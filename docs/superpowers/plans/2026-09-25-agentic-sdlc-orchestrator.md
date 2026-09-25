@@ -4,7 +4,7 @@
 
 **Goal:** Build the v1 CLI orchestrator that turns a markdown request into reviewed, merge-ready commits via a reconciler-driven pipeline (prepare → implement → review → merge), wrapping an agentic coding CLI as a pluggable provider.
 
-**Architecture:** A reconciler core reads persisted run state (context, plan, ordered slices) plus real git state, decides the next actionable step for the current slice, and executes it through swappable strategies (input source, agent provider, merge mode). State lives on a dedicated git branch (`sdlc/runs/<runId>`) checked out in its own worktree; slice implementation happens in a second worktree, one branch at a time (v1 is sequential — no parallel slices).
+**Architecture:** A reconciler core reads persisted run state (context, plan, ordered slices) plus real git state, decides the next actionable step for the current slice, and executes it through swappable strategies (input source, agent provider, merge mode). State is plain gitignored JSON on local disk (`.sdlc/<runId>/state/`); slice implementation happens in a dedicated git worktree, one branch at a time (v1 is sequential — no parallel slices, no conflict preflight/auto-resolve — see Global Constraints).
 
 **Tech Stack:** TypeScript (strict, ESM, Node >=20), commander (CLI), simple-git (git operations), zod (state/config validation), execa (subprocess spawning for the real agent provider), Vitest (tests), ESLint + Prettier, StrykerJS (mutation testing), secretlint.
 
@@ -13,12 +13,14 @@
 ## Global Constraints
 
 - Node >=20, TypeScript strict mode, ESM (`"type": "module"`), npm as package manager.
-- `git` >=2.38 required (uses non-mutating `git merge-tree --write-tree` for conflict preflight).
 - ESLint and Prettier must both be clean; this is an acceptance bar, not advisory.
 - No `gh` dependency anywhere in v1. No `gh-issue.ts` / `gh.ts` stub files — the strategy interfaces are designed so adding them later doesn't require touching existing code, but v1 does not ship placeholder files for unimplemented strategies.
 - `sdlc.config.json` only in v1 (no `.ts`/`.js` config loading — avoids needing a runtime TS loader for config alone).
-- Pipeline state lives on git branch `sdlc/runs/<runId>` (not a raw custom `refs/sdlc/...` namespace — git's worktree/branch tooling operates naturally on branches under `refs/heads/`), checked out in a dedicated worktree at `.sdlc/<runId>/state/`. This satisfies the spec's intent (state decoupled from the code branch, git-native, resumable) via a concrete implementation choice.
-- Slice implementation happens in a second worktree at `.sdlc/<runId>/workspace/`, created lazily on first use (not during `prepare`), reused across all of a run's slices by checking out a new branch per slice.
+- **State is plain local JSON, not git-backed.** An earlier version of this plan stored run state on a dedicated git branch checked out in its own worktree, for cross-machine durability. That was cut: it was the buggiest mechanism in review (an untracked nested worktree registers as a dirty embedded repo in the primary checkout, breaking every "is the working tree clean" check used by merge), and its payoff only matters for a future multi-machine "software factory," not a working v1. State now lives at `.sdlc/<runId>/state/*.json`, plain files, gitignored. Crash recovery still works (`resume` reads it back off local disk); only "survives a wiped local disk" is lost, which nothing else in v1 promised either.
+- `.sdlc/` (all run state and workspace worktrees) and `.sdlc-step-output.json` (the agent-provider structured-output convention, written into whatever `cwd` a provider runs in) must both be listed in the repo's `.gitignore` — added in Task 1. Neither may ever be picked up by `commitAll`.
+- **No conflict preflight and no `resolve-conflicts` step in v1.** An earlier version of this plan checked every slice for merge conflicts before acting and auto-resolved them via the agent, capped and retried. That was cut: in a sequential (non-parallel) pipeline, conflicts are rare — they only come from your own unrelated commits to main or time passing under manual-merge mode — and it was the second-buggiest area in review (ignored failure results, assumed worktree state that may not exist after a restart). `mergeBranchInto` (Task 4) throws a plain git error on a real conflict; you resolve it by hand in the workspace worktree and re-run `sdlc merge`, exactly like an ordinary local `git merge` conflict.
+- **Known v1 limitation: a manually squash-merged slice is not reliably detected as merged.** "Is this slice done" is decided by checking whether the slice branch's commits are reachable from the base branch (`isBranchMergedInto`, Task 4). A regular merge or fast-forward is detected correctly; a squash-merge is not, because it produces a new commit rather than replaying the original ones. This mostly matters for a future `gh` integration (GitHub's default PR-merge button squashes); v1 has no `gh` dependency, so it's not the primary manual-merge path today, but the limitation is real and undocumented nowhere else — this is that documentation.
+- Slice implementation happens in a dedicated worktree at `.sdlc/<runId>/workspace/`, created lazily on first use (not during `prepare`), reused across all of a run's slices by checking out a new branch per slice.
 - Naming: every exported name must be understandable without opening its definition — no `utils`/`helpers`/`manager`/`data` dumping-ground names.
 - File/module boundaries: one responsibility per file; split rather than grow a file that's taking on a second concern.
 - Declaration order within a file: usage before declaration, ordered by first use — not alphabetical.
@@ -40,15 +42,29 @@
 - Create: `src/cli/main.ts`
 - Test: `tests/cli/main.test.ts`
 - Modify: `index.js` (delete — superseded by `src/cli/main.ts`)
+- Modify: `.gitignore` (add `.sdlc/` and the structured-output filename)
 
 **Interfaces:**
 - Produces: `sdlc` CLI binary entry point at `src/cli/main.ts` (extended by later tasks); npm scripts `build`, `lint`, `format`, `format:check`, `test`, `test:mutation`, `secretlint`, `dev`.
 
-- [ ] **Step 1: Remove the placeholder scaffold**
+- [ ] **Step 1: Remove the placeholder scaffold and gitignore run state/scratch output**
 
 ```bash
 git rm index.js
 ```
+
+Append to `.gitignore` (it already has `.idea/` and `node_modules/` from an earlier commit):
+
+```
+.sdlc/
+.sdlc-step-output.json
+```
+
+This matters from the very first task: without it, every run's local state and
+worktrees register as untracked/embedded content in the primary checkout,
+which breaks the "is the working tree clean" check every merge relies on
+(Task 4) — a bug that only shows up once Task 14 tries to merge, much harder
+to diagnose after the fact than to prevent now.
 
 - [ ] **Step 2: Write `package.json`**
 
@@ -597,7 +613,12 @@ git commit -m "feat: add git worktree helpers"
 
 ---
 
-### Task 4: Git layer — conflict preflight and merge
+### Task 4: Git layer — merge and merged-detection
+
+v1 has no conflict preflight and no `resolve-conflicts` step (dropped — see
+Global Constraints). If a merge genuinely conflicts, `mergeBranchInto` below
+throws a plain git error; the CLI surfaces it and you resolve it by hand in
+the workspace worktree, same as any local `git merge` conflict.
 
 **Files:**
 - Create: `src/git/merge.ts`
@@ -605,7 +626,7 @@ git commit -m "feat: add git worktree helpers"
 
 **Interfaces:**
 - Consumes: `openRepo`, `isWorkingTreeClean` (repository.ts, Task 2); `getCurrentBranch` (branch.ts, Task 2).
-- Produces: `wouldMergeCleanly(repoRoot, branchName, intoBranch): Promise<boolean>`, `isBranchMergedInto(repoRoot, branchName, intoBranch): Promise<boolean>`, `mergeBranchInto(repoRoot, branchName, intoBranch): Promise<string>`.
+- Produces: `isBranchMergedInto(repoRoot, branchName, intoBranch): Promise<boolean>`, `mergeBranchInto(repoRoot, branchName, intoBranch): Promise<string>`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -614,7 +635,7 @@ git commit -m "feat: add git worktree helpers"
 import { afterEach, describe, expect, it } from 'vitest';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { isBranchMergedInto, mergeBranchInto, wouldMergeCleanly } from '../../src/git/merge.js';
+import { isBranchMergedInto, mergeBranchInto } from '../../src/git/merge.js';
 import { checkoutNewBranchAt, checkoutExistingBranch } from '../../src/git/branch.js';
 import { commitAll } from '../../src/git/repository.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
@@ -623,27 +644,6 @@ let repo: TempRepo;
 
 afterEach(async () => {
   await repo?.cleanup();
-});
-
-describe('wouldMergeCleanly', () => {
-  it('is true for a non-conflicting branch', async () => {
-    repo = await createTempRepo();
-    await checkoutNewBranchAt(repo.dir, 'feature/clean', 'main');
-    await writeFile(path.join(repo.dir, 'clean.txt'), 'hi');
-    await commitAll(repo.dir, 'add clean.txt');
-    expect(await wouldMergeCleanly(repo.dir, 'feature/clean', 'main')).toBe(true);
-  });
-
-  it('is false for a conflicting branch', async () => {
-    repo = await createTempRepo();
-    await checkoutNewBranchAt(repo.dir, 'feature/conflict', 'main');
-    await writeFile(path.join(repo.dir, 'README.md'), 'conflict from branch\n');
-    await commitAll(repo.dir, 'change readme on branch');
-    await checkoutExistingBranch(repo.dir, 'main');
-    await writeFile(path.join(repo.dir, 'README.md'), 'conflict from main\n');
-    await commitAll(repo.dir, 'change readme on main');
-    expect(await wouldMergeCleanly(repo.dir, 'feature/conflict', 'main')).toBe(false);
-  });
 });
 
 describe('mergeBranchInto and isBranchMergedInto', () => {
@@ -678,6 +678,17 @@ describe('mergeBranchInto and isBranchMergedInto', () => {
       /uncommitted changes/,
     );
   });
+
+  it('throws a plain git error when the branches actually conflict', async () => {
+    repo = await createTempRepo();
+    await checkoutNewBranchAt(repo.dir, 'feature/p', 'main');
+    await writeFile(path.join(repo.dir, 'README.md'), 'from branch\n');
+    await commitAll(repo.dir, 'change readme on branch');
+    await checkoutExistingBranch(repo.dir, 'main');
+    await writeFile(path.join(repo.dir, 'README.md'), 'from main\n');
+    await commitAll(repo.dir, 'change readme on main');
+    await expect(mergeBranchInto(repo.dir, 'feature/p', 'main')).rejects.toThrow();
+  });
 });
 ```
 
@@ -691,19 +702,6 @@ Expected: FAIL — `src/git/merge.ts` does not exist.
 ```ts
 import { getCurrentBranch } from './branch.js';
 import { isWorkingTreeClean, openRepo } from './repository.js';
-
-export async function wouldMergeCleanly(
-  repoRoot: string,
-  branchName: string,
-  intoBranch: string,
-): Promise<boolean> {
-  try {
-    await openRepo(repoRoot).raw(['merge-tree', '--write-tree', intoBranch, branchName]);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export async function isBranchMergedInto(
   repoRoot: string,
@@ -761,14 +759,14 @@ git commit -m "feat: add git conflict preflight and merge helpers"
 - Create: `src/state/types.ts`
 
 **Interfaces:**
-- Produces: `SliceStatus`, `Slice`, `RunContext`, `RunPlan`, `RunMeta` types, and `sliceSchema`, `slicesSchema`, `runContextSchema`, `runPlanSchema`, `runMetaSchema` zod schemas.
+- Produces: `SliceStatus`, `Slice`, `RunContext`, `RunPlan`, `RunMeta` types, and `sliceSchema`, `slicesSchema`, `runContextSchema`, `runPlanSchema`, `runMetaSchema` zod schemas. `Slice.lastFeedback` (optional string) carries the reviewer's or verify command's most recent "changes requested" reason, read by the implement step's prompt on the next pass so feedback isn't silently discarded. `Slice.mergeAttempts` has no reader or writer in v1 (it was the removed Task 13's retry counter) — kept in the schema, always `0`, reserved for when conflict-handling returns; do not remove it or repurpose it for something else.
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
 // tests/state/types.test.ts
 import { describe, expect, it } from 'vitest';
-import { runMetaSchema, slicesSchema } from '../../src/state/types.js';
+import { runMetaSchema, sliceSchema, slicesSchema } from '../../src/state/types.js';
 
 describe('state schemas', () => {
   it('accepts a valid slice list', () => {
@@ -804,6 +802,33 @@ describe('state schemas', () => {
     ).toThrow();
   });
 
+  it('accepts a slice with lastFeedback set and defaults it to undefined when absent', () => {
+    const withFeedback = sliceSchema.parse({
+      id: 'x',
+      title: 'x',
+      description: 'x',
+      order: 0,
+      status: 'pending',
+      branch: 'x',
+      reviewCycles: 1,
+      mergeAttempts: 0,
+      lastFeedback: 'Missing a test for the error path.',
+    });
+    expect(withFeedback.lastFeedback).toBe('Missing a test for the error path.');
+
+    const withoutFeedback = sliceSchema.parse({
+      id: 'y',
+      title: 'y',
+      description: 'y',
+      order: 0,
+      status: 'pending',
+      branch: 'y',
+      reviewCycles: 0,
+      mergeAttempts: 0,
+    });
+    expect(withoutFeedback.lastFeedback).toBeUndefined();
+  });
+
   it('parses run meta', () => {
     const meta = runMetaSchema.parse({
       runId: 'abc12345',
@@ -833,7 +858,6 @@ export const sliceStatusSchema = z.enum([
   'in_review',
   'ready_to_merge',
   'merged',
-  'conflict',
   'stuck',
 ]);
 export type SliceStatus = z.infer<typeof sliceStatusSchema>;
@@ -847,6 +871,7 @@ export const sliceSchema = z.object({
   branch: z.string().min(1),
   reviewCycles: z.number().int().nonnegative(),
   mergeAttempts: z.number().int().nonnegative(),
+  lastFeedback: z.string().optional(),
 });
 export type Slice = z.infer<typeof sliceSchema>;
 
@@ -894,14 +919,25 @@ git commit -m "feat: add run state schema and types"
 
 ### Task 6: State store
 
+v1 keeps run state as plain gitignored JSON files under `.sdlc/<runId>/state/`
+— no dedicated git branch, no state worktree. That mechanism was cut (see
+Global Constraints): it was the single buggiest part of the original design
+(an untracked nested worktree showing up as a dirty embedded repo in the
+primary checkout, breaking `isWorkingTreeClean` checks everywhere) and its
+only real payoff — resuming a run from a different machine by fetching a git
+ref — serves the future multi-machine "software factory," not a working v1.
+Crash recovery still works: state is still durable on local disk, and
+`resume` still reads it back; you only lose surviving a wiped local disk,
+which nothing else in v1 promises either.
+
 **Files:**
 - Create: `src/state/run-paths.ts`
 - Create: `src/state/store.ts`
 - Test: `tests/state/store.test.ts`
 
 **Interfaces:**
-- Consumes: `addWorktreeForNewBranch`, `worktreeExists` (worktree.ts, Task 3); `commitAll` (repository.ts, Task 2); `localBranchExists`, `addWorktreeForExistingBranch` (Tasks 2–3); zod schemas (Task 5).
-- Produces: `RunPaths` type + `getRunPaths(repoRoot, runId): RunPaths`; `initializeRunState(repoRoot, runId, baseBranch): Promise<RunPaths>`; `loadRunState(repoRoot, runId): Promise<RunPaths>` (reattaches an existing state worktree, e.g. after a crash); `readRunMeta/writeRunMeta`, `readContext/writeContext`, `readPlan/writePlan`, `readSlices/writeSlices`, all `(paths: RunPaths, ...) => Promise<...>`; `commitState(paths, message): Promise<void>`.
+- Consumes: zod schemas (Task 5).
+- Produces: `RunPaths` type + `getRunPaths(repoRoot, runId): RunPaths`; `initializeRunState(repoRoot, runId, baseBranch): Promise<RunPaths>`; `loadRunState(repoRoot, runId): Promise<RunPaths>` (throws if the run's state directory doesn't exist); `readRunMeta/writeRunMeta`, `readContext/writeContext`, `readPlan/writePlan`, `readSlices/writeSlices`, all `(paths: RunPaths, ...) => Promise<...>`.
 
 - [ ] **Step 1: Write `src/state/run-paths.ts`**
 
@@ -911,7 +947,6 @@ import path from 'node:path';
 export interface RunPaths {
   runId: string;
   repoRoot: string;
-  stateBranch: string;
   stateDir: string;
   workspaceDir: string;
 }
@@ -920,7 +955,6 @@ export function getRunPaths(repoRoot: string, runId: string): RunPaths {
   return {
     runId,
     repoRoot,
-    stateBranch: `sdlc/runs/${runId}`,
     stateDir: path.join(repoRoot, '.sdlc', runId, 'state'),
     workspaceDir: path.join(repoRoot, '.sdlc', runId, 'workspace'),
   };
@@ -939,9 +973,7 @@ import {
   readSlices,
   writeRunMeta,
   writeSlices,
-  commitState,
 } from '../../src/state/store.js';
-import { isWorkingTreeClean } from '../../src/git/repository.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
 
 let repo: TempRepo;
@@ -951,12 +983,13 @@ afterEach(async () => {
 });
 
 describe('state store', () => {
-  it('initializes a run state worktree with a seeded run meta', async () => {
+  it('initializes run state with a seeded run meta', async () => {
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run1', 'main');
     const meta = await readRunMeta(paths);
     expect(meta.runId).toBe('run1');
     expect(meta.baseBranch).toBe('main');
+    expect(await readSlices(paths)).toEqual([]);
   });
 
   it('round-trips slices through write and read', async () => {
@@ -979,35 +1012,25 @@ describe('state store', () => {
     expect(slices[0].id).toBe('s1');
   });
 
-  it('commits state changes onto the state branch', async () => {
+  it('reloads an existing run via loadRunState', async () => {
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run3', 'main');
     await writeRunMeta(paths, {
       runId: 'run3',
       baseBranch: 'main',
-      currentSliceId: 's1',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    await commitState(paths, 'sdlc: update run meta');
-    expect(await isWorkingTreeClean(paths.stateDir)).toBe(true);
-  });
-
-  it('reattaches to an existing run via loadRunState', async () => {
-    repo = await createTempRepo();
-    const paths = await initializeRunState(repo.dir, 'run4', 'main');
-    await writeRunMeta(paths, {
-      runId: 'run4',
-      baseBranch: 'main',
       currentSliceId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    await commitState(paths, 'sdlc: seed run4');
 
-    const reloaded = await loadRunState(repo.dir, 'run4');
+    const reloaded = await loadRunState(repo.dir, 'run3');
     const meta = await readRunMeta(reloaded);
-    expect(meta.runId).toBe('run4');
+    expect(meta.runId).toBe('run3');
+  });
+
+  it('throws a clear error when the run does not exist', async () => {
+    repo = await createTempRepo();
+    await expect(loadRunState(repo.dir, 'no-such-run')).rejects.toThrow(/no-such-run/);
   });
 });
 ```
@@ -1020,11 +1043,9 @@ Expected: FAIL — `src/state/store.ts` does not exist.
 - [ ] **Step 4: Write `src/state/store.ts`**
 
 ```ts
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { addWorktreeForExistingBranch, addWorktreeForNewBranch, worktreeExists } from '../git/worktree.js';
-import { localBranchExists } from '../git/branch.js';
-import { commitAll } from '../git/repository.js';
 import { getRunPaths, type RunPaths } from './run-paths.js';
 import {
   runContextSchema,
@@ -1048,7 +1069,7 @@ export async function initializeRunState(
   baseBranch: string,
 ): Promise<RunPaths> {
   const paths = getRunPaths(repoRoot, runId);
-  await addWorktreeForNewBranch(repoRoot, paths.stateDir, paths.stateBranch, baseBranch);
+  await mkdir(paths.stateDir, { recursive: true });
   await writeRunMeta(paths, {
     runId,
     baseBranch,
@@ -1057,22 +1078,15 @@ export async function initializeRunState(
     updatedAt: new Date().toISOString(),
   });
   await writeSlices(paths, []);
-  await commitState(paths, `sdlc: initialize run ${runId}`);
   return paths;
 }
 
 export async function loadRunState(repoRoot: string, runId: string): Promise<RunPaths> {
   const paths = getRunPaths(repoRoot, runId);
-  if (await worktreeExists(repoRoot, paths.stateDir)) return paths;
-  if (!(await localBranchExists(repoRoot, paths.stateBranch))) {
-    throw new Error(`No run found with id "${runId}" (branch ${paths.stateBranch} does not exist)`);
+  if (!existsSync(path.join(paths.stateDir, RUN_META_FILE))) {
+    throw new Error(`No run found with id "${runId}" (expected state at ${paths.stateDir})`);
   }
-  await addWorktreeForExistingBranch(repoRoot, paths.stateDir, paths.stateBranch);
   return paths;
-}
-
-export async function commitState(paths: RunPaths, message: string): Promise<void> {
-  await commitAll(paths.stateDir, message);
 }
 
 export async function readRunMeta(paths: RunPaths): Promise<RunMeta> {
@@ -1123,7 +1137,7 @@ Expected: PASS
 ```bash
 npm run lint
 git add -A
-git commit -m "feat: add git-branch-backed run state store"
+git commit -m "feat: add local JSON run state store"
 ```
 
 ---
@@ -1135,7 +1149,7 @@ git commit -m "feat: add git-branch-backed run state store"
 - Test: `tests/config/load-config.test.ts`
 
 **Interfaces:**
-- Produces: `SdlcConfig` type, `loadConfig(repoRoot): SdlcConfig`.
+- Produces: `SdlcConfig` type, `loadConfig(repoRoot): SdlcConfig`. `conflictResolveCap` has no reader in v1 (Task 13, its only consumer, was removed) — kept in the schema, reserved for when conflict-handling returns; do not remove it or repurpose it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1237,7 +1251,7 @@ git commit -m "feat: add sdlc.config.json loader"
 - Test: `tests/orchestrator/structured-output.test.ts`
 
 **Interfaces:**
-- Produces: `AgentRunInput`, `AgentRunResult`, `AgentProvider` interface (provider/types.ts); `FakeAgentProvider` class taking a handler function (provider/fake.ts); `STRUCTURED_OUTPUT_FILENAME`, `structuredOutputPath(cwd)`, `structuredOutputInstruction()`, `writeStructuredOutputInstructionInto(prompt)`, `readStructuredOutput<T>(cwd, parse)` (orchestrator/structured-output.ts).
+- Produces: `AgentRunInput`, `AgentRunResult`, `AgentProvider` interface (provider/types.ts); `FakeAgentProvider` class taking a handler function (provider/fake.ts); `STRUCTURED_OUTPUT_FILENAME`, `structuredOutputPath(cwd)`, `structuredOutputInstruction()`, `resetStructuredOutput(cwd): Promise<void>`, `readStructuredOutput<T>(cwd, parse)` (orchestrator/structured-output.ts). `resetStructuredOutput` deletes any existing output file at `cwd` (no-op if absent) — callers run it immediately before every `provider.run()` call that expects structured output, so a provider that fails to write a fresh file can never cause a stale prior result (e.g. a previous "approved: true") to be silently re-read.
 
 - [ ] **Step 1: Write `src/strategies/provider/types.ts`**
 
@@ -1284,6 +1298,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import {
   readStructuredOutput,
+  resetStructuredOutput,
   structuredOutputInstruction,
   structuredOutputPath,
 } from '../../src/orchestrator/structured-output.js';
@@ -1311,6 +1326,18 @@ describe('structured output helper', () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-output-'));
     await expect(readStructuredOutput(dir, (raw) => raw)).rejects.toThrow();
   });
+
+  it('reset removes an existing file so a stale result cannot be re-read', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-output-'));
+    await writeFile(structuredOutputPath(dir), JSON.stringify({ approved: true }));
+    await resetStructuredOutput(dir);
+    await expect(readStructuredOutput(dir, (raw) => raw)).rejects.toThrow();
+  });
+
+  it('reset is a no-op when no file exists yet', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-output-'));
+    await expect(resetStructuredOutput(dir)).resolves.toBeUndefined();
+  });
 });
 ```
 
@@ -1322,7 +1349,7 @@ Expected: FAIL — `src/orchestrator/structured-output.ts` does not exist.
 - [ ] **Step 5: Write `src/orchestrator/structured-output.ts`**
 
 ```ts
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 export const STRUCTURED_OUTPUT_FILENAME = '.sdlc-step-output.json';
@@ -1337,6 +1364,10 @@ export function structuredOutputInstruction(): string {
     `"${STRUCTURED_OUTPUT_FILENAME}" in the current directory. Do not wrap it in markdown`,
     `code fences and do not include any other content in that file.`,
   ].join(' ');
+}
+
+export async function resetStructuredOutput(cwd: string): Promise<void> {
+  await rm(structuredOutputPath(cwd), { force: true });
 }
 
 export async function readStructuredOutput<T>(
@@ -1457,8 +1488,8 @@ git commit -m "feat: add markdown-file input source"
 - Test: `tests/orchestrator/prepare.test.ts`
 
 **Interfaces:**
-- Consumes: `InputSource` (Task 9); `AgentProvider`, `FakeAgentProvider` (Task 8); `structuredOutputInstruction`, `readStructuredOutput` (Task 8); `initializeRunState`, `writeContext`, `writePlan`, `writeSlices`, `commitState` (Task 6); `runContextSchema`, `runPlanSchema`, `slicesSchema` (Task 5); `getCurrentBranch` (Task 2).
-- Produces: `generateRunId(): string`; `prepareRun(options: PrepareOptions): Promise<RunMeta>` where `PrepareOptions = { repoRoot: string; inputSource: InputSource; provider: AgentProvider }`.
+- Consumes: `InputSource` (Task 9); `AgentProvider`, `FakeAgentProvider` (Task 8); `structuredOutputInstruction`, `resetStructuredOutput`, `readStructuredOutput` (Task 8); `initializeRunState`, `writeContext`, `writePlan`, `writeSlices`, `writeRunMeta`, `readRunMeta` (Task 6); `runContextSchema`, `runPlanSchema`, `slicesSchema` (Task 5); `getCurrentBranch` (Task 2).
+- Produces: `generateRunId(): string`; `prepareRun(options: PrepareOptions): Promise<RunMeta>` where `PrepareOptions = { repoRoot: string; inputSource: InputSource; provider: AgentProvider }`. On return, `RunMeta.currentSliceId` is set to the first slice (lowest `order`), or stays `null` if the slice plan came back empty.
 
 - [ ] **Step 1: Write `src/orchestrator/prompts.ts`**
 
@@ -1527,6 +1558,7 @@ export function buildSlicePlanPrompt(planSummary: string, planApproach: string):
 ```ts
 // tests/orchestrator/prepare.test.ts
 import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
@@ -1584,6 +1616,7 @@ describe('prepareRun', () => {
     });
 
     expect(meta.baseBranch).toBe('main');
+    expect(meta.currentSliceId).toBe('add-health-route');
     const paths = await loadRunState(repo.dir, meta.runId);
     const context = await readContext(paths);
     expect(context.classification).toBe('feature');
@@ -1593,6 +1626,54 @@ describe('prepareRun', () => {
     expect(slices).toHaveLength(1);
     expect(slices[0].status).toBe('pending');
     expect(slices[0].branch).toBe(`sdlc/slice/${meta.runId}/add-health-route`);
+  });
+
+  it('runs the planning steps with the real repository as cwd, not an empty scratch directory', async () => {
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+
+    const seenCwds: string[] = [];
+    let call = 0;
+    const provider = new FakeAgentProvider(async (input) => {
+      seenCwds.push(input.cwd);
+      call += 1;
+      const output =
+        call === 1
+          ? { classification: 'feature', repoSummary: 'An Express app.' }
+          : call === 2
+            ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
+            : [{ id: 'add-health-route', title: 'Add health route', description: 'Add GET /health' }];
+      await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
+      return { success: true, output: 'done' };
+    });
+
+    await prepareRun({ repoRoot: repo.dir, inputSource: new MarkdownFileInputSource(requestPath), provider });
+
+    expect(seenCwds).toEqual([repo.dir, repo.dir, repo.dir]);
+  });
+
+  it('leaves no structured-output file behind in the repo root once done', async () => {
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+
+    let call = 0;
+    const provider = new FakeAgentProvider(async (input) => {
+      call += 1;
+      const output =
+        call === 1
+          ? { classification: 'feature', repoSummary: 'An Express app.' }
+          : call === 2
+            ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
+            : [{ id: 'add-health-route', title: 'Add health route', description: 'Add GET /health' }];
+      await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
+      return { success: true, output: 'done' };
+    });
+
+    await prepareRun({ repoRoot: repo.dir, inputSource: new MarkdownFileInputSource(requestPath), provider });
+
+    expect(existsSync(structuredOutputPath(repo.dir))).toBe(false);
   });
 });
 ```
@@ -1606,24 +1687,21 @@ Expected: FAIL — `src/orchestrator/prepare.ts` does not exist.
 
 ```ts
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { z } from 'zod';
 import { getCurrentBranch } from '../git/branch.js';
 import type { InputSource } from '../strategies/input-source/types.js';
 import type { AgentProvider } from '../strategies/provider/types.js';
 import {
-  commitState,
   initializeRunState,
   readRunMeta,
   writeContext,
   writePlan,
+  writeRunMeta,
   writeSlices,
 } from '../state/store.js';
 import type { RunMeta, Slice } from '../state/types.js';
 import { buildContextPrompt, buildFeaturePlanPrompt, buildSlicePlanPrompt } from './prompts.js';
-import { readStructuredOutput } from './structured-output.js';
+import { readStructuredOutput, resetStructuredOutput } from './structured-output.js';
 
 export interface PrepareOptions {
   repoRoot: string;
@@ -1651,48 +1729,59 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
   const baseBranch = await getCurrentBranch(repoRoot);
   const runId = generateRunId();
   const paths = await initializeRunState(repoRoot, runId, baseBranch);
-  const scratchDir = await mkdtemp(path.join(tmpdir(), `sdlc-prepare-${runId}-`));
 
-  try {
-    const contextResult = await provider.run({ cwd: scratchDir, prompt: buildContextPrompt(rawRequest) });
-    if (!contextResult.success) throw new Error(`Context step failed: ${contextResult.output}`);
-    const contextOutput = await readStructuredOutput(scratchDir, (raw) => contextOutputSchema.parse(raw));
-    await writeContext(paths, {
-      rawRequest,
-      classification: contextOutput.classification,
-      repoSummary: contextOutput.repoSummary,
-      createdAt: new Date().toISOString(),
-    });
+  // Planning steps run with cwd = repoRoot (not an empty scratch directory) so
+  // the provider can actually explore the repository its own prompt asks it
+  // to. The structured-output file this produces lands in repoRoot too —
+  // reset before each call and never left behind (see Task 1's .gitignore).
+  await resetStructuredOutput(repoRoot);
+  const contextResult = await provider.run({ cwd: repoRoot, prompt: buildContextPrompt(rawRequest) });
+  if (!contextResult.success) throw new Error(`Context step failed: ${contextResult.output}`);
+  const contextOutput = await readStructuredOutput(repoRoot, (raw) => contextOutputSchema.parse(raw));
+  await writeContext(paths, {
+    rawRequest,
+    classification: contextOutput.classification,
+    repoSummary: contextOutput.repoSummary,
+    createdAt: new Date().toISOString(),
+  });
 
-    const planResult = await provider.run({
-      cwd: scratchDir,
-      prompt: buildFeaturePlanPrompt(rawRequest, contextOutput.repoSummary),
-    });
-    if (!planResult.success) throw new Error(`Feature-plan step failed: ${planResult.output}`);
-    const planOutput = await readStructuredOutput(scratchDir, (raw) => planOutputSchema.parse(raw));
-    await writePlan(paths, planOutput);
+  await resetStructuredOutput(repoRoot);
+  const planResult = await provider.run({
+    cwd: repoRoot,
+    prompt: buildFeaturePlanPrompt(rawRequest, contextOutput.repoSummary),
+  });
+  if (!planResult.success) throw new Error(`Feature-plan step failed: ${planResult.output}`);
+  const planOutput = await readStructuredOutput(repoRoot, (raw) => planOutputSchema.parse(raw));
+  await writePlan(paths, planOutput);
 
-    const sliceResult = await provider.run({
-      cwd: scratchDir,
-      prompt: buildSlicePlanPrompt(planOutput.summary, planOutput.approach),
-    });
-    if (!sliceResult.success) throw new Error(`Slice-plan step failed: ${sliceResult.output}`);
-    const sliceOutput = await readStructuredOutput(scratchDir, (raw) => sliceOutputSchema.parse(raw));
-    const slices: Slice[] = sliceOutput.map((slice, order) => ({
-      ...slice,
-      order,
-      status: 'pending',
-      branch: `sdlc/slice/${runId}/${slice.id}`,
-      reviewCycles: 0,
-      mergeAttempts: 0,
-    }));
-    await writeSlices(paths, slices);
+  await resetStructuredOutput(repoRoot);
+  const sliceResult = await provider.run({
+    cwd: repoRoot,
+    prompt: buildSlicePlanPrompt(planOutput.summary, planOutput.approach),
+  });
+  if (!sliceResult.success) throw new Error(`Slice-plan step failed: ${sliceResult.output}`);
+  const sliceOutput = await readStructuredOutput(repoRoot, (raw) => sliceOutputSchema.parse(raw));
+  await resetStructuredOutput(repoRoot);
 
-    await commitState(paths, `sdlc: prepare run ${runId} (${slices.length} slice(s))`);
-    return readRunMeta(paths);
-  } finally {
-    await rm(scratchDir, { recursive: true, force: true });
-  }
+  const slices: Slice[] = sliceOutput.map((slice, order) => ({
+    ...slice,
+    order,
+    status: 'pending',
+    branch: `sdlc/slice/${runId}/${slice.id}`,
+    reviewCycles: 0,
+    mergeAttempts: 0,
+  }));
+  await writeSlices(paths, slices);
+
+  const firstSlice = [...slices].sort((a, b) => a.order - b.order)[0];
+  const meta = await readRunMeta(paths);
+  await writeRunMeta(paths, {
+    ...meta,
+    currentSliceId: firstSlice?.id ?? null,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return readRunMeta(paths);
 }
 ```
 
@@ -1718,8 +1807,8 @@ git commit -m "feat: add prepare pipeline (context, feature plan, slice plan)"
 - Test: `tests/orchestrator/implement-step.test.ts`
 
 **Interfaces:**
-- Consumes: `AgentProvider`, `FakeAgentProvider` (Task 8); `RunPaths`, `readSlices`, `writeSlices` (Task 6); `Slice` (Task 5); `addWorktreeForNewBranch`, `worktreeExists` (Task 3); `localBranchExists`, `checkoutExistingBranch`, `checkoutNewBranchAt` (Task 2); `commitAll` (Task 2).
-- Produces: `runImplementStep(input: ImplementStepInput): Promise<void>` where `ImplementStepInput = { repoRoot: string; paths: RunPaths; slice: Slice; baseBranch: string; provider: AgentProvider }`; on return, mutates `slice.status` to `'in_review'` (throws `ImplementStepFailedError` on provider failure, leaving `slice.status` untouched).
+- Consumes: `AgentProvider`, `FakeAgentProvider` (Task 8); `RunPaths` (Task 6); `Slice` (Task 5, including `lastFeedback`); `addWorktreeForNewBranch`, `worktreeExists` (Task 3); `localBranchExists`, `checkoutExistingBranch`, `checkoutNewBranchAt` (Task 2); `commitAll` (Task 2).
+- Produces: `runImplementStep(input: ImplementStepInput): Promise<void>` where `ImplementStepInput = { repoRoot: string; paths: RunPaths; slice: Slice; baseBranch: string; provider: AgentProvider }`; on return, mutates `slice.status` to `'in_review'` (throws `ImplementStepFailedError` on provider failure, leaving `slice.status` untouched). When `slice.lastFeedback` is set (a prior review or verify run requested changes), the prompt includes it so the re-implementation pass actually addresses it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1803,6 +1892,25 @@ describe('runImplementStep', () => {
     ).rejects.toThrow(ImplementStepFailedError);
     expect(slice.status).toBe('pending');
   });
+
+  it('includes lastFeedback in the prompt when a previous review requested changes', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run4');
+    const slice = makeSlice({
+      branch: 'sdlc/slice/run4/s1',
+      lastFeedback: 'The health check must also verify the database connection.',
+    });
+    let seenPrompt = '';
+    const provider = new FakeAgentProvider(async (input) => {
+      seenPrompt = input.prompt;
+      await writeFile(path.join(input.cwd, 'health.ts'), 'export const health = () => "ok";\n');
+      return { success: true, output: 'implemented' };
+    });
+
+    await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
+
+    expect(seenPrompt).toContain('verify the database connection');
+  });
 });
 ```
 
@@ -1849,15 +1957,26 @@ export async function runImplementStep(input: ImplementStepInput): Promise<void>
 }
 
 function buildImplementPrompt(slice: Slice): string {
-  return [
+  const lines = [
     `You are implementing one slice of a larger, already-planned feature.`,
     '',
     `Slice: ${slice.title}`,
     `Description: ${slice.description}`,
+  ];
+  if (slice.lastFeedback) {
+    lines.push(
+      '',
+      'A previous attempt at this slice was reviewed and changes were requested.',
+      'Address this feedback specifically:',
+      slice.lastFeedback,
+    );
+  }
+  lines.push(
     '',
     'Make the necessary code changes in this repository to complete this slice.',
     'Do not commit — leave the changes in the working tree.',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 async function ensureWorkspaceOnBranch(
@@ -1900,8 +2019,8 @@ git commit -m "feat: add reconciler implement step"
 - Test: `tests/orchestrator/review-step.test.ts`
 
 **Interfaces:**
-- Consumes: `AgentProvider`, `FakeAgentProvider` (Task 8); `structuredOutputInstruction`, `readStructuredOutput` (Task 8); `Slice` (Task 5); `SdlcConfig` (Task 7).
-- Produces: `runReviewStep(input: ReviewStepInput): Promise<void>` where `ReviewStepInput = { paths: RunPaths; slice: Slice; provider: AgentProvider; config: SdlcConfig }`. Mutates `slice.status` to one of `'pending'` (changes requested, under cap), `'stuck'` (cap exceeded), or `'ready_to_merge'` (approved and verify passed); increments `slice.reviewCycles` on a changes-requested outcome.
+- Consumes: `AgentProvider`, `FakeAgentProvider` (Task 8); `structuredOutputInstruction`, `resetStructuredOutput`, `readStructuredOutput` (Task 8); `Slice` (Task 5); `SdlcConfig` (Task 7).
+- Produces: `runReviewStep(input: ReviewStepInput): Promise<void>` where `ReviewStepInput = { paths: RunPaths; slice: Slice; provider: AgentProvider; config: SdlcConfig }`. Mutates `slice.status` to one of `'pending'` (changes requested, under cap), `'stuck'` (cap exceeded), or `'ready_to_merge'` (approved and verify passed); increments `slice.reviewCycles` on a changes-requested outcome. On a changes-requested outcome, sets `slice.lastFeedback` to the reviewer's feedback (or a verify-failure message) so Task 11's implement step can act on it; clears it on approval.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2039,6 +2158,32 @@ describe('runReviewStep', () => {
 
     expect(slice.status).toBe('ready_to_merge');
   });
+
+  it('records the reviewer feedback on the slice and clears it once approved', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run6');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice();
+    let approve = false;
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify(
+          approve
+            ? { approved: true, feedback: '' }
+            : { approved: false, feedback: 'Add error handling for a missing database.' },
+        ),
+      );
+      return { success: true, output: 'reviewed' };
+    });
+
+    await runReviewStep({ paths, slice, provider, config: baseConfig });
+    expect(slice.lastFeedback).toBe('Add error handling for a missing database.');
+
+    approve = true;
+    await runReviewStep({ paths, slice, provider, config: baseConfig });
+    expect(slice.lastFeedback).toBeUndefined();
+  });
 });
 ```
 
@@ -2056,7 +2201,11 @@ import type { SdlcConfig } from '../config/load-config.js';
 import type { AgentProvider } from '../strategies/provider/types.js';
 import type { RunPaths } from '../state/run-paths.js';
 import type { Slice } from '../state/types.js';
-import { readStructuredOutput, structuredOutputInstruction } from './structured-output.js';
+import {
+  readStructuredOutput,
+  resetStructuredOutput,
+  structuredOutputInstruction,
+} from './structured-output.js';
 
 const reviewOutputSchema = z.object({ approved: z.boolean(), feedback: z.string() });
 
@@ -2070,27 +2219,34 @@ export interface ReviewStepInput {
 export async function runReviewStep(input: ReviewStepInput): Promise<void> {
   const { paths, slice, provider, config } = input;
 
+  await resetStructuredOutput(paths.workspaceDir);
   const reviewResult = await provider.run({ cwd: paths.workspaceDir, prompt: buildReviewPrompt(slice) });
   if (!reviewResult.success) {
-    requestChanges(slice, config.reviewCycleCap);
+    requestChanges(slice, config.reviewCycleCap, `Review step failed to run: ${reviewResult.output}`);
     return;
   }
   const review = await readStructuredOutput(paths.workspaceDir, (raw) => reviewOutputSchema.parse(raw));
   if (!review.approved) {
-    requestChanges(slice, config.reviewCycleCap);
+    requestChanges(slice, config.reviewCycleCap, review.feedback);
     return;
   }
 
   if (config.verifyCommand && !(await runVerifyCommand(paths.workspaceDir, config.verifyCommand))) {
-    requestChanges(slice, config.reviewCycleCap);
+    requestChanges(
+      slice,
+      config.reviewCycleCap,
+      `The reviewer approved this slice, but the verify command ("${config.verifyCommand}") failed.`,
+    );
     return;
   }
 
+  slice.lastFeedback = undefined;
   slice.status = 'ready_to_merge';
 }
 
-function requestChanges(slice: Slice, reviewCycleCap: number): void {
+function requestChanges(slice: Slice, reviewCycleCap: number, feedback: string): void {
   slice.reviewCycles += 1;
+  slice.lastFeedback = feedback;
   slice.status = slice.reviewCycles >= reviewCycleCap ? 'stuck' : 'pending';
 }
 
@@ -2134,199 +2290,16 @@ git commit -m "feat: add reconciler review and verify step with bounded retry"
 
 ---
 
-### Task 13: Reconciler — conflict preflight and resolve-conflicts
+### Task 13: Removed — conflict preflight and resolve-conflicts
 
-**Files:**
-- Create: `src/orchestrator/conflict-step.ts`
-- Test: `tests/orchestrator/conflict-step.test.ts`
-
-**Interfaces:**
-- Consumes: `wouldMergeCleanly` (Task 4); `AgentProvider` (Task 8); `Slice` (Task 5); `commitAll` (Task 2).
-- Produces: `checkForConflict(input: ConflictCheckInput): Promise<boolean>` where `ConflictCheckInput = { repoRoot: string; slice: Slice; baseBranch: string }` — sets `slice.status = 'conflict'` and returns `true` if a conflict is detected (only checked when the slice's branch already exists, i.e. status is not `'pending'` with no prior implement run); `runResolveConflictsStep(input: ResolveConflictsInput): Promise<void>` where `ResolveConflictsInput = { paths: RunPaths; slice: Slice; baseBranch: string; provider: AgentProvider; config: SdlcConfig }` — reconciles the conflict via the provider in the slice's workspace, capped by `config.conflictResolveCap` using `slice.mergeAttempts`, resulting in `'pending'` (resolved, re-review needed), `'stuck'` (cap exceeded), unchanged `'conflict'` is never left silently — always resolves to one of those two.
-
-- [ ] **Step 1: Write the failing test**
-
-```ts
-// tests/orchestrator/conflict-step.test.ts
-import { afterEach, describe, expect, it } from 'vitest';
-import { writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { checkForConflict, runResolveConflictsStep } from '../../src/orchestrator/conflict-step.js';
-import { FakeAgentProvider } from '../../src/strategies/provider/fake.js';
-import { checkoutExistingBranch, checkoutNewBranchAt } from '../../src/git/branch.js';
-import { commitAll } from '../../src/git/repository.js';
-import { addWorktreeForNewBranch } from '../../src/git/worktree.js';
-import { getRunPaths } from '../../src/state/run-paths.js';
-import type { SdlcConfig } from '../../src/config/load-config.js';
-import type { Slice } from '../../src/state/types.js';
-import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
-
-let repo: TempRepo;
-
-afterEach(async () => {
-  await repo?.cleanup();
-});
-
-function makeSlice(overrides: Partial<Slice> = {}): Slice {
-  return {
-    id: 's1',
-    title: 'First slice',
-    description: 'Do the first thing.',
-    order: 0,
-    status: 'ready_to_merge',
-    branch: 'sdlc/slice/run1/s1',
-    reviewCycles: 0,
-    mergeAttempts: 0,
-    ...overrides,
-  };
-}
-
-const baseConfig: SdlcConfig = {
-  mergeMode: 'manual',
-  reviewCycleCap: 3,
-  conflictResolveCap: 2,
-  inputSource: 'markdown-file',
-  providerCommand: 'claude',
-};
-
-describe('checkForConflict', () => {
-  it('returns false and leaves status alone when the branch merges cleanly', async () => {
-    repo = await createTempRepo();
-    await checkoutNewBranchAt(repo.dir, 'sdlc/slice/run1/s1', 'main');
-    await writeFile(path.join(repo.dir, 'clean.txt'), 'hi');
-    await commitAll(repo.dir, 'add clean.txt');
-    await checkoutExistingBranch(repo.dir, 'main');
-    const slice = makeSlice();
-
-    const hasConflict = await checkForConflict({ repoRoot: repo.dir, slice, baseBranch: 'main' });
-
-    expect(hasConflict).toBe(false);
-    expect(slice.status).toBe('ready_to_merge');
-  });
-
-  it('returns true and marks the slice conflict when main has diverged incompatibly', async () => {
-    repo = await createTempRepo();
-    await checkoutNewBranchAt(repo.dir, 'sdlc/slice/run2/s1', 'main');
-    await writeFile(path.join(repo.dir, 'README.md'), 'from slice\n');
-    await commitAll(repo.dir, 'change readme on slice');
-    await checkoutExistingBranch(repo.dir, 'main');
-    await writeFile(path.join(repo.dir, 'README.md'), 'from main\n');
-    await commitAll(repo.dir, 'change readme on main');
-    const slice = makeSlice({ branch: 'sdlc/slice/run2/s1' });
-
-    const hasConflict = await checkForConflict({ repoRoot: repo.dir, slice, baseBranch: 'main' });
-
-    expect(hasConflict).toBe(true);
-    expect(slice.status).toBe('conflict');
-  });
-});
-
-describe('runResolveConflictsStep', () => {
-  it('resolves the conflict, commits, and returns the slice to pending', async () => {
-    repo = await createTempRepo();
-    const paths = getRunPaths(repo.dir, 'run3');
-    await addWorktreeForNewBranch(repo.dir, paths.workspaceDir, 'sdlc/slice/run3/s1', 'main');
-    const slice = makeSlice({ branch: 'sdlc/slice/run3/s1', status: 'conflict' });
-    const provider = new FakeAgentProvider(async (input) => {
-      await writeFile(path.join(input.cwd, 'resolved.txt'), 'resolved');
-      return { success: true, output: 'resolved' };
-    });
-
-    await runResolveConflictsStep({ paths, slice, baseBranch: 'main', provider, config: baseConfig });
-
-    expect(slice.status).toBe('pending');
-    expect(slice.mergeAttempts).toBe(1);
-  });
-
-  it('marks the slice stuck once the conflict-resolve cap is exceeded', async () => {
-    repo = await createTempRepo();
-    const paths = getRunPaths(repo.dir, 'run4');
-    await addWorktreeForNewBranch(repo.dir, paths.workspaceDir, 'sdlc/slice/run4/s1', 'main');
-    const slice = makeSlice({ branch: 'sdlc/slice/run4/s1', status: 'conflict', mergeAttempts: 2 });
-    const provider = new FakeAgentProvider(async () => ({ success: true, output: 'tried' }));
-
-    await runResolveConflictsStep({ paths, slice, baseBranch: 'main', provider, config: baseConfig });
-
-    expect(slice.status).toBe('stuck');
-  });
-});
-```
-
-- [ ] **Step 2: Run the test to verify it fails**
-
-Run: `npx vitest run tests/orchestrator/conflict-step.test.ts`
-Expected: FAIL — `src/orchestrator/conflict-step.ts` does not exist.
-
-- [ ] **Step 3: Write `src/orchestrator/conflict-step.ts`**
-
-```ts
-import type { SdlcConfig } from '../config/load-config.js';
-import { wouldMergeCleanly } from '../git/merge.js';
-import { commitAll } from '../git/repository.js';
-import type { RunPaths } from '../state/run-paths.js';
-import type { Slice } from '../state/types.js';
-import type { AgentProvider } from '../strategies/provider/types.js';
-
-export interface ConflictCheckInput {
-  repoRoot: string;
-  slice: Slice;
-  baseBranch: string;
-}
-
-export async function checkForConflict(input: ConflictCheckInput): Promise<boolean> {
-  const { repoRoot, slice, baseBranch } = input;
-  const cleanMerge = await wouldMergeCleanly(repoRoot, slice.branch, baseBranch);
-  if (!cleanMerge) slice.status = 'conflict';
-  return !cleanMerge;
-}
-
-export interface ResolveConflictsInput {
-  paths: RunPaths;
-  slice: Slice;
-  baseBranch: string;
-  provider: AgentProvider;
-  config: SdlcConfig;
-}
-
-export async function runResolveConflictsStep(input: ResolveConflictsInput): Promise<void> {
-  const { paths, slice, baseBranch, provider, config } = input;
-  slice.mergeAttempts += 1;
-  if (slice.mergeAttempts > config.conflictResolveCap) {
-    slice.status = 'stuck';
-    return;
-  }
-
-  await provider.run({ cwd: paths.workspaceDir, prompt: buildResolveConflictsPrompt(slice, baseBranch) });
-  await commitAll(paths.workspaceDir, `sdlc: resolve conflicts for ${slice.id} against ${baseBranch}`);
-  slice.status = 'pending';
-}
-
-function buildResolveConflictsPrompt(slice: Slice, baseBranch: string): string {
-  return [
-    `The branch for this slice no longer merges cleanly into "${baseBranch}".`,
-    '',
-    `Slice: ${slice.title}`,
-    `Description: ${slice.description}`,
-    '',
-    `Rebase or update this branch's changes so they apply cleanly on top of current`,
-    `"${baseBranch}", preserving the intent of the slice. Resolve any conflicts and leave`,
-    'the result in the working tree.',
-  ].join('\n');
-}
-```
-
-- [ ] **Step 4: Run the test to verify it passes**
-
-Run: `npx vitest run tests/orchestrator/conflict-step.test.ts`
-Expected: PASS
-
-- [ ] **Step 5: Lint and commit**
-
-```bash
-npm run lint
-git add -A
-git commit -m "feat: add reconciler conflict preflight and resolve-conflicts step"
-```
+This task was cut from the plan. Review surfaced it as the second-buggiest
+area of the original design (ignored provider failure results, assumed
+workspace worktree state that may not exist after a restart), and what it
+guards against is rare in a sequential v1: main only drifts under a slice
+branch from your own unrelated commits or the passage of time under
+manual-merge mode. See Global Constraints for the accepted alternative —
+`mergeBranchInto` (Task 4) throws a plain git error on a real conflict, and
+you resolve it by hand in the workspace worktree, then re-run `sdlc merge`.
 
 ---
 
@@ -2340,7 +2313,7 @@ git commit -m "feat: add reconciler conflict preflight and resolve-conflicts ste
 - Test: `tests/orchestrator/advance.test.ts`
 
 **Interfaces:**
-- Consumes: `mergeBranchInto`, `isBranchMergedInto` (Task 4); `Slice`, `RunMeta` (Task 5); `readSlices`, `writeSlices`, `readRunMeta`, `writeRunMeta`, `commitState` (Task 6); `checkoutExistingBranch` (Task 2).
+- Consumes: `mergeBranchInto`, `isBranchMergedInto` (Task 4); `Slice`, `RunMeta` (Task 5); `readSlices`, `writeSlices`, `readRunMeta`, `writeRunMeta` (Task 6); `checkoutExistingBranch` (Task 2).
 - Produces: `MergeStrategy` interface (`merge(repoRoot, slice, baseBranch): Promise<void>`); `ManualMergeStrategy` (no-op — never merges); `AutoMergeStrategy` (calls `mergeBranchInto`); `advanceRun(input: AdvanceInput): Promise<AdvanceResult>` where `AdvanceInput = { repoRoot: string; paths: RunPaths; baseBranch: string; mergeStrategy: MergeStrategy }` — for the run's current slice, if its status is `'ready_to_merge'`, invokes `mergeStrategy.merge`; then (regardless of merge mode) checks whether the current slice's branch `isBranchMergedInto` the base branch and, if so, marks it `'merged'` and moves `currentSliceId` to the next pending slice by `order`. `AdvanceResult = { advanced: boolean; currentSliceId: string | null; complete: boolean }`.
 
 - [ ] **Step 1: Write `src/strategies/merge/types.ts`**
@@ -2545,7 +2518,7 @@ Expected: FAIL — `src/orchestrator/advance.ts` does not exist.
 
 ```ts
 import { isBranchMergedInto } from '../git/merge.js';
-import { commitState, readRunMeta, readSlices, writeRunMeta, writeSlices } from '../state/store.js';
+import { readRunMeta, readSlices, writeRunMeta, writeSlices } from '../state/store.js';
 import type { RunPaths } from '../state/run-paths.js';
 import type { MergeStrategy } from '../strategies/merge/types.js';
 
@@ -2588,7 +2561,6 @@ export async function advanceRun(input: AdvanceInput): Promise<AdvanceResult> {
 
   await writeSlices(paths, slices);
   await writeRunMeta(paths, { ...meta, currentSliceId: nextSliceId, updatedAt: new Date().toISOString() });
-  await commitState(paths, `sdlc: mark ${currentSlice.id} merged${nextSliceId ? `, advance to ${nextSliceId}` : ' (run complete)'}`);
 
   return { advanced: true, currentSliceId: nextSliceId, complete: nextSliceId === null };
 }
@@ -2619,8 +2591,8 @@ git commit -m "feat: add merge strategies and slice advancement"
 - Test: `tests/orchestrator/reconcile.test.ts`
 
 **Interfaces:**
-- Consumes: everything from Tasks 5–14.
-- Produces: `PrCreateStrategy` interface (`create(paths, slice): Promise<void>`); `LocalPrCreateStrategy` (writes a PR description markdown file into the workspace); `runReconcilerPass(input: ReconcilePassInput): Promise<ReconcilePassResult>` where `ReconcilePassInput = { repoRoot: string; paths: RunPaths; baseBranch: string; provider: AgentProvider; config: SdlcConfig; mergeStrategy: MergeStrategy }` — does one dispatch (preflight conflict check when applicable, then act on the current slice's status), returning `{ blocked: boolean; reason?: string; complete: boolean }`. This is the single mechanism every CLI command in Task 16 calls into.
+- Consumes: everything from Tasks 5–12 and 14 (no Task 13 — removed).
+- Produces: `PrCreateStrategy` interface (`create(paths, slice): Promise<void>`); `LocalPrCreateStrategy` (writes a PR description markdown file into the workspace); `runReconcilerPass(input: ReconcilePassInput): Promise<ReconcilePassResult>` where `ReconcilePassInput = { repoRoot: string; paths: RunPaths; baseBranch: string; provider: AgentProvider; config: SdlcConfig; mergeStrategy: MergeStrategy }` — does one dispatch, acting on the current slice's status, returning `{ blocked: boolean; reason?: string; complete: boolean }`. A merge conflict thrown by the merge strategy is caught here and turned into a `blocked` result rather than propagating as an unhandled error. This is the single mechanism every CLI command in Task 16 calls into.
 
 - [ ] **Step 1: Write `src/strategies/pr/types.ts`**
 
@@ -2809,6 +2781,37 @@ describe('runReconcilerPass', () => {
     const slices = await readSlices(paths);
     expect(slices[0].status).toBe('ready_to_merge');
   });
+
+  it('turns a real merge conflict into a blocked result instead of throwing', async () => {
+    repo = await createTempRepo();
+    const paths = await setUpSingleSliceRun(repo.dir, 'run3');
+    const slices = await readSlices(paths);
+    slices[0].status = 'ready_to_merge';
+    await writeSlices(paths, slices);
+
+    // Create the slice branch with a change that conflicts with a later commit on main.
+    const branch = await import('../../src/git/branch.js');
+    const repository = await import('../../src/git/repository.js');
+    await branch.checkoutNewBranchAt(repo.dir, slices[0].branch, 'main');
+    await writeFile(`${repo.dir}/README.md`, 'from slice\n');
+    await repository.commitAll(repo.dir, 'change readme on slice');
+    await branch.checkoutExistingBranch(repo.dir, 'main');
+    await writeFile(`${repo.dir}/README.md`, 'from main\n');
+    await repository.commitAll(repo.dir, 'change readme on main');
+
+    const AutoMergeStrategy = (await import('../../src/strategies/merge/auto.js')).AutoMergeStrategy;
+    const result = await runReconcilerPass({
+      repoRoot: repo.dir,
+      paths,
+      baseBranch: 'main',
+      provider: new FakeAgentProvider(async () => ({ success: true, output: 'unused' })),
+      config: baseConfig,
+      mergeStrategy: new AutoMergeStrategy(),
+    });
+
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain('merge failed');
+  });
 });
 ```
 
@@ -2826,7 +2829,6 @@ import type { MergeStrategy } from '../strategies/merge/types.js';
 import type { RunPaths } from '../state/run-paths.js';
 import { readRunMeta, readSlices, writeSlices } from '../state/store.js';
 import { advanceRun } from './advance.js';
-import { checkForConflict, runResolveConflictsStep } from './conflict-step.js';
 import { runImplementStep } from './implement-step.js';
 import { runReviewStep } from './review-step.js';
 
@@ -2855,14 +2857,6 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
     return { blocked: false, complete: slices.length > 0 && slices.every((s) => s.status === 'merged') };
   }
 
-  if (slice.status !== 'pending' && slice.status !== 'conflict') {
-    const hasConflict = await checkForConflict({ repoRoot, slice, baseBranch });
-    if (hasConflict) {
-      await writeSlices(paths, slices);
-      return { blocked: true, reason: `slice "${slice.id}" conflicts with ${baseBranch}`, complete: false };
-    }
-  }
-
   switch (slice.status) {
     case 'pending':
       await runImplementStep({ repoRoot, paths, slice, baseBranch, provider });
@@ -2870,17 +2864,11 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
     case 'in_review':
       await runReviewStep({ paths, slice, provider, config });
       break;
-    case 'conflict':
-      await runResolveConflictsStep({ paths, slice, baseBranch, provider, config });
-      break;
-    case 'ready_to_merge': {
-      const advanceResult = await advanceRun({ repoRoot, paths, baseBranch, mergeStrategy });
-      await writeSlices(paths, slices);
-      if (!advanceResult.advanced) {
-        return { blocked: true, reason: `slice "${slice.id}" is ready_to_merge (manual mode)`, complete: false };
-      }
-      return { blocked: false, complete: advanceResult.complete };
-    }
+    case 'ready_to_merge':
+      // advanceRun persists slices/run-meta itself on success — it must not be
+      // written again here with this function's now-stale in-memory `slices`,
+      // or a just-recorded merge gets silently reverted to ready_to_merge.
+      return runAdvance({ repoRoot, paths, baseBranch, mergeStrategy, sliceId: slice.id });
     case 'stuck':
       await writeSlices(paths, slices);
       return { blocked: true, reason: `slice "${slice.id}" is stuck — needs human intervention`, complete: false };
@@ -2890,7 +2878,27 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
   }
 
   await writeSlices(paths, slices);
-  return { blocked: slice.status === 'stuck', complete: false };
+  return { blocked: false, complete: false };
+}
+
+async function runAdvance(input: {
+  repoRoot: string;
+  paths: RunPaths;
+  baseBranch: string;
+  mergeStrategy: MergeStrategy;
+  sliceId: string;
+}): Promise<ReconcilePassResult> {
+  const { repoRoot, paths, baseBranch, mergeStrategy, sliceId } = input;
+  try {
+    const advanceResult = await advanceRun({ repoRoot, paths, baseBranch, mergeStrategy });
+    if (!advanceResult.advanced) {
+      return { blocked: true, reason: `slice "${sliceId}" is ready_to_merge (manual mode)`, complete: false };
+    }
+    return { blocked: false, complete: advanceResult.complete };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { blocked: true, reason: `merge failed for slice "${sliceId}": ${message}`, complete: false };
+  }
 }
 ```
 
@@ -2925,7 +2933,7 @@ git commit -m "feat: add local PR-create strategy and the unified reconciler pas
 
 **Interfaces:**
 - Consumes: `prepareRun` (Task 10); `runReconcilerPass`, `advanceRun` (Tasks 14–15); `loadRunState`, `readRunMeta`, `readSlices` (Task 6); `loadConfig` (Task 7); `ManualMergeStrategy`, `AutoMergeStrategy` (Task 14); `LocalPrCreateStrategy` (Task 15); `MarkdownFileInputSource` (Task 9).
-- Produces: `buildCli(): Command` (extended, registers all nine v1 commands: `prepare`, `implement`, `review`, `resolve-conflicts`, `merge`, `create-pr`, `status`, `autopilot`, `resume`); `runAutopilot(input: AutopilotInput): Promise<AutopilotResult>` where `AutopilotInput` mirrors `ReconcilePassInput` minus one-pass-only, and `AutopilotResult = { complete: boolean; blockedReason?: string; passes: number }` — loops `runReconcilerPass` until `complete` or `blocked`.
+- Produces: `buildCli(): Command` (extended, registers all eight v1 commands: `prepare`, `implement`, `review`, `merge`, `create-pr`, `status`, `autopilot`, `resume`); `runAutopilot(input: AutopilotInput): Promise<AutopilotResult>` where `AutopilotInput` mirrors `ReconcilePassInput` minus one-pass-only, and `AutopilotResult = { complete: boolean; blockedReason?: string; passes: number }` — loops `runReconcilerPass` until `complete` or `blocked`.
 
 - [ ] **Step 1: Write `src/cli/run-context.ts`** (shared setup used by every command)
 
@@ -2994,7 +3002,7 @@ export function registerPrepareCommand(program: Command): void {
 }
 ```
 
-- [ ] **Step 3: Write `src/cli/commands/step.ts`** (implement / review / resolve-conflicts share the same one-pass shape)
+- [ ] **Step 3: Write `src/cli/commands/step.ts`** (implement / review share the same one-pass shape)
 
 ```ts
 import { Command } from 'commander';
@@ -3002,7 +3010,7 @@ import { runReconcilerPass } from '../../orchestrator/reconcile.js';
 import { loadCliRunContext, selectProvider } from '../run-context.js';
 
 export function registerStepCommands(program: Command): void {
-  for (const name of ['implement', 'review', 'resolve-conflicts'] as const) {
+  for (const name of ['implement', 'review'] as const) {
     program
       .command(name)
       .requiredOption('--run <id>', 'run id')
@@ -3097,26 +3105,39 @@ export function registerCreatePrCommand(program: Command): void {
 ```ts
 // tests/cli/commands/step.test.ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { registerStepCommands } from '../../../src/cli/commands/step.js';
 import { Command } from 'commander';
-import * as reconcileModule from '../../../src/orchestrator/reconcile.js';
-import * as runContextModule from '../../../src/cli/run-context.js';
+
+// vi.mock calls are hoisted above imports by Vitest, so declaring them first
+// is a style choice, not a requirement — but spying on named ESM exports
+// directly (vi.spyOn(moduleNamespace, 'fn')) does NOT work reliably against
+// compiled ESM output: the module under test's own import binding does not
+// see the spy. vi.mock with a factory replaces the module in the resolver
+// itself, which every importer (including step.ts) sees.
+vi.mock('../../../src/orchestrator/reconcile.js', () => ({ runReconcilerPass: vi.fn() }));
+vi.mock('../../../src/cli/run-context.js', () => ({
+  loadCliRunContext: vi.fn(),
+  selectProvider: vi.fn(),
+}));
+
+import { registerStepCommands } from '../../../src/cli/commands/step.js';
+import { runReconcilerPass } from '../../../src/orchestrator/reconcile.js';
+import { loadCliRunContext, selectProvider } from '../../../src/cli/run-context.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('implement/review/resolve-conflicts commands', () => {
+describe('implement/review commands', () => {
   it('prints the blocked reason when the reconciler pass is blocked', async () => {
-    vi.spyOn(runContextModule, 'loadCliRunContext').mockResolvedValue({
+    vi.mocked(loadCliRunContext).mockResolvedValue({
       repoRoot: '/tmp/repo',
-      paths: { runId: 'r1', repoRoot: '/tmp/repo', stateBranch: 'sdlc/runs/r1', stateDir: '/tmp/repo/.sdlc/r1/state', workspaceDir: '/tmp/repo/.sdlc/r1/workspace' },
+      paths: { runId: 'r1', repoRoot: '/tmp/repo', stateDir: '/tmp/repo/.sdlc/r1/state', workspaceDir: '/tmp/repo/.sdlc/r1/workspace' },
       baseBranch: 'main',
       config: { mergeMode: 'manual', reviewCycleCap: 3, conflictResolveCap: 3, inputSource: 'markdown-file', providerCommand: 'claude' },
       mergeStrategy: { merge: vi.fn() },
     });
-    vi.spyOn(runContextModule, 'selectProvider').mockReturnValue({ run: vi.fn() });
-    vi.spyOn(reconcileModule, 'runReconcilerPass').mockResolvedValue({
+    vi.mocked(selectProvider).mockReturnValue({ run: vi.fn() });
+    vi.mocked(runReconcilerPass).mockResolvedValue({
       blocked: true,
       reason: 'slice "s1" is stuck — needs human intervention',
       complete: false,
@@ -3157,16 +3178,26 @@ export interface AutopilotResult {
   passes: number;
 }
 
+// A hard cap, not a tuning knob: prepareRun (Task 10) sets currentSliceId so
+// the reconciler always has an actionable slice, and every non-blocked
+// outcome moves a slice forward by one status. This guard exists purely so a
+// future regression in that contract fails loudly with a clear error instead
+// of hanging the process.
+const MAX_RECONCILER_PASSES = 500;
+
 export async function runAutopilot(
   input: Omit<ReconcilePassInput, 'provider'> & { provider: ReconcilePassInput['provider'] },
 ): Promise<AutopilotResult> {
   let passes = 0;
-  for (;;) {
+  while (passes < MAX_RECONCILER_PASSES) {
     passes += 1;
     const result = await runReconcilerPass(input);
     if (result.complete) return { complete: true, passes };
     if (result.blocked) return { complete: false, blockedReason: result.reason, passes };
   }
+  throw new Error(
+    `Autopilot made no determination after ${MAX_RECONCILER_PASSES} reconciler passes — this indicates a bug in the reconciler, not a slow run.`,
+  );
 }
 
 export function registerAutopilotCommands(program: Command): void {
@@ -3211,20 +3242,27 @@ export function registerAutopilotCommands(program: Command): void {
 
 ```ts
 // tests/cli/commands/autopilot.test.ts
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/orchestrator/reconcile.js', () => ({ runReconcilerPass: vi.fn() }));
+
 import { runAutopilot } from '../../../src/cli/commands/autopilot.js';
-import * as reconcileModule from '../../../src/orchestrator/reconcile.js';
+import { runReconcilerPass } from '../../../src/orchestrator/reconcile.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('runAutopilot', () => {
   it('loops the reconciler pass until complete', async () => {
-    vi.spyOn(reconcileModule, 'runReconcilerPass')
+    vi.mocked(runReconcilerPass)
       .mockResolvedValueOnce({ blocked: false, complete: false })
       .mockResolvedValueOnce({ blocked: false, complete: false })
       .mockResolvedValueOnce({ blocked: false, complete: true });
 
     const result = await runAutopilot({
       repoRoot: '/tmp/repo',
-      paths: { runId: 'r1', repoRoot: '/tmp/repo', stateBranch: 'sdlc/runs/r1', stateDir: '/x', workspaceDir: '/y' },
+      paths: { runId: 'r1', repoRoot: '/tmp/repo', stateDir: '/x', workspaceDir: '/y' },
       baseBranch: 'main',
       provider: { run: vi.fn() },
       config: { mergeMode: 'auto', reviewCycleCap: 3, conflictResolveCap: 3, inputSource: 'markdown-file', providerCommand: 'claude' },
@@ -3236,7 +3274,7 @@ describe('runAutopilot', () => {
   });
 
   it('stops and reports the reason when a pass is blocked', async () => {
-    vi.spyOn(reconcileModule, 'runReconcilerPass').mockResolvedValueOnce({
+    vi.mocked(runReconcilerPass).mockResolvedValueOnce({
       blocked: true,
       reason: 'slice "s1" is stuck — needs human intervention',
       complete: false,
@@ -3244,7 +3282,7 @@ describe('runAutopilot', () => {
 
     const result = await runAutopilot({
       repoRoot: '/tmp/repo',
-      paths: { runId: 'r1', repoRoot: '/tmp/repo', stateBranch: 'sdlc/runs/r1', stateDir: '/x', workspaceDir: '/y' },
+      paths: { runId: 'r1', repoRoot: '/tmp/repo', stateDir: '/x', workspaceDir: '/y' },
       baseBranch: 'main',
       provider: { run: vi.fn() },
       config: { mergeMode: 'auto', reviewCycleCap: 3, conflictResolveCap: 3, inputSource: 'markdown-file', providerCommand: 'claude' },
@@ -3254,6 +3292,21 @@ describe('runAutopilot', () => {
     expect(result.complete).toBe(false);
     expect(result.blockedReason).toContain('stuck');
     expect(result.passes).toBe(1);
+  });
+
+  it('throws instead of looping forever if the reconciler never completes or blocks', async () => {
+    vi.mocked(runReconcilerPass).mockResolvedValue({ blocked: false, complete: false });
+
+    await expect(
+      runAutopilot({
+        repoRoot: '/tmp/repo',
+        paths: { runId: 'r1', repoRoot: '/tmp/repo', stateDir: '/x', workspaceDir: '/y' },
+        baseBranch: 'main',
+        provider: { run: vi.fn() },
+        config: { mergeMode: 'auto', reviewCycleCap: 3, conflictResolveCap: 3, inputSource: 'markdown-file', providerCommand: 'claude' },
+        mergeStrategy: { merge: vi.fn() },
+      }),
+    ).rejects.toThrow(/reconciler passes/);
   });
 });
 ```
@@ -3304,7 +3357,7 @@ Expected: PASS (all tests from Tasks 1–16)
 npm run lint
 npm run build
 git add -A
-git commit -m "feat: wire prepare/implement/review/resolve-conflicts/status/autopilot/resume CLI commands"
+git commit -m "feat: wire prepare/implement/review/merge/create-pr/status/autopilot/resume CLI commands"
 ```
 
 ---
