@@ -36,4 +36,30 @@ describe('AgenticCliProvider', () => {
     expect(result.success).toBe(false);
     expect(result.output).toContain('failing');
   });
+
+  it('reports an informative failure when the command does not exist', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-provider-'));
+    const missingCommand = path.join(dir, 'does-not-exist');
+
+    const provider = new AgenticCliProvider({ command: missingCommand });
+    const result = await provider.run({ cwd: dir, prompt: 'do the thing' });
+
+    expect(result.success).toBe(false);
+    expect(result.output).not.toBe('');
+    expect(result.output.toLowerCase()).toMatch(/enoent|not found|does-not-exist/);
+  });
+
+  it('reports an informative failure when the command times out', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-provider-'));
+    const script = path.join(dir, 'slow-agent.sh');
+    await writeFile(script, '#!/bin/sh\nsleep 5\necho "should not get here"\nexit 0\n');
+    await chmod(script, 0o755);
+
+    const provider = new AgenticCliProvider({ command: script, timeoutMs: 50 });
+    const result = await provider.run({ cwd: dir, prompt: 'do the thing' });
+
+    expect(result.success).toBe(false);
+    expect(result.output).not.toBe('');
+    expect(result.output.toLowerCase()).toContain('timed out');
+  });
 });
