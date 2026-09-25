@@ -80,6 +80,39 @@ describe('runImplementStep', () => {
     expect(slice.status).toBe('pending');
   });
 
+  it('recreates the branch from base when the workspace worktree exists but the branch does not', async () => {
+    // Exercises the fallback path distinct from the "reuse the existing
+    // branch" test above: the worktree directory is already there, but the
+    // slice's branch itself no longer exists (e.g. renamed away out of
+    // band). ensureWorkspaceOnBranch must fall through to
+    // checkoutNewBranchAt instead of trying to check out a branch that
+    // isn't there.
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run5');
+    const slice = makeSlice({ branch: 'sdlc/slice/run5/s1' });
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(path.join(input.cwd, 'first.txt'), 'x');
+      return { success: true, output: 'implemented' };
+    });
+
+    await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
+
+    const { openRepo } = await import('../../src/git/repository.js');
+    await openRepo(paths.workspaceDir).raw([
+      'branch',
+      '-m',
+      'sdlc/slice/run5/s1',
+      'sdlc/slice/run5/renamed-away',
+    ]);
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run5/renamed-away');
+
+    slice.status = 'pending';
+    await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
+
+    expect(slice.status).toBe('in_review');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run5/s1');
+  });
+
   it('includes lastFeedback in the prompt when a previous review requested changes', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run4');

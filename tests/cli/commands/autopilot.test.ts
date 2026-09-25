@@ -81,5 +81,7 @@ describe('runAutopilot', () => {
         mergeStrategy: { merge: vi.fn() },
       }),
     ).rejects.toThrow(/reconciler passes/);
+    // Pins the exact cap (500): a `<=` off-by-one would run 501 passes here.
+    expect(vi.mocked(runReconcilerPass).mock.calls.length).toBe(500);
   });
 });

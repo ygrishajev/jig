@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { runMetaSchema, sliceSchema, slicesSchema } from '../../src/state/types.js';
+import {
+  runMetaSchema,
+  sliceSchema,
+  sliceStatusSchema,
+  slicesSchema,
+} from '../../src/state/types.js';
 
 describe('state schemas', () => {
+  it('accepts every status defined in the slice status enum', () => {
+    const statuses = ['pending', 'implementing', 'in_review', 'ready_to_merge', 'merged', 'stuck'];
+    for (const status of statuses) {
+      expect(sliceStatusSchema.parse(status)).toBe(status);
+    }
+  });
+
   it('accepts a valid slice list', () => {
     const parsed = slicesSchema.parse([
       {

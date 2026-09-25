@@ -166,6 +166,102 @@ describe('runReviewStep', () => {
     expect(slice.status).toBe('ready_to_merge');
   });
 
+  it('requests changes when the reviewer provider itself fails to run', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run4c');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice();
+    const provider = new FakeAgentProvider(async () => ({ success: false, output: 'boom' }));
+
+    await runReviewStep({ paths, slice, provider, config: baseConfig });
+
+    expect(slice.status).toBe('pending');
+    expect(slice.reviewCycles).toBe(1);
+    expect(slice.lastFeedback).toContain('Review step failed to run');
+    expect(slice.lastFeedback).toContain('boom');
+  });
+
+  it('marks the slice stuck exactly when reviewCycles reaches the cap, not before', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run4d');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    // Starting one below the cap: this rejection brings reviewCycles to
+    // exactly reviewCycleCap, the boundary where the slice must flip to
+    // 'stuck'. A cap comparison that used `>` instead of `>=` would still
+    // leave it 'pending' here.
+    const slice = makeSlice({ reviewCycles: 2 });
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: false, feedback: 'Still not right.' }),
+      );
+      return { success: true, output: 'reviewed' };
+    });
+
+    await runReviewStep({ paths, slice, provider, config: { ...baseConfig, reviewCycleCap: 3 } });
+
+    expect(slice.reviewCycles).toBe(3);
+    expect(slice.status).toBe('stuck');
+  });
+
+  it('falls back to stdout when a failing verify command produced no stderr', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run4e');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice();
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: true, feedback: '' }),
+      );
+      return { success: true, output: 'reviewed' };
+    });
+
+    await runReviewStep({
+      paths,
+      slice,
+      provider,
+      config: { ...baseConfig, verifyCommand: `sh -c "echo 'stdout only failure'; exit 1"` },
+    });
+
+    expect(slice.status).toBe('pending');
+    expect(slice.lastFeedback).toContain('stdout only failure');
+  });
+
+  it('truncates a very long verify command failure to keep feedback bounded', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run4f');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice();
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: true, feedback: '' }),
+      );
+      return { success: true, output: 'reviewed' };
+    });
+    const longMessage = 'e'.repeat(450);
+
+    await runReviewStep({
+      paths,
+      slice,
+      provider,
+      config: {
+        ...baseConfig,
+        verifyCommand: `sh -c "echo '${longMessage}' 1>&2; exit 1"`,
+      },
+    });
+
+    expect(slice.status).toBe('pending');
+    expect(slice.lastFeedback).toBeDefined();
+    // 400-char truncation of the detail, plus the surrounding prose and the
+    // trailing ellipsis — assert the detail itself was capped rather than
+    // pinning the whole message to one exact length.
+    const detailMatch = slice.lastFeedback?.match(/e+…/);
+    expect(detailMatch).toBeTruthy();
+    expect(detailMatch?.[0].length).toBe(401);
+  });
+
   it('records the reviewer feedback on the slice and clears it once approved', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run6');

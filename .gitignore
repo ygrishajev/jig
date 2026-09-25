@@ -4,3 +4,4 @@ node_modules/
 .sdlc/
 .sdlc-step-output.json
 dist/
+reports/

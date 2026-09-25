@@ -103,6 +103,21 @@ describe('prepareRun', () => {
     expect(seenCwds).toEqual([repo.dir, repo.dir, repo.dir]);
   });
 
+  it('throws a clear error and does not persist run state when the context step fails', async () => {
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+    const provider = new FakeAgentProvider(async () => ({ success: false, output: 'boom' }));
+
+    await expect(
+      prepareRun({
+        repoRoot: repo.dir,
+        inputSource: new MarkdownFileInputSource(requestPath),
+        provider,
+      }),
+    ).rejects.toThrow(/Context step failed.*boom/s);
+  });
+
   it('leaves no structured-output file behind in the repo root once done', async () => {
     repo = await createTempRepo();
     const requestPath = path.join(repo.dir, 'request.md');
