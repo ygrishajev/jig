@@ -35,7 +35,10 @@ describe('loadConfig', () => {
 
   it('throws on an invalid mergeMode value', async () => {
     repo = await createTempRepo();
-    await writeFile(path.join(repo.dir, 'sdlc.config.json'), JSON.stringify({ mergeMode: 'sometimes' }));
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ mergeMode: 'sometimes' }),
+    );
     expect(() => loadConfig(repo.dir)).toThrow();
   });
 });
