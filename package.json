@@ -1,10 +1,46 @@
 {
   "name": "sdlc",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "version": "0.1.0",
+  "description": "Agentic SDLC pipeline orchestrator",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
   },
-  "private": true
+  "bin": {
+    "sdlc": "./dist/cli/main.js"
+  },
+  "main": "./dist/cli/main.js",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli/main.ts",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:mutation": "stryker run",
+    "secretlint": "secretlint '**/*'"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "execa": "^9.5.0",
+    "simple-git": "^3.27.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^9.0.0",
+    "@stryker-mutator/core": "^8.7.0",
+    "@stryker-mutator/vitest-runner": "^8.7.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.0",
+    "secretlint": "^9.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.19.0",
+    "vitest": "^2.1.0"
+  }
 }

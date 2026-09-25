@@ -1,3 +1,5 @@
 .idea/
 node_modules/
 .superpowers/
+.sdlc/
+.sdlc-step-output.json
