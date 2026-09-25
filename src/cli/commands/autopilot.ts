@@ -1,0 +1,70 @@
+import { Command } from 'commander';
+import { prepareRun } from '../../orchestrator/prepare.js';
+import { runReconcilerPass, type ReconcilePassInput } from '../../orchestrator/reconcile.js';
+import { MarkdownFileInputSource } from '../../strategies/input-source/markdown-file.js';
+import { loadCliRunContext, selectProvider } from '../run-context.js';
+
+export type AutopilotInput = ReconcilePassInput;
+
+export interface AutopilotResult {
+  complete: boolean;
+  blockedReason?: string;
+  passes: number;
+}
+
+// A hard cap, not a tuning knob: prepareRun (Task 10) sets currentSliceId so
+// the reconciler always has an actionable slice, and every non-blocked
+// outcome moves a slice forward by one status. This guard exists purely so a
+// future regression in that contract fails loudly with a clear error instead
+// of hanging the process.
+const MAX_RECONCILER_PASSES = 500;
+
+export async function runAutopilot(input: AutopilotInput): Promise<AutopilotResult> {
+  let passes = 0;
+  while (passes < MAX_RECONCILER_PASSES) {
+    passes += 1;
+    const result = await runReconcilerPass(input);
+    if (result.complete) return { complete: true, passes };
+    if (result.blocked) return { complete: false, blockedReason: result.reason, passes };
+  }
+  throw new Error(
+    `Autopilot made no determination after ${MAX_RECONCILER_PASSES} reconciler passes — this indicates a bug in the reconciler, not a slow run.`,
+  );
+}
+
+export function registerAutopilotCommands(program: Command): void {
+  program
+    .command('autopilot')
+    .requiredOption('--input <file>', 'path to a markdown request file')
+    .action(async (opts: { input: string }) => {
+      const repoRoot = process.cwd();
+      const provider = selectProvider();
+      const meta = await prepareRun({
+        repoRoot,
+        inputSource: new MarkdownFileInputSource(opts.input),
+        provider,
+      });
+      const context = await loadCliRunContext(repoRoot, meta.runId);
+      const result = await runAutopilot({ ...context, provider });
+      console.log(
+        result.complete
+          ? `Run ${meta.runId} complete after ${result.passes} pass(es).`
+          : `Run ${meta.runId} blocked after ${result.passes} pass(es): ${result.blockedReason}`,
+      );
+    });
+
+  program
+    .command('resume')
+    .requiredOption('--run <id>', 'run id')
+    .action(async (opts: { run: string }) => {
+      const repoRoot = process.cwd();
+      const provider = selectProvider();
+      const context = await loadCliRunContext(repoRoot, opts.run);
+      const result = await runAutopilot({ ...context, provider });
+      console.log(
+        result.complete
+          ? `Run ${opts.run} complete after ${result.passes} pass(es).`
+          : `Run ${opts.run} blocked after ${result.passes} pass(es): ${result.blockedReason}`,
+      );
+    });
+}
