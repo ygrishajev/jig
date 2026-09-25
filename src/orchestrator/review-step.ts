@@ -43,13 +43,16 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
     return;
   }
 
-  if (config.verifyCommand && !(await runVerifyCommand(paths.workspaceDir, config.verifyCommand))) {
-    requestChanges(
-      slice,
-      config.reviewCycleCap,
-      `The reviewer approved this slice, but the verify command ("${config.verifyCommand}") failed.`,
-    );
-    return;
+  if (config.verifyCommand) {
+    const verifyResult = await runVerifyCommand(paths.workspaceDir, config.verifyCommand);
+    if (!verifyResult.ok) {
+      requestChanges(
+        slice,
+        config.reviewCycleCap,
+        `The reviewer approved this slice, but the verify command ("${config.verifyCommand}") failed:\n${verifyResult.detail}`,
+      );
+      return;
+    }
   }
 
   slice.lastFeedback = undefined;
@@ -62,13 +65,35 @@ function requestChanges(slice: Slice, reviewCycleCap: number, feedback: string):
   slice.status = slice.reviewCycles >= reviewCycleCap ? 'stuck' : 'pending';
 }
 
-async function runVerifyCommand(cwd: string, verifyCommand: string): Promise<boolean> {
+const VERIFY_DETAIL_MAX_LENGTH = 400;
+
+type VerifyResult = { ok: true } | { ok: false; detail: string };
+
+async function runVerifyCommand(cwd: string, verifyCommand: string): Promise<VerifyResult> {
   try {
     await execa(verifyCommand, { cwd, shell: true });
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, detail: truncate(extractErrorDetail(error), VERIFY_DETAIL_MAX_LENGTH) };
   }
+}
+
+function extractErrorDetail(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const execaError = error as { stderr?: unknown; stdout?: unknown; shortMessage?: unknown };
+    const stderr = typeof execaError.stderr === 'string' ? execaError.stderr.trim() : '';
+    if (stderr) return stderr;
+    const stdout = typeof execaError.stdout === 'string' ? execaError.stdout.trim() : '';
+    if (stdout) return stdout;
+    const shortMessage =
+      typeof execaError.shortMessage === 'string' ? execaError.shortMessage.trim() : '';
+    if (shortMessage) return shortMessage;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+function truncate(text: string, maxLength: number): string {
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
 }
 
 function buildReviewPrompt(slice: Slice): string {

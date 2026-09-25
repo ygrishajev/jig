@@ -116,6 +116,33 @@ describe('runReviewStep', () => {
     expect(slice.reviewCycles).toBe(1);
   });
 
+  it('includes the verify command failure output in lastFeedback', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run4b');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice();
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: true, feedback: '' }),
+      );
+      return { success: true, output: 'reviewed' };
+    });
+
+    await runReviewStep({
+      paths,
+      slice,
+      provider,
+      config: {
+        ...baseConfig,
+        verifyCommand: `sh -c "echo 'expected 2 got 3' >&2; exit 1"`,
+      },
+    });
+
+    expect(slice.status).toBe('pending');
+    expect(slice.lastFeedback).toContain('expected 2 got 3');
+  });
+
   it('reaches ready_to_merge when both the reviewer and the verify command pass', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run5');
