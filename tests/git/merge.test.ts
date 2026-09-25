@@ -55,4 +55,9 @@ describe('mergeBranchInto and isBranchMergedInto', () => {
     await commitAll(repo.dir, 'change readme on main');
     await expect(mergeBranchInto(repo.dir, 'feature/p', 'main')).rejects.toThrow();
   });
+
+  it('returns false for a non-existent branch', async () => {
+    repo = await createTempRepo();
+    expect(await isBranchMergedInto(repo.dir, 'does-not-exist', 'main')).toBe(false);
+  });
 });
