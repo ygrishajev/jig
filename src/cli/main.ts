@@ -20,5 +20,5 @@ export function buildCli(): Command {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  buildCli().parse(process.argv);
+  await buildCli().parseAsync(process.argv);
 }
