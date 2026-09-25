@@ -16,7 +16,8 @@ export async function createTempRepo(): Promise<TempRepo> {
   await git.addConfig('user.name', 'Test');
   await git.addConfig('commit.gpgsign', 'false');
   await writeFile(path.join(dir, 'README.md'), '# test repo\n');
-  await git.add('README.md');
+  await writeFile(path.join(dir, '.gitignore'), '.sdlc/\n');
+  await git.add(['README.md', '.gitignore']);
   await git.commit('initial commit');
   return {
     dir,
