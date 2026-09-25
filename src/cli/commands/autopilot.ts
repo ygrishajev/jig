@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { loadConfig } from '../../config/load-config.js';
 import { prepareRun } from '../../orchestrator/prepare.js';
 import { runReconcilerPass, type ReconcilePassInput } from '../../orchestrator/reconcile.js';
 import { MarkdownFileInputSource } from '../../strategies/input-source/markdown-file.js';
@@ -40,7 +41,8 @@ export function registerAutopilotCommands(program: Command): void {
     .action(
       withErrorHandling(async (opts: { input: string }) => {
         const repoRoot = process.cwd();
-        const provider = selectProvider();
+        const config = loadConfig(repoRoot);
+        const provider = selectProvider(config);
         const meta = await prepareRun({
           repoRoot,
           inputSource: new MarkdownFileInputSource(opts.input),
@@ -62,8 +64,8 @@ export function registerAutopilotCommands(program: Command): void {
     .action(
       withErrorHandling(async (opts: { run: string }) => {
         const repoRoot = process.cwd();
-        const provider = selectProvider();
         const context = await loadCliRunContext(repoRoot, opts.run);
+        const provider = selectProvider(context.config);
         const result = await runAutopilot({ ...context, provider });
         console.log(
           result.complete

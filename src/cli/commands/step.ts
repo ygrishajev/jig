@@ -11,7 +11,10 @@ export function registerStepCommands(program: Command): void {
       .action(
         withErrorHandling(async (opts: { run: string }) => {
           const context = await loadCliRunContext(process.cwd(), opts.run);
-          const result = await runReconcilerPass({ ...context, provider: selectProvider() });
+          const result = await runReconcilerPass({
+            ...context,
+            provider: selectProvider(context.config),
+          });
           if (result.blocked) {
             console.log(`Blocked: ${result.reason}`);
             return;
