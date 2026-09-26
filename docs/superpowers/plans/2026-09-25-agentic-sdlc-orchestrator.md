@@ -25,6 +25,8 @@
 - File/module boundaries: one responsibility per file; split rather than grow a file that's taking on a second concern.
 - Declaration order within a file: usage before declaration, ordered by first use — not alphabetical.
 - No placeholder code (`TODO`, `// implement later`, empty stub functions) anywhere in this plan's deliverables.
+- **No raw provider transcript logging (`logs/<sliceId>-<step>-<n>.log`) in v1.** The spec's data model names this; it was never built, and the final whole-branch review caught the gap going undocumented rather than the feature going missing being a defect. Cut for v1: when a run goes `stuck`, there is currently no persisted record of what the agent actually did or said beyond the terse `lastFeedback` string. Worth revisiting if `stuck` runs turn out to need more forensics than that in practice.
+- **No `--slice <id>` targeting in v1.** The spec's CLI reference lists it on `implement`/`review`/`merge`/`create-pr`; the plan silently dropped it since v1 is strictly sequential (exactly one slice can ever be actionable at a time, so there's nothing to disambiguate). Revisit if/when the parked parallel-slice work (see Extensibility/Roadmap in the spec) returns.
 
 ---
 
