@@ -12,7 +12,10 @@ export interface ReconcilePassInput {
   repoRoot: string;
   paths: RunPaths;
   baseBranch: string;
+  /** Used for the review step, and for implement when `implementProvider` is unset. */
   provider: AgentProvider;
+  /** Overrides `provider` for the implement step only — see `implementProviderCommand`. */
+  implementProvider?: AgentProvider;
   config: SdlcConfig;
   mergeStrategy: MergeStrategy;
 }
@@ -24,7 +27,7 @@ export interface ReconcilePassResult {
 }
 
 export async function runReconcilerPass(input: ReconcilePassInput): Promise<ReconcilePassResult> {
-  const { repoRoot, paths, baseBranch, provider, config, mergeStrategy } = input;
+  const { repoRoot, paths, baseBranch, provider, implementProvider, config, mergeStrategy } = input;
   const meta = await readRunMeta(paths);
   const slices = await readSlices(paths);
   const slice = slices.find((candidate) => candidate.id === meta.currentSliceId);
@@ -38,7 +41,13 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
 
   switch (slice.status) {
     case 'pending':
-      await runImplementStep({ repoRoot, paths, slice, baseBranch, provider });
+      await runImplementStep({
+        repoRoot,
+        paths,
+        slice,
+        baseBranch,
+        provider: implementProvider ?? provider,
+      });
       break;
     case 'in_review':
       await runReviewStep({ paths, slice, provider, config });

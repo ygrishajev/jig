@@ -50,7 +50,12 @@ runs inside the Docker image built by `npm run docker:build`
 directory bind-mounted in.
 
 Set `providerCommand` in `sdlc.config.json` to pick which agent runs (see
-Configuration below). Each has its own one-time credential setup:
+Configuration below). Set `implementProviderCommand` too if you want the
+implement step to use a _different_ agent than planning (`prepare`'s
+context/plan/slice-plan steps) and review — e.g. claude for
+planning/review, opencode for implementing. When both are set, you need
+each provider's credentials set up on the host. Each provider has its own
+one-time credential setup:
 
 - **`claude`** (default) — run `claude setup-token` on your host once (an
   interactive, account-level action producing a long-lived token), then
@@ -73,18 +78,20 @@ Optional `sdlc.config.json` in the repo root:
   "mergeMode": "manual",
   "reviewCycleCap": 3,
   "verifyCommand": "npm test",
-  "providerCommand": "claude"
+  "providerCommand": "claude",
+  "implementProviderCommand": "opencode"
 }
 ```
 
-| Field                | Default           | Meaning                                                                                                                                                               |
-| -------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mergeMode`          | `"manual"`        | `"manual"`: the tool never merges a slice into your base branch itself — only detects that you did. `"auto"`: the tool merges automatically once a slice is approved. |
-| `reviewCycleCap`     | `3`               | How many implement→review round-trips a slice gets before it's marked `stuck` and needs human intervention.                                                           |
-| `verifyCommand`      | _(none)_          | An optional shell command (e.g. `npm test`) that must also pass, alongside the AI reviewer's approval, before a slice is considered ready to merge.                   |
-| `inputSource`        | `"markdown-file"` | Only one supported in v1.                                                                                                                                             |
-| `providerCommand`    | `"claude"`        | Which agent to run: `"claude"` or `"opencode"` — see [Agent sandbox & credentials](#agent-sandbox--credentials).                                                      |
-| `conflictResolveCap` | `3`               | Reserved for a future conflict-auto-resolution feature; not currently read by anything.                                                                               |
+| Field                      | Default           | Meaning                                                                                                                                                               |
+| -------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mergeMode`                | `"manual"`        | `"manual"`: the tool never merges a slice into your base branch itself — only detects that you did. `"auto"`: the tool merges automatically once a slice is approved. |
+| `reviewCycleCap`           | `3`               | How many implement→review round-trips a slice gets before it's marked `stuck` and needs human intervention.                                                           |
+| `verifyCommand`            | _(none)_          | An optional shell command (e.g. `npm test`) that must also pass, alongside the AI reviewer's approval, before a slice is considered ready to merge.                   |
+| `inputSource`              | `"markdown-file"` | Only one supported in v1.                                                                                                                                             |
+| `providerCommand`          | `"claude"`        | Which agent runs planning (`prepare`) and review: `"claude"` or `"opencode"` — see [Agent sandbox & credentials](#agent-sandbox--credentials).                        |
+| `implementProviderCommand` | _(unset)_         | Overrides `providerCommand` for the implement step only. Falls back to `providerCommand` when unset.                                                                  |
+| `conflictResolveCap`       | `3`               | Reserved for a future conflict-auto-resolution feature; not currently read by anything.                                                                               |
 
 ## Commands
 

@@ -12,6 +12,10 @@ const configSchema = z.object({
   // src/strategies/provider/provider-profiles.ts — not imported from here to
   // keep config a lower-level module than the strategies built on top of it.
   providerCommand: z.enum(['claude', 'opencode']).default('claude'),
+  // Overrides providerCommand for the implement step only (prepare's
+  // planning steps and review always use providerCommand). Falls back to
+  // providerCommand when unset — most setups only ever need one provider.
+  implementProviderCommand: z.enum(['claude', 'opencode']).optional(),
 });
 export type SdlcConfig = z.infer<typeof configSchema>;
 

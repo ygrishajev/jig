@@ -74,6 +74,33 @@ describe('runReconcilerPass', () => {
     expect(slices[0].status).toBe('in_review');
   });
 
+  it('uses implementProvider instead of provider for a pending slice when set', async () => {
+    repo = await createTempRepo();
+    const paths = await setUpSingleSliceRun(repo.dir, 'run1c');
+    const provider = new FakeAgentProvider(async () => ({
+      success: false,
+      output: 'the wrong provider ran',
+    }));
+    const implementProvider = new FakeAgentProvider(async (input) => {
+      await writeFile(`${input.cwd}/impl.txt`, 'x');
+      return { success: true, output: 'ok' };
+    });
+
+    const result = await runReconcilerPass({
+      repoRoot: repo.dir,
+      paths,
+      baseBranch: 'main',
+      provider,
+      implementProvider,
+      config: baseConfig,
+      mergeStrategy: new ManualMergeStrategy(),
+    });
+
+    expect(result.blocked).toBe(false);
+    const slices = await readSlices(paths);
+    expect(slices[0].status).toBe('in_review');
+  });
+
   it('does not advance within the same pass when the review step requests changes', async () => {
     // Covers the negative side of the "did the review step just approve this
     // slice within this same pass?" check: a rejection must fall through to

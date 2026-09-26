@@ -33,11 +33,21 @@ export async function loadCliRunContext(repoRoot: string, runId: string): Promis
   };
 }
 
-export function selectProvider(config: SdlcConfig): AgentProvider {
-  const profile = PROVIDER_PROFILES[config.providerCommand];
+/**
+ * Builds the provider for `providerCommand` by default. Pass an explicit
+ * `providerCommandOverride` to build a provider for a *different* step —
+ * e.g. `selectProvider(config, config.implementProviderCommand)` — falling
+ * back to `providerCommand` when the override is unset.
+ */
+export function selectProvider(
+  config: SdlcConfig,
+  providerCommandOverride?: SdlcConfig['providerCommand'],
+): AgentProvider {
+  const providerCommand = providerCommandOverride ?? config.providerCommand;
+  const profile = PROVIDER_PROFILES[providerCommand];
   if (!profile) {
     throw new Error(
-      `Unknown providerCommand "${config.providerCommand}" — supported: ` +
+      `Unknown providerCommand "${providerCommand}" — supported: ` +
         Object.keys(PROVIDER_PROFILES).join(', '),
     );
   }
@@ -51,6 +61,11 @@ export function selectProvider(config: SdlcConfig): AgentProvider {
     envVarsFromHost: profile.envVarsFromHost,
     hostFileMounts: profile.hostFileMounts,
   });
+}
+
+/** The provider for the implement step specifically — see `implementProviderCommand`. */
+export function selectImplementProvider(config: SdlcConfig): AgentProvider {
+  return selectProvider(config, config.implementProviderCommand);
 }
 
 export { getCurrentBranch };
