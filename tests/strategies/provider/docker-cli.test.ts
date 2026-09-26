@@ -18,14 +18,14 @@ async function writeFakeDocker(dir: string, body: string): Promise<string> {
 }
 
 describe('DockerCliProvider', () => {
-  it('mounts cwd, sets the workdir, and passes the prompt as the final argument', async () => {
+  it('mounts cwd, sets the workdir, and places the prompt where buildArgs puts it', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
     const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
 
     const provider = new DockerCliProvider({
       image: 'sdlc-agent-sandbox',
       command: 'claude',
-      args: ['-p'],
+      buildArgs: (prompt) => ['-p', prompt, '--output-format', 'text'],
       dockerCommand,
     });
     const result = await provider.run({ cwd: dir, prompt: 'do the thing' });
@@ -33,7 +33,26 @@ describe('DockerCliProvider', () => {
     expect(result.success).toBe(true);
     expect(result.output).toContain(`-v ${dir}:/workspace`);
     expect(result.output).toContain('-w /workspace');
-    expect(result.output).toContain('sdlc-agent-sandbox claude -p do the thing');
+    expect(result.output).toContain(
+      'sdlc-agent-sandbox claude -p do the thing --output-format text',
+    );
+  });
+
+  it('supports a prompt placed mid-argument-list, not just trailing (e.g. opencode-style)', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
+
+    const provider = new DockerCliProvider({
+      image: 'sdlc-agent-sandbox',
+      command: 'opencode',
+      buildArgs: (prompt) => ['run', prompt, '--format', 'json', '--auto'],
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: dir, prompt: 'do the thing' });
+
+    expect(result.output).toContain(
+      'sdlc-agent-sandbox opencode run do the thing --format json --auto',
+    );
   });
 
   it('passes named host environment variables through to -e flags, in order', async () => {
@@ -45,6 +64,7 @@ describe('DockerCliProvider', () => {
       const provider = new DockerCliProvider({
         image: 'sdlc-agent-sandbox',
         command: 'claude',
+        buildArgs: (prompt) => [prompt],
         envVarsFromHost: ['SDLC_TEST_TOKEN'],
         dockerCommand,
       });
@@ -64,12 +84,33 @@ describe('DockerCliProvider', () => {
     const provider = new DockerCliProvider({
       image: 'sdlc-agent-sandbox',
       command: 'claude',
+      buildArgs: (prompt) => [prompt],
       envVarsFromHost: ['SDLC_TEST_UNSET_TOKEN'],
       dockerCommand,
     });
     const result = await provider.run({ cwd: dir, prompt: 'hi' });
 
     expect(result.output).not.toContain('SDLC_TEST_UNSET_TOKEN');
+  });
+
+  it('mounts host files read-only at the given container paths', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
+    const credsPath = path.join(dir, 'auth.json');
+    await writeFile(credsPath, '{}');
+
+    const provider = new DockerCliProvider({
+      image: 'sdlc-agent-sandbox',
+      command: 'opencode',
+      buildArgs: (prompt) => [prompt],
+      hostFileMounts: [
+        { hostPath: credsPath, containerPath: '/root/.local/share/opencode/auth.json' },
+      ],
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: dir, prompt: 'hi' });
+
+    expect(result.output).toContain(`-v ${credsPath}:/root/.local/share/opencode/auth.json:ro`);
   });
 
   it('reports failure when the container exits non-zero', async () => {
@@ -79,6 +120,7 @@ describe('DockerCliProvider', () => {
     const provider = new DockerCliProvider({
       image: 'sdlc-agent-sandbox',
       command: 'claude',
+      buildArgs: (prompt) => [prompt],
       dockerCommand,
     });
     const result = await provider.run({ cwd: dir, prompt: 'hi' });
@@ -94,6 +136,7 @@ describe('DockerCliProvider', () => {
     const provider = new DockerCliProvider({
       image: 'sdlc-agent-sandbox',
       command: 'claude',
+      buildArgs: (prompt) => [prompt],
       dockerCommand: missingDocker,
     });
     const result = await provider.run({ cwd: dir, prompt: 'hi' });

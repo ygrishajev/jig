@@ -4,6 +4,7 @@ import { AutoMergeStrategy } from '../strategies/merge/auto.js';
 import { ManualMergeStrategy } from '../strategies/merge/manual.js';
 import type { MergeStrategy } from '../strategies/merge/types.js';
 import { DockerCliProvider } from '../strategies/provider/docker-cli.js';
+import { PROVIDER_PROFILES } from '../strategies/provider/provider-profiles.js';
 import type { AgentProvider } from '../strategies/provider/types.js';
 import { loadRunState, readRunMeta } from '../state/store.js';
 import type { RunPaths } from '../state/run-paths.js';
@@ -33,25 +34,22 @@ export async function loadCliRunContext(repoRoot: string, runId: string): Promis
 }
 
 export function selectProvider(config: SdlcConfig): AgentProvider {
-  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN && !process.env.ANTHROPIC_API_KEY) {
+  const profile = PROVIDER_PROFILES[config.providerCommand];
+  if (!profile) {
     throw new Error(
-      'No agent credentials found. Set CLAUDE_CODE_OAUTH_TOKEN (run `claude setup-token`' +
-        ' on your host once) or ANTHROPIC_API_KEY in your environment before running sdlc.',
+      `Unknown providerCommand "${config.providerCommand}" — supported: ` +
+        Object.keys(PROVIDER_PROFILES).join(', '),
     );
   }
+  // Fails fast, before any container starts, if this provider's credentials
+  // aren't available on the host — see each profile's own check for why.
+  profile.assertCredentialsAvailable();
   return new DockerCliProvider({
     image: AGENT_SANDBOX_IMAGE,
-    command: config.providerCommand,
-    // --dangerously-skip-permissions bypasses claude's interactive tool-use
-    // approval gate. Without it, every file write / bash call in headless
-    // (-p) mode silently fails (claude prints a permission request and exits
-    // 0 with no side effect, no error) — unattended autopilot cannot work at
-    // all otherwise, since there's no TTY to approve prompts against. This
-    // flag is ONLY ever used here, wrapped in DockerCliProvider — never on
-    // the bare host — so unattended full tool access is confined to the
-    // sandbox container, not the machine sdlc itself runs on.
-    args: ['-p', '--output-format', 'text', '--dangerously-skip-permissions'],
-    envVarsFromHost: ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
+    command: profile.command,
+    buildArgs: profile.buildArgs,
+    envVarsFromHost: profile.envVarsFromHost,
+    hostFileMounts: profile.hostFileMounts,
   });
 }
 

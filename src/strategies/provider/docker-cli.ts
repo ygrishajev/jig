@@ -1,12 +1,27 @@
 import { execa, ExecaError } from 'execa';
 import type { AgentProvider, AgentRunInput, AgentRunResult } from './types.js';
 
+export interface HostFileMount {
+  hostPath: string;
+  containerPath: string;
+}
+
 export interface DockerCliProviderOptions {
   image: string;
   command: string;
-  args?: string[];
+  /**
+   * Builds the full argument list for one invocation, given the prompt.
+   * A function rather than a flat `args` array plus an implicit trailing
+   * prompt, because different CLIs place the prompt in different positions
+   * (e.g. `claude -p "<prompt>" --output-format text` vs.
+   * `opencode run "<prompt>" --format json`) — there is no single fixed slot
+   * that works for every provider.
+   */
+  buildArgs: (prompt: string) => string[];
   /** Host environment variable names to pass into the container, unchanged. */
   envVarsFromHost?: string[];
+  /** Host files (e.g. a credentials file) to bind-mount read-only into the container. */
+  hostFileMounts?: HostFileMount[];
   timeoutMs?: number;
   /** The `docker` binary to invoke. Overridable for tests; defaults to `docker`. */
   dockerCommand?: string;
@@ -27,8 +42,9 @@ export class DockerCliProvider implements AgentProvider {
     const {
       image,
       command,
-      args = [],
+      buildArgs,
       envVarsFromHost = [],
+      hostFileMounts = [],
       timeoutMs,
       dockerCommand = 'docker',
     } = this.options;
@@ -40,10 +56,10 @@ export class DockerCliProvider implements AgentProvider {
       '-w',
       '/workspace',
       ...hostEnvArgs(envVarsFromHost),
+      ...hostFileMountArgs(hostFileMounts),
       image,
       command,
-      ...args,
-      input.prompt,
+      ...buildArgs(input.prompt),
     ];
     try {
       const result = await execa(dockerCommand, dockerArgs, { timeout: timeoutMs, reject: false });
@@ -68,4 +84,8 @@ function hostEnvArgs(envVarNames: string[]): string[] {
     const value = process.env[name];
     return value ? ['-e', `${name}=${value}`] : [];
   });
+}
+
+function hostFileMountArgs(mounts: HostFileMount[]): string[] {
+  return mounts.flatMap(({ hostPath, containerPath }) => ['-v', `${hostPath}:${containerPath}:ro`]);
 }

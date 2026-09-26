@@ -8,7 +8,10 @@ const configSchema = z.object({
   conflictResolveCap: z.number().int().positive().default(3),
   verifyCommand: z.string().optional(),
   inputSource: z.enum(['markdown-file']).default('markdown-file'),
-  providerCommand: z.string().default('claude'),
+  // Must stay in sync with the keys of PROVIDER_PROFILES in
+  // src/strategies/provider/provider-profiles.ts — not imported from here to
+  // keep config a lower-level module than the strategies built on top of it.
+  providerCommand: z.enum(['claude', 'opencode']).default('claude'),
 });
 export type SdlcConfig = z.infer<typeof configSchema>;
 

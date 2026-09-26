@@ -29,8 +29,7 @@ export function buildCli(): Command {
 // never fires for a real global install. Resolve the invoked path's realpath
 // before comparing.
 const isMainModule =
-  process.argv[1] !== undefined &&
-  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isMainModule) {
   await buildCli().parseAsync(process.argv);
