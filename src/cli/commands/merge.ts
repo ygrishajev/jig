@@ -11,6 +11,11 @@ export function registerMergeCommand(program: Command): void {
     .action(
       withErrorHandling(async (opts: { run: string }) => {
         const context = await loadCliRunContext(process.cwd(), opts.run);
+        // Deliberately a fresh AutoMergeStrategy(), not context.mergeStrategy:
+        // an explicit `sdlc merge` invocation IS the human's decision to
+        // merge now, regardless of the configured mergeMode. Under manual
+        // mode, context.mergeStrategy would be a no-op ManualMergeStrategy,
+        // which would make this command do nothing.
         const result = await advanceRun({ ...context, mergeStrategy: new AutoMergeStrategy() });
         console.log(
           result.advanced
