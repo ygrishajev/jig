@@ -11,7 +11,7 @@ import {
   writeRunMeta,
   writeSlices,
 } from '../state/store.js';
-import type { RunMeta, Slice } from '../state/types.js';
+import { sliceIdPattern, type RunMeta, type Slice } from '../state/types.js';
 import { buildContextPrompt, buildFeaturePlanPrompt, buildSlicePlanPrompt } from './prompts.js';
 import { readStructuredOutput, resetStructuredOutput } from './structured-output.js';
 
@@ -27,9 +27,21 @@ const planOutputSchema = z.object({
   approach: z.string(),
   affectedAreas: z.array(z.string()),
 });
-const sliceOutputSchema = z.array(
-  z.object({ id: z.string().min(1), title: z.string().min(1), description: z.string().min(1) }),
-);
+const sliceOutputSchema = z
+  .array(
+    z.object({
+      id: z
+        .string()
+        .min(1)
+        .regex(
+          sliceIdPattern,
+          'slice id must be lowercase alphanumeric characters and hyphens only',
+        ),
+      title: z.string().min(1),
+      description: z.string().min(1),
+    }),
+  )
+  .min(1, 'slice-plan step must return at least one slice');
 
 export function generateRunId(): string {
   return randomBytes(4).toString('hex');
@@ -79,6 +91,7 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
   if (!sliceResult.success) throw new Error(`Slice-plan step failed: ${sliceResult.output}`);
   const sliceOutput = await readStructuredOutput(repoRoot, (raw) => sliceOutputSchema.parse(raw));
   await resetStructuredOutput(repoRoot);
+  assertUniqueSliceIds(sliceOutput);
 
   const slices: Slice[] = sliceOutput.map((slice, order) => ({
     ...slice,
@@ -99,4 +112,22 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
   });
 
   return readRunMeta(paths);
+}
+
+// Nothing in sliceOutputSchema enforces id uniqueness even though the prompt
+// asks for it. A duplicate id makes advanceRun get stuck: two slices sharing
+// one id/branch means the "next non-merged slice" lookup can keep landing
+// back on one that's already been merged, forever.
+function assertUniqueSliceIds(sliceOutput: { id: string }[]): void {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const { id } of sliceOutput) {
+    if (seen.has(id)) duplicates.add(id);
+    seen.add(id);
+  }
+  if (duplicates.size > 0) {
+    throw new Error(
+      `Slice-plan step returned duplicate slice id(s): ${[...duplicates].join(', ')}`,
+    );
+  }
 }

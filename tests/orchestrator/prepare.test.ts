@@ -150,4 +150,106 @@ describe('prepareRun', () => {
 
     expect(existsSync(structuredOutputPath(repo.dir))).toBe(false);
   });
+
+  it('throws a clear error when the slice-plan step returns zero slices', async () => {
+    // Regression for Important 3: an empty slice list used to silently
+    // produce currentSliceId: null, which made runAutopilot spin for 500
+    // passes before throwing a misleading "bug in the reconciler" error.
+    // sliceOutputSchema's .min(1) now fails loudly right here instead.
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+
+    let call = 0;
+    const provider = new FakeAgentProvider(async (input) => {
+      call += 1;
+      const output =
+        call === 1
+          ? { classification: 'feature', repoSummary: 'An Express app.' }
+          : call === 2
+            ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
+            : [];
+      await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
+      return { success: true, output: 'done' };
+    });
+
+    await expect(
+      prepareRun({
+        repoRoot: repo.dir,
+        inputSource: new MarkdownFileInputSource(requestPath),
+        provider,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('throws a clear error naming the duplicate id when the slice-plan step returns duplicate ids', async () => {
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+
+    let call = 0;
+    const provider = new FakeAgentProvider(async (input) => {
+      call += 1;
+      const output =
+        call === 1
+          ? { classification: 'feature', repoSummary: 'An Express app.' }
+          : call === 2
+            ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
+            : [
+                {
+                  id: 'add-health-route',
+                  title: 'Add health route',
+                  description: 'Add GET /health',
+                },
+                {
+                  id: 'add-health-route',
+                  title: 'Duplicate slice',
+                  description: 'Same id as the first slice.',
+                },
+              ];
+      await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
+      return { success: true, output: 'done' };
+    });
+
+    await expect(
+      prepareRun({
+        repoRoot: repo.dir,
+        inputSource: new MarkdownFileInputSource(requestPath),
+        provider,
+      }),
+    ).rejects.toThrow(/duplicate slice id.*add-health-route/is);
+  });
+
+  it('throws when the slice-plan step returns an id with characters unsafe for a git branch name', async () => {
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+
+    let call = 0;
+    const provider = new FakeAgentProvider(async (input) => {
+      call += 1;
+      const output =
+        call === 1
+          ? { classification: 'feature', repoSummary: 'An Express app.' }
+          : call === 2
+            ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
+            : [
+                {
+                  id: 'Add Health Route!',
+                  title: 'Add health route',
+                  description: 'Add GET /health',
+                },
+              ];
+      await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
+      return { success: true, output: 'done' };
+    });
+
+    await expect(
+      prepareRun({
+        repoRoot: repo.dir,
+        inputSource: new MarkdownFileInputSource(requestPath),
+        provider,
+      }),
+    ).rejects.toThrow();
+  });
 });

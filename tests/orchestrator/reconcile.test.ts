@@ -167,7 +167,7 @@ describe('runReconcilerPass', () => {
 
     expect(result.blocked).toBe(true);
     expect(result.complete).toBe(false);
-    expect(result.reason).toMatch(/manual/i);
+    expect(result.reason).toContain('not yet merged');
     const slices = await readSlices(paths);
     expect(slices[0].status).toBe('ready_to_merge');
   });
@@ -299,6 +299,62 @@ describe('runReconcilerPass', () => {
 
     expect(result.blocked).toBe(false);
     expect(result.complete).toBe(false);
+  });
+
+  it('advances past an already-merged current slice to the next pending one instead of dead-ending', async () => {
+    // Regression for Important 3: a 'merged' slice used to be a no-op in the
+    // switch, permanently stuck if currentSliceId ever pointed at an
+    // already-merged slice (reachable via zero slices from the planner, or
+    // duplicate slice ids). It must now self-heal by delegating to the same
+    // runAdvance path 'ready_to_merge' uses.
+    repo = await createTempRepo();
+    const paths = await initializeRunState(repo.dir, 'run5', 'main');
+    const branch = await import('../../src/git/branch.js');
+    const firstBranch = 'sdlc/slice/run5/first';
+    // The branch's commits are already fully reachable from main (no new
+    // commits made on it), which is what makes isBranchMergedInto report it
+    // as merged without needing an actual merge commit.
+    await branch.checkoutNewBranchAt(repo.dir, firstBranch, 'main');
+    await branch.checkoutExistingBranch(repo.dir, 'main');
+    const slices: Slice[] = [
+      {
+        id: 'first',
+        title: 'First slice',
+        description: 'Already merged.',
+        order: 0,
+        status: 'merged',
+        branch: firstBranch,
+        reviewCycles: 0,
+        mergeAttempts: 0,
+      },
+      {
+        id: 'second',
+        title: 'Second slice',
+        description: 'Still pending.',
+        order: 1,
+        status: 'pending',
+        branch: 'sdlc/slice/run5/second',
+        reviewCycles: 0,
+        mergeAttempts: 0,
+      },
+    ];
+    await writeSlices(paths, slices);
+    const meta = await readRunMeta(paths);
+    await writeRunMeta(paths, { ...meta, currentSliceId: 'first' });
+
+    const result = await runReconcilerPass({
+      repoRoot: repo.dir,
+      paths,
+      baseBranch: 'main',
+      provider: new FakeAgentProvider(async () => ({ success: true, output: 'unused' })),
+      config: baseConfig,
+      mergeStrategy: new ManualMergeStrategy(),
+    });
+
+    expect(result.blocked).toBe(false);
+    expect(result.complete).toBe(false);
+    const updatedMeta = await readRunMeta(paths);
+    expect(updatedMeta.currentSliceId).toBe('second');
   });
 
   it('turns a real merge conflict into a blocked result instead of throwing', async () => {

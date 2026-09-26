@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+// A slice id is interpolated directly into a git branch name
+// (`sdlc/slice/${runId}/${slice.id}`), so it's constrained to characters that
+// are always safe there rather than accepting arbitrary agent-provided text.
+export const sliceIdPattern = /^[a-z0-9-]+$/;
+
 export const sliceStatusSchema = z.enum([
   'pending',
   'implementing',
@@ -11,7 +16,10 @@ export const sliceStatusSchema = z.enum([
 export type SliceStatus = z.infer<typeof sliceStatusSchema>;
 
 export const sliceSchema = z.object({
-  id: z.string().min(1),
+  id: z
+    .string()
+    .min(1)
+    .regex(sliceIdPattern, 'slice id must be lowercase alphanumeric characters and hyphens only'),
   title: z.string().min(1),
   description: z.string().min(1),
   order: z.number().int().nonnegative(),

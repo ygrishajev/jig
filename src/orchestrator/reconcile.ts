@@ -53,9 +53,18 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
       }
       break;
     case 'ready_to_merge':
+    case 'merged':
       // advanceRun persists slices/run-meta itself on success — it must not be
       // written again here with this function's now-stale in-memory `slices`,
       // or a just-recorded merge gets silently reverted to ready_to_merge.
+      //
+      // Routing 'merged' through the same helper is what makes it
+      // self-healing instead of a dead end: two reachable paths (the
+      // slice-planning provider returning zero slices, or duplicate slice
+      // ids) can leave currentSliceId pointing at a slice that is already
+      // 'merged'. advanceRun skips the merge attempt for a non-ready slice,
+      // sees isBranchMergedInto is already true, and advances to the next
+      // pending slice or reports the run complete.
       return runAdvance({ repoRoot, paths, baseBranch, mergeStrategy, sliceId: slice.id });
     case 'stuck':
       await writeSlices(paths, slices);
@@ -65,7 +74,6 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
         complete: false,
       };
     case 'implementing':
-    case 'merged':
       break;
   }
 
@@ -84,9 +92,13 @@ async function runAdvance(input: {
   try {
     const advanceResult = await advanceRun({ repoRoot, paths, baseBranch, mergeStrategy });
     if (!advanceResult.advanced) {
+      // Reached both when manual mode hasn't merged the branch yet, and when
+      // an already-'merged' slice's branch isn't (yet, or ever, given the
+      // squash-merge limitation) detected as merged into baseBranch — so this
+      // can't claim a specific mode or cause.
       return {
         blocked: true,
-        reason: `slice "${sliceId}" is ready_to_merge (manual mode)`,
+        reason: `slice "${sliceId}" is not yet merged into "${baseBranch}"`,
         complete: false,
       };
     }

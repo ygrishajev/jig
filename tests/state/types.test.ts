@@ -74,6 +74,24 @@ describe('state schemas', () => {
     expect(withoutFeedback.lastFeedback).toBeUndefined();
   });
 
+  it('rejects a slice id with characters unsafe for a git branch name', () => {
+    // A slice id is interpolated directly into `sdlc/slice/<runId>/<id>` as a
+    // branch name, so anything but lowercase alphanumerics and hyphens must
+    // be rejected rather than accepted as arbitrary agent-provided text.
+    expect(() =>
+      sliceSchema.parse({
+        id: 'Add Auth/Middleware!',
+        title: 'x',
+        description: 'x',
+        order: 0,
+        status: 'pending',
+        branch: 'x',
+        reviewCycles: 0,
+        mergeAttempts: 0,
+      }),
+    ).toThrow(/lowercase/);
+  });
+
   it('parses run meta', () => {
     const meta = runMetaSchema.parse({
       runId: 'abc12345',
