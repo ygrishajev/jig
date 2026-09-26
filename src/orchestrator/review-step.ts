@@ -35,9 +35,25 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
     );
     return;
   }
-  const review = await readStructuredOutput(paths.workspaceDir, (raw) =>
-    reviewOutputSchema.parse(raw),
-  );
+  let review: { approved: boolean; feedback: string };
+  try {
+    review = await readStructuredOutput(paths.workspaceDir, (raw) => reviewOutputSchema.parse(raw));
+  } catch (error) {
+    // A provider that exits 0 but never writes the structured-output file
+    // (ENOENT), writes malformed JSON (SyntaxError), or writes the wrong
+    // shape (ZodError) is arguably the most likely real-world agentic-CLI
+    // failure mode. Left uncaught, any of these would propagate straight out
+    // of the whole reconciler pass and abort the entire autopilot run instead
+    // of being treated like any other failed review attempt.
+    await resetStructuredOutput(paths.workspaceDir);
+    const message = error instanceof Error ? error.message : String(error);
+    requestChanges(
+      slice,
+      config.reviewCycleCap,
+      `Review step did not produce valid structured output: ${message}`,
+    );
+    return;
+  }
   // Mirrors prepare.ts: reset immediately after a successful read so the
   // structured-output file never lingers in the workspace worktree past this
   // point. Left behind, it sits untracked until the next commitAll's

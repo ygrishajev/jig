@@ -170,6 +170,44 @@ describe('runReviewStep', () => {
     expect(slice.status).toBe('ready_to_merge');
   });
 
+  it('requests changes instead of throwing when the provider succeeds but writes no structured output', async () => {
+    // Regression for Important 4: a provider that exits 0 but forgets to
+    // write the structured-output file used to let a raw ENOENT propagate
+    // straight out of runReviewStep (and the whole reconciler pass), aborting
+    // the entire autopilot run instead of being treated like any other
+    // failed review attempt.
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run8');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice();
+    const provider = new FakeAgentProvider(async () => ({ success: true, output: 'reviewed' }));
+
+    await expect(
+      runReviewStep({ paths, slice, provider, config: baseConfig }),
+    ).resolves.toBeUndefined();
+
+    expect(slice.status).toBe('pending');
+    expect(slice.reviewCycles).toBe(1);
+    expect(slice.lastFeedback).toContain('did not produce valid structured output');
+  });
+
+  it('requests changes instead of throwing when the provider writes malformed JSON', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run9');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice();
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(structuredOutputPath(input.cwd), 'not valid json {');
+      return { success: true, output: 'reviewed' };
+    });
+
+    await runReviewStep({ paths, slice, provider, config: baseConfig });
+
+    expect(slice.status).toBe('pending');
+    expect(slice.reviewCycles).toBe(1);
+    expect(slice.lastFeedback).toContain('did not produce valid structured output');
+  });
+
   it('requests changes when the reviewer provider itself fails to run', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run4c');
