@@ -13,4 +13,9 @@ RUN npm install -g @anthropic-ai/claude-code opencode-ai
 # agent runs as the non-root `node` user node:22-slim already ships with.
 WORKDIR /workspace
 RUN chown node:node /workspace
+# Pre-create opencode's config dir owned by `node`. Bind-mounting a single
+# file (the auth.json mount) auto-creates missing parent directories owned by
+# root, which would otherwise block opencode from writing sibling dirs (e.g.
+# its `repos` cache) alongside the mounted file.
+RUN mkdir -p /home/node/.local/share/opencode && chown -R node:node /home/node/.local
 USER node
