@@ -63,8 +63,9 @@ export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
     hostFileMounts: [
       {
         hostPath: opencodeAuthPath,
-        // node:22-slim's default container user is root, so $HOME is /root.
-        containerPath: '/root/.local/share/opencode/auth.json',
+        // The sandbox runs as node:22-slim's built-in `node` user (see the
+        // Dockerfile), whose $HOME is /home/node.
+        containerPath: '/home/node/.local/share/opencode/auth.json',
       },
     ],
     assertCredentialsAvailable(): void {

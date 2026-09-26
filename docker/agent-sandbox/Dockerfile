@@ -9,4 +9,8 @@ RUN apt-get update \
 
 RUN npm install -g @anthropic-ai/claude-code opencode-ai
 
+# claude refuses --dangerously-skip-permissions when run as root/sudo, so the
+# agent runs as the non-root `node` user node:22-slim already ships with.
 WORKDIR /workspace
+RUN chown node:node /workspace
+USER node

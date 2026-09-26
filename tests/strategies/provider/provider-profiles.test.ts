@@ -55,7 +55,7 @@ describe('PROVIDER_PROFILES', () => {
       const expectedHostPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json');
 
       expect(PROVIDER_PROFILES.opencode.hostFileMounts).toEqual([
-        { hostPath: expectedHostPath, containerPath: '/root/.local/share/opencode/auth.json' },
+        { hostPath: expectedHostPath, containerPath: '/home/node/.local/share/opencode/auth.json' },
       ]);
     });
 
