@@ -17,12 +17,13 @@ for a walkthrough using a real agentic CLI.
 ```bash
 npm install
 npm run build
+npm run docker:build   # builds the agent sandbox image (see below)
 npm link   # or: node dist/cli/main.js <command>
 ```
 
-Requires Node >=20. The agentic CLI named by `providerCommand` (see
-Configuration below) must be separately installed and on `PATH` — this
-tool only spawns it as a subprocess, it doesn't bundle one.
+Requires Node >=20 and Docker running locally. Every agent invocation runs
+inside a throwaway Docker container, never directly on your machine — see
+[Agent sandbox & credentials](#agent-sandbox--credentials).
 
 ## Quickstart
 
@@ -37,6 +38,31 @@ sdlc autopilot --input request.md
 dedicated worktree for implementing slices — it self-gitignores that
 directory on first use, so nothing here needs to touch your project's own
 `.gitignore`.
+
+## Agent sandbox & credentials
+
+Every step that calls an agent runs `--dangerously-skip-permissions`
+(claude) / `--auto` (opencode) — full unattended file-write and bash
+access, with no human approval gate. That's inherent to what an unattended
+pipeline needs to do, so it's never run on the bare host: it only ever
+runs inside the Docker image built by `npm run docker:build`
+(`docker/agent-sandbox/Dockerfile`), with just the current step's working
+directory bind-mounted in.
+
+Set `providerCommand` in `sdlc.config.json` to pick which agent runs (see
+Configuration below). Each has its own one-time credential setup:
+
+- **`claude`** (default) — run `claude setup-token` on your host once (an
+  interactive, account-level action producing a long-lived token), then
+  `export CLAUDE_CODE_OAUTH_TOKEN="<the token>"` in your shell before
+  running `sdlc`. An `ANTHROPIC_API_KEY` env var works too, if you use one.
+- **`opencode`** — run `opencode auth login` on your host once; its
+  credentials file (`~/.local/share/opencode/auth.json`) is mounted
+  read-only into the container automatically, no env var needed.
+
+`sdlc` fails fast with a clear message if the selected provider's
+credentials aren't available — it won't silently try to run a container
+that can't authenticate.
 
 ## Configuration
 
@@ -57,7 +83,7 @@ Optional `sdlc.config.json` in the repo root:
 | `reviewCycleCap`     | `3`               | How many implement→review round-trips a slice gets before it's marked `stuck` and needs human intervention.                                                           |
 | `verifyCommand`      | _(none)_          | An optional shell command (e.g. `npm test`) that must also pass, alongside the AI reviewer's approval, before a slice is considered ready to merge.                   |
 | `inputSource`        | `"markdown-file"` | Only one supported in v1.                                                                                                                                             |
-| `providerCommand`    | `"claude"`        | The agentic CLI binary to spawn for every step that needs a model.                                                                                                    |
+| `providerCommand`    | `"claude"`        | Which agent to run: `"claude"` or `"opencode"` — see [Agent sandbox & credentials](#agent-sandbox--credentials).                                                      |
 | `conflictResolveCap` | `3`               | Reserved for a future conflict-auto-resolution feature; not currently read by anything.                                                                               |
 
 ## Commands
