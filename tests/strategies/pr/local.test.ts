@@ -13,10 +13,10 @@ afterEach(async () => {
 });
 
 describe('LocalPrCreateStrategy', () => {
-  it('writes a PR description file into the workspace', async () => {
+  it('writes a PR description file into the state directory, not the workspace worktree', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run1');
-    await mkdir(paths.workspaceDir, { recursive: true });
+    await mkdir(paths.stateDir, { recursive: true });
     const slice: Slice = {
       id: 's1',
       title: 'Add health route',
@@ -30,7 +30,7 @@ describe('LocalPrCreateStrategy', () => {
 
     await new LocalPrCreateStrategy().create(paths, slice);
 
-    const content = await readFile(path.join(paths.workspaceDir, 'PR_DESCRIPTION.md'), 'utf-8');
+    const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
     expect(content).toContain('Add health route');
     expect(content).toContain('Adds GET /health returning 200.');
   });

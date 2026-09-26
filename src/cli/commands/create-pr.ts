@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import path from 'node:path';
 import { LocalPrCreateStrategy } from '../../strategies/pr/local.js';
 import { readRunMeta, readSlices } from '../../state/store.js';
 import { loadCliRunContext } from '../run-context.js';
@@ -19,7 +20,9 @@ export function registerCreatePrCommand(program: Command): void {
           return;
         }
         await new LocalPrCreateStrategy().create(context.paths, slice);
-        console.log(`Wrote PR description for "${slice.id}" to the workspace.`);
+        console.log(
+          `Wrote PR description for "${slice.id}" to ${path.join(context.paths.stateDir, 'PR_DESCRIPTION.md')}`,
+        );
       }),
     );
 }

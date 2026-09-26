@@ -38,6 +38,12 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
   const review = await readStructuredOutput(paths.workspaceDir, (raw) =>
     reviewOutputSchema.parse(raw),
   );
+  // Mirrors prepare.ts: reset immediately after a successful read so the
+  // structured-output file never lingers in the workspace worktree past this
+  // point. Left behind, it sits untracked until the next commitAll's
+  // `git add -A` sweeps it into the slice's commit — landing the agent's raw
+  // review-verdict JSON in the user's merged history.
+  await resetStructuredOutput(paths.workspaceDir);
   if (!review.approved) {
     requestChanges(slice, config.reviewCycleCap, review.feedback);
     return;

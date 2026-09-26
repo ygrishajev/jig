@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { runReviewStep } from '../../src/orchestrator/review-step.js';
 import { FakeAgentProvider } from '../../src/strategies/provider/fake.js';
 import { structuredOutputPath } from '../../src/orchestrator/structured-output.js';
+import { commitAll } from '../../src/git/repository.js';
+import { runImplementStep } from '../../src/orchestrator/implement-step.js';
 import { getRunPaths } from '../../src/state/run-paths.js';
+import { simpleGit } from 'simple-git';
 import type { SdlcConfig } from '../../src/config/load-config.js';
 import type { Slice } from '../../src/state/types.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
@@ -286,5 +290,51 @@ describe('runReviewStep', () => {
     approve = true;
     await runReviewStep({ paths, slice, provider, config: baseConfig });
     expect(slice.lastFeedback).toBeUndefined();
+  });
+
+  it('does not leave a structured-output file behind for the next commitAll to sweep in', async () => {
+    // Regression for Critical 2: resetStructuredOutput(paths.workspaceDir) was
+    // only ever called BEFORE the provider ran, never again after reading the
+    // result, so .sdlc-step-output.json sat untracked in the workspace
+    // worktree until the next commitAll's `git add -A` landed the agent's raw
+    // review-verdict JSON in the user's merged history.
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run7');
+    const slice = makeSlice({ branch: 'sdlc/slice/run7/s1' });
+    await runImplementStep({
+      repoRoot: repo.dir,
+      paths,
+      slice,
+      baseBranch: 'main',
+      provider: new FakeAgentProvider(async (input) => {
+        await writeFile(`${input.cwd}/impl.txt`, 'x');
+        return { success: true, output: 'ok' };
+      }),
+    });
+
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: true, feedback: '' }),
+      );
+      return { success: true, output: 'reviewed' };
+    });
+    await runReviewStep({ paths, slice, provider, config: baseConfig });
+
+    expect(existsSync(structuredOutputPath(paths.workspaceDir))).toBe(false);
+
+    // Simulate the next thing that happens in this worktree: another commit
+    // (e.g. a follow-up slice, or a manual fixup). Its tree must not contain
+    // the structured-output filename.
+    await writeFile(`${paths.workspaceDir}/more.txt`, 'y');
+    const commitHash = await commitAll(paths.workspaceDir, 'follow-up commit');
+    expect(commitHash).not.toBeNull();
+    const committedFiles = await simpleGit({ baseDir: paths.workspaceDir }).raw([
+      'ls-tree',
+      '-r',
+      '--name-only',
+      'HEAD',
+    ]);
+    expect(committedFiles).not.toContain('.sdlc-step-output.json');
   });
 });

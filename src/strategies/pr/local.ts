@@ -7,6 +7,10 @@ import type { PrCreateStrategy } from './types.js';
 export class LocalPrCreateStrategy implements PrCreateStrategy {
   async create(paths: RunPaths, slice: Slice): Promise<void> {
     const content = [`# ${slice.title}`, '', slice.description, ''].join('\n');
-    await writeFile(path.join(paths.workspaceDir, 'PR_DESCRIPTION.md'), content, 'utf-8');
+    // Written to stateDir, not workspaceDir: stateDir isn't even part of the
+    // workspace worktree's git working tree, so this file can never be swept
+    // into a commit by a later `commitAll` — unlike workspaceDir, which is
+    // exactly the mistake that landed agent scratch files in user history.
+    await writeFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), content, 'utf-8');
   }
 }
