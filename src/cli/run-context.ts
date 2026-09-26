@@ -57,7 +57,7 @@ export function selectProvider(
   return new DockerCliProvider({
     image: AGENT_SANDBOX_IMAGE,
     command: profile.command,
-    buildArgs: profile.buildArgs,
+    buildArgs: (prompt) => profile.buildArgs(prompt, config.opencodeModel),
     envVarsFromHost: profile.envVarsFromHost,
     hostFileMounts: profile.hostFileMounts,
   });

@@ -63,7 +63,11 @@ one-time credential setup:
   running `sdlc`. An `ANTHROPIC_API_KEY` env var works too, if you use one.
 - **`opencode`** — run `opencode auth login` on your host once; its
   credentials file (`~/.local/share/opencode/auth.json`) is mounted
-  read-only into the container automatically, no env var needed.
+  read-only into the container automatically, no env var needed. Also set
+  `opencodeModel` (`"provider/model"`, e.g. what `opencode models` lists) —
+  a fresh sandbox container has no stored model preference, so without this
+  opencode falls back to its own default, which may not support tool use
+  (bash, file writes) on your OpenRouter account.
 
 `sdlc` fails fast with a clear message if the selected provider's
 credentials aren't available — it won't silently try to run a container
@@ -79,7 +83,8 @@ Optional `sdlc.config.json` in the repo root:
   "reviewCycleCap": 3,
   "verifyCommand": "npm test",
   "providerCommand": "claude",
-  "implementProviderCommand": "opencode"
+  "implementProviderCommand": "opencode",
+  "opencodeModel": "openrouter/~z-ai/glm-flash-latest"
 }
 ```
 
@@ -91,6 +96,7 @@ Optional `sdlc.config.json` in the repo root:
 | `inputSource`              | `"markdown-file"` | Only one supported in v1.                                                                                                                                             |
 | `providerCommand`          | `"claude"`        | Which agent runs planning (`prepare`) and review: `"claude"` or `"opencode"` — see [Agent sandbox & credentials](#agent-sandbox--credentials).                        |
 | `implementProviderCommand` | _(unset)_         | Overrides `providerCommand` for the implement step only. Falls back to `providerCommand` when unset.                                                                  |
+| `opencodeModel`            | _(unset)_         | `"provider/model"` passed to opencode via `-m`. See [Agent sandbox & credentials](#agent-sandbox--credentials) for why this matters in the sandbox.                   |
 | `conflictResolveCap`       | `3`               | Reserved for a future conflict-auto-resolution feature; not currently read by anything.                                                                               |
 
 ## Commands

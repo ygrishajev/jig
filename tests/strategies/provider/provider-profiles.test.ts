@@ -51,6 +51,20 @@ describe('PROVIDER_PROFILES', () => {
       expect(args).toEqual(['run', 'do the thing', '--format', 'json', '--auto']);
     });
 
+    it('appends --model when a model is given', () => {
+      const args = PROVIDER_PROFILES.opencode.buildArgs('do the thing', 'openrouter/some-model');
+
+      expect(args).toEqual([
+        'run',
+        'do the thing',
+        '--format',
+        'json',
+        '--auto',
+        '--model',
+        'openrouter/some-model',
+      ]);
+    });
+
     it('mounts the host auth.json read-only into the container home directory', () => {
       const expectedHostPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json');
 

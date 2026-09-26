@@ -6,8 +6,13 @@ import type { HostFileMount } from './docker-cli.js';
 export interface ProviderProfile {
   /** The binary name inside the sandbox image. */
   command: string;
-  /** Builds the full CLI args for one headless, permission-bypassed run. */
-  buildArgs(prompt: string): string[];
+  /**
+   * Builds the full CLI args for one headless, permission-bypassed run.
+   * `model` is passed for providers that accept an explicit model override
+   * (currently opencode, via config's `opencodeModel`); a profile that
+   * doesn't support one simply ignores it.
+   */
+  buildArgs(prompt: string, model?: string): string[];
   /** Host environment variable names to pass into the container, unchanged. */
   envVarsFromHost: string[];
   /** Host files (credentials) to bind-mount read-only into the container. */
@@ -49,7 +54,7 @@ export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
   },
   opencode: {
     command: 'opencode',
-    buildArgs: (prompt) => [
+    buildArgs: (prompt, model) => [
       'run',
       prompt,
       '--format',
@@ -58,6 +63,10 @@ export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
       // equivalent of claude's --dangerously-skip-permissions. Same
       // reasoning: only ever used here, inside the sandbox container.
       '--auto',
+      // Without this, a fresh sandbox container (no stored model
+      // preference) falls back to opencode's own default, which may not
+      // support tool use on the configured OpenRouter account.
+      ...(model ? ['--model', model] : []),
     ],
     envVarsFromHost: [],
     hostFileMounts: [

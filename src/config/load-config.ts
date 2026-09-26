@@ -16,6 +16,11 @@ const configSchema = z.object({
   // planning steps and review always use providerCommand). Falls back to
   // providerCommand when unset — most setups only ever need one provider.
   implementProviderCommand: z.enum(['claude', 'opencode']).optional(),
+  // Explicit "provider/model" passed to opencode via -m. Left unset, a fresh
+  // sandbox container has no stored model preference and opencode falls back
+  // to its own default, which may not support tool use on your OpenRouter
+  // account — set this to whatever you use successfully in interactive mode.
+  opencodeModel: z.string().optional(),
 });
 export type SdlcConfig = z.infer<typeof configSchema>;
 
