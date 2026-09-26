@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { simpleGit } from 'simple-git';
 import {
   initializeRunState,
   loadRunState,
@@ -7,7 +11,11 @@ import {
   writeRunMeta,
   writeSlices,
 } from '../../src/state/store.js';
-import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
+import {
+  createTempRepo,
+  createTempRepoWithoutSdlcIgnore,
+  type TempRepo,
+} from '../support/temp-repo.js';
 
 let repo: TempRepo;
 
@@ -64,5 +72,33 @@ describe('state store', () => {
   it('throws a clear error when the run does not exist', async () => {
     repo = await createTempRepo();
     await expect(loadRunState(repo.dir, 'no-such-run')).rejects.toThrow(/no-such-run/);
+  });
+
+  it('self-ignores .sdlc/ in a target repo whose own .gitignore never mentions it', async () => {
+    // Reproduces Critical 1: in a real target repo (unlike this project's own
+    // test fixtures, which pre-ignore .sdlc/ as an unrelated Task 14 fix),
+    // .sdlc/ starts out fully untracked. Without a self-ignoring
+    // .sdlc/.gitignore, every file initializeRunState writes shows up as
+    // untracked/dirty, which is exactly what makes `isWorkingTreeClean` (and
+    // therefore every merge) fail 100% of the time in such a repo.
+    repo = await createTempRepoWithoutSdlcIgnore();
+
+    await initializeRunState(repo.dir, 'run1', 'main');
+
+    const status = await simpleGit({ baseDir: repo.dir }).status(['--porcelain']);
+    expect(status.isClean()).toBe(true);
+    expect(existsSync(path.join(repo.dir, '.sdlc', '.gitignore'))).toBe(true);
+    expect(await readFile(path.join(repo.dir, '.sdlc', '.gitignore'), 'utf-8')).toBe('*\n');
+  });
+
+  it('does not touch an existing .sdlc/.gitignore on a second run in the same repo', async () => {
+    repo = await createTempRepoWithoutSdlcIgnore();
+    await initializeRunState(repo.dir, 'run1', 'main');
+    const sdlcGitignorePath = path.join(repo.dir, '.sdlc', '.gitignore');
+    await writeFile(sdlcGitignorePath, '*\n# customized\n', 'utf-8');
+
+    await initializeRunState(repo.dir, 'run2', 'main');
+
+    expect(await readFile(sdlcGitignorePath, 'utf-8')).toBe('*\n# customized\n');
   });
 });

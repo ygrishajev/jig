@@ -25,6 +25,7 @@ export async function initializeRunState(
 ): Promise<RunPaths> {
   const paths = getRunPaths(repoRoot, runId);
   await mkdir(paths.stateDir, { recursive: true });
+  await ensureSdlcDirIsSelfIgnored(repoRoot);
   await writeRunMeta(paths, {
     runId,
     baseBranch,
@@ -34,6 +35,20 @@ export async function initializeRunState(
   });
   await writeSlices(paths, []);
   return paths;
+}
+
+// A target repo's own tracked .gitignore has no reason to know about .sdlc/
+// (it's this tool's own scratch space, not the target project's concern), so
+// without this the directory is untracked in every OTHER repo the tool runs
+// against, and `isWorkingTreeClean` (which every merge relies on) never
+// reports clean. Writing a self-ignoring `.sdlc/.gitignore` (a single `*`)
+// solves this without ever touching the user's own tracked .gitignore.
+// Written once per repo, not per run — repeated runs in the same repo just
+// find it already there.
+async function ensureSdlcDirIsSelfIgnored(repoRoot: string): Promise<void> {
+  const sdlcGitignorePath = path.join(repoRoot, '.sdlc', '.gitignore');
+  if (existsSync(sdlcGitignorePath)) return;
+  await writeFile(sdlcGitignorePath, '*\n', 'utf-8');
 }
 
 export async function loadRunState(repoRoot: string, runId: string): Promise<RunPaths> {
