@@ -20,7 +20,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:mutation": "stryker run",
-    "secretlint": "secretlint '**/*'"
+    "secretlint": "secretlint '**/*'",
+    "docker:build": "docker build -t sdlc-agent-sandbox docker/agent-sandbox"
   },
   "dependencies": {
     "commander": "^13.0.0",
