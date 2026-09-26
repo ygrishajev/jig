@@ -93,9 +93,9 @@ async function runAdvance(input: {
     const advanceResult = await advanceRun({ repoRoot, paths, baseBranch, mergeStrategy });
     if (!advanceResult.advanced) {
       // Reached both when manual mode hasn't merged the branch yet, and when
-      // an already-'merged' slice's branch isn't (yet, or ever, given the
-      // squash-merge limitation) detected as merged into baseBranch — so this
-      // can't claim a specific mode or cause.
+      // an already-'merged' slice routed here via the self-healing case below
+      // still isn't detected as merged into baseBranch — so this can't claim
+      // a specific mode or cause.
       return {
         blocked: true,
         reason: `slice "${sliceId}" is not yet merged into "${baseBranch}"`,
