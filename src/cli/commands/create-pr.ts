@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import path from 'node:path';
 import { LocalPrCreateStrategy } from '../../strategies/pr/local.js';
-import { readRunMeta, readSlices } from '../../state/store.js';
 import { loadCliRunContext } from '../run-context.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
@@ -12,16 +11,9 @@ export function registerCreatePrCommand(program: Command): void {
     .action(
       withErrorHandling(async (opts: { run: string }) => {
         const context = await loadCliRunContext(process.cwd(), opts.run);
-        const meta = await readRunMeta(context.paths);
-        const slices = await readSlices(context.paths);
-        const slice = slices.find((candidate) => candidate.id === meta.currentSliceId);
-        if (!slice) {
-          console.log('No current slice to create a PR description for.');
-          return;
-        }
-        await new LocalPrCreateStrategy().create(context.paths, slice);
+        await new LocalPrCreateStrategy().create(context.paths);
         console.log(
-          `Wrote PR description for "${slice.id}" to ${path.join(context.paths.stateDir, 'PR_DESCRIPTION.md')}`,
+          `Wrote PR description to ${path.join(context.paths.stateDir, 'PR_DESCRIPTION.md')}`,
         );
       }),
     );

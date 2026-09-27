@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { LocalPrCreateStrategy } from '../../../src/strategies/pr/local.js';
-import { getRunPaths } from '../../../src/state/run-paths.js';
+import {
+  initializeRunState,
+  readRunMeta,
+  writePlan,
+  writeRunMeta,
+  writeSlices,
+} from '../../../src/state/store.js';
 import type { Slice } from '../../../src/state/types.js';
 import { createTempRepo, type TempRepo } from '../../support/temp-repo.js';
 
@@ -15,31 +21,38 @@ afterEach(async () => {
 describe('LocalPrCreateStrategy', () => {
   it('writes a PR description file into the state directory, not the workspace worktree', async () => {
     repo = await createTempRepo();
-    const paths = getRunPaths(repo.dir, 'run1');
-    await mkdir(paths.stateDir, { recursive: true });
+    const paths = await initializeRunState(repo.dir, 'run1', 'main');
+    await writePlan(paths, {
+      summary: 'Add health route',
+      approach: 'Adds GET /health returning 200.',
+      affectedAreas: ['src/routes'],
+    });
     const slice: Slice = {
       id: 's1',
       title: 'Add health route',
       description: 'Adds GET /health returning 200.',
       order: 0,
-      status: 'ready_to_merge',
-      branch: 'sdlc/slice/run1/s1',
+      status: 'merged',
       reviewCycles: 0,
       mergeAttempts: 0,
     };
+    await writeSlices(paths, [slice]);
 
-    await new LocalPrCreateStrategy().create(paths, slice);
+    await new LocalPrCreateStrategy().create(paths);
 
     const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
     expect(content).toContain('Add health route');
     expect(content).toContain('Adds GET /health returning 200.');
   });
 
-  it('embeds the design and plan and marks the current slice in the mapping', async () => {
+  it('embeds the design and plan and checks off every slice already folded into the run branch', async () => {
     repo = await createTempRepo();
-    const { initializeRunState, writeSlices, readRunMeta, writeRunMeta } =
-      await import('../../../src/state/store.js');
     const paths = await initializeRunState(repo.dir, 'run2', 'main');
+    await writePlan(paths, {
+      summary: 'Add /health endpoint',
+      approach: 'Add a route returning 200 OK',
+      affectedAreas: ['src/routes'],
+    });
     await writeFile(path.join(paths.stateDir, 'design.md'), '# Design\n\nA route returning 200.');
     await writeFile(path.join(paths.stateDir, 'plan.md'), '# Plan\n\n## Step 1 — Add health route');
     const s1: Slice = {
@@ -47,8 +60,7 @@ describe('LocalPrCreateStrategy', () => {
       title: 'Add health route',
       description: 'Implements plan step 1. Adds GET /health returning 200.',
       order: 0,
-      status: 'ready_to_merge',
-      branch: 'sdlc/slice/run2/s1',
+      status: 'merged',
       reviewCycles: 0,
       mergeAttempts: 0,
     };
@@ -59,39 +71,42 @@ describe('LocalPrCreateStrategy', () => {
       description: 'Implements plan step 2. Wire the route into the app.',
       order: 1,
       status: 'pending',
-      branch: 'sdlc/slice/run2/s2',
     };
     await writeSlices(paths, [s1, s2]);
     const meta = await readRunMeta(paths);
-    await writeRunMeta(paths, { ...meta, currentSliceId: 's1' });
+    await writeRunMeta(paths, { ...meta, currentSliceId: 's2' });
 
-    await new LocalPrCreateStrategy().create(paths, s1);
+    await new LocalPrCreateStrategy().create(paths);
 
     const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
     expect(content).toContain('## Design');
     expect(content).toContain('A route returning 200.');
     expect(content).toContain('## Plan');
     expect(content).toContain('## Step 1 — Add health route');
-    expect(content).toContain('**▶ s1 — Implements plan step 1. Adds GET /health returning 200.**');
-    expect(content).toContain('- s2 — Implements plan step 2. Wire the route into the app.');
+    expect(content).toContain('- [x] s1 — Implements plan step 1. Adds GET /health returning 200.');
+    expect(content).toContain('- [ ] s2 — Implements plan step 2. Wire the route into the app.');
   });
 
-  it('omits the design and plan sections when the run has no planning docs', async () => {
+  it('omits the design and plan markdown sections when the run has no planning docs, using the plan summary as the title', async () => {
     repo = await createTempRepo();
-    const paths = getRunPaths(repo.dir, 'run3');
-    await mkdir(paths.stateDir, { recursive: true });
+    const paths = await initializeRunState(repo.dir, 'run3', 'main');
+    await writePlan(paths, {
+      summary: 'Add health route',
+      approach: 'Adds GET /health returning 200.',
+      affectedAreas: ['src/routes'],
+    });
     const slice: Slice = {
       id: 's1',
       title: 'Add health route',
       description: 'Adds GET /health returning 200.',
       order: 0,
-      status: 'ready_to_merge',
-      branch: 'sdlc/slice/run3/s1',
+      status: 'merged',
       reviewCycles: 0,
       mergeAttempts: 0,
     };
+    await writeSlices(paths, [slice]);
 
-    await new LocalPrCreateStrategy().create(paths, slice);
+    await new LocalPrCreateStrategy().create(paths);
 
     const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
     expect(content).not.toContain('## Design');

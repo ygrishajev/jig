@@ -107,7 +107,7 @@ Optional `sdlc.config.json` in the repo root:
 | `sdlc implement --run <id>`     | Runs the implement step for the run's current slice.                                                            |
 | `sdlc review --run <id>`        | Runs the review (+ verify command) step for the current slice.                                                  |
 | `sdlc merge --run <id>`         | Manually merges an approved slice now, regardless of `mergeMode`.                                               |
-| `sdlc create-pr --run <id>`     | Writes a local PR description for the current slice (no `gh` integration in v1).                                |
+| `sdlc create-pr --run <id>`     | Writes a local PR description for the whole run — every slice ships as one PR (no `gh` integration in v1).      |
 | `sdlc status --run <id>`        | Shows the run's slices and their status.                                                                        |
 | `sdlc autopilot --input <file>` | Runs `prepare`, then loops the reconciler until the run completes or something needs your attention.            |
 | `sdlc resume --run <id>`        | Re-enters the reconciler loop for an existing run (e.g. after a manual merge, or after fixing a `stuck` slice). |

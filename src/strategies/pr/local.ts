@@ -1,20 +1,22 @@
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { readSlices } from '../../state/store.js';
+import { readPlan, readSlices } from '../../state/store.js';
 import type { RunPaths } from '../../state/run-paths.js';
 import type { Slice } from '../../state/types.js';
 import type { PrCreateStrategy } from './types.js';
 
 export class LocalPrCreateStrategy implements PrCreateStrategy {
-  async create(paths: RunPaths, slice: Slice): Promise<void> {
+  async create(paths: RunPaths): Promise<void> {
+    const plan = await readPlan(paths);
+    const slices = await readSlices(paths);
     const content = [
-      `# ${slice.title}`,
+      `# ${plan.summary}`,
       '',
-      slice.description,
+      plan.approach,
       '',
       ...(await this.planningSections(paths)),
-      await this.sliceMapping(paths, slice),
+      this.sliceMapping(slices),
     ].join('\n');
     // Written to stateDir, not workspaceDir: stateDir isn't even part of the
     // workspace worktree's git working tree, so this file can never be swept
@@ -36,17 +38,12 @@ export class LocalPrCreateStrategy implements PrCreateStrategy {
     return sections;
   }
 
-  private async sliceMapping(paths: RunPaths, slice: Slice): Promise<string> {
-    let slices: Slice[];
-    try {
-      slices = await readSlices(paths);
-    } catch {
-      slices = [slice];
-    }
-    const lines = slices.map((s) => {
-      const entry = `- ${s.id} — ${s.description.split('\n')[0]}`;
-      return s.id === slice.id ? entry.replace(/^- /, '**▶ ') + '**' : entry;
-    });
+  private sliceMapping(slices: Slice[]): string {
+    const lines = [...slices]
+      .sort((a, b) => a.order - b.order)
+      .map(
+        (s) => `- [${s.status === 'merged' ? 'x' : ' '}] ${s.id} — ${s.description.split('\n')[0]}`,
+      );
     return ['## Slices', '', ...lines].join('\n');
   }
 }
