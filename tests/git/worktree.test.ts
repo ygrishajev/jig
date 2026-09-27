@@ -8,6 +8,7 @@ import {
   worktreeExists,
 } from '../../src/git/worktree.js';
 import { createBranchFrom } from '../../src/git/branch.js';
+import { openRepo } from '../../src/git/repository.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
 
 let repo: TempRepo;
@@ -23,6 +24,36 @@ describe('worktree helpers', () => {
     await addWorktreeForNewBranch(repo.dir, wt, 'feature/a', 'main');
     expect(existsSync(wt)).toBe(true);
     expect(await worktreeExists(repo.dir, wt)).toBe(true);
+  });
+
+  it('leaves commit signing as configured by default', async () => {
+    repo = await createTempRepo();
+    await openRepo(repo.dir).raw(['config', 'commit.gpgsign', 'true']);
+    const wt = path.join(repo.dir, '.wt', 'r');
+    await addWorktreeForNewBranch(repo.dir, wt, 'feature/r', 'main');
+
+    expect((await openRepo(wt).raw(['config', 'commit.gpgsign'])).trim()).toBe('true');
+  });
+
+  it('disables commit signing in a new worktree when skipCommitSigning is set', async () => {
+    repo = await createTempRepo();
+    await openRepo(repo.dir).raw(['config', 'commit.gpgsign', 'true']);
+    const wt = path.join(repo.dir, '.wt', 'g');
+    await addWorktreeForNewBranch(repo.dir, wt, 'feature/g', 'main', {
+      skipCommitSigning: true,
+    });
+
+    expect((await openRepo(wt).raw(['config', 'commit.gpgsign'])).trim()).toBe('false');
+    expect((await openRepo(repo.dir).raw(['config', 'commit.gpgsign'])).trim()).toBe('true');
+  });
+
+  it('disables commit signing in a worktree added for an existing branch when asked', async () => {
+    repo = await createTempRepo();
+    await createBranchFrom(repo.dir, 'feature/h', 'main');
+    const wt = path.join(repo.dir, '.wt', 'h');
+    await addWorktreeForExistingBranch(repo.dir, wt, 'feature/h', { skipCommitSigning: true });
+
+    expect((await openRepo(wt).raw(['config', 'commit.gpgsign'])).trim()).toBe('false');
   });
 
   it('adds a worktree for an existing branch', async () => {

@@ -17,11 +17,15 @@ export interface ImplementStepInput {
   slice: Slice;
   baseBranch: string;
   provider: AgentProvider;
+  /** See config's `commitSigning: 'skip'` — passes the choice to worktree creation. */
+  skipCommitSigning?: boolean;
 }
 
 export async function runImplementStep(input: ImplementStepInput): Promise<void> {
-  const { repoRoot, paths, slice, baseBranch, provider } = input;
-  await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, slice.branch, baseBranch);
+  const { repoRoot, paths, slice, baseBranch, provider, skipCommitSigning } = input;
+  await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, slice.branch, baseBranch, {
+    skipCommitSigning,
+  });
 
   const result = await provider.run({
     cwd: paths.workspaceDir,
@@ -63,9 +67,10 @@ async function ensureWorkspaceOnBranch(
   workspacePath: string,
   branchName: string,
   baseBranch: string,
+  options: { skipCommitSigning?: boolean },
 ): Promise<void> {
   if (!(await worktreeExists(repoRoot, workspacePath))) {
-    await addWorktreeForNewBranch(repoRoot, workspacePath, branchName, baseBranch);
+    await addWorktreeForNewBranch(repoRoot, workspacePath, branchName, baseBranch, options);
     return;
   }
   if (await localBranchExists(repoRoot, branchName)) {

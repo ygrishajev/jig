@@ -47,6 +47,7 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
         slice,
         baseBranch,
         provider: implementProvider ?? provider,
+        skipCommitSigning: config.commitSigning === 'skip',
       });
       break;
     case 'in_review':
