@@ -27,7 +27,6 @@ describe('buildReviewPrompt', () => {
     description: 'Does something.',
     order: 0,
     status: 'ready_to_merge' as const,
-    branch: 'sdlc/slice/run/some-slice',
     reviewCycles: 0,
   };
 
