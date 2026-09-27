@@ -25,10 +25,10 @@ const configSchema = z
     // unreachable from the sandbox container (e.g. 1Password). The operator's
     // own repo and merges are never touched in either mode.
     commitSigning: z.enum(['repo', 'skip']).default('repo'),
-  // 'auto' (default): implementation starts immediately after planning.
-  // 'checkpoint': the autopilot command stops after planning so a human can
-  // read design.md/plan.md and resumes with `sdlc resume`.
-  designGate: z.enum(['auto', 'checkpoint']).default('auto'),
+    // 'auto' (default): implementation starts immediately after planning.
+    // 'checkpoint': the autopilot command stops after planning so a human can
+    // read design.md/plan.md and resumes with `sdlc resume`.
+    designGate: z.enum(['auto', 'checkpoint']).default('auto'),
     // Per-step agent configuration. Provider names must stay in sync with the
     // keys of PROVIDER_PROFILES in src/strategies/provider/provider-profiles.ts
     // — not imported from here to keep config a lower-level module than the

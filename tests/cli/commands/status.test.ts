@@ -30,9 +30,9 @@ describe('status command', () => {
     await program.parseAsync(['node', 'sdlc', 'status', '--run', 'run1']);
 
     const logged = logSpy.mock.calls.map((args) => args.join(' '));
-    expect(logged.some((line) => line.startsWith('Design: ') && line.endsWith('state/design.md'))).toBe(
-      true,
-    );
+    expect(
+      logged.some((line) => line.startsWith('Design: ') && line.endsWith('state/design.md')),
+    ).toBe(true);
     expect(logged.some((line) => line.startsWith('Plan: ') && line.endsWith('state/plan.md'))).toBe(
       true,
     );
