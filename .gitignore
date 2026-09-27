@@ -5,3 +5,4 @@ node_modules/
 .sdlc-step-output.json
 dist/
 reports/
+tmp/
