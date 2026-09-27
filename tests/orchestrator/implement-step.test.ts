@@ -25,7 +25,6 @@ function makeSlice(overrides: Partial<Slice> = {}): Slice {
     description: 'Do the first thing.',
     order: 0,
     status: 'pending',
-    branch: 'sdlc/slice/run1/s1',
     reviewCycles: 0,
     mergeAttempts: 0,
     ...overrides,
@@ -36,7 +35,7 @@ describe('runImplementStep', () => {
   it('logs which slice it is implementing and the worktree path, prefixed by the run id', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'runlog');
-    const slice = makeSlice({ branch: 'sdlc/slice/runlog/s1' });
+    const slice = makeSlice();
     const provider = new FakeAgentProvider(async (input) => {
       await writeFile(path.join(input.cwd, 'health.ts'), 'export const health = () => "ok";\n');
       return { success: true, output: 'implemented' };
@@ -51,7 +50,7 @@ describe('runImplementStep', () => {
     expect(logged.some((line) => line.includes(paths.workspaceDir))).toBe(true);
   });
 
-  it('creates the workspace, runs the provider, commits, and advances status', async () => {
+  it('creates the workspace on the run branch, runs the provider, commits, and advances status', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run1');
     const slice = makeSlice();
@@ -63,14 +62,14 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     expect(slice.status).toBe('in_review');
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run1/s1');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/run1');
     expect(await isWorkingTreeClean(paths.workspaceDir)).toBe(true);
   });
 
-  it('reuses the existing branch on a second call instead of recreating it', async () => {
+  it('reuses the run branch on a second call (e.g. the next slice) instead of recreating it', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run2');
-    const slice = makeSlice({ branch: 'sdlc/slice/run2/s1' });
+    const slice = makeSlice();
     let calls = 0;
     const provider = new FakeAgentProvider(async (input) => {
       calls += 1;
@@ -83,13 +82,13 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     expect(calls).toBe(2);
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run2/s1');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/run2');
   });
 
   it('throws and leaves status untouched when the provider fails', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run3');
-    const slice = makeSlice({ branch: 'sdlc/slice/run3/s1' });
+    const slice = makeSlice();
     const provider = new FakeAgentProvider(async () => ({ success: false, output: 'boom' }));
 
     await expect(
@@ -98,16 +97,10 @@ describe('runImplementStep', () => {
     expect(slice.status).toBe('pending');
   });
 
-  it('recreates the branch from base when the workspace worktree exists but the branch does not', async () => {
-    // Exercises the fallback path distinct from the "reuse the existing
-    // branch" test above: the worktree directory is already there, but the
-    // slice's branch itself no longer exists (e.g. renamed away out of
-    // band). ensureWorkspaceOnBranch must fall through to
-    // checkoutNewBranchAt instead of trying to check out a branch that
-    // isn't there.
+  it('recreates the run branch from base when the workspace worktree exists but the branch does not', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run5');
-    const slice = makeSlice({ branch: 'sdlc/slice/run5/s1' });
+    const slice = makeSlice();
     const provider = new FakeAgentProvider(async (input) => {
       await writeFile(path.join(input.cwd, 'first.txt'), 'x');
       return { success: true, output: 'implemented' };
@@ -116,19 +109,14 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     const { openRepo } = await import('../../src/git/repository.js');
-    await openRepo(paths.workspaceDir).raw([
-      'branch',
-      '-m',
-      'sdlc/slice/run5/s1',
-      'sdlc/slice/run5/renamed-away',
-    ]);
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run5/renamed-away');
+    await openRepo(paths.workspaceDir).raw(['branch', '-m', 'sdlc/run/run5', 'sdlc/run/renamed-away']);
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/renamed-away');
 
     slice.status = 'pending';
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     expect(slice.status).toBe('in_review');
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run5/s1');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/run5');
   });
 
   it('disables commit signing in the workspace only when skipCommitSigning is set', async () => {
@@ -136,7 +124,7 @@ describe('runImplementStep', () => {
     const { openRepo } = await import('../../src/git/repository.js');
     await openRepo(repo.dir).raw(['config', 'commit.gpgsign', 'true']);
     const paths = getRunPaths(repo.dir, 'run6');
-    const slice = makeSlice({ branch: 'sdlc/slice/run6/s1' });
+    const slice = makeSlice();
     const provider = new FakeAgentProvider(async (input) => {
       await writeFile(path.join(input.cwd, 'health.ts'), 'export const health = () => "ok";\n');
       return { success: true, output: 'implemented' };
@@ -161,7 +149,6 @@ describe('runImplementStep', () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run4');
     const slice = makeSlice({
-      branch: 'sdlc/slice/run4/s1',
       lastFeedback: 'The health check must also verify the database connection.',
     });
     let seenPrompt = '';

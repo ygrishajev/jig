@@ -3,7 +3,7 @@ import { checkoutExistingBranch, checkoutNewBranchAt, localBranchExists } from '
 import { commitAll } from '../git/repository.js';
 import { addWorktreeForNewBranch, worktreeExists } from '../git/worktree.js';
 import type { RunPaths } from '../state/run-paths.js';
-import type { Slice } from '../state/types.js';
+import { runBranchFor, type Slice } from '../state/types.js';
 import { logRun } from '../logging.js';
 
 export class ImplementStepFailedError extends Error {
@@ -24,7 +24,7 @@ export interface ImplementStepInput {
 
 export async function runImplementStep(input: ImplementStepInput): Promise<void> {
   const { repoRoot, paths, slice, baseBranch, provider, skipCommitSigning } = input;
-  await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, slice.branch, baseBranch, {
+  await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, runBranchFor(paths.runId), baseBranch, {
     skipCommitSigning,
   });
   logRun(paths.runId, `implementing slice "${slice.id}": ${slice.title}`);
