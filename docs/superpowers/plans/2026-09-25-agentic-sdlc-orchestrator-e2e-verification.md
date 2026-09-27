@@ -10,7 +10,7 @@ agentic CLI (cost, non-determinism), matching the spec's Testing Strategy.
 3. Run `sdlc autopilot --input request.md` with `providerCommand` pointed at a
    real agentic CLI (e.g. `claude`).
 4. Confirm: a run directory appears under `.sdlc/<runId>/`; `sdlc status --run
-   <runId>` shows at least one slice; the workspace worktree
+<runId>` shows at least one slice; the workspace worktree
    (`.sdlc/<runId>/workspace`) contains real code changes on a
    `sdlc/slice/<runId>/<sliceId>` branch; the command exits reporting either
    completion or a clear blocked reason (e.g. manual-mode `ready_to_merge`).

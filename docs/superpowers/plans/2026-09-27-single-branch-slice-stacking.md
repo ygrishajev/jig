@@ -673,7 +673,12 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     const { openRepo } = await import('../../src/git/repository.js');
-    await openRepo(paths.workspaceDir).raw(['branch', '-m', 'sdlc/run/run5', 'sdlc/run/renamed-away']);
+    await openRepo(paths.workspaceDir).raw([
+      'branch',
+      '-m',
+      'sdlc/run/run5',
+      'sdlc/run/renamed-away',
+    ]);
     expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/renamed-away');
 
     slice.status = 'pending';
@@ -757,19 +762,19 @@ Then change the body of `runImplementStep`:
 Old:
 
 ```ts
-  const { repoRoot, paths, slice, baseBranch, provider, skipCommitSigning } = input;
-  await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, slice.branch, baseBranch, {
-    skipCommitSigning,
-  });
+const { repoRoot, paths, slice, baseBranch, provider, skipCommitSigning } = input;
+await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, slice.branch, baseBranch, {
+  skipCommitSigning,
+});
 ```
 
 New:
 
 ```ts
-  const { repoRoot, paths, slice, baseBranch, provider, skipCommitSigning } = input;
-  await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, runBranchFor(paths.runId), baseBranch, {
-    skipCommitSigning,
-  });
+const { repoRoot, paths, slice, baseBranch, provider, skipCommitSigning } = input;
+await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, runBranchFor(paths.runId), baseBranch, {
+  skipCommitSigning,
+});
 ```
 
 Nothing else in the file changes — `ensureWorkspaceOnBranch` was already generic over the branch name.
@@ -806,7 +811,7 @@ git commit -m "sdlc: implement step commits onto the run branch, not a per-slice
 In `tests/orchestrator/prepare.test.ts`, delete this line (around line 210):
 
 ```ts
-    expect(slices[0].branch).toBe(`sdlc/slice/${meta.runId}/add-health-route`);
+expect(slices[0].branch).toBe(`sdlc/slice/${meta.runId}/add-health-route`);
 ```
 
 Rename the test title around line 373 from:
@@ -842,26 +847,26 @@ In `src/orchestrator/prepare.ts`, change:
 Old:
 
 ```ts
-  const slices: Slice[] = sliceOutput.map((slice, order) => ({
-    ...slice,
-    order,
-    status: 'pending',
-    branch: `sdlc/slice/${runId}/${slice.id}`,
-    reviewCycles: 0,
-    mergeAttempts: 0,
-  }));
+const slices: Slice[] = sliceOutput.map((slice, order) => ({
+  ...slice,
+  order,
+  status: 'pending',
+  branch: `sdlc/slice/${runId}/${slice.id}`,
+  reviewCycles: 0,
+  mergeAttempts: 0,
+}));
 ```
 
 New:
 
 ```ts
-  const slices: Slice[] = sliceOutput.map((slice, order) => ({
-    ...slice,
-    order,
-    status: 'pending',
-    reviewCycles: 0,
-    mergeAttempts: 0,
-  }));
+const slices: Slice[] = sliceOutput.map((slice, order) => ({
+  ...slice,
+  order,
+  status: 'pending',
+  reviewCycles: 0,
+  mergeAttempts: 0,
+}));
 ```
 
 Also update the stale comment above `assertUniqueSliceIds` in the same file:
@@ -1404,7 +1409,12 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
     case 'in_review':
       await runReviewStep({ paths, slice, provider, config });
       if ((slice.status as SliceStatus) === 'ready_to_merge') {
-        return advancePastSlice({ repoRoot, paths, baseBranch, mergeStrategy }, slices, slice, meta);
+        return advancePastSlice(
+          { repoRoot, paths, baseBranch, mergeStrategy },
+          slices,
+          slice,
+          meta,
+        );
       }
       break;
     case 'ready_to_merge':
@@ -2025,7 +2035,9 @@ export function registerMergeCommand(program: Command): void {
         // mode, context.mergeStrategy would be a no-op ManualMergeStrategy,
         // which would make this command do nothing.
         const result = await finalizeRun({ ...context, mergeStrategy: new AutoMergeStrategy() });
-        console.log(result.complete ? `Merged. Run "${opts.run}" complete.` : 'Nothing to merge yet.');
+        console.log(
+          result.complete ? `Merged. Run "${opts.run}" complete.` : 'Nothing to merge yet.',
+        );
       }),
     );
 }

@@ -1,4 +1,5 @@
 import { isBranchMergedInto } from '../git/merge.js';
+import { openRepo } from '../git/repository.js';
 import { logRun } from '../logging.js';
 import { runBranchFor } from '../state/types.js';
 import type { RunPaths } from '../state/run-paths.js';
@@ -41,6 +42,13 @@ export async function finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunR
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    try {
+      await openRepo(repoRoot).raw(['merge', '--abort']);
+    } catch {
+      // Best-effort cleanup — if there was no merge in progress to abort
+      // (e.g. the failure happened before git started merging), this
+      // throws too; the real error is already captured in `message`.
+    }
     return {
       blocked: true,
       reason: `merge failed for run branch "${branch}": ${message}`,

@@ -101,7 +101,9 @@ export function buildSlicePlanPrompt(planMarkdown: string): string {
 export function buildReviewPrompt(slice: Slice): string {
   return [
     'You are the review step of an automated SDLC pipeline.',
-    `Review the uncommitted and committed changes in this worktree for the slice below.`,
+    'Review only the most recent commit (HEAD) on this branch for the slice below — that',
+    "commit is this slice's change. Earlier commits on this branch belong to already-approved",
+    'slices; treat them as existing context you can rely on, not something to judge or reject.',
     '',
     `Slice: ${slice.title}`,
     `Description: ${slice.description}`,

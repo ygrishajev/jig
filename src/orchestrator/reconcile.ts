@@ -56,7 +56,12 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
     case 'in_review':
       await runReviewStep({ paths, slice, provider, config });
       if ((slice.status as SliceStatus) === 'ready_to_merge') {
-        return advancePastSlice({ repoRoot, paths, baseBranch, mergeStrategy }, slices, slice, meta);
+        return advancePastSlice(
+          { repoRoot, paths, baseBranch, mergeStrategy },
+          slices,
+          slice,
+          meta,
+        );
       }
       break;
     case 'ready_to_merge':

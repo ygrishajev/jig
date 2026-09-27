@@ -88,29 +88,29 @@ Optional `sdlc.config.json` in the repo root:
 }
 ```
 
-| Field                      | Default           | Meaning                                                                                                                                                               |
-| -------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field                      | Default           | Meaning                                                                                                                                                                            |
+| -------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mergeMode`                | `"manual"`        | `"manual"`: the tool never merges the run's branch into your base branch itself — only detects that you did. `"auto"`: the tool merges automatically once every slice is approved. |
-| `reviewCycleCap`           | `3`               | How many implement→review round-trips a slice gets before it's marked `stuck` and needs human intervention.                                                           |
-| `verifyCommand`            | _(none)_          | An optional shell command (e.g. `npm test`) that must also pass, alongside the AI reviewer's approval, before a slice is considered ready to merge.                   |
-| `inputSource`              | `"markdown-file"` | Only one supported in v1.                                                                                                                                             |
-| `providerCommand`          | `"claude"`        | Which agent runs planning (`prepare`) and review: `"claude"` or `"opencode"` — see [Agent sandbox & credentials](#agent-sandbox--credentials).                        |
-| `implementProviderCommand` | _(unset)_         | Overrides `providerCommand` for the implement step only. Falls back to `providerCommand` when unset.                                                                  |
-| `opencodeModel`            | _(unset)_         | `"provider/model"` passed to opencode via `-m`. See [Agent sandbox & credentials](#agent-sandbox--credentials) for why this matters in the sandbox.                   |
-| `conflictResolveCap`       | `3`               | Reserved for a future conflict-auto-resolution feature; not currently read by anything.                                                                               |
+| `reviewCycleCap`           | `3`               | How many implement→review round-trips a slice gets before it's marked `stuck` and needs human intervention.                                                                        |
+| `verifyCommand`            | _(none)_          | An optional shell command (e.g. `npm test`) that must also pass, alongside the AI reviewer's approval, before a slice is considered ready to merge.                                |
+| `inputSource`              | `"markdown-file"` | Only one supported in v1.                                                                                                                                                          |
+| `providerCommand`          | `"claude"`        | Which agent runs planning (`prepare`) and review: `"claude"` or `"opencode"` — see [Agent sandbox & credentials](#agent-sandbox--credentials).                                     |
+| `implementProviderCommand` | _(unset)_         | Overrides `providerCommand` for the implement step only. Falls back to `providerCommand` when unset.                                                                               |
+| `opencodeModel`            | _(unset)_         | `"provider/model"` passed to opencode via `-m`. See [Agent sandbox & credentials](#agent-sandbox--credentials) for why this matters in the sandbox.                                |
+| `conflictResolveCap`       | `3`               | Reserved for a future conflict-auto-resolution feature; not currently read by anything.                                                                                            |
 
 ## Commands
 
-| Command                         | What it does                                                                                                    |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `sdlc prepare --input <file>`   | Reads the request, produces a plan and an ordered list of slices.                                               |
-| `sdlc implement --run <id>`     | Runs the implement step for the run's current slice.                                                            |
-| `sdlc review --run <id>`        | Runs the review (+ verify command) step for the current slice.                                                  |
+| Command                         | What it does                                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `sdlc prepare --input <file>`   | Reads the request, produces a plan and an ordered list of slices.                                                                    |
+| `sdlc implement --run <id>`     | Runs the implement step for the run's current slice.                                                                                 |
+| `sdlc review --run <id>`        | Runs the review (+ verify command) step for the current slice.                                                                       |
 | `sdlc merge --run <id>`         | Manually merges the run's branch (every slice's commits, as one unit) now, once every slice is approved — regardless of `mergeMode`. |
-| `sdlc create-pr --run <id>`     | Writes a local PR description for the whole run — every slice ships as one PR (no `gh` integration in v1).      |
-| `sdlc status --run <id>`        | Shows the run's slices and their status.                                                                        |
-| `sdlc autopilot --input <file>` | Runs `prepare`, then loops the reconciler until the run completes or something needs your attention.            |
-| `sdlc resume --run <id>`        | Re-enters the reconciler loop for an existing run (e.g. after a manual merge, or after fixing a `stuck` slice). |
+| `sdlc create-pr --run <id>`     | Writes a local PR description for the whole run — every slice ships as one PR (no `gh` integration in v1).                           |
+| `sdlc status --run <id>`        | Shows the run's slices and their status.                                                                                             |
+| `sdlc autopilot --input <file>` | Runs `prepare`, then loops the reconciler until the run completes or something needs your attention.                                 |
+| `sdlc resume --run <id>`        | Re-enters the reconciler loop for an existing run (e.g. after a manual merge, or after fixing a `stuck` slice).                      |
 
 `implement` and `review` are aliases of the same underlying reconciler
 step — each does whatever the current slice's status actually calls for.

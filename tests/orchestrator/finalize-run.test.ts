@@ -5,7 +5,7 @@ import { finalizeRun } from '../../src/orchestrator/finalize-run.js';
 import { AutoMergeStrategy } from '../../src/strategies/merge/auto.js';
 import { ManualMergeStrategy } from '../../src/strategies/merge/manual.js';
 import { checkoutExistingBranch, checkoutNewBranchAt } from '../../src/git/branch.js';
-import { commitAll } from '../../src/git/repository.js';
+import { commitAll, isWorkingTreeClean } from '../../src/git/repository.js';
 import { mergeBranchInto } from '../../src/git/merge.js';
 import { initializeRunState } from '../../src/state/store.js';
 import { runBranchFor } from '../../src/state/types.js';
@@ -113,6 +113,7 @@ describe('finalizeRun', () => {
     expect(result.blocked).toBe(true);
     expect(result.complete).toBe(false);
     expect(result.reason).toContain('merge failed');
+    expect(await isWorkingTreeClean(repo.dir)).toBe(true);
   });
 
   it('reports blocked, not complete, when the run branch does not exist yet', async () => {

@@ -33,6 +33,7 @@
 ### Task 1: Project scaffolding and tooling
 
 **Files:**
+
 - Create: `package.json`
 - Create: `tsconfig.json`
 - Create: `eslint.config.js`
@@ -47,6 +48,7 @@
 - Modify: `.gitignore` (add `.sdlc/` and the structured-output filename)
 
 **Interfaces:**
+
 - Produces: `sdlc` CLI binary entry point at `src/cli/main.ts` (extended by later tasks); npm scripts `build`, `lint`, `format`, `format:check`, `test`, `test:mutation`, `secretlint`, `dev`.
 
 - [ ] **Step 1: Remove the placeholder scaffold and gitignore run state/scratch output**
@@ -147,19 +149,15 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
-export default tseslint.config(
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
-  prettier,
-  {
-    ignores: ['dist/**', 'node_modules/**', '.sdlc/**'],
-  },
-);
+export default tseslint.config(js.configs.recommended, ...tseslint.configs.recommended, prettier, {
+  ignores: ['dist/**', 'node_modules/**', '.sdlc/**'],
+});
 ```
 
 - [ ] **Step 6: Write `.prettierrc.json` and `.prettierignore`**
 
 `.prettierrc.json`:
+
 ```json
 {
   "singleQuote": true,
@@ -170,6 +168,7 @@ export default tseslint.config(
 ```
 
 `.prettierignore`:
+
 ```
 dist/
 node_modules/
@@ -270,6 +269,7 @@ git commit -m "chore: scaffold TypeScript CLI project with lint/format/test/muta
 ### Task 2: Git layer — repository and branch helpers
 
 **Files:**
+
 - Create: `src/git/repository.ts`
 - Create: `src/git/branch.ts`
 - Test: `tests/git/repository.test.ts`
@@ -277,6 +277,7 @@ git commit -m "chore: scaffold TypeScript CLI project with lint/format/test/muta
 - Create: `tests/support/temp-repo.ts` (shared test fixture)
 
 **Interfaces:**
+
 - Produces: `openRepo(cwd): SimpleGit`, `isWorkingTreeClean(cwd): Promise<boolean>`, `commitAll(cwd, message): Promise<string | null>` from `repository.ts`; `getCurrentBranch(cwd): Promise<string>`, `localBranchExists(cwd, branchName): Promise<boolean>`, `createBranchFrom(cwd, branchName, fromRef): Promise<void>`, `checkoutExistingBranch(cwd, branchName): Promise<void>`, `checkoutNewBranchAt(cwd, branchName, startPoint): Promise<void>` from `branch.ts`.
 - Consumes: nothing (foundation layer).
 
@@ -501,10 +502,12 @@ git commit -m "feat: add git repository and branch helpers"
 ### Task 3: Git layer — worktree helpers
 
 **Files:**
+
 - Create: `src/git/worktree.ts`
 - Test: `tests/git/worktree.test.ts`
 
 **Interfaces:**
+
 - Consumes: `openRepo` from `src/git/repository.ts` (Task 2).
 - Produces: `addWorktreeForNewBranch(repoRoot, worktreePath, branchName, fromRef): Promise<void>`, `addWorktreeForExistingBranch(repoRoot, worktreePath, branchName): Promise<void>`, `removeWorktree(repoRoot, worktreePath): Promise<void>`, `worktreeExists(repoRoot, worktreePath): Promise<boolean>`.
 
@@ -623,10 +626,12 @@ throws a plain git error; the CLI surfaces it and you resolve it by hand in
 the workspace worktree, same as any local `git merge` conflict.
 
 **Files:**
+
 - Create: `src/git/merge.ts`
 - Test: `tests/git/merge.test.ts`
 
 **Interfaces:**
+
 - Consumes: `openRepo`, `isWorkingTreeClean` (repository.ts, Task 2); `getCurrentBranch` (branch.ts, Task 2).
 - Produces: `isBranchMergedInto(repoRoot, branchName, intoBranch): Promise<boolean>`, `mergeBranchInto(repoRoot, branchName, intoBranch): Promise<string>`.
 
@@ -758,9 +763,11 @@ git commit -m "feat: add git conflict preflight and merge helpers"
 ### Task 5: State schema and types
 
 **Files:**
+
 - Create: `src/state/types.ts`
 
 **Interfaces:**
+
 - Produces: `SliceStatus`, `Slice`, `RunContext`, `RunPlan`, `RunMeta` types, and `sliceSchema`, `slicesSchema`, `runContextSchema`, `runPlanSchema`, `runMetaSchema` zod schemas. `Slice.lastFeedback` (optional string) carries the reviewer's or verify command's most recent "changes requested" reason, read by the implement step's prompt on the next pass so feedback isn't silently discarded. `Slice.mergeAttempts` has no reader or writer in v1 (it was the removed Task 13's retry counter) — kept in the schema, always `0`, reserved for when conflict-handling returns; do not remove it or repurpose it for something else.
 
 - [ ] **Step 1: Write the failing test**
@@ -933,11 +940,13 @@ Crash recovery still works: state is still durable on local disk, and
 which nothing else in v1 promises either.
 
 **Files:**
+
 - Create: `src/state/run-paths.ts`
 - Create: `src/state/store.ts`
 - Test: `tests/state/store.test.ts`
 
 **Interfaces:**
+
 - Consumes: zod schemas (Task 5).
 - Produces: `RunPaths` type + `getRunPaths(repoRoot, runId): RunPaths`; `initializeRunState(repoRoot, runId, baseBranch): Promise<RunPaths>`; `loadRunState(repoRoot, runId): Promise<RunPaths>` (throws if the run's state directory doesn't exist); `readRunMeta/writeRunMeta`, `readContext/writeContext`, `readPlan/writePlan`, `readSlices/writeSlices`, all `(paths: RunPaths, ...) => Promise<...>`.
 
@@ -1092,7 +1101,9 @@ export async function loadRunState(repoRoot: string, runId: string): Promise<Run
 }
 
 export async function readRunMeta(paths: RunPaths): Promise<RunMeta> {
-  return runMetaSchema.parse(JSON.parse(await readFile(path.join(paths.stateDir, RUN_META_FILE), 'utf-8')));
+  return runMetaSchema.parse(
+    JSON.parse(await readFile(path.join(paths.stateDir, RUN_META_FILE), 'utf-8')),
+  );
 }
 
 export async function writeRunMeta(paths: RunPaths, meta: RunMeta): Promise<void> {
@@ -1100,7 +1111,9 @@ export async function writeRunMeta(paths: RunPaths, meta: RunMeta): Promise<void
 }
 
 export async function readContext(paths: RunPaths): Promise<RunContext> {
-  return runContextSchema.parse(JSON.parse(await readFile(path.join(paths.stateDir, CONTEXT_FILE), 'utf-8')));
+  return runContextSchema.parse(
+    JSON.parse(await readFile(path.join(paths.stateDir, CONTEXT_FILE), 'utf-8')),
+  );
 }
 
 export async function writeContext(paths: RunPaths, context: RunContext): Promise<void> {
@@ -1108,7 +1121,9 @@ export async function writeContext(paths: RunPaths, context: RunContext): Promis
 }
 
 export async function readPlan(paths: RunPaths): Promise<RunPlan> {
-  return runPlanSchema.parse(JSON.parse(await readFile(path.join(paths.stateDir, PLAN_FILE), 'utf-8')));
+  return runPlanSchema.parse(
+    JSON.parse(await readFile(path.join(paths.stateDir, PLAN_FILE), 'utf-8')),
+  );
 }
 
 export async function writePlan(paths: RunPaths, plan: RunPlan): Promise<void> {
@@ -1116,7 +1131,9 @@ export async function writePlan(paths: RunPaths, plan: RunPlan): Promise<void> {
 }
 
 export async function readSlices(paths: RunPaths): Promise<Slice[]> {
-  return slicesSchema.parse(JSON.parse(await readFile(path.join(paths.stateDir, SLICES_FILE), 'utf-8')));
+  return slicesSchema.parse(
+    JSON.parse(await readFile(path.join(paths.stateDir, SLICES_FILE), 'utf-8')),
+  );
 }
 
 export async function writeSlices(paths: RunPaths, slices: Slice[]): Promise<void> {
@@ -1147,10 +1164,12 @@ git commit -m "feat: add local JSON run state store"
 ### Task 7: Config loader
 
 **Files:**
+
 - Create: `src/config/load-config.ts`
 - Test: `tests/config/load-config.test.ts`
 
 **Interfaces:**
+
 - Produces: `SdlcConfig` type, `loadConfig(repoRoot): SdlcConfig`. `conflictResolveCap` has no reader in v1 (Task 13, its only consumer, was removed) — kept in the schema, reserved for when conflict-handling returns; do not remove it or repurpose it.
 
 - [ ] **Step 1: Write the failing test**
@@ -1194,7 +1213,10 @@ describe('loadConfig', () => {
 
   it('throws on an invalid mergeMode value', async () => {
     repo = await createTempRepo();
-    await writeFile(path.join(repo.dir, 'sdlc.config.json'), JSON.stringify({ mergeMode: 'sometimes' }));
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ mergeMode: 'sometimes' }),
+    );
     expect(() => loadConfig(repo.dir)).toThrow();
   });
 });
@@ -1247,12 +1269,14 @@ git commit -m "feat: add sdlc.config.json loader"
 ### Task 8: Agent provider abstraction, fake provider, structured output
 
 **Files:**
+
 - Create: `src/strategies/provider/types.ts`
 - Create: `src/strategies/provider/fake.ts`
 - Create: `src/orchestrator/structured-output.ts`
 - Test: `tests/orchestrator/structured-output.test.ts`
 
 **Interfaces:**
+
 - Produces: `AgentRunInput`, `AgentRunResult`, `AgentProvider` interface (provider/types.ts); `FakeAgentProvider` class taking a handler function (provider/fake.ts); `STRUCTURED_OUTPUT_FILENAME`, `structuredOutputPath(cwd)`, `structuredOutputInstruction()`, `resetStructuredOutput(cwd): Promise<void>`, `readStructuredOutput<T>(cwd, parse)` (orchestrator/structured-output.ts). `resetStructuredOutput` deletes any existing output file at `cwd` (no-op if absent) — callers run it immediately before every `provider.run()` call that expects structured output, so a provider that fails to write a fresh file can never cause a stale prior result (e.g. a previous "approved: true") to be silently re-read.
 
 - [ ] **Step 1: Write `src/strategies/provider/types.ts`**
@@ -1372,10 +1396,7 @@ export async function resetStructuredOutput(cwd: string): Promise<void> {
   await rm(structuredOutputPath(cwd), { force: true });
 }
 
-export async function readStructuredOutput<T>(
-  cwd: string,
-  parse: (raw: unknown) => T,
-): Promise<T> {
+export async function readStructuredOutput<T>(cwd: string, parse: (raw: unknown) => T): Promise<T> {
   const raw = JSON.parse(await readFile(structuredOutputPath(cwd), 'utf-8'));
   return parse(raw);
 }
@@ -1399,11 +1420,13 @@ git commit -m "feat: add agent provider abstraction and structured output helper
 ### Task 9: Input source — markdown file
 
 **Files:**
+
 - Create: `src/strategies/input-source/types.ts`
 - Create: `src/strategies/input-source/markdown-file.ts`
 - Test: `tests/strategies/input-source/markdown-file.test.ts`
 
 **Interfaces:**
+
 - Produces: `InputSource` interface (`resolve(): Promise<string>`); `MarkdownFileInputSource` class.
 
 - [ ] **Step 1: Write `src/strategies/input-source/types.ts`**
@@ -1485,11 +1508,13 @@ git commit -m "feat: add markdown-file input source"
 ### Task 10: Prepare pipeline
 
 **Files:**
+
 - Create: `src/orchestrator/prompts.ts`
 - Create: `src/orchestrator/prepare.ts`
 - Test: `tests/orchestrator/prepare.test.ts`
 
 **Interfaces:**
+
 - Consumes: `InputSource` (Task 9); `AgentProvider`, `FakeAgentProvider` (Task 8); `structuredOutputInstruction`, `resetStructuredOutput`, `readStructuredOutput` (Task 8); `initializeRunState`, `writeContext`, `writePlan`, `writeSlices`, `writeRunMeta`, `readRunMeta` (Task 6); `runContextSchema`, `runPlanSchema`, `slicesSchema` (Task 5); `getCurrentBranch` (Task 2).
 - Produces: `generateRunId(): string`; `prepareRun(options: PrepareOptions): Promise<RunMeta>` where `PrepareOptions = { repoRoot: string; inputSource: InputSource; provider: AgentProvider }`. On return, `RunMeta.currentSliceId` is set to the first slice (lowest `order`), or stays `null` if the slice plan came back empty.
 
@@ -1645,12 +1670,22 @@ describe('prepareRun', () => {
           ? { classification: 'feature', repoSummary: 'An Express app.' }
           : call === 2
             ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
-            : [{ id: 'add-health-route', title: 'Add health route', description: 'Add GET /health' }];
+            : [
+                {
+                  id: 'add-health-route',
+                  title: 'Add health route',
+                  description: 'Add GET /health',
+                },
+              ];
       await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
       return { success: true, output: 'done' };
     });
 
-    await prepareRun({ repoRoot: repo.dir, inputSource: new MarkdownFileInputSource(requestPath), provider });
+    await prepareRun({
+      repoRoot: repo.dir,
+      inputSource: new MarkdownFileInputSource(requestPath),
+      provider,
+    });
 
     expect(seenCwds).toEqual([repo.dir, repo.dir, repo.dir]);
   });
@@ -1668,12 +1703,22 @@ describe('prepareRun', () => {
           ? { classification: 'feature', repoSummary: 'An Express app.' }
           : call === 2
             ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
-            : [{ id: 'add-health-route', title: 'Add health route', description: 'Add GET /health' }];
+            : [
+                {
+                  id: 'add-health-route',
+                  title: 'Add health route',
+                  description: 'Add GET /health',
+                },
+              ];
       await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
       return { success: true, output: 'done' };
     });
 
-    await prepareRun({ repoRoot: repo.dir, inputSource: new MarkdownFileInputSource(requestPath), provider });
+    await prepareRun({
+      repoRoot: repo.dir,
+      inputSource: new MarkdownFileInputSource(requestPath),
+      provider,
+    });
 
     expect(existsSync(structuredOutputPath(repo.dir))).toBe(false);
   });
@@ -1737,9 +1782,14 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
   // to. The structured-output file this produces lands in repoRoot too —
   // reset before each call and never left behind (see Task 1's .gitignore).
   await resetStructuredOutput(repoRoot);
-  const contextResult = await provider.run({ cwd: repoRoot, prompt: buildContextPrompt(rawRequest) });
+  const contextResult = await provider.run({
+    cwd: repoRoot,
+    prompt: buildContextPrompt(rawRequest),
+  });
   if (!contextResult.success) throw new Error(`Context step failed: ${contextResult.output}`);
-  const contextOutput = await readStructuredOutput(repoRoot, (raw) => contextOutputSchema.parse(raw));
+  const contextOutput = await readStructuredOutput(repoRoot, (raw) =>
+    contextOutputSchema.parse(raw),
+  );
   await writeContext(paths, {
     rawRequest,
     classification: contextOutput.classification,
@@ -1805,10 +1855,12 @@ git commit -m "feat: add prepare pipeline (context, feature plan, slice plan)"
 ### Task 11: Reconciler — implement step
 
 **Files:**
+
 - Create: `src/orchestrator/implement-step.ts`
 - Test: `tests/orchestrator/implement-step.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AgentProvider`, `FakeAgentProvider` (Task 8); `RunPaths` (Task 6); `Slice` (Task 5, including `lastFeedback`); `addWorktreeForNewBranch`, `worktreeExists` (Task 3); `localBranchExists`, `checkoutExistingBranch`, `checkoutNewBranchAt` (Task 2); `commitAll` (Task 2).
 - Produces: `runImplementStep(input: ImplementStepInput): Promise<void>` where `ImplementStepInput = { repoRoot: string; paths: RunPaths; slice: Slice; baseBranch: string; provider: AgentProvider }`; on return, mutates `slice.status` to `'in_review'` (throws `ImplementStepFailedError` on provider failure, leaving `slice.status` untouched). When `slice.lastFeedback` is set (a prior review or verify run requested changes), the prompt includes it so the re-implementation pass actually addresses it.
 
@@ -1819,7 +1871,10 @@ git commit -m "feat: add prepare pipeline (context, feature plan, slice plan)"
 import { afterEach, describe, expect, it } from 'vitest';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { ImplementStepFailedError, runImplementStep } from '../../src/orchestrator/implement-step.js';
+import {
+  ImplementStepFailedError,
+  runImplementStep,
+} from '../../src/orchestrator/implement-step.js';
 import { FakeAgentProvider } from '../../src/strategies/provider/fake.js';
 import { getRunPaths } from '../../src/state/run-paths.js';
 import { isWorkingTreeClean } from '../../src/git/repository.js';
@@ -1949,7 +2004,10 @@ export async function runImplementStep(input: ImplementStepInput): Promise<void>
   const { repoRoot, paths, slice, baseBranch, provider } = input;
   await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, slice.branch, baseBranch);
 
-  const result = await provider.run({ cwd: paths.workspaceDir, prompt: buildImplementPrompt(slice) });
+  const result = await provider.run({
+    cwd: paths.workspaceDir,
+    prompt: buildImplementPrompt(slice),
+  });
   if (!result.success) {
     throw new ImplementStepFailedError(slice.id, result.output);
   }
@@ -2017,10 +2075,12 @@ git commit -m "feat: add reconciler implement step"
 ### Task 12: Reconciler — review and verify step
 
 **Files:**
+
 - Create: `src/orchestrator/review-step.ts`
 - Test: `tests/orchestrator/review-step.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AgentProvider`, `FakeAgentProvider` (Task 8); `structuredOutputInstruction`, `resetStructuredOutput`, `readStructuredOutput` (Task 8); `Slice` (Task 5); `SdlcConfig` (Task 7).
 - Produces: `runReviewStep(input: ReviewStepInput): Promise<void>` where `ReviewStepInput = { paths: RunPaths; slice: Slice; provider: AgentProvider; config: SdlcConfig }`. Mutates `slice.status` to one of `'pending'` (changes requested, under cap), `'stuck'` (cap exceeded), or `'ready_to_merge'` (approved and verify passed); increments `slice.reviewCycles` on a changes-requested outcome. On a changes-requested outcome, sets `slice.lastFeedback` to the reviewer's feedback (or a verify-failure message) so Task 11's implement step can act on it; clears it on approval.
 
@@ -2074,7 +2134,10 @@ describe('runReviewStep', () => {
     await mkdir(paths.workspaceDir, { recursive: true });
     const slice = makeSlice();
     const provider = new FakeAgentProvider(async (input) => {
-      await writeFile(structuredOutputPath(input.cwd), JSON.stringify({ approved: true, feedback: '' }));
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: true, feedback: '' }),
+      );
       return { success: true, output: 'reviewed' };
     });
 
@@ -2126,7 +2189,10 @@ describe('runReviewStep', () => {
     await mkdir(paths.workspaceDir, { recursive: true });
     const slice = makeSlice();
     const provider = new FakeAgentProvider(async (input) => {
-      await writeFile(structuredOutputPath(input.cwd), JSON.stringify({ approved: true, feedback: '' }));
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: true, feedback: '' }),
+      );
       return { success: true, output: 'reviewed' };
     });
 
@@ -2147,7 +2213,10 @@ describe('runReviewStep', () => {
     await mkdir(paths.workspaceDir, { recursive: true });
     const slice = makeSlice();
     const provider = new FakeAgentProvider(async (input) => {
-      await writeFile(structuredOutputPath(input.cwd), JSON.stringify({ approved: true, feedback: '' }));
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: true, feedback: '' }),
+      );
       return { success: true, output: 'reviewed' };
     });
 
@@ -2222,12 +2291,21 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
   const { paths, slice, provider, config } = input;
 
   await resetStructuredOutput(paths.workspaceDir);
-  const reviewResult = await provider.run({ cwd: paths.workspaceDir, prompt: buildReviewPrompt(slice) });
+  const reviewResult = await provider.run({
+    cwd: paths.workspaceDir,
+    prompt: buildReviewPrompt(slice),
+  });
   if (!reviewResult.success) {
-    requestChanges(slice, config.reviewCycleCap, `Review step failed to run: ${reviewResult.output}`);
+    requestChanges(
+      slice,
+      config.reviewCycleCap,
+      `Review step failed to run: ${reviewResult.output}`,
+    );
     return;
   }
-  const review = await readStructuredOutput(paths.workspaceDir, (raw) => reviewOutputSchema.parse(raw));
+  const review = await readStructuredOutput(paths.workspaceDir, (raw) =>
+    reviewOutputSchema.parse(raw),
+  );
   if (!review.approved) {
     requestChanges(slice, config.reviewCycleCap, review.feedback);
     return;
@@ -2308,6 +2386,7 @@ you resolve it by hand in the workspace worktree, then re-run `sdlc merge`.
 ### Task 14: Merge strategies and slice advancement
 
 **Files:**
+
 - Create: `src/strategies/merge/types.ts`
 - Create: `src/strategies/merge/manual.ts`
 - Create: `src/strategies/merge/auto.ts`
@@ -2315,6 +2394,7 @@ you resolve it by hand in the workspace worktree, then re-run `sdlc merge`.
 - Test: `tests/orchestrator/advance.test.ts`
 
 **Interfaces:**
+
 - Consumes: `mergeBranchInto`, `isBranchMergedInto` (Task 4); `Slice`, `RunMeta` (Task 5); `readSlices`, `writeSlices`, `readRunMeta`, `writeRunMeta` (Task 6); `checkoutExistingBranch` (Task 2).
 - Produces: `MergeStrategy` interface (`merge(repoRoot, slice, baseBranch): Promise<void>`); `ManualMergeStrategy` (no-op — never merges); `AutoMergeStrategy` (calls `mergeBranchInto`); `advanceRun(input: AdvanceInput): Promise<AdvanceResult>` where `AdvanceInput = { repoRoot: string; paths: RunPaths; baseBranch: string; mergeStrategy: MergeStrategy }` — for the run's current slice, if its status is `'ready_to_merge'`, invokes `mergeStrategy.merge`; then (regardless of merge mode) checks whether the current slice's branch `isBranchMergedInto` the base branch and, if so, marks it `'merged'` and moves `currentSliceId` to the next pending slice by `order`. `AdvanceResult = { advanced: boolean; currentSliceId: string | null; complete: boolean }`.
 
@@ -2370,7 +2450,13 @@ import { ManualMergeStrategy } from '../../src/strategies/merge/manual.js';
 import { checkoutNewBranchAt } from '../../src/git/branch.js';
 import { commitAll } from '../../src/git/repository.js';
 import { mergeBranchInto } from '../../src/git/merge.js';
-import { initializeRunState, readRunMeta, readSlices, writeRunMeta, writeSlices } from '../../src/state/store.js';
+import {
+  initializeRunState,
+  readRunMeta,
+  readSlices,
+  writeRunMeta,
+  writeSlices,
+} from '../../src/state/store.js';
 import type { Slice } from '../../src/state/types.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
 
@@ -2460,7 +2546,9 @@ describe('advanceRun', () => {
   it('does not advance and reports not advanced when the current slice is not merged yet', async () => {
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run3', 'main');
-    const slices = makeSlices('run3').map((s) => (s.id === 'first' ? { ...s, status: 'in_review' as const } : s));
+    const slices = makeSlices('run3').map((s) =>
+      s.id === 'first' ? { ...s, status: 'in_review' as const } : s,
+    );
     await writeSlices(paths, slices);
     const meta = await readRunMeta(paths);
     await writeRunMeta(paths, { ...meta, currentSliceId: 'first' });
@@ -2562,7 +2650,11 @@ export async function advanceRun(input: AdvanceInput): Promise<AdvanceResult> {
   const nextSliceId = nextSlice?.id ?? null;
 
   await writeSlices(paths, slices);
-  await writeRunMeta(paths, { ...meta, currentSliceId: nextSliceId, updatedAt: new Date().toISOString() });
+  await writeRunMeta(paths, {
+    ...meta,
+    currentSliceId: nextSliceId,
+    updatedAt: new Date().toISOString(),
+  });
 
   return { advanced: true, currentSliceId: nextSliceId, complete: nextSliceId === null };
 }
@@ -2586,6 +2678,7 @@ git commit -m "feat: add merge strategies and slice advancement"
 ### Task 15: Local PR-create strategy and the reconciler loop
 
 **Files:**
+
 - Create: `src/strategies/pr/types.ts`
 - Create: `src/strategies/pr/local.ts`
 - Create: `src/orchestrator/reconcile.ts`
@@ -2593,6 +2686,7 @@ git commit -m "feat: add merge strategies and slice advancement"
 - Test: `tests/orchestrator/reconcile.test.ts`
 
 **Interfaces:**
+
 - Consumes: everything from Tasks 5–12 and 14 (no Task 13 — removed).
 - Produces: `PrCreateStrategy` interface (`create(paths, slice): Promise<void>`); `LocalPrCreateStrategy` (writes a PR description markdown file into the workspace); `runReconcilerPass(input: ReconcilePassInput): Promise<ReconcilePassResult>` where `ReconcilePassInput = { repoRoot: string; paths: RunPaths; baseBranch: string; provider: AgentProvider; config: SdlcConfig; mergeStrategy: MergeStrategy }` — does one dispatch, acting on the current slice's status, returning `{ blocked: boolean; reason?: string; complete: boolean }`. A merge conflict thrown by the merge strategy is caught here and turned into a `blocked` result rather than propagating as an unhandled error. This is the single mechanism every CLI command in Task 16 calls into.
 
@@ -2687,7 +2781,13 @@ import { runReconcilerPass } from '../../src/orchestrator/reconcile.js';
 import { FakeAgentProvider } from '../../src/strategies/provider/fake.js';
 import { ManualMergeStrategy } from '../../src/strategies/merge/manual.js';
 import { structuredOutputPath } from '../../src/orchestrator/structured-output.js';
-import { initializeRunState, readRunMeta, readSlices, writeRunMeta, writeSlices } from '../../src/state/store.js';
+import {
+  initializeRunState,
+  readRunMeta,
+  readSlices,
+  writeRunMeta,
+  writeSlices,
+} from '../../src/state/store.js';
 import type { SdlcConfig } from '../../src/config/load-config.js';
 import type { Slice } from '../../src/state/types.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
@@ -2706,7 +2806,10 @@ const baseConfig: SdlcConfig = {
   providerCommand: 'claude',
 };
 
-async function setUpSingleSliceRun(repoDir: string, runId: string): Promise<ReturnType<typeof initializeRunState>> {
+async function setUpSingleSliceRun(
+  repoDir: string,
+  runId: string,
+): Promise<ReturnType<typeof initializeRunState>> {
   const paths = await initializeRunState(repoDir, runId, 'main');
   const slice: Slice = {
     id: 'only',
@@ -2756,7 +2859,10 @@ describe('runReconcilerPass', () => {
       if (call === 1) {
         await writeFile(`${input.cwd}/impl.txt`, 'x');
       } else {
-        await writeFile(structuredOutputPath(input.cwd), JSON.stringify({ approved: true, feedback: '' }));
+        await writeFile(
+          structuredOutputPath(input.cwd),
+          JSON.stringify({ approved: true, feedback: '' }),
+        );
       }
       return { success: true, output: 'ok' };
     });
@@ -2801,7 +2907,8 @@ describe('runReconcilerPass', () => {
     await writeFile(`${repo.dir}/README.md`, 'from main\n');
     await repository.commitAll(repo.dir, 'change readme on main');
 
-    const AutoMergeStrategy = (await import('../../src/strategies/merge/auto.js')).AutoMergeStrategy;
+    const AutoMergeStrategy = (await import('../../src/strategies/merge/auto.js'))
+      .AutoMergeStrategy;
     const result = await runReconcilerPass({
       repoRoot: repo.dir,
       paths,
@@ -2856,7 +2963,10 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
   const slice = slices.find((candidate) => candidate.id === meta.currentSliceId);
 
   if (!slice) {
-    return { blocked: false, complete: slices.length > 0 && slices.every((s) => s.status === 'merged') };
+    return {
+      blocked: false,
+      complete: slices.length > 0 && slices.every((s) => s.status === 'merged'),
+    };
   }
 
   switch (slice.status) {
@@ -2873,7 +2983,11 @@ export async function runReconcilerPass(input: ReconcilePassInput): Promise<Reco
       return runAdvance({ repoRoot, paths, baseBranch, mergeStrategy, sliceId: slice.id });
     case 'stuck':
       await writeSlices(paths, slices);
-      return { blocked: true, reason: `slice "${slice.id}" is stuck — needs human intervention`, complete: false };
+      return {
+        blocked: true,
+        reason: `slice "${slice.id}" is stuck — needs human intervention`,
+        complete: false,
+      };
     case 'implementing':
     case 'merged':
       break;
@@ -2894,12 +3008,20 @@ async function runAdvance(input: {
   try {
     const advanceResult = await advanceRun({ repoRoot, paths, baseBranch, mergeStrategy });
     if (!advanceResult.advanced) {
-      return { blocked: true, reason: `slice "${sliceId}" is ready_to_merge (manual mode)`, complete: false };
+      return {
+        blocked: true,
+        reason: `slice "${sliceId}" is ready_to_merge (manual mode)`,
+        complete: false,
+      };
     }
     return { blocked: false, complete: advanceResult.complete };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { blocked: true, reason: `merge failed for slice "${sliceId}": ${message}`, complete: false };
+    return {
+      blocked: true,
+      reason: `merge failed for slice "${sliceId}": ${message}`,
+      complete: false,
+    };
   }
 }
 ```
@@ -2922,6 +3044,7 @@ git commit -m "feat: add local PR-create strategy and the unified reconciler pas
 ### Task 16: CLI commands
 
 **Files:**
+
 - Modify: `src/cli/main.ts`
 - Create: `src/cli/run-context.ts`
 - Create: `src/cli/commands/prepare.ts`
@@ -2934,6 +3057,7 @@ git commit -m "feat: add local PR-create strategy and the unified reconciler pas
 - Test: `tests/cli/commands/autopilot.test.ts`
 
 **Interfaces:**
+
 - Consumes: `prepareRun` (Task 10); `runReconcilerPass`, `advanceRun` (Tasks 14–15); `loadRunState`, `readRunMeta`, `readSlices` (Task 6); `loadConfig` (Task 7); `ManualMergeStrategy`, `AutoMergeStrategy` (Task 14); `LocalPrCreateStrategy` (Task 15); `MarkdownFileInputSource` (Task 9).
 - Produces: `buildCli(): Command` (extended, registers all eight v1 commands: `prepare`, `implement`, `review`, `merge`, `create-pr`, `status`, `autopilot`, `resume`); `runAutopilot(input: AutopilotInput): Promise<AutopilotResult>` where `AutopilotInput` mirrors `ReconcilePassInput` minus one-pass-only, and `AutopilotResult = { complete: boolean; blockedReason?: string; passes: number }` — loops `runReconcilerPass` until `complete` or `blocked`.
 
@@ -2957,10 +3081,7 @@ export interface CliRunContext {
   mergeStrategy: MergeStrategy;
 }
 
-export async function loadCliRunContext(
-  repoRoot: string,
-  runId: string,
-): Promise<CliRunContext> {
+export async function loadCliRunContext(repoRoot: string, runId: string): Promise<CliRunContext> {
   const paths = await loadRunState(repoRoot, runId);
   const meta = await readRunMeta(paths);
   const config = loadConfig(repoRoot);
@@ -2969,7 +3090,8 @@ export async function loadCliRunContext(
     paths,
     baseBranch: meta.baseBranch,
     config,
-    mergeStrategy: config.mergeMode === 'auto' ? new AutoMergeStrategy() : new ManualMergeStrategy(),
+    mergeStrategy:
+      config.mergeMode === 'auto' ? new AutoMergeStrategy() : new ManualMergeStrategy(),
   };
 }
 
@@ -3043,7 +3165,9 @@ export function registerStatusCommand(program: Command): void {
       const paths = await loadRunState(process.cwd(), opts.run);
       const meta = await readRunMeta(paths);
       const slices = await readSlices(paths);
-      console.log(`Run ${meta.runId} (base: ${meta.baseBranch}, current: ${meta.currentSliceId ?? '—'})`);
+      console.log(
+        `Run ${meta.runId} (base: ${meta.baseBranch}, current: ${meta.currentSliceId ?? '—'})`,
+      );
       for (const slice of slices) {
         console.log(`  [${slice.status}] ${slice.id} — ${slice.title}`);
       }
@@ -3133,9 +3257,20 @@ describe('implement/review commands', () => {
   it('prints the blocked reason when the reconciler pass is blocked', async () => {
     vi.mocked(loadCliRunContext).mockResolvedValue({
       repoRoot: '/tmp/repo',
-      paths: { runId: 'r1', repoRoot: '/tmp/repo', stateDir: '/tmp/repo/.sdlc/r1/state', workspaceDir: '/tmp/repo/.sdlc/r1/workspace' },
+      paths: {
+        runId: 'r1',
+        repoRoot: '/tmp/repo',
+        stateDir: '/tmp/repo/.sdlc/r1/state',
+        workspaceDir: '/tmp/repo/.sdlc/r1/workspace',
+      },
       baseBranch: 'main',
-      config: { mergeMode: 'manual', reviewCycleCap: 3, conflictResolveCap: 3, inputSource: 'markdown-file', providerCommand: 'claude' },
+      config: {
+        mergeMode: 'manual',
+        reviewCycleCap: 3,
+        conflictResolveCap: 3,
+        inputSource: 'markdown-file',
+        providerCommand: 'claude',
+      },
       mergeStrategy: { merge: vi.fn() },
     });
     vi.mocked(selectProvider).mockReturnValue({ run: vi.fn() });
@@ -3267,7 +3402,13 @@ describe('runAutopilot', () => {
       paths: { runId: 'r1', repoRoot: '/tmp/repo', stateDir: '/x', workspaceDir: '/y' },
       baseBranch: 'main',
       provider: { run: vi.fn() },
-      config: { mergeMode: 'auto', reviewCycleCap: 3, conflictResolveCap: 3, inputSource: 'markdown-file', providerCommand: 'claude' },
+      config: {
+        mergeMode: 'auto',
+        reviewCycleCap: 3,
+        conflictResolveCap: 3,
+        inputSource: 'markdown-file',
+        providerCommand: 'claude',
+      },
       mergeStrategy: { merge: vi.fn() },
     });
 
@@ -3287,7 +3428,13 @@ describe('runAutopilot', () => {
       paths: { runId: 'r1', repoRoot: '/tmp/repo', stateDir: '/x', workspaceDir: '/y' },
       baseBranch: 'main',
       provider: { run: vi.fn() },
-      config: { mergeMode: 'auto', reviewCycleCap: 3, conflictResolveCap: 3, inputSource: 'markdown-file', providerCommand: 'claude' },
+      config: {
+        mergeMode: 'auto',
+        reviewCycleCap: 3,
+        conflictResolveCap: 3,
+        inputSource: 'markdown-file',
+        providerCommand: 'claude',
+      },
       mergeStrategy: { merge: vi.fn() },
     });
 
@@ -3305,7 +3452,13 @@ describe('runAutopilot', () => {
         paths: { runId: 'r1', repoRoot: '/tmp/repo', stateDir: '/x', workspaceDir: '/y' },
         baseBranch: 'main',
         provider: { run: vi.fn() },
-        config: { mergeMode: 'auto', reviewCycleCap: 3, conflictResolveCap: 3, inputSource: 'markdown-file', providerCommand: 'claude' },
+        config: {
+          mergeMode: 'auto',
+          reviewCycleCap: 3,
+          conflictResolveCap: 3,
+          inputSource: 'markdown-file',
+          providerCommand: 'claude',
+        },
         mergeStrategy: { merge: vi.fn() },
       }),
     ).rejects.toThrow(/reconciler passes/);
@@ -3367,11 +3520,13 @@ git commit -m "feat: wire prepare/implement/review/merge/create-pr/status/autopi
 ### Task 17: Real agent provider (agentic CLI subprocess wrapper)
 
 **Files:**
+
 - Create: `src/strategies/provider/agentic-cli.ts`
 - Modify: `src/cli/run-context.ts` (replace `selectProvider` stub with the real selection)
 - Test: `tests/strategies/provider/agentic-cli.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AgentProvider`, `AgentRunInput`, `AgentRunResult` (Task 8); `SdlcConfig` (Task 7).
 - Produces: `AgenticCliProvider` class implementing `AgentProvider`, constructed with `{ command: string; args?: string[]; timeoutMs?: number }`; spawns `command [...args, prompt]` headless via execa in `input.cwd`, captures stdout/stderr, writes a log, and maps exit code to `AgentRunResult.success`.
 
@@ -3469,7 +3624,10 @@ Expected: PASS
 import { AgenticCliProvider } from '../strategies/provider/agentic-cli.js';
 // ...
 export function selectProvider(config: SdlcConfig): AgentProvider {
-  return new AgenticCliProvider({ command: config.providerCommand, args: ['-p', '--output-format', 'text'] });
+  return new AgenticCliProvider({
+    command: config.providerCommand,
+    args: ['-p', '--output-format', 'text'],
+  });
 }
 ```
 
@@ -3484,6 +3642,7 @@ const meta = await prepareRun({
   provider: selectProvider(config),
 });
 ```
+
 (add `import { loadConfig } from '../../config/load-config.js';` to `prepare.ts`)
 
 ```ts
@@ -3497,6 +3656,7 @@ const result = await runReconcilerPass({ ...context, provider: selectProvider(co
 const config = loadConfig(process.cwd()); // autopilot only: needed before loadCliRunContext exists
 const provider = selectProvider(config);
 ```
+
 For `resume`, `loadCliRunContext` already returns `config`, so use `selectProvider(context.config)` after loading the context instead, mirroring `step.ts`.
 
 - [ ] **Step 6: Run the full test suite**
@@ -3518,10 +3678,12 @@ git commit -m "feat: add real agentic-CLI subprocess provider and wire it into t
 ### Task 18: Mutation testing baseline and manual end-to-end verification notes
 
 **Files:**
+
 - Modify: `stryker.conf.json` (if the initial mutation run surfaces surviving mutants worth excluding — see Step 2)
 - Create: `docs/superpowers/plans/2026-09-25-agentic-sdlc-orchestrator-e2e-verification.md`
 
 **Interfaces:**
+
 - Consumes: the full test suite from Tasks 1–17.
 - Produces: a documented, opt-in manual verification procedure (not automated — the spec explicitly excludes a real-agent smoke test from CI).
 
@@ -3554,7 +3716,7 @@ agentic CLI (cost, non-determinism), matching the spec's Testing Strategy.
 3. Run `sdlc autopilot --input request.md` with `providerCommand` pointed at a
    real agentic CLI (e.g. `claude`).
 4. Confirm: a run directory appears under `.sdlc/<runId>/`; `sdlc status --run
-   <runId>` shows at least one slice; the workspace worktree
+<runId>` shows at least one slice; the workspace worktree
    (`.sdlc/<runId>/workspace`) contains real code changes on a
    `sdlc/slice/<runId>/<sliceId>` branch; the command exits reporting either
    completion or a clear blocked reason (e.g. manual-mode `ready_to_merge`).

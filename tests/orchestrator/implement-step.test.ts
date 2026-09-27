@@ -109,7 +109,12 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     const { openRepo } = await import('../../src/git/repository.js');
-    await openRepo(paths.workspaceDir).raw(['branch', '-m', 'sdlc/run/run5', 'sdlc/run/renamed-away']);
+    await openRepo(paths.workspaceDir).raw([
+      'branch',
+      '-m',
+      'sdlc/run/run5',
+      'sdlc/run/renamed-away',
+    ]);
     expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/renamed-away');
 
     slice.status = 'pending';

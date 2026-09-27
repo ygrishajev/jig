@@ -23,7 +23,9 @@ export function registerMergeCommand(program: Command): void {
         // mode, context.mergeStrategy would be a no-op ManualMergeStrategy,
         // which would make this command do nothing.
         const result = await finalizeRun({ ...context, mergeStrategy: new AutoMergeStrategy() });
-        console.log(result.complete ? `Merged. Run "${opts.run}" complete.` : 'Nothing to merge yet.');
+        console.log(
+          result.complete ? `Merged. Run "${opts.run}" complete.` : 'Nothing to merge yet.',
+        );
       }),
     );
 }

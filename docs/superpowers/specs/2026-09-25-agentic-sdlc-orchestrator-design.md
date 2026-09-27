@@ -129,6 +129,7 @@ Side-states reachable from most of the above: `conflict`, `stuck`.
 ## Data Flow
 
 **`sdlc prepare`:**
+
 1. `InputSource` resolves the raw request.
 2. Context step (`AgentProvider`) reads the request + scans the repo ->
    `context.json`.
@@ -139,6 +140,7 @@ Side-states reachable from most of the above: `conflict`, `stuck`.
    branch is created; state is committed to `refs/sdlc/runs/<run-id>`.
 
 **Reconciler pass** (shared by `implement`/`review`/`autopilot`/`resume`):
+
 1. Load state from the local cache, refreshed from the git ref if it moved
    since last read (covers resuming from a different machine/checkout).
 2. Preflight: dry-run check whether the current slice's branch still applies
@@ -154,7 +156,7 @@ Side-states reachable from most of the above: `conflict`, `stuck`.
      the prompt; at cap, `stuck`.
    - `ready_to_merge` -> under `mergeMode: auto`, re-check conflicts then
      merge -> `merged`, advance to next slice, loop. Under `mergeMode:
-     manual`, stop here — a legitimate exit, not an error.
+manual`, stop here — a legitimate exit, not an error.
    - `merged` (detected by checking `main` directly, not trusted from
      state) -> advance to next slice automatically, even under `manual`
      mode — this is what lets `resume` pick back up after a manual merge.

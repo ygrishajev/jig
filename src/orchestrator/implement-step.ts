@@ -24,9 +24,15 @@ export interface ImplementStepInput {
 
 export async function runImplementStep(input: ImplementStepInput): Promise<void> {
   const { repoRoot, paths, slice, baseBranch, provider, skipCommitSigning } = input;
-  await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, runBranchFor(paths.runId), baseBranch, {
-    skipCommitSigning,
-  });
+  await ensureWorkspaceOnBranch(
+    repoRoot,
+    paths.workspaceDir,
+    runBranchFor(paths.runId),
+    baseBranch,
+    {
+      skipCommitSigning,
+    },
+  );
   logRun(paths.runId, `implementing slice "${slice.id}": ${slice.title}`);
   logRun(paths.runId, `worktree: ${paths.workspaceDir}`);
 
