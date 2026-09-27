@@ -1,5 +1,3 @@
-import type { Slice } from '../../state/types.js';
-
 export interface MergeStrategy {
-  merge(repoRoot: string, slice: Slice, baseBranch: string): Promise<void>;
+  merge(repoRoot: string, branchName: string, baseBranch: string): Promise<void>;
 }
