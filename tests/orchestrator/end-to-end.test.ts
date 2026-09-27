@@ -59,22 +59,44 @@ describe('end-to-end run', () => {
             }),
           );
           break;
-        case 3: // prepareRun: slice-plan step
+        case 3: {
+          // prepareRun: design step — writes the planning docs into this
+          // run's state dir, then acks via the structured-output file.
+          const { readdir } = await import('node:fs/promises');
+          const runDirs = (
+            await readdir(path.join(repo.dir, '.sdlc'), { withFileTypes: true })
+          ).filter((entry) => entry.isDirectory());
+          const stateDir = path.join(repo.dir, '.sdlc', runDirs[0].name, 'state');
+          await writeFile(
+            path.join(stateDir, 'design.md'),
+            '# Design\n\n## Chosen approach\n\nA route returning 200 OK.',
+          );
+          await writeFile(
+            path.join(stateDir, 'plan.md'),
+            '# Plan\n\n## Step 1 — Add health route\n',
+          );
+          await writeFile(
+            structuredOutputPath(input.cwd),
+            JSON.stringify({ written: ['design.md', 'plan.md'] }),
+          );
+          break;
+        }
+        case 4: // prepareRun: slice-plan step
           await writeFile(
             structuredOutputPath(input.cwd),
             JSON.stringify([
               {
                 id: 'add-health-route',
                 title: 'Add health route',
-                description: 'Add GET /health',
+                description: 'Implements plan step 1. Add GET /health',
               },
             ]),
           );
           break;
-        case 4: // reconciler pass 1: implement step (cwd = workspace worktree)
+        case 5: // reconciler pass 1: implement step (cwd = workspace worktree)
           await writeFile(path.join(input.cwd, 'health.txt'), 'ok');
           break;
-        case 5: // reconciler pass 2: review step (cwd = workspace worktree)
+        case 6: // reconciler pass 2: review step (cwd = workspace worktree)
           await writeFile(
             structuredOutputPath(input.cwd),
             JSON.stringify({ approved: true, feedback: '' }),
@@ -116,6 +138,6 @@ describe('end-to-end run', () => {
     const slices = await readSlices(paths);
     expect(slices).toHaveLength(1);
     expect(slices[0].status).toBe('merged');
-    expect(call).toBe(5);
+    expect(call).toBe(6);
   });
 });

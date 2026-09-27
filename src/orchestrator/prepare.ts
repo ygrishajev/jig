@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
 import { getCurrentBranch } from '../git/branch.js';
 import type { InputSource } from '../strategies/input-source/types.js';
@@ -13,7 +15,12 @@ import {
 } from '../state/store.js';
 import { sliceIdPattern, type RunMeta, type Slice } from '../state/types.js';
 import { logRun } from '../logging.js';
-import { buildContextPrompt, buildFeaturePlanPrompt, buildSlicePlanPrompt } from './prompts.js';
+import {
+  buildContextPrompt,
+  buildDesignPrompt,
+  buildFeaturePlanPrompt,
+  buildSlicePlanPrompt,
+} from './prompts.js';
 import { readStructuredOutput, resetStructuredOutput } from './structured-output.js';
 
 export interface PrepareOptions {
@@ -28,6 +35,7 @@ const planOutputSchema = z.object({
   approach: z.string(),
   affectedAreas: z.array(z.string()),
 });
+const designAckSchema = z.object({ written: z.array(z.string()) });
 const sliceOutputSchema = z
   .array(
     z.object({
@@ -86,11 +94,31 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
   const planOutput = await readStructuredOutput(repoRoot, (raw) => planOutputSchema.parse(raw));
   await writePlan(paths, planOutput);
 
+  const designPath = path.join(paths.stateDir, 'design.md');
+  const planPath = path.join(paths.stateDir, 'plan.md');
+  logRun(runId, 'planning: design…');
+  await resetStructuredOutput(repoRoot);
+  const designResult = await provider.run({
+    cwd: repoRoot,
+    prompt: buildDesignPrompt(
+      rawRequest,
+      contextOutput.repoSummary,
+      planOutput.summary,
+      planOutput.approach,
+      designPath,
+      planPath,
+    ),
+  });
+  if (!designResult.success) throw new Error(`Design step failed: ${designResult.output}`);
+  await readStructuredOutput(repoRoot, (raw) => designAckSchema.parse(raw));
+  await resetStructuredOutput(repoRoot);
+  await assertPlanningDocsWritten(designPath, planPath);
+
   logRun(runId, 'planning: slice planning…');
   await resetStructuredOutput(repoRoot);
   const sliceResult = await provider.run({
     cwd: repoRoot,
-    prompt: buildSlicePlanPrompt(planOutput.summary, planOutput.approach),
+    prompt: buildSlicePlanPrompt(await readFile(planPath, 'utf-8')),
   });
   if (!sliceResult.success) throw new Error(`Slice-plan step failed: ${sliceResult.output}`);
   const sliceOutput = await readStructuredOutput(repoRoot, (raw) => sliceOutputSchema.parse(raw));
@@ -133,6 +161,28 @@ function assertUniqueSliceIds(sliceOutput: { id: string }[]): void {
   if (duplicates.size > 0) {
     throw new Error(
       `Slice-plan step returned duplicate slice id(s): ${[...duplicates].join(', ')}`,
+    );
+  }
+}
+
+async function assertPlanningDocsWritten(designPath: string, planPath: string): Promise<void> {
+  const missing: string[] = [];
+  for (const [name, filePath] of [
+    ['design.md', designPath],
+    ['plan.md', planPath],
+  ] as const) {
+    let ok = false;
+    try {
+      ok = (await readFile(filePath, 'utf-8')).trim().length > 0;
+    } catch {
+      ok = false;
+    }
+    if (!ok) missing.push(name);
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Design step did not produce ${missing.join(' and ')} at the requested paths — ` +
+        'expected non-empty markdown files; the run cannot be sliced without a plan.',
     );
   }
 }
