@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { runReconcilerPass } from '../../src/orchestrator/reconcile.js';
 import { FakeAgentProvider } from '../../src/strategies/provider/fake.js';
+import { AutoMergeStrategy } from '../../src/strategies/merge/auto.js';
 import { ManualMergeStrategy } from '../../src/strategies/merge/manual.js';
+import { checkoutExistingBranch, checkoutNewBranchAt } from '../../src/git/branch.js';
+import { commitAll } from '../../src/git/repository.js';
+import { mergeBranchInto } from '../../src/git/merge.js';
 import { structuredOutputPath } from '../../src/orchestrator/structured-output.js';
 import {
   initializeRunState,
@@ -11,6 +15,7 @@ import {
   writeRunMeta,
   writeSlices,
 } from '../../src/state/store.js';
+import { runBranchFor } from '../../src/state/types.js';
 import type { SdlcConfig } from '../../src/config/load-config.js';
 import type { Slice } from '../../src/state/types.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
@@ -31,10 +36,7 @@ const baseConfig: SdlcConfig = {
   reviewer: { provider: 'claude' },
 };
 
-async function setUpSingleSliceRun(
-  repoDir: string,
-  runId: string,
-): Promise<ReturnType<typeof initializeRunState>> {
+async function setUpSingleSliceRun(repoDir: string, runId: string) {
   const paths = await initializeRunState(repoDir, runId, 'main');
   const slice: Slice = {
     id: 'only',
@@ -42,7 +44,6 @@ async function setUpSingleSliceRun(
     description: 'Do the only thing.',
     order: 0,
     status: 'pending',
-    branch: `sdlc/slice/${runId}/only`,
     reviewCycles: 0,
     mergeAttempts: 0,
   };
@@ -104,10 +105,6 @@ describe('runReconcilerPass', () => {
   });
 
   it('does not advance within the same pass when the review step requests changes', async () => {
-    // Covers the negative side of the "did the review step just approve this
-    // slice within this same pass?" check: a rejection must fall through to
-    // the ordinary "blocked: false, complete: false" result, not race ahead
-    // into runAdvance as if the slice had reached ready_to_merge.
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run1b', 'main');
     const slices: Slice[] = [
@@ -117,7 +114,6 @@ describe('runReconcilerPass', () => {
         description: 'Some other slice ahead in the array.',
         order: 0,
         status: 'pending',
-        branch: 'sdlc/slice/run1b/other',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -127,7 +123,6 @@ describe('runReconcilerPass', () => {
         description: 'Do the only thing.',
         order: 1,
         status: 'in_review',
-        branch: 'sdlc/slice/run1b/only',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -160,7 +155,11 @@ describe('runReconcilerPass', () => {
     expect(updatedSlices.find((s) => s.id === 'only')?.reviewCycles).toBe(1);
   });
 
-  it('reports blocked with a reason when manual mode reaches ready_to_merge', async () => {
+  it('folds the slice into the run branch and reports blocked on the final merge once every slice is done', async () => {
+    // Distinct from finalize-run.test.ts's coverage of finalizeRun itself:
+    // this pins the reconciler's handoff into it — the slice's own status
+    // must already read 'merged' (folded into the run branch) while the
+    // run-level merge is still pending, not 'ready_to_merge'.
     repo = await createTempRepo();
     const paths = await setUpSingleSliceRun(repo.dir, 'run2');
     let call = 0;
@@ -198,30 +197,24 @@ describe('runReconcilerPass', () => {
     expect(result.complete).toBe(false);
     expect(result.reason).toContain('not yet merged');
     const slices = await readSlices(paths);
-    expect(slices[0].status).toBe('ready_to_merge');
+    expect(slices[0].status).toBe('merged');
+    const updatedMeta = await readRunMeta(paths);
+    expect(updatedMeta.currentSliceId).toBeNull();
   });
 
-  it('advances directly when the pass starts with the slice already ready_to_merge', async () => {
-    // Distinct from the "reaches ready_to_merge within this pass" case above:
-    // here the slice is *already* ready_to_merge when the pass begins, so
-    // the switch's own 'ready_to_merge' case (not the same-pass shortcut)
-    // must thread the real repoRoot/paths/baseBranch/mergeStrategy through
-    // to runAdvance and report the successful advance.
+  it('completes the run in one pass when auto mode merges the run branch right after the last slice is approved', async () => {
     repo = await createTempRepo();
     const paths = await setUpSingleSliceRun(repo.dir, 'run4');
     const slices = await readSlices(paths);
     slices[0].status = 'ready_to_merge';
     await writeSlices(paths, slices);
-
-    const branch = await import('../../src/git/branch.js');
-    const repository = await import('../../src/git/repository.js');
-    await branch.checkoutNewBranchAt(repo.dir, slices[0].branch, 'main');
+    // The run branch needs real commits for finalizeRun to have anything to
+    // merge — this simulates the implement step having already run.
+    await checkoutNewBranchAt(repo.dir, runBranchFor('run4'), 'main');
     await writeFile(`${repo.dir}/impl.txt`, 'x');
-    await repository.commitAll(repo.dir, 'implement only');
-    await branch.checkoutExistingBranch(repo.dir, 'main');
+    await commitAll(repo.dir, 'implement only');
+    await checkoutExistingBranch(repo.dir, 'main');
 
-    const AutoMergeStrategy = (await import('../../src/strategies/merge/auto.js'))
-      .AutoMergeStrategy;
     const result = await runReconcilerPass({
       repoRoot: repo.dir,
       paths,
@@ -237,7 +230,7 @@ describe('runReconcilerPass', () => {
     expect(updatedSlices[0].status).toBe('merged');
   });
 
-  it('reports complete when the current slice id matches nothing and every slice is already merged', async () => {
+  it('reports complete once the run branch is already merged into base, with every slice already folded in', async () => {
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run4b', 'main');
     const slice: Slice = {
@@ -246,13 +239,17 @@ describe('runReconcilerPass', () => {
       description: 'Do the only thing.',
       order: 0,
       status: 'merged',
-      branch: 'sdlc/slice/run4b/only',
       reviewCycles: 0,
       mergeAttempts: 0,
     };
     await writeSlices(paths, [slice]);
     const meta = await readRunMeta(paths);
     await writeRunMeta(paths, { ...meta, currentSliceId: null });
+    await checkoutNewBranchAt(repo.dir, runBranchFor('run4b'), 'main');
+    await writeFile(`${repo.dir}/impl.txt`, 'x');
+    await commitAll(repo.dir, 'implement only');
+    await checkoutExistingBranch(repo.dir, 'main');
+    await mergeBranchInto(repo.dir, runBranchFor('run4b'), 'main');
 
     const result = await runReconcilerPass({
       repoRoot: repo.dir,
@@ -268,9 +265,6 @@ describe('runReconcilerPass', () => {
   });
 
   it('reports not complete when there is no current slice and no slices exist at all', async () => {
-    // `[].every(...)` is vacuously true in JS, so complete here hinges on
-    // `slices.length > 0` actually short-circuiting the `&&` — an `||` in
-    // its place, or a hardcoded `true`, would wrongly report complete.
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run4c', 'main');
     await writeSlices(paths, []);
@@ -295,10 +289,9 @@ describe('runReconcilerPass', () => {
       {
         id: 'done',
         title: 'Done slice',
-        description: 'Already merged.',
+        description: 'Already folded into the run branch.',
         order: 0,
         status: 'merged',
-        branch: 'sdlc/slice/run4d/done',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -308,7 +301,6 @@ describe('runReconcilerPass', () => {
         description: 'Still pending.',
         order: 1,
         status: 'pending',
-        branch: 'sdlc/slice/run4d/not-done',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -331,28 +323,15 @@ describe('runReconcilerPass', () => {
   });
 
   it('advances past an already-merged current slice to the next pending one instead of dead-ending', async () => {
-    // Regression for Important 3: a 'merged' slice used to be a no-op in the
-    // switch, permanently stuck if currentSliceId ever pointed at an
-    // already-merged slice (reachable via zero slices from the planner, or
-    // duplicate slice ids). It must now self-heal by delegating to the same
-    // runAdvance path 'ready_to_merge' uses.
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run5', 'main');
-    const branch = await import('../../src/git/branch.js');
-    const firstBranch = 'sdlc/slice/run5/first';
-    // The branch's commits are already fully reachable from main (no new
-    // commits made on it), which is what makes isBranchMergedInto report it
-    // as merged without needing an actual merge commit.
-    await branch.checkoutNewBranchAt(repo.dir, firstBranch, 'main');
-    await branch.checkoutExistingBranch(repo.dir, 'main');
     const slices: Slice[] = [
       {
         id: 'first',
         title: 'First slice',
-        description: 'Already merged.',
+        description: 'Already folded into the run branch.',
         order: 0,
         status: 'merged',
-        branch: firstBranch,
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -362,7 +341,6 @@ describe('runReconcilerPass', () => {
         description: 'Still pending.',
         order: 1,
         status: 'pending',
-        branch: 'sdlc/slice/run5/second',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -386,36 +364,56 @@ describe('runReconcilerPass', () => {
     expect(updatedMeta.currentSliceId).toBe('second');
   });
 
-  it('turns a real merge conflict into a blocked result instead of throwing', async () => {
+  it('picks the next slice by order, not array position, when multiple slices remain', async () => {
     repo = await createTempRepo();
-    const paths = await setUpSingleSliceRun(repo.dir, 'run3');
-    const slices = await readSlices(paths);
-    slices[0].status = 'ready_to_merge';
+    const paths = await initializeRunState(repo.dir, 'run3e', 'main');
+    // Array position deliberately disagrees with `order`: the slice that
+    // should come next ('low-order') is listed *after* the one that should
+    // come later ('high-order'). Only a real sort by `order` picks correctly.
+    const slices: Slice[] = [
+      {
+        id: 'current',
+        title: 'Current',
+        description: 'current',
+        order: 0,
+        status: 'ready_to_merge',
+        reviewCycles: 0,
+        mergeAttempts: 0,
+      },
+      {
+        id: 'high-order',
+        title: 'High order',
+        description: 'high',
+        order: 2,
+        status: 'pending',
+        reviewCycles: 0,
+        mergeAttempts: 0,
+      },
+      {
+        id: 'low-order',
+        title: 'Low order',
+        description: 'low',
+        order: 1,
+        status: 'pending',
+        reviewCycles: 0,
+        mergeAttempts: 0,
+      },
+    ];
     await writeSlices(paths, slices);
+    const meta = await readRunMeta(paths);
+    await writeRunMeta(paths, { ...meta, currentSliceId: 'current' });
 
-    // Create the slice branch with a change that conflicts with a later commit on main.
-    const branch = await import('../../src/git/branch.js');
-    const repository = await import('../../src/git/repository.js');
-    await branch.checkoutNewBranchAt(repo.dir, slices[0].branch, 'main');
-    await writeFile(`${repo.dir}/README.md`, 'from slice\n');
-    await repository.commitAll(repo.dir, 'change readme on slice');
-    await branch.checkoutExistingBranch(repo.dir, 'main');
-    await writeFile(`${repo.dir}/README.md`, 'from main\n');
-    await repository.commitAll(repo.dir, 'change readme on main');
-
-    const AutoMergeStrategy = (await import('../../src/strategies/merge/auto.js'))
-      .AutoMergeStrategy;
     const result = await runReconcilerPass({
       repoRoot: repo.dir,
       paths,
       baseBranch: 'main',
       provider: new FakeAgentProvider(async () => ({ success: true, output: 'unused' })),
       config: baseConfig,
-      mergeStrategy: new AutoMergeStrategy(),
+      mergeStrategy: new ManualMergeStrategy(),
     });
 
-    expect(result.blocked).toBe(true);
-    expect(result.complete).toBe(false);
-    expect(result.reason).toContain('merge failed');
+    expect(result.blocked).toBe(false);
+    const updatedMeta = await readRunMeta(paths);
+    expect(updatedMeta.currentSliceId).toBe('low-order');
   });
 });
