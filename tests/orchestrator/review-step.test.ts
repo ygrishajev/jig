@@ -25,7 +25,6 @@ function makeSlice(overrides: Partial<Slice> = {}): Slice {
     description: 'Do the first thing.',
     order: 0,
     status: 'in_review',
-    branch: 'sdlc/slice/run1/s1',
     reviewCycles: 0,
     mergeAttempts: 0,
     ...overrides,
@@ -47,7 +46,7 @@ describe('runReviewStep', () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'runlog');
     await mkdir(paths.workspaceDir, { recursive: true });
-    const slice = makeSlice({ branch: 'sdlc/slice/runlog/s1' });
+    const slice = makeSlice();
     const provider = new FakeAgentProvider(async (input) => {
       await writeFile(
         structuredOutputPath(input.cwd),
@@ -69,7 +68,7 @@ describe('runReviewStep', () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'runlog2');
     await mkdir(paths.workspaceDir, { recursive: true });
-    const slice = makeSlice({ branch: 'sdlc/slice/runlog2/s1' });
+    const slice = makeSlice();
     const provider = new FakeAgentProvider(async (input) => {
       await writeFile(
         structuredOutputPath(input.cwd),
@@ -382,7 +381,7 @@ describe('runReviewStep', () => {
     // review-verdict JSON in the user's merged history.
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run7');
-    const slice = makeSlice({ branch: 'sdlc/slice/run7/s1' });
+    const slice = makeSlice();
     await runImplementStep({
       repoRoot: repo.dir,
       paths,

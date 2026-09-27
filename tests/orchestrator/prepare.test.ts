@@ -207,7 +207,6 @@ describe('prepareRun', () => {
     const slices = await readSlices(paths);
     expect(slices).toHaveLength(1);
     expect(slices[0].status).toBe('pending');
-    expect(slices[0].branch).toBe(`sdlc/slice/${meta.runId}/add-health-route`);
   });
 
   it('runs the planning steps with the real repository as cwd, not an empty scratch directory', async () => {
@@ -370,7 +369,7 @@ describe('prepareRun', () => {
     ).rejects.toThrow(/duplicate slice id.*add-health-route/is);
   });
 
-  it('throws when the slice-plan step returns an id with characters unsafe for a git branch name', async () => {
+  it('throws when the slice-plan step returns an id with characters unsafe for a stable slice id', async () => {
     repo = await createTempRepo();
     const requestPath = path.join(repo.dir, 'request.md');
     await writeFile(requestPath, '# Add a health check endpoint');

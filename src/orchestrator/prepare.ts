@@ -129,7 +129,6 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
     ...slice,
     order,
     status: 'pending',
-    branch: `sdlc/slice/${runId}/${slice.id}`,
     reviewCycles: 0,
     mergeAttempts: 0,
   }));
@@ -148,8 +147,8 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
 }
 
 // Nothing in sliceOutputSchema enforces id uniqueness even though the prompt
-// asks for it. A duplicate id makes advanceRun get stuck: two slices sharing
-// one id/branch means the "next non-merged slice" lookup can keep landing
+// asks for it. A duplicate id makes the reconciler get stuck: two slices
+// sharing one id means the "next non-merged slice" lookup can keep landing
 // back on one that's already been merged, forever.
 function assertUniqueSliceIds(sliceOutput: { id: string }[]): void {
   const seen = new Set<string>();
