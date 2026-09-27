@@ -21,6 +21,7 @@ describe('loadConfig', () => {
     expect(config.planner).toEqual({ provider: 'claude' });
     expect(config.implementer).toEqual({ provider: 'claude' });
     expect(config.reviewer).toEqual({ provider: 'claude' });
+    expect(config.designGate).toBe('auto');
     expect(config.commitSigning).toBe('repo');
   });
 
@@ -63,6 +64,24 @@ describe('loadConfig', () => {
     );
     const config = loadConfig(repo.dir);
     expect(config.implementer).toEqual({ provider: 'opencode' });
+  });
+
+  it('accepts designGate checkpoint', async () => {
+    repo = await createTempRepo();
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ designGate: 'checkpoint' }),
+    );
+    expect(loadConfig(repo.dir).designGate).toBe('checkpoint');
+  });
+
+  it('throws on an invalid designGate value', async () => {
+    repo = await createTempRepo();
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ designGate: 'maybe' }),
+    );
+    expect(() => loadConfig(repo.dir)).toThrow();
   });
 
   it('accepts commitSigning skip', async () => {
