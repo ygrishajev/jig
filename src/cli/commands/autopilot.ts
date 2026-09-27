@@ -51,6 +51,15 @@ export function registerAutopilotCommands(program: Command): void {
           provider: selectProvider(config, 'planner'),
         });
         const context = await loadCliRunContext(repoRoot, meta.runId);
+        if (config.designGate === 'checkpoint') {
+          console.log(`Design: ${path.join(context.paths.stateDir, 'design.md')}`);
+          console.log(`Plan:   ${path.join(context.paths.stateDir, 'plan.md')}`);
+          console.log(
+            `Run ${meta.runId} planning complete — review the design and plan, then run ` +
+              `sdlc resume --run ${meta.runId} to start implementation.`,
+          );
+          return;
+        }
         const result = await runAutopilot({ ...context, provider, implementProvider });
         await printRunSummary(context);
         console.log(

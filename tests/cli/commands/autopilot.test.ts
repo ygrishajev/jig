@@ -1,9 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Command } from 'commander';
 
 vi.mock('../../../src/orchestrator/reconcile.js', () => ({ runReconcilerPass: vi.fn() }));
+vi.mock('../../../src/orchestrator/prepare.js', () => ({ prepareRun: vi.fn() }));
+vi.mock('../../../src/cli/run-context.js', () => ({
+  loadCliRunContext: vi.fn(),
+  selectProvider: vi.fn(),
+}));
+vi.mock('../../../src/config/load-config.js', () => ({ loadConfig: vi.fn() }));
+vi.mock('../../../src/strategies/input-source/markdown-file.js', () => ({
+  MarkdownFileInputSource: vi.fn(),
+}));
 
-import { runAutopilot } from '../../../src/cli/commands/autopilot.js';
+import { runAutopilot, registerAutopilotCommands } from '../../../src/cli/commands/autopilot.js';
 import { runReconcilerPass } from '../../../src/orchestrator/reconcile.js';
+import { prepareRun } from '../../../src/orchestrator/prepare.js';
+import { loadConfig } from '../../../src/config/load-config.js';
+import { loadCliRunContext, selectProvider } from '../../../src/cli/run-context.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -89,5 +102,52 @@ describe('runAutopilot', () => {
     ).rejects.toThrow(/reconciler passes/);
     // Pins the exact cap (500): a `<=` off-by-one would run 501 passes here.
     expect(vi.mocked(runReconcilerPass).mock.calls.length).toBe(500);
+  });
+});
+
+describe('autopilot command with designGate checkpoint', () => {
+  it('stops after planning without running the reconciler', async () => {
+    const config = {
+      mergeMode: 'manual',
+      reviewCycleCap: 3,
+      conflictResolveCap: 3,
+      inputSource: 'markdown-file' as const,
+      planner: { provider: 'claude' as const },
+      implementer: { provider: 'claude' as const },
+      reviewer: { provider: 'claude' as const },
+      commitSigning: 'repo' as const,
+      designGate: 'checkpoint' as const,
+    };
+    vi.mocked(loadConfig).mockReturnValue(config);
+    vi.mocked(prepareRun).mockResolvedValue({
+      runId: 'r1',
+      baseBranch: 'main',
+      currentSliceId: 's1',
+      createdAt: '',
+      updatedAt: '',
+    });
+    vi.mocked(loadCliRunContext).mockResolvedValue({
+      repoRoot: '/tmp/repo',
+      paths: {
+        runId: 'r1',
+        repoRoot: '/tmp/repo',
+        stateDir: '/tmp/repo/.sdlc/r1/state',
+        workspaceDir: '/tmp/repo/.sdlc/r1/workspace',
+      },
+      baseBranch: 'main',
+      config,
+      mergeStrategy: { merge: vi.fn() },
+    });
+    vi.mocked(selectProvider).mockReturnValue({ run: vi.fn() });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const program = new Command();
+    registerAutopilotCommands(program);
+    await program.parseAsync(['node', 'sdlc', 'autopilot', '--input', 'request.md']);
+
+    expect(vi.mocked(runReconcilerPass)).not.toHaveBeenCalled();
+    const logged = logSpy.mock.calls.map((args) => args.join(' '));
+    expect(logged.some((line) => line.includes('design.md'))).toBe(true);
+    expect(logged.some((line) => line.includes('sdlc resume --run r1'))).toBe(true);
   });
 });
