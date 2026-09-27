@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { openRepo } from '../git/repository.js';
-import { readRunMeta, readSlices } from '../state/store.js';
+import { runBranchFor } from '../state/types.js';
 import type { RunPaths } from '../state/run-paths.js';
 
 export interface RunSummaryInput {
@@ -11,9 +11,10 @@ export interface RunSummaryInput {
 }
 
 /**
- * Prints where the run's code lives (the slice worktree) and what the current
- * slice contributed (its commits over the base branch), so a blocked or
- * finished run can be picked up without digging through state files.
+ * Prints where the run's code lives (the run's single worktree/branch) and
+ * what it has contributed so far (its commits over the base branch), so a
+ * blocked or finished run can be picked up without digging through state
+ * files.
  */
 export async function printRunSummary(input: RunSummaryInput): Promise<void> {
   const { repoRoot, paths, baseBranch } = input;
@@ -26,15 +27,11 @@ export async function printRunSummary(input: RunSummaryInput): Promise<void> {
     if (existsSync(docPath)) console.log(`${label}: ${docPath}`);
   }
 
-  const meta = await readRunMeta(paths);
-  const slices = await readSlices(paths);
-  const current = slices.find((slice) => slice.id === meta.currentSliceId);
-  if (!current) return;
-
-  console.log(`Commits on slice branch (not in ${baseBranch}):`);
+  const branch = runBranchFor(paths.runId);
+  console.log(`Commits on run branch (not in ${baseBranch}):`);
   let log;
   try {
-    log = await openRepo(repoRoot).log([`${baseBranch}..${current.branch}`]);
+    log = await openRepo(repoRoot).log([`${baseBranch}..${branch}`]);
   } catch {
     console.log('  (none)');
     return;
