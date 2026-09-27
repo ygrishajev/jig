@@ -11,16 +11,11 @@ vi.mock('../../../src/orchestrator/reconcile.js', () => ({ runReconcilerPass: vi
 vi.mock('../../../src/cli/run-context.js', () => ({
   loadCliRunContext: vi.fn(),
   selectProvider: vi.fn(),
-  selectImplementProvider: vi.fn(),
 }));
 
 import { registerStepCommands } from '../../../src/cli/commands/step.js';
 import { runReconcilerPass } from '../../../src/orchestrator/reconcile.js';
-import {
-  loadCliRunContext,
-  selectImplementProvider,
-  selectProvider,
-} from '../../../src/cli/run-context.js';
+import { loadCliRunContext, selectProvider } from '../../../src/cli/run-context.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -42,12 +37,13 @@ describe('implement/review commands', () => {
         reviewCycleCap: 3,
         conflictResolveCap: 3,
         inputSource: 'markdown-file',
-        providerCommand: 'claude',
+        planner: { provider: 'claude' },
+        implementer: { provider: 'claude' },
+        reviewer: { provider: 'claude' },
       },
       mergeStrategy: { merge: vi.fn() },
     });
     vi.mocked(selectProvider).mockReturnValue({ run: vi.fn() });
-    vi.mocked(selectImplementProvider).mockReturnValue({ run: vi.fn() });
     vi.mocked(runReconcilerPass).mockResolvedValue({
       blocked: true,
       reason: 'slice "s1" is stuck — needs human intervention',

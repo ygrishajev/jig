@@ -3,7 +3,7 @@ import { loadConfig } from '../../config/load-config.js';
 import { prepareRun } from '../../orchestrator/prepare.js';
 import { runReconcilerPass, type ReconcilePassInput } from '../../orchestrator/reconcile.js';
 import { MarkdownFileInputSource } from '../../strategies/input-source/markdown-file.js';
-import { loadCliRunContext, selectImplementProvider, selectProvider } from '../run-context.js';
+import { loadCliRunContext, selectProvider } from '../run-context.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 export type AutopilotInput = ReconcilePassInput;
@@ -42,12 +42,12 @@ export function registerAutopilotCommands(program: Command): void {
       withErrorHandling(async (opts: { input: string }) => {
         const repoRoot = process.cwd();
         const config = loadConfig(repoRoot);
-        const provider = selectProvider(config);
-        const implementProvider = selectImplementProvider(config);
+        const provider = selectProvider(config, 'reviewer');
+        const implementProvider = selectProvider(config, 'implementer');
         const meta = await prepareRun({
           repoRoot,
           inputSource: new MarkdownFileInputSource(opts.input),
-          provider,
+          provider: selectProvider(config, 'planner'),
         });
         const context = await loadCliRunContext(repoRoot, meta.runId);
         const result = await runAutopilot({ ...context, provider, implementProvider });
@@ -66,8 +66,8 @@ export function registerAutopilotCommands(program: Command): void {
       withErrorHandling(async (opts: { run: string }) => {
         const repoRoot = process.cwd();
         const context = await loadCliRunContext(repoRoot, opts.run);
-        const provider = selectProvider(context.config);
-        const implementProvider = selectImplementProvider(context.config);
+        const provider = selectProvider(context.config, 'reviewer');
+        const implementProvider = selectProvider(context.config, 'implementer');
         const result = await runAutopilot({ ...context, provider, implementProvider });
         console.log(
           result.complete

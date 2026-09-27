@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { runReconcilerPass } from '../../orchestrator/reconcile.js';
-import { loadCliRunContext, selectImplementProvider, selectProvider } from '../run-context.js';
+import { loadCliRunContext, selectProvider } from '../run-context.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 export function registerStepCommands(program: Command): void {
@@ -13,8 +13,8 @@ export function registerStepCommands(program: Command): void {
           const context = await loadCliRunContext(process.cwd(), opts.run);
           const result = await runReconcilerPass({
             ...context,
-            provider: selectProvider(context.config),
-            implementProvider: selectImplementProvider(context.config),
+            provider: selectProvider(context.config, 'reviewer'),
+            implementProvider: selectProvider(context.config, 'implementer'),
           });
           if (result.blocked) {
             console.log(`Blocked: ${result.reason}`);

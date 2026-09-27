@@ -22,6 +22,20 @@ describe('PROVIDER_PROFILES', () => {
       ]);
     });
 
+    it('appends --model when a model is given', () => {
+      const args = PROVIDER_PROFILES.claude.buildArgs('do the thing', 'claude-sonnet-4-5');
+
+      expect(args).toEqual([
+        '-p',
+        'do the thing',
+        '--output-format',
+        'text',
+        '--dangerously-skip-permissions',
+        '--model',
+        'claude-sonnet-4-5',
+      ]);
+    });
+
     it('throws when neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set', () => {
       delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
       delete process.env.ANTHROPIC_API_KEY;

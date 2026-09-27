@@ -2,26 +2,40 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
-const configSchema = z.object({
-  mergeMode: z.enum(['manual', 'auto']).default('manual'),
-  reviewCycleCap: z.number().int().positive().default(3),
-  conflictResolveCap: z.number().int().positive().default(3),
-  verifyCommand: z.string().optional(),
-  inputSource: z.enum(['markdown-file']).default('markdown-file'),
-  // Must stay in sync with the keys of PROVIDER_PROFILES in
-  // src/strategies/provider/provider-profiles.ts — not imported from here to
-  // keep config a lower-level module than the strategies built on top of it.
-  providerCommand: z.enum(['claude', 'opencode']).default('claude'),
-  // Overrides providerCommand for the implement step only (prepare's
-  // planning steps and review always use providerCommand). Falls back to
-  // providerCommand when unset — most setups only ever need one provider.
-  implementProviderCommand: z.enum(['claude', 'opencode']).optional(),
-  // Explicit "provider/model" passed to opencode via -m. Left unset, a fresh
-  // sandbox container has no stored model preference and opencode falls back
-  // to its own default, which may not support tool use on your OpenRouter
-  // account — set this to whatever you use successfully in interactive mode.
-  opencodeModel: z.string().optional(),
+const stepConfigSchema = z.object({
+  provider: z.enum(['claude', 'opencode']),
+  model: z.string().optional(),
 });
+export type StepConfig = z.infer<typeof stepConfigSchema>;
+export type StepName = 'planner' | 'implementer' | 'reviewer';
+
+// .strict() rejects unknown top-level keys — a typo like `implementer` vs
+// `implement` must fail loudly at load time, not silently fall back to the
+// default while a run uses the wrong provider.
+const configSchema = z
+  .object({
+    mergeMode: z.enum(['manual', 'auto']).default('manual'),
+    reviewCycleCap: z.number().int().positive().default(3),
+    conflictResolveCap: z.number().int().positive().default(3),
+    verifyCommand: z.string().optional(),
+    inputSource: z.enum(['markdown-file']).default('markdown-file'),
+    // 'repo' (default): commits behave exactly as the repository is configured,
+    // including GPG signing. 'skip': sdlc disables signing in its slice
+    // worktrees — needed when the repo signs commits through an agent that is
+    // unreachable from the sandbox container (e.g. 1Password). The operator's
+    // own repo and merges are never touched in either mode.
+    commitSigning: z.enum(['repo', 'skip']).default('repo'),
+    // Per-step agent configuration. Provider names must stay in sync with the
+    // keys of PROVIDER_PROFILES in src/strategies/provider/provider-profiles.ts
+    // — not imported from here to keep config a lower-level module than the
+    // strategies built on top of it. `model` is passed to the provider CLI via
+    // its model flag (e.g. opencode's --model); unset means the CLI's own
+    // default.
+    planner: stepConfigSchema.default({ provider: 'claude' }),
+    implementer: stepConfigSchema.default({ provider: 'claude' }),
+    reviewer: stepConfigSchema.default({ provider: 'claude' }),
+  })
+  .strict();
 export type SdlcConfig = z.infer<typeof configSchema>;
 
 export function loadConfig(repoRoot: string): SdlcConfig {

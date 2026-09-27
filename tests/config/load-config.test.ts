@@ -18,7 +18,10 @@ describe('loadConfig', () => {
     expect(config.reviewCycleCap).toBe(3);
     expect(config.conflictResolveCap).toBe(3);
     expect(config.inputSource).toBe('markdown-file');
-    expect(config.providerCommand).toBe('claude');
+    expect(config.planner).toEqual({ provider: 'claude' });
+    expect(config.implementer).toEqual({ provider: 'claude' });
+    expect(config.reviewer).toEqual({ provider: 'claude' });
+    expect(config.commitSigning).toBe('repo');
   });
 
   it('merges values from sdlc.config.json over defaults', async () => {
@@ -33,11 +36,76 @@ describe('loadConfig', () => {
     expect(config.reviewCycleCap).toBe(3);
   });
 
+  it('accepts per-step provider and model configuration', async () => {
+    repo = await createTempRepo();
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({
+        planner: { provider: 'claude', model: 'claude-sonnet-4-5' },
+        implementer: { provider: 'opencode', model: 'openrouter/~z-ai/glm-flash-latest' },
+        reviewer: { provider: 'opencode', model: 'openrouter/~z-ai/glm-4.6' },
+      }),
+    );
+    const config = loadConfig(repo.dir);
+    expect(config.planner).toEqual({ provider: 'claude', model: 'claude-sonnet-4-5' });
+    expect(config.implementer).toEqual({
+      provider: 'opencode',
+      model: 'openrouter/~z-ai/glm-flash-latest',
+    });
+    expect(config.reviewer).toEqual({ provider: 'opencode', model: 'openrouter/~z-ai/glm-4.6' });
+  });
+
+  it('accepts a step entry with a provider only', async () => {
+    repo = await createTempRepo();
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ implementer: { provider: 'opencode' } }),
+    );
+    const config = loadConfig(repo.dir);
+    expect(config.implementer).toEqual({ provider: 'opencode' });
+  });
+
+  it('accepts commitSigning skip', async () => {
+    repo = await createTempRepo();
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ commitSigning: 'skip' }),
+    );
+    expect(loadConfig(repo.dir).commitSigning).toBe('skip');
+  });
+
+  it('throws on an invalid commitSigning value', async () => {
+    repo = await createTempRepo();
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ commitSigning: 'sometimes' }),
+    );
+    expect(() => loadConfig(repo.dir)).toThrow();
+  });
+
   it('throws on an invalid mergeMode value', async () => {
     repo = await createTempRepo();
     await writeFile(
       path.join(repo.dir, 'sdlc.config.json'),
       JSON.stringify({ mergeMode: 'sometimes' }),
+    );
+    expect(() => loadConfig(repo.dir)).toThrow();
+  });
+
+  it('throws on an unknown provider in a step entry', async () => {
+    repo = await createTempRepo();
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ planner: { provider: 'cursor' } }),
+    );
+    expect(() => loadConfig(repo.dir)).toThrow();
+  });
+
+  it('throws on an unknown step key', async () => {
+    repo = await createTempRepo();
+    await writeFile(
+      path.join(repo.dir, 'sdlc.config.json'),
+      JSON.stringify({ architect: { provider: 'claude' } }),
     );
     expect(() => loadConfig(repo.dir)).toThrow();
   });

@@ -1,4 +1,9 @@
-import { loadConfig, type SdlcConfig } from '../config/load-config.js';
+import {
+  loadConfig,
+  type SdlcConfig,
+  type StepConfig,
+  type StepName,
+} from '../config/load-config.js';
 import { getCurrentBranch } from '../git/branch.js';
 import { AutoMergeStrategy } from '../strategies/merge/auto.js';
 import { ManualMergeStrategy } from '../strategies/merge/manual.js';
@@ -34,20 +39,19 @@ export async function loadCliRunContext(repoRoot: string, runId: string): Promis
 }
 
 /**
- * Builds the provider for `providerCommand` by default. Pass an explicit
- * `providerCommandOverride` to build a provider for a *different* step —
- * e.g. `selectProvider(config, config.implementProviderCommand)` — falling
- * back to `providerCommand` when the override is unset.
+ * Builds the provider for one pipeline step. Each step (`planner`,
+ * `implementer`, `reviewer`) carries its own provider and optional model from
+ * config, so different steps can run on different agents/models.
  */
-export function selectProvider(
-  config: SdlcConfig,
-  providerCommandOverride?: SdlcConfig['providerCommand'],
-): AgentProvider {
-  const providerCommand = providerCommandOverride ?? config.providerCommand;
-  const profile = PROVIDER_PROFILES[providerCommand];
+export function selectProvider(config: SdlcConfig, step: StepName): AgentProvider {
+  return buildProvider(config[step]);
+}
+
+function buildProvider(stepConfig: StepConfig): AgentProvider {
+  const profile = PROVIDER_PROFILES[stepConfig.provider];
   if (!profile) {
     throw new Error(
-      `Unknown providerCommand "${providerCommand}" — supported: ` +
+      `Unknown provider "${stepConfig.provider}" — supported: ` +
         Object.keys(PROVIDER_PROFILES).join(', '),
     );
   }
@@ -57,15 +61,10 @@ export function selectProvider(
   return new DockerCliProvider({
     image: AGENT_SANDBOX_IMAGE,
     command: profile.command,
-    buildArgs: (prompt) => profile.buildArgs(prompt, config.opencodeModel),
+    buildArgs: (prompt) => profile.buildArgs(prompt, stepConfig.model),
     envVarsFromHost: profile.envVarsFromHost,
     hostFileMounts: profile.hostFileMounts,
   });
-}
-
-/** The provider for the implement step specifically — see `implementProviderCommand`. */
-export function selectImplementProvider(config: SdlcConfig): AgentProvider {
-  return selectProvider(config, config.implementProviderCommand);
 }
 
 export { getCurrentBranch };

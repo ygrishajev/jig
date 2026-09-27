@@ -26,7 +26,9 @@ const baseConfig: SdlcConfig = {
   reviewCycleCap: 3,
   conflictResolveCap: 3,
   inputSource: 'markdown-file',
-  providerCommand: 'claude',
+  planner: { provider: 'claude' },
+  implementer: { provider: 'claude' },
+  reviewer: { provider: 'claude' },
 };
 
 async function setUpSingleSliceRun(

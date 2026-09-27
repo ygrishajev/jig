@@ -30,7 +30,7 @@ const opencodeAuthPath = path.join(os.homedir(), '.local', 'share', 'opencode', 
 export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
   claude: {
     command: 'claude',
-    buildArgs: (prompt) => [
+    buildArgs: (prompt, model) => [
       '-p',
       prompt,
       '--output-format',
@@ -40,6 +40,7 @@ export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
       // there's no TTY to approve prompts against. Only ever used here,
       // inside the sandbox container — never on the bare host.
       '--dangerously-skip-permissions',
+      ...(model ? ['--model', model] : []),
     ],
     envVarsFromHost: ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
     hostFileMounts: [],

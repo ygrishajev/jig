@@ -15,7 +15,7 @@ export function registerPrepareCommand(program: Command): void {
         const meta = await prepareRun({
           repoRoot: process.cwd(),
           inputSource: new MarkdownFileInputSource(opts.input),
-          provider: selectProvider(config),
+          provider: selectProvider(config, 'planner'),
         });
         console.log(`Run ${meta.runId} prepared from ${opts.input}`);
       }),
