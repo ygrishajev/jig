@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { openRepo } from '../git/repository.js';
 import { readRunMeta, readSlices } from '../state/store.js';
 import type { RunPaths } from '../state/run-paths.js';
@@ -16,6 +18,13 @@ export interface RunSummaryInput {
 export async function printRunSummary(input: RunSummaryInput): Promise<void> {
   const { repoRoot, paths, baseBranch } = input;
   console.log(`Worktree: ${paths.workspaceDir}`);
+  for (const [label, filename] of [
+    ['Design', 'design.md'],
+    ['Plan', 'plan.md'],
+  ] as const) {
+    const docPath = path.join(paths.stateDir, filename);
+    if (existsSync(docPath)) console.log(`${label}: ${docPath}`);
+  }
 
   const meta = await readRunMeta(paths);
   const slices = await readSlices(paths);

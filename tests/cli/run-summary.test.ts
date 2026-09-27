@@ -46,12 +46,20 @@ describe('printRunSummary', () => {
     await writeFile(path.join(repo.dir, 'feature.txt'), 'x');
     await commitAll(repo.dir, 'implement the feature');
     await (await import('../../src/git/branch.js')).checkoutExistingBranch(repo.dir, 'main');
+    await writeFile(path.join(paths.stateDir, 'design.md'), '# Design');
+    await writeFile(path.join(paths.stateDir, 'plan.md'), '# Plan');
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await printRunSummary({ repoRoot: repo.dir, paths, baseBranch: 'main' });
 
     const logged = logSpy.mock.calls.map((args) => args.join(' '));
     expect(logged.some((line) => line.includes(`Worktree: ${paths.workspaceDir}`))).toBe(true);
+    expect(
+      logged.some((line) => line.startsWith('Design: ') && line.endsWith('state/design.md')),
+    ).toBe(true);
+    expect(logged.some((line) => line.startsWith('Plan: ') && line.endsWith('state/plan.md'))).toBe(
+      true,
+    );
     expect(logged.some((line) => line.includes('Commits on slice branch'))).toBe(true);
     expect(logged.some((line) => line.includes('implement the feature'))).toBe(true);
   });
