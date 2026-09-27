@@ -90,7 +90,7 @@ Optional `sdlc.config.json` in the repo root:
 
 | Field                      | Default           | Meaning                                                                                                                                                               |
 | -------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mergeMode`                | `"manual"`        | `"manual"`: the tool never merges a slice into your base branch itself — only detects that you did. `"auto"`: the tool merges automatically once a slice is approved. |
+| `mergeMode`                | `"manual"`        | `"manual"`: the tool never merges the run's branch into your base branch itself — only detects that you did. `"auto"`: the tool merges automatically once every slice is approved. |
 | `reviewCycleCap`           | `3`               | How many implement→review round-trips a slice gets before it's marked `stuck` and needs human intervention.                                                           |
 | `verifyCommand`            | _(none)_          | An optional shell command (e.g. `npm test`) that must also pass, alongside the AI reviewer's approval, before a slice is considered ready to merge.                   |
 | `inputSource`              | `"markdown-file"` | Only one supported in v1.                                                                                                                                             |
@@ -106,7 +106,7 @@ Optional `sdlc.config.json` in the repo root:
 | `sdlc prepare --input <file>`   | Reads the request, produces a plan and an ordered list of slices.                                               |
 | `sdlc implement --run <id>`     | Runs the implement step for the run's current slice.                                                            |
 | `sdlc review --run <id>`        | Runs the review (+ verify command) step for the current slice.                                                  |
-| `sdlc merge --run <id>`         | Manually merges an approved slice now, regardless of `mergeMode`.                                               |
+| `sdlc merge --run <id>`         | Manually merges the run's branch (every slice's commits, as one unit) now, once every slice is approved — regardless of `mergeMode`. |
 | `sdlc create-pr --run <id>`     | Writes a local PR description for the whole run — every slice ships as one PR (no `gh` integration in v1).      |
 | `sdlc status --run <id>`        | Shows the run's slices and their status.                                                                        |
 | `sdlc autopilot --input <file>` | Runs `prepare`, then loops the reconciler until the run completes or something needs your attention.            |
