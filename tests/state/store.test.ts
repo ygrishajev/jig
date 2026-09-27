@@ -43,7 +43,6 @@ describe('state store', () => {
         description: 'Does the first thing.',
         order: 0,
         status: 'pending',
-        branch: 'sdlc/slice/run2/s1',
         reviewCycles: 0,
         mergeAttempts: 0,
       },

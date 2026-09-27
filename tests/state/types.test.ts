@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  runBranchFor,
   runMetaSchema,
   sliceSchema,
   sliceStatusSchema,
@@ -22,7 +23,6 @@ describe('state schemas', () => {
         description: 'Add the auth middleware that checks the session token.',
         order: 0,
         status: 'pending',
-        branch: 'sdlc/slice/run1/add-auth-middleware',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -39,7 +39,6 @@ describe('state schemas', () => {
           description: 'x',
           order: 0,
           status: 'not-a-real-status',
-          branch: 'x',
           reviewCycles: 0,
           mergeAttempts: 0,
         },
@@ -54,7 +53,6 @@ describe('state schemas', () => {
       description: 'x',
       order: 0,
       status: 'pending',
-      branch: 'x',
       reviewCycles: 1,
       mergeAttempts: 0,
       lastFeedback: 'Missing a test for the error path.',
@@ -67,17 +65,13 @@ describe('state schemas', () => {
       description: 'y',
       order: 0,
       status: 'pending',
-      branch: 'y',
       reviewCycles: 0,
       mergeAttempts: 0,
     });
     expect(withoutFeedback.lastFeedback).toBeUndefined();
   });
 
-  it('rejects a slice id with characters unsafe for a git branch name', () => {
-    // A slice id is interpolated directly into `sdlc/slice/<runId>/<id>` as a
-    // branch name, so anything but lowercase alphanumerics and hyphens must
-    // be rejected rather than accepted as arbitrary agent-provided text.
+  it('rejects a slice id with characters unsafe for a stable lookup key', () => {
     expect(() =>
       sliceSchema.parse({
         id: 'Add Auth/Middleware!',
@@ -85,7 +79,6 @@ describe('state schemas', () => {
         description: 'x',
         order: 0,
         status: 'pending',
-        branch: 'x',
         reviewCycles: 0,
         mergeAttempts: 0,
       }),
@@ -101,5 +94,10 @@ describe('state schemas', () => {
       updatedAt: '2026-09-25T00:00:00.000Z',
     });
     expect(meta.runId).toBe('abc12345');
+  });
+
+  it('derives one stable branch name per run id, not per slice', () => {
+    expect(runBranchFor('abc12345')).toBe('sdlc/run/abc12345');
+    expect(runBranchFor('abc12345')).toBe(runBranchFor('abc12345'));
   });
 });
