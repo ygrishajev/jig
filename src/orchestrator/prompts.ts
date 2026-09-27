@@ -1,4 +1,5 @@
 import { structuredOutputInstruction } from './structured-output.js';
+import type { Slice } from '../state/types.js';
 
 export function buildContextPrompt(rawRequest: string): string {
   return [
@@ -47,11 +48,35 @@ export function buildSlicePlanPrompt(planSummary: string, planApproach: string):
     planApproach,
     '',
     'Break this plan into an ordered sequence of small, independently reviewable slices.',
-    'Each slice must be implementable and mergeable on its own, in the given order.',
+    "Each slice must be a standalone deliverable: someone reading only that slice's commit",
+    'must understand why the change exists, without knowing what comes after it.',
+    'Fold prerequisite edits (type additions, builders, small refactors) into the slice that',
+    'uses them — a slice that only prepares for later slices is forbidden.',
+    'Prefer fewer, feature-shaped slices; "small" means reviewable, never meaningless on its own.',
+    'Size each slice so a reviewer can skim-review it in about 10 minutes — if a slice would',
+    'take noticeably longer, split it along feature seams, not into bare prerequisite steps.',
     '',
     'Respond with JSON matching an array of:',
     '{ "id": string (kebab-case, unique), "title": string, "description": string }.',
     'Order the array the way the slices must be implemented.',
+    structuredOutputInstruction(),
+  ].join('\n');
+}
+
+export function buildReviewPrompt(slice: Slice): string {
+  return [
+    'You are the review step of an automated SDLC pipeline.',
+    `Review the uncommitted and committed changes in this worktree for the slice below.`,
+    '',
+    `Slice: ${slice.title}`,
+    `Description: ${slice.description}`,
+    '',
+    'Decide whether this slice is ready to merge as-is.',
+    'Reject the slice if it is not a self-explanatory, standalone deliverable — for example,',
+    'pure scaffolding (types, builders, refactors) for later slices with no meaningful purpose',
+    'of its own; feedback must say it must be folded into the slice that consumes it.',
+    'Respond with JSON matching: { "approved": boolean, "feedback": string }.',
+    'If approved is false, feedback must explain exactly what needs to change.',
     structuredOutputInstruction(),
   ].join('\n');
 }

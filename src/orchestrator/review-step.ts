@@ -4,11 +4,8 @@ import type { SdlcConfig } from '../config/load-config.js';
 import type { AgentProvider } from '../strategies/provider/types.js';
 import type { RunPaths } from '../state/run-paths.js';
 import type { Slice } from '../state/types.js';
-import {
-  readStructuredOutput,
-  resetStructuredOutput,
-  structuredOutputInstruction,
-} from './structured-output.js';
+import { buildReviewPrompt } from './prompts.js';
+import { readStructuredOutput, resetStructuredOutput } from './structured-output.js';
 
 const reviewOutputSchema = z.object({ approved: z.boolean(), feedback: z.string() });
 
@@ -116,19 +113,4 @@ function extractErrorDetail(error: unknown): string {
 
 function truncate(text: string, maxLength: number): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
-}
-
-function buildReviewPrompt(slice: Slice): string {
-  return [
-    'You are the review step of an automated SDLC pipeline.',
-    `Review the uncommitted and committed changes in this worktree for the slice below.`,
-    '',
-    `Slice: ${slice.title}`,
-    `Description: ${slice.description}`,
-    '',
-    'Decide whether this slice is ready to merge as-is.',
-    'Respond with JSON matching: { "approved": boolean, "feedback": string }.',
-    'If approved is false, feedback must explain exactly what needs to change.',
-    structuredOutputInstruction(),
-  ].join('\n');
 }
