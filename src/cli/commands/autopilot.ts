@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import path from 'node:path';
 import { loadConfig } from '../../config/load-config.js';
 import { prepareRun } from '../../orchestrator/prepare.js';
 import { runReconcilerPass, type ReconcilePassInput } from '../../orchestrator/reconcile.js';
