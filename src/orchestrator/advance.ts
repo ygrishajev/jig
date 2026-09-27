@@ -1,4 +1,5 @@
 import { isBranchMergedInto } from '../git/merge.js';
+import { logRun } from '../logging.js';
 import { readRunMeta, readSlices, writeRunMeta, writeSlices } from '../state/store.js';
 import type { RunPaths } from '../state/run-paths.js';
 import type { MergeStrategy } from '../strategies/merge/types.js';
@@ -28,6 +29,9 @@ export async function advanceRun(input: AdvanceInput): Promise<AdvanceResult> {
 
   if (currentSlice.status === 'ready_to_merge') {
     await mergeStrategy.merge(repoRoot, currentSlice, baseBranch);
+    if (await isBranchMergedInto(repoRoot, currentSlice.branch, baseBranch)) {
+      logRun(paths.runId, `slice "${currentSlice.id}" merged into "${baseBranch}"`);
+    }
   }
 
   if (!(await isBranchMergedInto(repoRoot, currentSlice.branch, baseBranch))) {

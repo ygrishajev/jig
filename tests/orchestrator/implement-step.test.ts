@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -33,6 +33,24 @@ function makeSlice(overrides: Partial<Slice> = {}): Slice {
 }
 
 describe('runImplementStep', () => {
+  it('logs which slice it is implementing and the worktree path, prefixed by the run id', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'runlog');
+    const slice = makeSlice({ branch: 'sdlc/slice/runlog/s1' });
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(path.join(input.cwd, 'health.ts'), 'export const health = () => "ok";\n');
+      return { success: true, output: 'implemented' };
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
+
+    const logged = logSpy.mock.calls.map((args) => args.join(' '));
+    expect(logged.some((line) => line.includes(`[sdlc runlog]`))).toBe(true);
+    expect(logged.some((line) => line.includes('implementing slice "s1"'))).toBe(true);
+    expect(logged.some((line) => line.includes(paths.workspaceDir))).toBe(true);
+  });
+
   it('creates the workspace, runs the provider, commits, and advances status', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run1');
@@ -111,6 +129,32 @@ describe('runImplementStep', () => {
 
     expect(slice.status).toBe('in_review');
     expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run5/s1');
+  });
+
+  it('disables commit signing in the workspace only when skipCommitSigning is set', async () => {
+    repo = await createTempRepo();
+    const { openRepo } = await import('../../src/git/repository.js');
+    await openRepo(repo.dir).raw(['config', 'commit.gpgsign', 'true']);
+    const paths = getRunPaths(repo.dir, 'run6');
+    const slice = makeSlice({ branch: 'sdlc/slice/run6/s1' });
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(path.join(input.cwd, 'health.ts'), 'export const health = () => "ok";\n');
+      return { success: true, output: 'implemented' };
+    });
+
+    await runImplementStep({
+      repoRoot: repo.dir,
+      paths,
+      slice,
+      baseBranch: 'main',
+      provider,
+      skipCommitSigning: true,
+    });
+
+    expect((await openRepo(paths.workspaceDir).raw(['config', 'commit.gpgsign'])).trim()).toBe(
+      'false',
+    );
+    expect((await openRepo(repo.dir).raw(['config', 'commit.gpgsign'])).trim()).toBe('true');
   });
 
   it('includes lastFeedback in the prompt when a previous review requested changes', async () => {

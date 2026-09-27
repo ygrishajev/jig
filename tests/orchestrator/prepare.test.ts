@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -16,6 +16,45 @@ afterEach(async () => {
 });
 
 describe('prepareRun', () => {
+  it('logs the run id and each planning stage as it goes', async () => {
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+
+    let call = 0;
+    const provider = new FakeAgentProvider(async (input) => {
+      call += 1;
+      const output =
+        call === 1
+          ? { classification: 'feature', repoSummary: 'An Express app.' }
+          : call === 2
+            ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
+            : [
+                {
+                  id: 'add-health-route',
+                  title: 'Add health route',
+                  description: 'Add GET /health',
+                },
+              ];
+      await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
+      return { success: true, output: 'done' };
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const meta = await prepareRun({
+      repoRoot: repo.dir,
+      inputSource: new MarkdownFileInputSource(requestPath),
+      provider,
+    });
+
+    const logged = logSpy.mock.calls.map((args) => args.join(' '));
+    const runLines = logged.filter((line) => line.includes(`[sdlc ${meta.runId}]`));
+    expect(runLines.some((line) => line.includes('context'))).toBe(true);
+    expect(runLines.some((line) => line.includes('feature plan'))).toBe(true);
+    expect(runLines.some((line) => line.includes('slice planning'))).toBe(true);
+    expect(runLines.some((line) => line.includes('planned 1 slice'))).toBe(true);
+  });
+
   it('runs context, plan, and slice-plan steps and persists the result', async () => {
     repo = await createTempRepo();
     const requestPath = path.join(repo.dir, 'request.md');

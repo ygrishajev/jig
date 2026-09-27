@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { runReviewStep } from '../../src/orchestrator/review-step.js';
@@ -37,10 +37,54 @@ const baseConfig: SdlcConfig = {
   reviewCycleCap: 3,
   conflictResolveCap: 3,
   inputSource: 'markdown-file',
-  providerCommand: 'claude',
+  planner: { provider: 'claude' },
+  implementer: { provider: 'claude' },
+  reviewer: { provider: 'claude' },
 };
 
 describe('runReviewStep', () => {
+  it('logs the review and its outcome, prefixed by the run id', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'runlog');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice({ branch: 'sdlc/slice/runlog/s1' });
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: true, feedback: '' }),
+      );
+      return { success: true, output: 'reviewed' };
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runReviewStep({ paths, slice, provider, config: baseConfig });
+
+    const logged = logSpy.mock.calls.map((args) => args.join(' '));
+    expect(logged.some((line) => line.includes('[sdlc runlog]'))).toBe(true);
+    expect(logged.some((line) => line.includes('reviewing slice "s1"'))).toBe(true);
+    expect(logged.some((line) => line.includes('approved'))).toBe(true);
+  });
+
+  it('logs that changes were requested with the review cycle count', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'runlog2');
+    await mkdir(paths.workspaceDir, { recursive: true });
+    const slice = makeSlice({ branch: 'sdlc/slice/runlog2/s1' });
+    const provider = new FakeAgentProvider(async (input) => {
+      await writeFile(
+        structuredOutputPath(input.cwd),
+        JSON.stringify({ approved: false, feedback: 'Missing a test.' }),
+      );
+      return { success: true, output: 'reviewed' };
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runReviewStep({ paths, slice, provider, config: baseConfig });
+
+    const logged = logSpy.mock.calls.map((args) => args.join(' '));
+    expect(logged.some((line) => line.includes('changes requested (cycle 1/3)'))).toBe(true);
+  });
+
   it('moves to ready_to_merge when the reviewer approves and no verify command is set', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run1');

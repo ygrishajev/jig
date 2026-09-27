@@ -4,6 +4,7 @@ import { prepareRun } from '../../orchestrator/prepare.js';
 import { runReconcilerPass, type ReconcilePassInput } from '../../orchestrator/reconcile.js';
 import { MarkdownFileInputSource } from '../../strategies/input-source/markdown-file.js';
 import { loadCliRunContext, selectProvider } from '../run-context.js';
+import { printRunSummary } from '../run-summary.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 export type AutopilotInput = ReconcilePassInput;
@@ -51,6 +52,7 @@ export function registerAutopilotCommands(program: Command): void {
         });
         const context = await loadCliRunContext(repoRoot, meta.runId);
         const result = await runAutopilot({ ...context, provider, implementProvider });
+        await printRunSummary(context);
         console.log(
           result.complete
             ? `Run ${meta.runId} complete after ${result.passes} pass(es).`
@@ -69,6 +71,7 @@ export function registerAutopilotCommands(program: Command): void {
         const provider = selectProvider(context.config, 'reviewer');
         const implementProvider = selectProvider(context.config, 'implementer');
         const result = await runAutopilot({ ...context, provider, implementProvider });
+        await printRunSummary(context);
         console.log(
           result.complete
             ? `Run ${opts.run} complete after ${result.passes} pass(es).`

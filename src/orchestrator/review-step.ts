@@ -5,6 +5,7 @@ import type { AgentProvider } from '../strategies/provider/types.js';
 import type { RunPaths } from '../state/run-paths.js';
 import type { Slice } from '../state/types.js';
 import { buildReviewPrompt } from './prompts.js';
+import { logRun } from '../logging.js';
 import { readStructuredOutput, resetStructuredOutput } from './structured-output.js';
 
 const reviewOutputSchema = z.object({ approved: z.boolean(), feedback: z.string() });
@@ -18,6 +19,7 @@ export interface ReviewStepInput {
 
 export async function runReviewStep(input: ReviewStepInput): Promise<void> {
   const { paths, slice, provider, config } = input;
+  logRun(paths.runId, `reviewing slice "${slice.id}": ${slice.title}`);
 
   await resetStructuredOutput(paths.workspaceDir);
   const reviewResult = await provider.run({
@@ -26,6 +28,7 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
   });
   if (!reviewResult.success) {
     requestChanges(
+      paths,
       slice,
       config.reviewCycleCap,
       `Review step failed to run: ${reviewResult.output}`,
@@ -45,6 +48,7 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
     await resetStructuredOutput(paths.workspaceDir);
     const message = error instanceof Error ? error.message : String(error);
     requestChanges(
+      paths,
       slice,
       config.reviewCycleCap,
       `Review step did not produce valid structured output: ${message}`,
@@ -58,7 +62,7 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
   // review-verdict JSON in the user's merged history.
   await resetStructuredOutput(paths.workspaceDir);
   if (!review.approved) {
-    requestChanges(slice, config.reviewCycleCap, review.feedback);
+    requestChanges(paths, slice, config.reviewCycleCap, review.feedback);
     return;
   }
 
@@ -66,6 +70,7 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
     const verifyResult = await runVerifyCommand(paths.workspaceDir, config.verifyCommand);
     if (!verifyResult.ok) {
       requestChanges(
+        paths,
         slice,
         config.reviewCycleCap,
         `The reviewer approved this slice, but the verify command ("${config.verifyCommand}") failed:\n${verifyResult.detail}`,
@@ -76,12 +81,19 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
 
   slice.lastFeedback = undefined;
   slice.status = 'ready_to_merge';
+  logRun(paths.runId, `slice "${slice.id}" approved — ready to merge`);
 }
 
-function requestChanges(slice: Slice, reviewCycleCap: number, feedback: string): void {
+function requestChanges(
+  paths: RunPaths,
+  slice: Slice,
+  reviewCycleCap: number,
+  feedback: string,
+): void {
   slice.reviewCycles += 1;
   slice.lastFeedback = feedback;
   slice.status = slice.reviewCycles >= reviewCycleCap ? 'stuck' : 'pending';
+  logRun(paths.runId, `changes requested (cycle ${slice.reviewCycles}/${reviewCycleCap})`);
 }
 
 const VERIFY_DETAIL_MAX_LENGTH = 400;

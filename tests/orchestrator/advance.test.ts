@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { advanceRun } from '../../src/orchestrator/advance.js';
@@ -49,6 +49,31 @@ function makeSlices(runId: string): Slice[] {
 }
 
 describe('advanceRun', () => {
+  it('logs which slice was merged into which base branch', async () => {
+    repo = await createTempRepo();
+    const paths = await initializeRunState(repo.dir, 'runlog', 'main');
+    const slices = makeSlices('runlog');
+    await writeSlices(paths, slices);
+    const meta = await readRunMeta(paths);
+    await writeRunMeta(paths, { ...meta, currentSliceId: 'first' });
+    await checkoutNewBranchAt(repo.dir, slices[0].branch, 'main');
+    await writeFile(path.join(repo.dir, 'first.txt'), 'x');
+    await commitAll(repo.dir, 'implement first');
+    await (await import('../../src/git/branch.js')).checkoutExistingBranch(repo.dir, 'main');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await advanceRun({
+      repoRoot: repo.dir,
+      paths,
+      baseBranch: 'main',
+      mergeStrategy: new AutoMergeStrategy(),
+    });
+
+    const logged = logSpy.mock.calls.map((args) => args.join(' '));
+    expect(logged.some((line) => line.includes('[sdlc runlog]'))).toBe(true);
+    expect(logged.some((line) => line.includes('slice "first" merged into "main"'))).toBe(true);
+  });
+
   it('auto-merges, marks the slice merged, and advances currentSliceId', async () => {
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run1', 'main');

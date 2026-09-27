@@ -4,6 +4,7 @@ import { commitAll } from '../git/repository.js';
 import { addWorktreeForNewBranch, worktreeExists } from '../git/worktree.js';
 import type { RunPaths } from '../state/run-paths.js';
 import type { Slice } from '../state/types.js';
+import { logRun } from '../logging.js';
 
 export class ImplementStepFailedError extends Error {
   constructor(sliceId: string, providerOutput: string) {
@@ -26,6 +27,8 @@ export async function runImplementStep(input: ImplementStepInput): Promise<void>
   await ensureWorkspaceOnBranch(repoRoot, paths.workspaceDir, slice.branch, baseBranch, {
     skipCommitSigning,
   });
+  logRun(paths.runId, `implementing slice "${slice.id}": ${slice.title}`);
+  logRun(paths.runId, `worktree: ${paths.workspaceDir}`);
 
   const result = await provider.run({
     cwd: paths.workspaceDir,

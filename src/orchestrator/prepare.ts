@@ -12,6 +12,7 @@ import {
   writeSlices,
 } from '../state/store.js';
 import { sliceIdPattern, type RunMeta, type Slice } from '../state/types.js';
+import { logRun } from '../logging.js';
 import { buildContextPrompt, buildFeaturePlanPrompt, buildSlicePlanPrompt } from './prompts.js';
 import { readStructuredOutput, resetStructuredOutput } from './structured-output.js';
 
@@ -53,6 +54,7 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
   const baseBranch = await getCurrentBranch(repoRoot);
   const runId = generateRunId();
   const paths = await initializeRunState(repoRoot, runId, baseBranch);
+  logRun(runId, 'planning: context…');
 
   // Planning steps run with cwd = repoRoot (not an empty scratch directory) so
   // the provider can actually explore the repository its own prompt asks it
@@ -74,6 +76,7 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
     createdAt: new Date().toISOString(),
   });
 
+  logRun(runId, 'planning: feature plan…');
   await resetStructuredOutput(repoRoot);
   const planResult = await provider.run({
     cwd: repoRoot,
@@ -83,6 +86,7 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
   const planOutput = await readStructuredOutput(repoRoot, (raw) => planOutputSchema.parse(raw));
   await writePlan(paths, planOutput);
 
+  logRun(runId, 'planning: slice planning…');
   await resetStructuredOutput(repoRoot);
   const sliceResult = await provider.run({
     cwd: repoRoot,
@@ -102,6 +106,7 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
     mergeAttempts: 0,
   }));
   await writeSlices(paths, slices);
+  logRun(runId, `planned ${slices.length} slice(s)`);
 
   const firstSlice = [...slices].sort((a, b) => a.order - b.order)[0];
   const meta = await readRunMeta(paths);
