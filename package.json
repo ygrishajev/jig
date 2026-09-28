@@ -1,5 +1,5 @@
 {
-  "name": "sdlc",
+  "name": "@ygrishajev/sdlc",
   "version": "0.1.0",
   "description": "Agentic SDLC pipeline orchestrator",
   "type": "module",
@@ -10,7 +10,17 @@
     "sdlc": "./dist/cli/main.js"
   },
   "main": "./dist/cli/main.js",
-  "private": true,
+  "files": [
+    "dist",
+    "docker"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ygrishajev/sdlc.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli/main.ts",

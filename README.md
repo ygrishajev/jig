@@ -25,6 +25,30 @@ Requires Node >=20 and Docker running locally. Every agent invocation runs
 inside a throwaway Docker container, never directly on your machine — see
 [Agent sandbox & credentials](#agent-sandbox--credentials).
 
+### Installing from another repo
+
+`sdlc` publishes as `@ygrishajev/sdlc` to GitHub Packages (private npm
+registry) on every `vX.Y.Z` tag push — see
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml). It stays
+a private repo; only accounts with read access to it can install the
+package.
+
+In the consuming repo, add an `.npmrc`:
+
+```
+@ygrishajev:registry=https://npm.pkg.github.com
+```
+
+Then install with a token that has `read:packages` scope (a classic PAT —
+GitHub Packages needs a token even for repos you own):
+
+```bash
+npm install @ygrishajev/sdlc
+```
+
+In CI, set `NODE_AUTH_TOKEN` to that token before `npm install` (e.g. a
+repo secret), same as `registry-url` in `actions/setup-node`.
+
 ## Quickstart
 
 ```bash
