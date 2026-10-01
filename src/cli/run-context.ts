@@ -65,7 +65,7 @@ function buildProvider(stepConfig: StepConfig): AgentProvider {
     command: profile.command,
     buildArgs: (prompt) => profile.buildArgs(prompt, stepConfig.model),
     envVarsFromHost: profile.envVarsFromHost,
-    hostFileMounts: profile.hostFileMounts,
+    hostEnvFileMounts: profile.hostEnvFileMounts,
   });
 }
 

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import { PROVIDER_PROFILES } from '../../../src/strategies/provider/provider-profiles.js';
-import { SANDBOX_HOME } from '../../../src/strategies/provider/docker-cli.js';
 
 describe('PROVIDER_PROFILES', () => {
   describe('claude', () => {
@@ -80,18 +79,11 @@ describe('PROVIDER_PROFILES', () => {
       ]);
     });
 
-    it('mounts the host auth.json read-only into the sandbox home directory', () => {
+    it('passes the host auth.json as an env var, not a bind mount', () => {
       const expectedHostPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json');
-      const expectedContainerPath = path.join(
-        SANDBOX_HOME,
-        '.local',
-        'share',
-        'opencode',
-        'auth.json',
-      );
 
-      expect(PROVIDER_PROFILES.opencode.hostFileMounts).toEqual([
-        { hostPath: expectedHostPath, containerPath: expectedContainerPath },
+      expect(PROVIDER_PROFILES.opencode.hostEnvFileMounts).toEqual([
+        { hostPath: expectedHostPath, envVarName: 'OPENCODE_AUTH_JSON' },
       ]);
     });
 

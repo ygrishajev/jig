@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { SANDBOX_HOME, type HostFileMount } from './docker-cli.js';
+import type { HostEnvFileMount } from './docker-cli.js';
 
 export interface ProviderProfile {
   /** The binary name inside the sandbox image. */
@@ -15,8 +15,8 @@ export interface ProviderProfile {
   buildArgs(prompt: string, model?: string): string[];
   /** Host environment variable names to pass into the container, unchanged. */
   envVarsFromHost: string[];
-  /** Host files (credentials) to bind-mount read-only into the container. */
-  hostFileMounts: HostFileMount[];
+  /** Host files (credentials) whose contents are passed into the container as an env var. */
+  hostEnvFileMounts: HostEnvFileMount[];
   /**
    * Throws a clear, actionable error if this provider's credentials aren't
    * available on the host — checked before a container ever starts, so a
@@ -43,7 +43,7 @@ export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
       ...(model ? ['--model', model] : []),
     ],
     envVarsFromHost: ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
-    hostFileMounts: [],
+    hostEnvFileMounts: [],
     assertCredentialsAvailable(): void {
       if (!process.env.CLAUDE_CODE_OAUTH_TOKEN && !process.env.ANTHROPIC_API_KEY) {
         throw new Error(
@@ -70,12 +70,11 @@ export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
       ...(model ? ['--model', model] : []),
     ],
     envVarsFromHost: [],
-    hostFileMounts: [
-      {
-        hostPath: opencodeAuthPath,
-        containerPath: path.join(SANDBOX_HOME, '.local', 'share', 'opencode', 'auth.json'),
-      },
-    ],
+    // $HOME is a tmpfs with nothing backing it on the host (see SANDBOX_HOME
+    // in docker-cli.ts), so this can't be a bind mount — the entrypoint
+    // baked into the sandbox image writes the value to the path opencode
+    // actually reads, once the container itself owns $HOME.
+    hostEnvFileMounts: [{ hostPath: opencodeAuthPath, envVarName: 'OPENCODE_AUTH_JSON' }],
     assertCredentialsAvailable(): void {
       if (!existsSync(opencodeAuthPath)) {
         throw new Error(

@@ -93,27 +93,25 @@ describe('DockerCliProvider', () => {
     expect(result.output).not.toContain('SDLC_TEST_UNSET_TOKEN');
   });
 
-  it('mounts host files read-only at the given container paths', async () => {
+  it("reads a host file's contents and passes them into the container as an env var", async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
     const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
     const credsPath = path.join(dir, 'auth.json');
-    await writeFile(credsPath, '{}');
+    await writeFile(credsPath, '{"key":"secret"}');
 
     const provider = new DockerCliProvider({
       image: 'sdlc-agent-sandbox',
       command: 'opencode',
       buildArgs: (prompt) => [prompt],
-      hostFileMounts: [
-        { hostPath: credsPath, containerPath: '/root/.local/share/opencode/auth.json' },
-      ],
+      hostEnvFileMounts: [{ hostPath: credsPath, envVarName: 'OPENCODE_AUTH_JSON' }],
       dockerCommand,
     });
     const result = await provider.run({ cwd: dir, prompt: 'hi' });
 
-    expect(result.output).toContain(`-v ${credsPath}:/root/.local/share/opencode/auth.json:ro`);
+    expect(result.output).toContain('-e OPENCODE_AUTH_JSON={"key":"secret"}');
   });
 
-  it('runs the container as the host uid/gid, with a scratch $HOME', async () => {
+  it('runs the container as the host uid/gid, with $HOME on a tmpfs', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
     const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
 
@@ -128,93 +126,7 @@ describe('DockerCliProvider', () => {
     const { uid, gid } = os.userInfo();
     expect(result.output).toContain(`-u ${uid}:${gid}`);
     expect(result.output).toContain(`-e HOME=${SANDBOX_HOME}`);
-    expect(result.output).toMatch(new RegExp(`-v \\S+:${SANDBOX_HOME}(?!\\S)`));
-  });
-
-  it('pre-creates the parent directory for a host file mount nested under SANDBOX_HOME, before docker runs', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
-    // Rather than trust a path parsed back out of the args, the fake
-    // "docker" checks for the directory itself, at the moment it would
-    // actually need to be there — proving the ordering, not just that the
-    // mount flag was generated.
-    const dockerCommand = await writeFakeDocker(
-      dir,
-      [
-        'args="$@"',
-        'scratch=""',
-        'prev=""',
-        'for a in "$@"; do',
-        `  if [ "$prev" = "-v" ]; then`,
-        `    case "$a" in *":${SANDBOX_HOME}") scratch="\${a%%:*}" ;; esac`,
-        '  fi',
-        '  prev="$a"',
-        'done',
-        'if [ -d "$scratch/.local/share/opencode" ]; then',
-        '  echo "PARENT_DIR_EXISTS"',
-        'else',
-        '  echo "PARENT_DIR_MISSING"',
-        'fi',
-        'echo "args: $args"',
-        'exit 0',
-      ].join('\n') + '\n',
-    );
-    const credsPath = path.join(dir, 'auth.json');
-    await writeFile(credsPath, '{}');
-    const nestedContainerPath = path.join(SANDBOX_HOME, '.local', 'share', 'opencode', 'auth.json');
-
-    const provider = new DockerCliProvider({
-      image: 'sdlc-agent-sandbox',
-      command: 'opencode',
-      buildArgs: (prompt) => [prompt],
-      hostFileMounts: [{ hostPath: credsPath, containerPath: nestedContainerPath }],
-      dockerCommand,
-    });
-    const result = await provider.run({ cwd: dir, prompt: 'hi' });
-
-    expect(result.output).toContain('PARENT_DIR_EXISTS');
-    expect(result.output).toContain(`-v ${credsPath}:${nestedContainerPath}:ro`);
-  });
-
-  it('opens the scratch $HOME (and any pre-created nested dirs) to any uid, not just the host uid', async () => {
-    // Guards against EACCES on a self-hosted runner whose docker remaps the
-    // `-u` uid (rootless / userns-remap) so it no longer actually matches
-    // the uid that owns these directories on the host side — see the
-    // comments in docker-cli.ts. Checked with `ls -ld` (portable across the
-    // BSD stat used in local/macOS test runs and the GNU stat in CI) rather
-    // than asserting as a different real uid, which the test can't assume.
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
-    const dockerCommand = await writeFakeDocker(
-      dir,
-      [
-        'args="$@"',
-        'scratch=""',
-        'prev=""',
-        'for a in "$@"; do',
-        `  if [ "$prev" = "-v" ]; then`,
-        `    case "$a" in *":${SANDBOX_HOME}") scratch="\${a%%:*}" ;; esac`,
-        '  fi',
-        '  prev="$a"',
-        'done',
-        'echo "home: $(ls -ld "$scratch" | cut -c1-10)"',
-        'echo "nested: $(ls -ld "$scratch/.local/share/opencode" | cut -c1-10)"',
-        'exit 0',
-      ].join('\n') + '\n',
-    );
-    const credsPath = path.join(dir, 'auth.json');
-    await writeFile(credsPath, '{}');
-    const nestedContainerPath = path.join(SANDBOX_HOME, '.local', 'share', 'opencode', 'auth.json');
-
-    const provider = new DockerCliProvider({
-      image: 'sdlc-agent-sandbox',
-      command: 'opencode',
-      buildArgs: (prompt) => [prompt],
-      hostFileMounts: [{ hostPath: credsPath, containerPath: nestedContainerPath }],
-      dockerCommand,
-    });
-    const result = await provider.run({ cwd: dir, prompt: 'hi' });
-
-    expect(result.output).toContain('home: drwxrwxrwx');
-    expect(result.output).toContain('nested: drwxrwxrwx');
+    expect(result.output).toContain(`--tmpfs ${SANDBOX_HOME}:mode=1777`);
   });
 
   it('reports failure when the container exits non-zero', async () => {
@@ -248,5 +160,24 @@ describe('DockerCliProvider', () => {
     expect(result.success).toBe(false);
     expect(result.output).not.toBe('');
     expect(result.output.toLowerCase()).toMatch(/enoent|not found|does-not-exist/);
+  });
+
+  it('reports a clear failure when a host env file mount does not exist', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
+
+    const provider = new DockerCliProvider({
+      image: 'sdlc-agent-sandbox',
+      command: 'opencode',
+      buildArgs: (prompt) => [prompt],
+      hostEnvFileMounts: [
+        { hostPath: path.join(dir, 'does-not-exist.json'), envVarName: 'OPENCODE_AUTH_JSON' },
+      ],
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: dir, prompt: 'hi' });
+
+    expect(result.success).toBe(false);
+    expect(result.output.toLowerCase()).toMatch(/enoent/);
   });
 });

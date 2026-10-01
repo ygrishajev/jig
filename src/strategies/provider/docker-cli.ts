@@ -1,21 +1,21 @@
-import { mkdtemp, mkdir, chmod, rm } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import os from 'node:os';
-import path from 'node:path';
 import { execa, ExecaError } from 'execa';
 import type { AgentProvider, AgentRunInput, AgentRunResult } from './types.js';
 
-export interface HostFileMount {
+export interface HostEnvFileMount {
+  /** A file on the host whose contents become an env var's value, e.g. a credentials file. */
   hostPath: string;
-  containerPath: string;
+  /** The env var name the container sees, with the file's contents as its value. */
+  envVarName: string;
 }
 
 /**
  * The sandbox's $HOME for every run, regardless of which host (a Mac
  * laptop, a CI runner) is driving it or which uid the container runs as.
- * Fixed rather than mirroring the host's real home path, so it's always a
- * path `run()` can freely create a backing directory for — the host's own
- * home path might not even be a legal/creatable path inside the container
- * (e.g. a macOS-style `/Users/...` path on a Linux image).
+ * Backed by a tmpfs (see `run()`) rather than any host-side directory, so
+ * there's never a host path for `run()` to create, own correctly, or for a
+ * nested-in-a-container CI runner to fail to see.
  */
 export const SANDBOX_HOME = '/home/sandbox';
 
@@ -33,8 +33,14 @@ export interface DockerCliProviderOptions {
   buildArgs: (prompt: string) => string[];
   /** Host environment variable names to pass into the container, unchanged. */
   envVarsFromHost?: string[];
-  /** Host files (e.g. a credentials file) to bind-mount read-only into the container. */
-  hostFileMounts?: HostFileMount[];
+  /**
+   * Host files (e.g. a credentials file) whose contents are passed into the
+   * container as an env var — not bind-mounted. $HOME is a tmpfs with
+   * nothing backing it on the host, so there's no path to mount a file
+   * into; the image's own entrypoint (docker/agent-sandbox/entrypoint.sh)
+   * writes the value to the file a provider's CLI actually expects.
+   */
+  hostEnvFileMounts?: HostEnvFileMount[];
   timeoutMs?: number;
   /** The `docker` binary to invoke. Overridable for tests; defaults to `docker`. */
   dockerCommand?: string;
@@ -57,33 +63,12 @@ export class DockerCliProvider implements AgentProvider {
       command,
       buildArgs,
       envVarsFromHost = [],
-      hostFileMounts = [],
+      hostEnvFileMounts = [],
       timeoutMs,
       dockerCommand = 'docker',
     } = this.options;
 
-    // Backs $HOME for this one call. Created fresh (and matches whichever
-    // uid is actually running sdlc, since this process creates it) rather
-    // than reusing the image's baked-in user, so the container's uid always
-    // matches the host's — the bind-mounted cwd (and anything sdlc creates
-    // under it mid-run, like a slice's worktree) is owned by the host uid,
-    // not by whatever fixed uid the image happens to declare.
-    const scratchHome = await mkdtemp(path.join(os.tmpdir(), 'sdlc-sandbox-home-'));
     try {
-      // `mkdtemp` defaults to 0700, owned by whatever uid is running sdlc.
-      // The `-u <hostUid>:<hostGid>` below only actually lands as that same
-      // uid *inside* the container on a plain, non-remapped dockerd (true on
-      // GitHub-hosted runners). A self-hosted runner's docker is often
-      // rootless or has userns-remap enabled, which maps that uid onto a
-      // different uid on the host side — so the container no longer owns
-      // this directory, and e.g. opencode's own writes under $HOME (like
-      // creating its repos cache dir) get EACCES despite the uid flag
-      // matching in appearance. Since this directory is a throwaway backing
-      // store removed right after the run, opening it up to any uid is a
-      // cheap way to stay correct regardless of how the host's docker
-      // remaps container identities.
-      await chmod(scratchHome, 0o777);
-      await prepareHostFileMountDirs(scratchHome, hostFileMounts);
       const { uid, gid } = os.userInfo();
       const dockerArgs = [
         'run',
@@ -92,14 +77,22 @@ export class DockerCliProvider implements AgentProvider {
         `${uid}:${gid}`,
         '-e',
         `HOME=${SANDBOX_HOME}`,
-        '-v',
-        `${scratchHome}:${SANDBOX_HOME}`,
+        // A daemon-managed tmpfs, not a host bind mount: whichever uid the
+        // container actually runs as (the `-u` above only lands as the real
+        // host uid on a plain, non-remapped dockerd — a self-hosted
+        // runner's docker is often rootless or userns-remapped, and a
+        // containerized runner may not even see a host tmp path the same
+        // way the real daemon does) can write here regardless, since the
+        // daemon creates it directly with `mode=1777` rather than this
+        // process trying to pre-create and own a directory on disk.
+        '--tmpfs',
+        `${SANDBOX_HOME}:mode=1777`,
         '-v',
         `${input.cwd}:/workspace`,
         '-w',
         '/workspace',
         ...hostEnvArgs(envVarsFromHost),
-        ...hostFileMountArgs(hostFileMounts),
+        ...(await hostEnvFileArgs(hostEnvFileMounts)),
         image,
         command,
         ...buildArgs(input.prompt),
@@ -126,44 +119,6 @@ export class DockerCliProvider implements AgentProvider {
             ? error.message
             : String(error);
       return { success: false, output };
-    } finally {
-      await rm(scratchHome, { recursive: true, force: true });
-    }
-  }
-}
-
-/**
- * For a host file mount landing inside SANDBOX_HOME (e.g. a credential at
- * `${SANDBOX_HOME}/.local/share/opencode/auth.json`), pre-creates that
- * file's parent directory on the scratch home *before* docker runs —
- * owned by the current process's own uid, i.e. the same uid the container
- * is about to run as. Skipped for a mount outside SANDBOX_HOME: nothing
- * here backs that path, so there's no parent on the scratch home to make.
- *
- * Otherwise, Docker itself creates that missing parent at container start,
- * owned by root (since the daemon does it, not the container's own
- * process) — blocking the very writes this exists to allow, e.g. opencode
- * needing to write its own cache dir alongside the mounted auth.json.
- */
-async function prepareHostFileMountDirs(
-  scratchHome: string,
-  mounts: HostFileMount[],
-): Promise<void> {
-  for (const mount of mounts) {
-    if (!mount.containerPath.startsWith(`${SANDBOX_HOME}/`)) continue;
-    const relativeDir = path.relative(SANDBOX_HOME, path.dirname(mount.containerPath));
-    await mkdir(path.join(scratchHome, relativeDir), { recursive: true });
-    // `mkdir`'s `mode` is masked by the process umask, so a freshly created
-    // nested dir (e.g. .local/share/opencode) typically ends up 0755 —
-    // writable only by its owner. Walk back up to chmod every segment this
-    // call created, for the same remapped-uid reason `scratchHome` itself is
-    // opened up above: a sibling write under here (opencode creating its
-    // repos cache dir next to the mounted auth.json) must work no matter
-    // which uid the container is actually seen as on the host.
-    let dir = scratchHome;
-    for (const segment of relativeDir.split(path.sep).filter(Boolean)) {
-      dir = path.join(dir, segment);
-      await chmod(dir, 0o777);
     }
   }
 }
@@ -175,6 +130,11 @@ function hostEnvArgs(envVarNames: string[]): string[] {
   });
 }
 
-function hostFileMountArgs(mounts: HostFileMount[]): string[] {
-  return mounts.flatMap(({ hostPath, containerPath }) => ['-v', `${hostPath}:${containerPath}:ro`]);
+async function hostEnvFileArgs(mounts: HostEnvFileMount[]): Promise<string[]> {
+  const args: string[] = [];
+  for (const { hostPath, envVarName } of mounts) {
+    const value = await readFile(hostPath, 'utf-8');
+    args.push('-e', `${envVarName}=${value}`);
+  }
+  return args;
 }
