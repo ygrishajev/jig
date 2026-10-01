@@ -14,7 +14,9 @@ import type { AgentProvider } from '../strategies/provider/types.js';
 import { loadRunState, readRunMeta } from '../state/store.js';
 import type { RunPaths } from '../state/run-paths.js';
 
-const AGENT_SANDBOX_IMAGE = 'sdlc-agent-sandbox';
+// Overridable so CI can point at a pre-built image (e.g. from a registry)
+// instead of needing a local `docker build` — see README's CI section.
+const AGENT_SANDBOX_IMAGE = process.env.SDLC_AGENT_SANDBOX_IMAGE ?? 'sdlc-agent-sandbox';
 
 export interface CliRunContext {
   repoRoot: string;

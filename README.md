@@ -97,6 +97,10 @@ one-time credential setup:
 credentials aren't available — it won't silently try to run a container
 that can't authenticate.
 
+Set `SDLC_AGENT_SANDBOX_IMAGE` to use a pre-built image instead of the one
+`npm run docker:build` produces locally — e.g. in CI, pulling a published
+image is faster than rebuilding it (installing the agent CLIs) on every run.
+
 ## Configuration
 
 Optional `sdlc.config.json` in the repo root:

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { HostFileMount } from './docker-cli.js';
+import { SANDBOX_HOME, type HostFileMount } from './docker-cli.js';
 
 export interface ProviderProfile {
   /** The binary name inside the sandbox image. */
@@ -73,9 +73,7 @@ export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
     hostFileMounts: [
       {
         hostPath: opencodeAuthPath,
-        // The sandbox runs as node:22-slim's built-in `node` user (see the
-        // Dockerfile), whose $HOME is /home/node.
-        containerPath: '/home/node/.local/share/opencode/auth.json',
+        containerPath: path.join(SANDBOX_HOME, '.local', 'share', 'opencode', 'auth.json'),
       },
     ],
     assertCredentialsAvailable(): void {

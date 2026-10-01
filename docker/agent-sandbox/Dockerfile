@@ -9,13 +9,12 @@ RUN apt-get update \
 
 RUN npm install -g @anthropic-ai/claude-code opencode-ai
 
-# claude refuses --dangerously-skip-permissions when run as root/sudo, so the
-# agent runs as the non-root `node` user node:22-slim already ships with.
 WORKDIR /workspace
-RUN chown node:node /workspace
-# Pre-create opencode's config dir owned by `node`. Bind-mounting a single
-# file (the auth.json mount) auto-creates missing parent directories owned by
-# root, which would otherwise block opencode from writing sibling dirs (e.g.
-# its `repos` cache) alongside the mounted file.
-RUN mkdir -p /home/node/.local/share/opencode && chown -R node:node /home/node/.local
+
+# claude refuses --dangerously-skip-permissions when run as root/sudo. sdlc
+# always overrides this at runtime with the host's own uid, and provides its
+# own $HOME backing directory (see SANDBOX_HOME in docker-cli.ts), so neither
+# this workdir nor this user's uid are actually load-bearing when run through
+# sdlc — `node` is just a safe non-root default for running this image
+# directly.
 USER node

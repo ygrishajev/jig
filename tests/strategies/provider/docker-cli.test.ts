@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, chmod, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import os, { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DockerCliProvider } from '../../../src/strategies/provider/docker-cli.js';
+import { DockerCliProvider, SANDBOX_HOME } from '../../../src/strategies/provider/docker-cli.js';
 
 let dir: string;
 
@@ -111,6 +111,68 @@ describe('DockerCliProvider', () => {
     const result = await provider.run({ cwd: dir, prompt: 'hi' });
 
     expect(result.output).toContain(`-v ${credsPath}:/root/.local/share/opencode/auth.json:ro`);
+  });
+
+  it('runs the container as the host uid/gid, with a scratch $HOME', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
+
+    const provider = new DockerCliProvider({
+      image: 'sdlc-agent-sandbox',
+      command: 'claude',
+      buildArgs: (prompt) => [prompt],
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: dir, prompt: 'hi' });
+
+    const { uid, gid } = os.userInfo();
+    expect(result.output).toContain(`-u ${uid}:${gid}`);
+    expect(result.output).toContain(`-e HOME=${SANDBOX_HOME}`);
+    expect(result.output).toMatch(new RegExp(`-v \\S+:${SANDBOX_HOME}(?!\\S)`));
+  });
+
+  it('pre-creates the parent directory for a host file mount nested under SANDBOX_HOME, before docker runs', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    // Rather than trust a path parsed back out of the args, the fake
+    // "docker" checks for the directory itself, at the moment it would
+    // actually need to be there — proving the ordering, not just that the
+    // mount flag was generated.
+    const dockerCommand = await writeFakeDocker(
+      dir,
+      [
+        'args="$@"',
+        'scratch=""',
+        'prev=""',
+        'for a in "$@"; do',
+        `  if [ "$prev" = "-v" ]; then`,
+        `    case "$a" in *":${SANDBOX_HOME}") scratch="\${a%%:*}" ;; esac`,
+        '  fi',
+        '  prev="$a"',
+        'done',
+        'if [ -d "$scratch/.local/share/opencode" ]; then',
+        '  echo "PARENT_DIR_EXISTS"',
+        'else',
+        '  echo "PARENT_DIR_MISSING"',
+        'fi',
+        'echo "args: $args"',
+        'exit 0',
+      ].join('\n') + '\n',
+    );
+    const credsPath = path.join(dir, 'auth.json');
+    await writeFile(credsPath, '{}');
+    const nestedContainerPath = path.join(SANDBOX_HOME, '.local', 'share', 'opencode', 'auth.json');
+
+    const provider = new DockerCliProvider({
+      image: 'sdlc-agent-sandbox',
+      command: 'opencode',
+      buildArgs: (prompt) => [prompt],
+      hostFileMounts: [{ hostPath: credsPath, containerPath: nestedContainerPath }],
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: dir, prompt: 'hi' });
+
+    expect(result.output).toContain('PARENT_DIR_EXISTS');
+    expect(result.output).toContain(`-v ${credsPath}:${nestedContainerPath}:ro`);
   });
 
   it('reports failure when the container exits non-zero', async () => {

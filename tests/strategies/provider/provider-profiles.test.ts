@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import { PROVIDER_PROFILES } from '../../../src/strategies/provider/provider-profiles.js';
+import { SANDBOX_HOME } from '../../../src/strategies/provider/docker-cli.js';
 
 describe('PROVIDER_PROFILES', () => {
   describe('claude', () => {
@@ -79,11 +80,18 @@ describe('PROVIDER_PROFILES', () => {
       ]);
     });
 
-    it('mounts the host auth.json read-only into the container home directory', () => {
+    it('mounts the host auth.json read-only into the sandbox home directory', () => {
       const expectedHostPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json');
+      const expectedContainerPath = path.join(
+        SANDBOX_HOME,
+        '.local',
+        'share',
+        'opencode',
+        'auth.json',
+      );
 
       expect(PROVIDER_PROFILES.opencode.hostFileMounts).toEqual([
-        { hostPath: expectedHostPath, containerPath: '/home/node/.local/share/opencode/auth.json' },
+        { hostPath: expectedHostPath, containerPath: expectedContainerPath },
       ]);
     });
 

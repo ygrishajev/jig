@@ -1,3 +1,6 @@
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { execa, ExecaError } from 'execa';
 import type { AgentProvider, AgentRunInput, AgentRunResult } from './types.js';
 
@@ -5,6 +8,16 @@ export interface HostFileMount {
   hostPath: string;
   containerPath: string;
 }
+
+/**
+ * The sandbox's $HOME for every run, regardless of which host (a Mac
+ * laptop, a CI runner) is driving it or which uid the container runs as.
+ * Fixed rather than mirroring the host's real home path, so it's always a
+ * path `run()` can freely create a backing directory for — the host's own
+ * home path might not even be a legal/creatable path inside the container
+ * (e.g. a macOS-style `/Users/...` path on a Linux image).
+ */
+export const SANDBOX_HOME = '/home/sandbox';
 
 export interface DockerCliProviderOptions {
   image: string;
@@ -48,20 +61,36 @@ export class DockerCliProvider implements AgentProvider {
       timeoutMs,
       dockerCommand = 'docker',
     } = this.options;
-    const dockerArgs = [
-      'run',
-      '--rm',
-      '-v',
-      `${input.cwd}:/workspace`,
-      '-w',
-      '/workspace',
-      ...hostEnvArgs(envVarsFromHost),
-      ...hostFileMountArgs(hostFileMounts),
-      image,
-      command,
-      ...buildArgs(input.prompt),
-    ];
+
+    // Backs $HOME for this one call. Created fresh (and matches whichever
+    // uid is actually running sdlc, since this process creates it) rather
+    // than reusing the image's baked-in user, so the container's uid always
+    // matches the host's — the bind-mounted cwd (and anything sdlc creates
+    // under it mid-run, like a slice's worktree) is owned by the host uid,
+    // not by whatever fixed uid the image happens to declare.
+    const scratchHome = await mkdtemp(path.join(os.tmpdir(), 'sdlc-sandbox-home-'));
     try {
+      await prepareHostFileMountDirs(scratchHome, hostFileMounts);
+      const { uid, gid } = os.userInfo();
+      const dockerArgs = [
+        'run',
+        '--rm',
+        '-u',
+        `${uid}:${gid}`,
+        '-e',
+        `HOME=${SANDBOX_HOME}`,
+        '-v',
+        `${scratchHome}:${SANDBOX_HOME}`,
+        '-v',
+        `${input.cwd}:/workspace`,
+        '-w',
+        '/workspace',
+        ...hostEnvArgs(envVarsFromHost),
+        ...hostFileMountArgs(hostFileMounts),
+        image,
+        command,
+        ...buildArgs(input.prompt),
+      ];
       const result = await execa(dockerCommand, dockerArgs, { timeout: timeoutMs, reject: false });
       const success = result.exitCode === 0;
       const combinedOutput = `${result.stdout}\n${result.stderr}`.trim();
@@ -75,7 +104,33 @@ export class DockerCliProvider implements AgentProvider {
             ? error.message
             : String(error);
       return { success: false, output };
+    } finally {
+      await rm(scratchHome, { recursive: true, force: true });
     }
+  }
+}
+
+/**
+ * For a host file mount landing inside SANDBOX_HOME (e.g. a credential at
+ * `${SANDBOX_HOME}/.local/share/opencode/auth.json`), pre-creates that
+ * file's parent directory on the scratch home *before* docker runs —
+ * owned by the current process's own uid, i.e. the same uid the container
+ * is about to run as. Skipped for a mount outside SANDBOX_HOME: nothing
+ * here backs that path, so there's no parent on the scratch home to make.
+ *
+ * Otherwise, Docker itself creates that missing parent at container start,
+ * owned by root (since the daemon does it, not the container's own
+ * process) — blocking the very writes this exists to allow, e.g. opencode
+ * needing to write its own cache dir alongside the mounted auth.json.
+ */
+async function prepareHostFileMountDirs(
+  scratchHome: string,
+  mounts: HostFileMount[],
+): Promise<void> {
+  for (const mount of mounts) {
+    if (!mount.containerPath.startsWith(`${SANDBOX_HOME}/`)) continue;
+    const relativeDir = path.relative(SANDBOX_HOME, path.dirname(mount.containerPath));
+    await mkdir(path.join(scratchHome, relativeDir), { recursive: true });
   }
 }
 
