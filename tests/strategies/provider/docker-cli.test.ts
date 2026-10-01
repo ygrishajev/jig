@@ -111,6 +111,37 @@ describe('DockerCliProvider', () => {
     expect(result.output).toContain('-e OPENCODE_AUTH_JSON={"key":"secret"}');
   });
 
+  it("defaults to docker's own pull policy (missing), so a locally built image isn't re-pulled", async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
+
+    const provider = new DockerCliProvider({
+      image: 'sdlc-agent-sandbox',
+      command: 'claude',
+      buildArgs: (prompt) => [prompt],
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: dir, prompt: 'hi' });
+
+    expect(result.output).toContain('--pull missing');
+  });
+
+  it("re-pulls on every run when pullPolicy is 'always', so a self-hosted runner's cached image doesn't go stale", async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
+
+    const provider = new DockerCliProvider({
+      image: 'ghcr.io/example/sdlc-agent-sandbox:latest',
+      command: 'claude',
+      buildArgs: (prompt) => [prompt],
+      pullPolicy: 'always',
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: dir, prompt: 'hi' });
+
+    expect(result.output).toContain('--pull always');
+  });
+
   it('runs the container as the host uid/gid, with $HOME on a tmpfs', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
     const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');

@@ -17,6 +17,10 @@ import type { RunPaths } from '../state/run-paths.js';
 // Overridable so CI can point at a pre-built image (e.g. from a registry)
 // instead of needing a local `docker build` — see README's CI section.
 const AGENT_SANDBOX_IMAGE = process.env.SDLC_AGENT_SANDBOX_IMAGE ?? 'sdlc-agent-sandbox';
+// Only a registry-backed image (SDLC_AGENT_SANDBOX_IMAGE set) can be
+// re-pulled — see DockerCliProviderOptions.pullPolicy for why this can't
+// default to 'always' for the local `docker build` tag too.
+const AGENT_SANDBOX_PULL_POLICY = process.env.SDLC_AGENT_SANDBOX_IMAGE ? 'always' : 'missing';
 
 export interface CliRunContext {
   repoRoot: string;
@@ -66,6 +70,7 @@ function buildProvider(stepConfig: StepConfig): AgentProvider {
     buildArgs: (prompt) => profile.buildArgs(prompt, stepConfig.model),
     envVarsFromHost: profile.envVarsFromHost,
     hostEnvFileMounts: profile.hostEnvFileMounts,
+    pullPolicy: AGENT_SANDBOX_PULL_POLICY,
   });
 }
 

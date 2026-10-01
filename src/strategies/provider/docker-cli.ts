@@ -41,6 +41,19 @@ export interface DockerCliProviderOptions {
    * writes the value to the file a provider's CLI actually expects.
    */
   hostEnvFileMounts?: HostEnvFileMount[];
+  /**
+   * 'always' re-checks the registry for a newer image on every run, instead
+   * of docker's own default of reusing whatever's already cached locally
+   * under that tag. Needed for a registry-backed image (e.g.
+   * SDLC_AGENT_SANDBOX_IMAGE in CI): a GitHub-hosted runner's image cache is
+   * empty on every job anyway, but a self-hosted runner keeps its cache
+   * across runs, so without this it would silently keep using a stale
+   * `:latest` forever once pulled once — never left unset by a caller using
+   * a registry image, but defaults to 'missing' (docker's own default) so a
+   * locally `docker build`-tagged image (no registry behind it at all) isn't
+   * broken by a pull attempt that can only fail.
+   */
+  pullPolicy?: 'always' | 'missing';
   timeoutMs?: number;
   /** The `docker` binary to invoke. Overridable for tests; defaults to `docker`. */
   dockerCommand?: string;
@@ -64,6 +77,7 @@ export class DockerCliProvider implements AgentProvider {
       buildArgs,
       envVarsFromHost = [],
       hostEnvFileMounts = [],
+      pullPolicy = 'missing',
       timeoutMs,
       dockerCommand = 'docker',
     } = this.options;
@@ -73,6 +87,8 @@ export class DockerCliProvider implements AgentProvider {
       const dockerArgs = [
         'run',
         '--rm',
+        '--pull',
+        pullPolicy,
         '-u',
         `${uid}:${gid}`,
         '-e',
