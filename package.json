@@ -1,6 +1,6 @@
 {
   "name": "@ygrishajev/sdlc",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Agentic SDLC pipeline orchestrator",
   "type": "module",
   "engines": {
