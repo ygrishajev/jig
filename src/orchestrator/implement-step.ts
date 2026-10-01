@@ -24,6 +24,7 @@ export interface ImplementStepInput {
 
 export async function runImplementStep(input: ImplementStepInput): Promise<void> {
   const { repoRoot, paths, slice, baseBranch, provider, skipCommitSigning } = input;
+  logRun(paths.runId, `preparing worktree for slice "${slice.id}"`);
   await ensureWorkspaceOnBranch(
     repoRoot,
     paths.workspaceDir,
@@ -44,6 +45,7 @@ export async function runImplementStep(input: ImplementStepInput): Promise<void>
     throw new ImplementStepFailedError(slice.id, result.output);
   }
 
+  logRun(paths.runId, `committing slice "${slice.id}"`);
   await commitAll(paths.workspaceDir, `sdlc: implement ${slice.id} — ${slice.title}`);
   slice.status = 'in_review';
 }

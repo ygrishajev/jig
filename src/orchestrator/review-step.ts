@@ -67,6 +67,7 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
   }
 
   if (config.verifyCommand) {
+    logRun(paths.runId, `running verify command: ${config.verifyCommand}`);
     const verifyResult = await runVerifyCommand(paths.workspaceDir, config.verifyCommand);
     if (!verifyResult.ok) {
       requestChanges(
@@ -102,7 +103,14 @@ type VerifyResult = { ok: true } | { ok: false; detail: string };
 
 async function runVerifyCommand(cwd: string, verifyCommand: string): Promise<VerifyResult> {
   try {
-    await execa(verifyCommand, { cwd, shell: true });
+    // Piped live for the same reason as the agent's own docker call (see
+    // docker-cli.ts) — a slow verify command (e.g. a real test suite)
+    // would otherwise look identical to a hang until it finally returns.
+    const subprocess = execa(verifyCommand, { cwd, shell: true, reject: false });
+    subprocess.stdout?.pipe(process.stdout);
+    subprocess.stderr?.pipe(process.stderr);
+    const result = await subprocess;
+    if (result.exitCode !== 0) throw result;
     return { ok: true };
   } catch (error) {
     return { ok: false, detail: truncate(extractErrorDetail(error), VERIFY_DETAIL_MAX_LENGTH) };

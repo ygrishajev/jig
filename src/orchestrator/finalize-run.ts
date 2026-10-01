@@ -30,6 +30,7 @@ export async function finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunR
     return { blocked: false, complete: true };
   }
   try {
+    logRun(paths.runId, `merging run branch "${branch}" into "${baseBranch}"`);
     await mergeStrategy.merge(repoRoot, branch, baseBranch);
     if (await isBranchMergedInto(repoRoot, branch, baseBranch)) {
       logRun(paths.runId, `run branch "${branch}" merged into "${baseBranch}"`);

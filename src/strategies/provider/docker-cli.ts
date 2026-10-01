@@ -91,7 +91,16 @@ export class DockerCliProvider implements AgentProvider {
         command,
         ...buildArgs(input.prompt),
       ];
-      const result = await execa(dockerCommand, dockerArgs, { timeout: timeoutMs, reject: false });
+      // Piped through live (in addition to the normal buffering execa does
+      // for the awaited result below) so a long call's progress is visible
+      // as it happens — in a local terminal, or in CI, where the job log
+      // streams whatever this process prints in real time. Without this, a
+      // slow-but-working agent and a genuinely hung one look identical
+      // until the call finally returns.
+      const subprocess = execa(dockerCommand, dockerArgs, { timeout: timeoutMs, reject: false });
+      subprocess.stdout?.pipe(process.stdout);
+      subprocess.stderr?.pipe(process.stderr);
+      const result = await subprocess;
       const success = result.exitCode === 0;
       const combinedOutput = `${result.stdout}\n${result.stderr}`.trim();
       const output = !success && !combinedOutput ? (result.shortMessage ?? '') : combinedOutput;
