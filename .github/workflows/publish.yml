@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -26,3 +25,26 @@ jobs:
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sandbox-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tagged with the release version so it can be pinned, and `latest` for
+      # consumers (e.g. firefly's CI) that just want the current one. No
+      # secrets live in this image (see the Dockerfile) — it's set to public
+      # once in the package's own settings after the first push, so pulling
+      # it never needs a credential either.
+      - run: |
+          docker build -t ghcr.io/ygrishajev/sdlc-agent-sandbox:${{ github.ref_name }} \
+            -t ghcr.io/ygrishajev/sdlc-agent-sandbox:latest \
+            docker/agent-sandbox
+          docker push ghcr.io/ygrishajev/sdlc-agent-sandbox:${{ github.ref_name }}
+          docker push ghcr.io/ygrishajev/sdlc-agent-sandbox:latest
