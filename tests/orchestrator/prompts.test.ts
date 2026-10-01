@@ -1,5 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { buildReviewPrompt, buildSlicePlanPrompt } from '../../src/orchestrator/prompts.js';
+import {
+  buildDesignPrompt,
+  buildReviewPrompt,
+  buildSlicePlanPrompt,
+} from '../../src/orchestrator/prompts.js';
+
+describe('buildDesignPrompt', () => {
+  it('tells the agent to write the two files at paths relative to the repo root, not absolute ones', () => {
+    // The agent runs inside a sandbox container that never has the host's
+    // absolute path (e.g. a CI runner's /home/runner/_work/...) — only cwd,
+    // which the sandbox always bind-mounts the repo root to, so a relative
+    // path is the only one guaranteed to resolve the same way in both
+    // places. Regression test for a prompt that used to embed the host's
+    // absolute path instead, which the agent could never actually write to.
+    const prompt = buildDesignPrompt(
+      'request',
+      'repo summary',
+      'plan summary',
+      'approach',
+      '.sdlc/abc123/state/design.md',
+      '.sdlc/abc123/state/plan.md',
+    );
+
+    expect(prompt).toContain('.sdlc/abc123/state/design.md');
+    expect(prompt).toContain('.sdlc/abc123/state/plan.md');
+    expect(prompt).toMatch(/relative to the repository root/i);
+    expect(prompt).not.toMatch(/\/home\/|\/Users\/|^[A-Za-z]:\\/m);
+  });
+});
 
 describe('buildSlicePlanPrompt', () => {
   it('demands slices that are standalone deliverables understandable on their own', () => {

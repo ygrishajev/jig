@@ -42,8 +42,13 @@ export function buildDesignPrompt(
   repoSummary: string,
   planSummary: string,
   planApproach: string,
-  designPath: string,
-  planPath: string,
+  // Relative to the repo root, not absolute: the agent runs inside a
+  // sandbox container whose filesystem doesn't have the host's absolute
+  // path (e.g. a GitHub Actions runner's /home/runner/_work/...) — only a
+  // path relative to its cwd (which the sandbox always bind-mounts the repo
+  // root to) resolves the same way regardless of what host is driving it.
+  designRelativePath: string,
+  planRelativePath: string,
 ): string {
   return [
     'You are the design step of an automated SDLC pipeline.',
@@ -62,10 +67,10 @@ export function buildDesignPrompt(
     '--- APPROACH ---',
     planApproach,
     '',
-    'Write TWO markdown files:',
-    `1. "${designPath}" with sections: Goal; Context; Chosen approach; Alternatives considered`,
-    '   (each with why it was rejected); Assumptions; Non-goals; Affected areas.',
-    `2. "${planPath}" — the overall implementation plan as numbered steps, each under a`,
+    'Write TWO markdown files, with paths given relative to the repository root:',
+    `1. "${designRelativePath}" with sections: Goal; Context; Chosen approach; Alternatives`,
+    '   considered (each with why it was rejected); Assumptions; Non-goals; Affected areas.',
+    `2. "${planRelativePath}" — the overall implementation plan as numbered steps, each under a`,
     '   `## Step N — <title>` heading, each step small enough to map onto one slice.',
     '',
     'Respond with JSON matching: { "written": string[] } listing the file names you wrote.',

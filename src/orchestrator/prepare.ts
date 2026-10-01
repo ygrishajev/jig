@@ -132,8 +132,8 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
       contextOutput.repoSummary,
       planOutput.summary,
       planOutput.approach,
-      designPath,
-      planPath,
+      path.relative(repoRoot, designPath),
+      path.relative(repoRoot, planPath),
     ),
   });
   if (!designResult.success) throw new Error(`Design step failed: ${designResult.output}`);
