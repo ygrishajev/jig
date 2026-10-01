@@ -56,6 +56,31 @@ export function generateRunId(): string {
   return randomBytes(4).toString('hex');
 }
 
+/**
+ * A provider that exits 0 but never writes the structured-output file
+ * (ENOENT), writes malformed JSON, or writes the wrong shape is the most
+ * likely real-world agentic-CLI failure mode (mirrors review-step.ts's same
+ * handling). Left as a bare `readStructuredOutput` call, the thrown error
+ * carries none of the agent's own output, so a planning failure is
+ * undiagnosable — this wraps it so the agent's raw response is always part
+ * of the error.
+ */
+async function readStepOutput<T>(
+  cwd: string,
+  label: string,
+  agentOutput: string,
+  parse: (raw: unknown) => T,
+): Promise<T> {
+  try {
+    return await readStructuredOutput(cwd, parse);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${label} step did not produce valid structured output: ${message}\n\nAgent output:\n${agentOutput}`,
+    );
+  }
+}
+
 export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
   const { repoRoot, inputSource, provider } = options;
   const rawRequest = await inputSource.resolve();
@@ -74,7 +99,7 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
     prompt: buildContextPrompt(rawRequest),
   });
   if (!contextResult.success) throw new Error(`Context step failed: ${contextResult.output}`);
-  const contextOutput = await readStructuredOutput(repoRoot, (raw) =>
+  const contextOutput = await readStepOutput(repoRoot, 'Context', contextResult.output, (raw) =>
     contextOutputSchema.parse(raw),
   );
   await writeContext(paths, {
@@ -91,7 +116,9 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
     prompt: buildFeaturePlanPrompt(rawRequest, contextOutput.repoSummary),
   });
   if (!planResult.success) throw new Error(`Feature-plan step failed: ${planResult.output}`);
-  const planOutput = await readStructuredOutput(repoRoot, (raw) => planOutputSchema.parse(raw));
+  const planOutput = await readStepOutput(repoRoot, 'Feature-plan', planResult.output, (raw) =>
+    planOutputSchema.parse(raw),
+  );
   await writePlan(paths, planOutput);
 
   const designPath = path.join(paths.stateDir, 'design.md');
@@ -110,7 +137,9 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
     ),
   });
   if (!designResult.success) throw new Error(`Design step failed: ${designResult.output}`);
-  await readStructuredOutput(repoRoot, (raw) => designAckSchema.parse(raw));
+  await readStepOutput(repoRoot, 'Design', designResult.output, (raw) =>
+    designAckSchema.parse(raw),
+  );
   await resetStructuredOutput(repoRoot);
   await assertPlanningDocsWritten(designPath, planPath);
 
@@ -121,7 +150,9 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
     prompt: buildSlicePlanPrompt(await readFile(planPath, 'utf-8')),
   });
   if (!sliceResult.success) throw new Error(`Slice-plan step failed: ${sliceResult.output}`);
-  const sliceOutput = await readStructuredOutput(repoRoot, (raw) => sliceOutputSchema.parse(raw));
+  const sliceOutput = await readStepOutput(repoRoot, 'Slice-plan', sliceResult.output, (raw) =>
+    sliceOutputSchema.parse(raw),
+  );
   await resetStructuredOutput(repoRoot);
   assertUniqueSliceIds(sliceOutput);
 
