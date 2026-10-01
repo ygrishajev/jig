@@ -111,6 +111,35 @@ describe('DockerCliProvider', () => {
     expect(result.output).toContain('-e OPENCODE_AUTH_JSON={"key":"secret"}');
   });
 
+  it('skips the file fallback when the env var is already set as a host env var', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
+    // Points at a file that does not exist — proving the fallback read never
+    // happens (it would fail with ENOENT) rather than just checking which
+    // value won.
+    const missingCredsPath = path.join(dir, 'does-not-exist.json');
+    process.env.SDLC_TEST_OPENCODE_AUTH_JSON = '{"key":"from-host-env"}';
+
+    try {
+      const provider = new DockerCliProvider({
+        image: 'sdlc-agent-sandbox',
+        command: 'opencode',
+        buildArgs: (prompt) => [prompt],
+        envVarsFromHost: ['SDLC_TEST_OPENCODE_AUTH_JSON'],
+        hostEnvFileMounts: [
+          { hostPath: missingCredsPath, envVarName: 'SDLC_TEST_OPENCODE_AUTH_JSON' },
+        ],
+        dockerCommand,
+      });
+      const result = await provider.run({ cwd: dir, prompt: 'hi' });
+
+      expect(result.success).toBe(true);
+      expect(result.output).toContain('-e SDLC_TEST_OPENCODE_AUTH_JSON={"key":"from-host-env"}');
+    } finally {
+      delete process.env.SDLC_TEST_OPENCODE_AUTH_JSON;
+    }
+  });
+
   it("defaults to docker's own pull policy (missing), so a locally built image isn't re-pulled", async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
     const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');

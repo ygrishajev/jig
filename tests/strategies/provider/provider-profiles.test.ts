@@ -59,6 +59,10 @@ describe('PROVIDER_PROFILES', () => {
   });
 
   describe('opencode', () => {
+    afterEach(() => {
+      delete process.env.OPENCODE_AUTH_JSON;
+    });
+
     it('builds args with the prompt placed right after the run subcommand', () => {
       const args = PROVIDER_PROFILES.opencode.buildArgs('do the thing');
 
@@ -79,7 +83,11 @@ describe('PROVIDER_PROFILES', () => {
       ]);
     });
 
-    it('passes the host auth.json as an env var, not a bind mount', () => {
+    it('forwards OPENCODE_AUTH_JSON directly when set as a host env var (the CI path)', () => {
+      expect(PROVIDER_PROFILES.opencode.envVarsFromHost).toEqual(['OPENCODE_AUTH_JSON']);
+    });
+
+    it('falls back to reading auth.json from disk when no env var is set (the local-dev path)', () => {
       const expectedHostPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json');
 
       expect(PROVIDER_PROFILES.opencode.hostEnvFileMounts).toEqual([
@@ -87,8 +95,10 @@ describe('PROVIDER_PROFILES', () => {
       ]);
     });
 
-    it('uses no host environment variables (credentials are file-based)', () => {
-      expect(PROVIDER_PROFILES.opencode.envVarsFromHost).toEqual([]);
+    it('does not throw when OPENCODE_AUTH_JSON is set, even without an auth.json file', () => {
+      process.env.OPENCODE_AUTH_JSON = '{"openrouter":{"type":"api","key":"test"}}';
+
+      expect(() => PROVIDER_PROFILES.opencode.assertCredentialsAvailable()).not.toThrow();
     });
   });
 });

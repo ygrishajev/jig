@@ -85,11 +85,14 @@ one-time credential setup:
   interactive, account-level action producing a long-lived token), then
   `export CLAUDE_CODE_OAUTH_TOKEN="<the token>"` in your shell before
   running `sdlc`. An `ANTHROPIC_API_KEY` env var works too, if you use one.
-- **`opencode`** — run `opencode auth login` on your host once; its
-  credentials file (`~/.local/share/opencode/auth.json`) is read and passed
-  into the container automatically (as an env var, materialized back to a
-  file by the container's own entrypoint — `$HOME` inside the sandbox is a
-  tmpfs, not anything bind-mounted from the host). Also set
+- **`opencode`** — set `OPENCODE_AUTH_JSON` in your environment to its
+  credentials JSON (e.g. a CI secret — this is the one to use there; no file
+  needs to exist on the runner). Locally, running `opencode auth login` once
+  works too: without the env var, sdlc falls back to reading what it wrote
+  to `~/.local/share/opencode/auth.json`. Either way, the value reaches the
+  container as an env var — `$HOME` inside the sandbox is a tmpfs, so the
+  container's own entrypoint materializes it back to the file opencode
+  actually reads, not a host bind mount. Also set
   `opencodeModel` (`"provider/model"`, e.g. what `opencode models` lists) —
   a fresh sandbox container has no stored model preference, so without this
   opencode falls back to its own default, which may not support tool use

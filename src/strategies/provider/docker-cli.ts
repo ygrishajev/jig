@@ -39,6 +39,11 @@ export interface DockerCliProviderOptions {
    * nothing backing it on the host, so there's no path to mount a file
    * into; the image's own entrypoint (docker/agent-sandbox/entrypoint.sh)
    * writes the value to the file a provider's CLI actually expects.
+   *
+   * A fallback, not a requirement: skipped for any entry whose `envVarName`
+   * is already set as a host env var (i.e. came through `envVarsFromHost`
+   * above) — CI setting the secret directly never needs this file to exist
+   * on the runner's disk at all.
    */
   hostEnvFileMounts?: HostEnvFileMount[];
   /**
@@ -108,7 +113,7 @@ export class DockerCliProvider implements AgentProvider {
         '-w',
         '/workspace',
         ...hostEnvArgs(envVarsFromHost),
-        ...(await hostEnvFileArgs(hostEnvFileMounts)),
+        ...(await hostEnvFileArgs(hostEnvFileMounts, envVarsFromHost)),
         image,
         command,
         ...buildArgs(input.prompt),
@@ -146,9 +151,16 @@ function hostEnvArgs(envVarNames: string[]): string[] {
   });
 }
 
-async function hostEnvFileArgs(mounts: HostEnvFileMount[]): Promise<string[]> {
+async function hostEnvFileArgs(
+  mounts: HostEnvFileMount[],
+  envVarsFromHost: string[],
+): Promise<string[]> {
   const args: string[] = [];
   for (const { hostPath, envVarName } of mounts) {
+    // Already supplied directly as a host env var (e.g. a CI secret) — skip
+    // the file read entirely rather than racing two `-e` flags for the same
+    // name, and rather than requiring a file that CI has no reason to have.
+    if (envVarsFromHost.includes(envVarName) && process.env[envVarName]) continue;
     const value = await readFile(hostPath, 'utf-8');
     args.push('-e', `${envVarName}=${value}`);
   }
