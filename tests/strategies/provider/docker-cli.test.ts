@@ -175,6 +175,48 @@ describe('DockerCliProvider', () => {
     expect(result.output).toContain(`-v ${credsPath}:${nestedContainerPath}:ro`);
   });
 
+  it('opens the scratch $HOME (and any pre-created nested dirs) to any uid, not just the host uid', async () => {
+    // Guards against EACCES on a self-hosted runner whose docker remaps the
+    // `-u` uid (rootless / userns-remap) so it no longer actually matches
+    // the uid that owns these directories on the host side — see the
+    // comments in docker-cli.ts. Checked with `ls -ld` (portable across the
+    // BSD stat used in local/macOS test runs and the GNU stat in CI) rather
+    // than asserting as a different real uid, which the test can't assume.
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const dockerCommand = await writeFakeDocker(
+      dir,
+      [
+        'args="$@"',
+        'scratch=""',
+        'prev=""',
+        'for a in "$@"; do',
+        `  if [ "$prev" = "-v" ]; then`,
+        `    case "$a" in *":${SANDBOX_HOME}") scratch="\${a%%:*}" ;; esac`,
+        '  fi',
+        '  prev="$a"',
+        'done',
+        'echo "home: $(ls -ld "$scratch" | cut -c1-10)"',
+        'echo "nested: $(ls -ld "$scratch/.local/share/opencode" | cut -c1-10)"',
+        'exit 0',
+      ].join('\n') + '\n',
+    );
+    const credsPath = path.join(dir, 'auth.json');
+    await writeFile(credsPath, '{}');
+    const nestedContainerPath = path.join(SANDBOX_HOME, '.local', 'share', 'opencode', 'auth.json');
+
+    const provider = new DockerCliProvider({
+      image: 'sdlc-agent-sandbox',
+      command: 'opencode',
+      buildArgs: (prompt) => [prompt],
+      hostFileMounts: [{ hostPath: credsPath, containerPath: nestedContainerPath }],
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: dir, prompt: 'hi' });
+
+    expect(result.output).toContain('home: drwxrwxrwx');
+    expect(result.output).toContain('nested: drwxrwxrwx');
+  });
+
   it('reports failure when the container exits non-zero', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
     const dockerCommand = await writeFakeDocker(dir, 'echo "failing" 1>&2\nexit 1\n');
