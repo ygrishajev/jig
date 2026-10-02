@@ -66,11 +66,19 @@ export interface DockerCliProviderOptions {
 
 /**
  * Runs an agentic CLI inside a throwaway Docker container instead of
- * directly on the host. `input.cwd` is bind-mounted to `/workspace` (both
- * for `prepare`'s repo-root calls and `implement`/`review`'s slice
- * worktree), so code changes land on the host's real files even though the
- * container itself is discarded after each call — the container is the
- * sandbox, not the source of truth for anything written to disk.
+ * directly on the host. By default `input.cwd` is bind-mounted to
+ * `/workspace` (e.g. `prepare`'s repo-root calls, where `cwd` IS the repo),
+ * so code changes land on the host's real files even though the container
+ * itself is discarded after each call — the container is the sandbox, not
+ * the source of truth for anything written to disk.
+ *
+ * When `input.repoRoot` is given (e.g. `implement`/`review`'s slice
+ * worktree), the whole repo is bind-mounted at its own absolute host path
+ * instead, with the container's workdir set to `cwd`'s real path rather
+ * than `/workspace`. A secondary worktree's `.git` is a file containing an
+ * absolute `gitdir: <repoRoot>/.git/worktrees/...` pointer — mounting only
+ * `cwd` leaves that path nonexistent inside the container, so every git
+ * command the agent runs there fails as if the repo had no history at all.
  */
 export class DockerCliProvider implements AgentProvider {
   constructor(private readonly options: DockerCliProviderOptions) {}
@@ -89,6 +97,14 @@ export class DockerCliProvider implements AgentProvider {
 
     try {
       const { uid, gid } = os.userInfo();
+      // Mounting just `cwd` works when it IS the repo (prepare's calls).
+      // For a secondary worktree, `cwd`'s `.git` file points at an absolute
+      // path under `repoRoot/.git/worktrees/...` outside `cwd` itself, so
+      // the whole repo is mounted at that same absolute host path instead,
+      // keeping the pointer resolvable from inside the container.
+      const mountSource = input.repoRoot ?? input.cwd;
+      const mountTarget = input.repoRoot ?? '/workspace';
+      const workdir = input.repoRoot ? input.cwd : '/workspace';
       const dockerArgs = [
         'run',
         '--rm',
@@ -109,9 +125,9 @@ export class DockerCliProvider implements AgentProvider {
         '--tmpfs',
         `${SANDBOX_HOME}:mode=1777`,
         '-v',
-        `${input.cwd}:/workspace`,
+        `${mountSource}:${mountTarget}`,
         '-w',
-        '/workspace',
+        workdir,
         ...hostEnvArgs(envVarsFromHost),
         ...(await hostEnvFileArgs(hostEnvFileMounts, envVarsFromHost)),
         image,

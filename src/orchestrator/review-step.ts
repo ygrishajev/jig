@@ -24,6 +24,7 @@ export async function runReviewStep(input: ReviewStepInput): Promise<void> {
   await resetStructuredOutput(paths.workspaceDir);
   const reviewResult = await provider.run({
     cwd: paths.workspaceDir,
+    repoRoot: paths.repoRoot,
     prompt: buildReviewPrompt(slice),
   });
   if (!reviewResult.success) {

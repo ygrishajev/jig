@@ -39,6 +39,7 @@ export async function runImplementStep(input: ImplementStepInput): Promise<void>
 
   const result = await provider.run({
     cwd: paths.workspaceDir,
+    repoRoot,
     prompt: buildImplementPrompt(slice),
   });
   if (!result.success) {

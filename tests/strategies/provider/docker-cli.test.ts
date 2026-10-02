@@ -38,6 +38,23 @@ describe('DockerCliProvider', () => {
     );
   });
 
+  it('mounts the whole repo at its own path when repoRoot is given, so a worktree\'s absolute .git pointer still resolves', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
+    const workspaceDir = path.join(dir, '.sdlc', 'run1', 'workspace');
+    const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
+
+    const provider = new DockerCliProvider({
+      image: 'sdlc-agent-sandbox',
+      command: 'claude',
+      buildArgs: (prompt) => [prompt],
+      dockerCommand,
+    });
+    const result = await provider.run({ cwd: workspaceDir, repoRoot: dir, prompt: 'hi' });
+
+    expect(result.output).toContain(`-v ${dir}:${dir}`);
+    expect(result.output).toContain(`-w ${workspaceDir}`);
+  });
+
   it('supports a prompt placed mid-argument-list, not just trailing (e.g. opencode-style)', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
     const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');
