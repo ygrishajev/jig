@@ -46,6 +46,13 @@ describe('buildSlicePlanPrompt', () => {
     const prompt = buildSlicePlanPrompt('plan summary', 'approach');
     expect(prompt).toMatch(/10 minutes/);
   });
+
+  it('does not require more than one slice, and ties slice size to a commit-sized unit of work', () => {
+    const prompt = buildSlicePlanPrompt('plan summary', 'approach');
+    expect(prompt).toMatch(/no required or minimum slice count/i);
+    expect(prompt).toMatch(/exactly one slice/i);
+    expect(prompt).toMatch(/becomes exactly one\s*\n?\s*commit/i);
+  });
 });
 
 describe('buildReviewPrompt', () => {
