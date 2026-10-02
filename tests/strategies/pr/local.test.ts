@@ -87,6 +87,34 @@ describe('LocalPrCreateStrategy', () => {
     expect(content).toContain('- [ ] s2 — Implements plan step 2. Wire the route into the app.');
   });
 
+  it("includes a stuck slice's reviewer feedback, so a PR opened for a blocked run still shows why", async () => {
+    repo = await createTempRepo();
+    const paths = await initializeRunState(repo.dir, 'run4', 'main');
+    await writePlan(paths, {
+      summary: 'Add /health endpoint',
+      approach: 'Add a route returning 200 OK',
+      affectedAreas: ['src/routes'],
+    });
+    const stuck: Slice = {
+      id: 's1',
+      title: 'Add health route',
+      description: 'Implements plan step 1. Adds GET /health returning 200.',
+      order: 0,
+      status: 'stuck',
+      reviewCycles: 3,
+      mergeAttempts: 0,
+      lastFeedback: 'Missing a test for the 500 path.',
+    };
+    await writeSlices(paths, [stuck]);
+
+    await new LocalPrCreateStrategy().create(paths);
+
+    const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
+    expect(content).toContain('- [ ] s1 — Implements plan step 1. Adds GET /health returning 200.');
+    expect(content).toContain('[stuck]');
+    expect(content).toContain('Missing a test for the 500 path.');
+  });
+
   it('omits the design and plan markdown sections when the run has no planning docs, using the plan summary as the title', async () => {
     repo = await createTempRepo();
     const paths = await initializeRunState(repo.dir, 'run3', 'main');

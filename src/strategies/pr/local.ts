@@ -38,12 +38,23 @@ export class LocalPrCreateStrategy implements PrCreateStrategy {
     return sections;
   }
 
+  // A stuck slice's reviewer feedback is appended under its line (rather
+  // than folded into the line itself) so the already-covered checkbox
+  // format stays exactly as it was — this is the only thing a human reads
+  // when a run is blocked and nothing got pushed/merged to show the
+  // feedback any other way.
   private sliceMapping(slices: Slice[]): string {
     const lines = [...slices]
       .sort((a, b) => a.order - b.order)
-      .map(
-        (s) => `- [${s.status === 'merged' ? 'x' : ' '}] ${s.id} — ${s.description.split('\n')[0]}`,
-      );
+      .flatMap((s) => {
+        const line = `- [${s.status === 'merged' ? 'x' : ' '}] ${s.id} — ${s.description.split('\n')[0]}`;
+        if (!s.lastFeedback) return [line];
+        const feedback = s.lastFeedback
+          .split('\n')
+          .map((feedbackLine) => `  > ${feedbackLine}`)
+          .join('\n');
+        return [line, `  **[${s.status}]** reviewer feedback:`, feedback];
+      });
     return ['## Slices', '', ...lines].join('\n');
   }
 }
