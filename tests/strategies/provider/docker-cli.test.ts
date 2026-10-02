@@ -38,7 +38,7 @@ describe('DockerCliProvider', () => {
     );
   });
 
-  it('mounts the whole repo at its own path when repoRoot is given, so a worktree\'s absolute .git pointer still resolves', async () => {
+  it("mounts the whole repo at its own path when repoRoot is given, so a worktree's absolute .git pointer still resolves", async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'sdlc-docker-'));
     const workspaceDir = path.join(dir, '.sdlc', 'run1', 'workspace');
     const dockerCommand = await writeFakeDocker(dir, 'echo "args: $@"\nexit 0\n');

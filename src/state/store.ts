@@ -6,10 +6,12 @@ import {
   runContextSchema,
   runMetaSchema,
   runPlanSchema,
+  runResultSchema,
   slicesSchema,
   type RunContext,
   type RunMeta,
   type RunPlan,
+  type RunResult,
   type Slice,
 } from './types.js';
 
@@ -17,6 +19,7 @@ const CONTEXT_FILE = 'context.json';
 const PLAN_FILE = 'plan.json';
 const SLICES_FILE = 'slices.json';
 const RUN_META_FILE = 'run-meta.json';
+const RESULT_FILE = 'result.json';
 
 export async function initializeRunState(
   repoRoot: string,
@@ -59,6 +62,12 @@ export async function loadRunState(repoRoot: string, runId: string): Promise<Run
   return paths;
 }
 
+// Used to validate a caller-supplied `--run-id` before `initializeRunState`
+// would otherwise silently reuse (and overwrite) an existing run's state.
+export function runIdInUse(repoRoot: string, runId: string): boolean {
+  return existsSync(path.join(getRunPaths(repoRoot, runId).stateDir, RUN_META_FILE));
+}
+
 export async function readRunMeta(paths: RunPaths): Promise<RunMeta> {
   return runMetaSchema.parse(
     JSON.parse(await readFile(path.join(paths.stateDir, RUN_META_FILE), 'utf-8')),
@@ -97,6 +106,16 @@ export async function readSlices(paths: RunPaths): Promise<Slice[]> {
 
 export async function writeSlices(paths: RunPaths, slices: Slice[]): Promise<void> {
   await writeJsonFile(paths.stateDir, SLICES_FILE, slicesSchema.parse(slices));
+}
+
+export async function readRunResult(paths: RunPaths): Promise<RunResult> {
+  return runResultSchema.parse(
+    JSON.parse(await readFile(path.join(paths.stateDir, RESULT_FILE), 'utf-8')),
+  );
+}
+
+export async function writeRunResult(paths: RunPaths, result: RunResult): Promise<void> {
+  await writeJsonFile(paths.stateDir, RESULT_FILE, runResultSchema.parse(result));
 }
 
 async function writeJsonFile(dir: string, filename: string, value: unknown): Promise<void> {

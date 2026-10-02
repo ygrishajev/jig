@@ -4,6 +4,8 @@ import { loadConfig } from '../../config/load-config.js';
 import { prepareRun } from '../../orchestrator/prepare.js';
 import { runReconcilerPass, type ReconcilePassInput } from '../../orchestrator/reconcile.js';
 import { MarkdownFileInputSource } from '../../strategies/input-source/markdown-file.js';
+import { writeRunResult } from '../../state/store.js';
+import type { RunPaths } from '../../state/run-paths.js';
 import { loadCliRunContext, selectProvider } from '../run-context.js';
 import { printRunSummary } from '../run-summary.js';
 import { withErrorHandling } from '../with-error-handling.js';
@@ -36,12 +38,38 @@ export async function runAutopilot(input: AutopilotInput): Promise<AutopilotResu
   );
 }
 
+/**
+ * Writes the run's outcome to a structured file (`result.json` in the
+ * run's state dir), alongside the existing human-readable console line —
+ * so a caller like a CI workflow can read `{ complete, blockedReason }`
+ * directly instead of grepping stdout, which also carries whatever an
+ * agent itself printed (see docker-cli.ts's provider.run).
+ */
+async function reportAutopilotResult(
+  paths: RunPaths,
+  runId: string,
+  result: AutopilotResult,
+): Promise<void> {
+  await writeRunResult(paths, {
+    runId,
+    complete: result.complete,
+    blockedReason: result.blockedReason,
+    passes: result.passes,
+  });
+  console.log(
+    result.complete
+      ? `Run ${runId} complete after ${result.passes} pass(es).`
+      : `Run ${runId} blocked after ${result.passes} pass(es): ${result.blockedReason}`,
+  );
+}
+
 export function registerAutopilotCommands(program: Command): void {
   program
     .command('autopilot')
     .requiredOption('--input <file>', 'path to a markdown request file')
+    .option('--run-id <id>', 'use this run id instead of generating one')
     .action(
-      withErrorHandling(async (opts: { input: string }) => {
+      withErrorHandling(async (opts: { input: string; runId?: string }) => {
         const repoRoot = process.cwd();
         const config = loadConfig(repoRoot);
         const provider = selectProvider(config, 'reviewer');
@@ -50,6 +78,7 @@ export function registerAutopilotCommands(program: Command): void {
           repoRoot,
           inputSource: new MarkdownFileInputSource(opts.input),
           provider: selectProvider(config, 'planner'),
+          runId: opts.runId,
         });
         const context = await loadCliRunContext(repoRoot, meta.runId);
         if (config.designGate === 'checkpoint') {
@@ -63,11 +92,7 @@ export function registerAutopilotCommands(program: Command): void {
         }
         const result = await runAutopilot({ ...context, provider, implementProvider });
         await printRunSummary(context);
-        console.log(
-          result.complete
-            ? `Run ${meta.runId} complete after ${result.passes} pass(es).`
-            : `Run ${meta.runId} blocked after ${result.passes} pass(es): ${result.blockedReason}`,
-        );
+        await reportAutopilotResult(context.paths, meta.runId, result);
       }),
     );
 
@@ -82,11 +107,7 @@ export function registerAutopilotCommands(program: Command): void {
         const implementProvider = selectProvider(context.config, 'implementer');
         const result = await runAutopilot({ ...context, provider, implementProvider });
         await printRunSummary(context);
-        console.log(
-          result.complete
-            ? `Run ${opts.run} complete after ${result.passes} pass(es).`
-            : `Run ${opts.run} blocked after ${result.passes} pass(es): ${result.blockedReason}`,
-        );
+        await reportAutopilotResult(context.paths, opts.run, result);
       }),
     );
 }

@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { Command } from 'commander';
 
 vi.mock('../../../src/orchestrator/reconcile.js', () => ({ runReconcilerPass: vi.fn() }));
@@ -17,9 +20,14 @@ import { runReconcilerPass } from '../../../src/orchestrator/reconcile.js';
 import { prepareRun } from '../../../src/orchestrator/prepare.js';
 import { loadConfig } from '../../../src/config/load-config.js';
 import { loadCliRunContext, selectProvider } from '../../../src/cli/run-context.js';
+import { readRunResult } from '../../../src/state/store.js';
 
-afterEach(() => {
+let repoDir: string | undefined;
+
+afterEach(async () => {
   vi.restoreAllMocks();
+  if (repoDir) await rm(repoDir, { recursive: true, force: true });
+  repoDir = undefined;
 });
 
 describe('runAutopilot', () => {
@@ -149,5 +157,60 @@ describe('autopilot command with designGate checkpoint', () => {
     const logged = logSpy.mock.calls.map((args) => args.join(' '));
     expect(logged.some((line) => line.includes('design.md'))).toBe(true);
     expect(logged.some((line) => line.includes('sdlc resume --run r1'))).toBe(true);
+  });
+});
+
+describe('autopilot command result reporting', () => {
+  it('writes a structured result file alongside the human-readable summary once a run blocks', async () => {
+    repoDir = await mkdtemp(path.join(tmpdir(), 'sdlc-autopilot-cli-'));
+    const config = {
+      mergeMode: 'manual' as const,
+      reviewCycleCap: 3,
+      conflictResolveCap: 3,
+      inputSource: 'markdown-file' as const,
+      planner: { provider: 'claude' as const },
+      implementer: { provider: 'claude' as const },
+      reviewer: { provider: 'claude' as const },
+      commitSigning: 'repo' as const,
+    };
+    const paths = {
+      runId: 'r2',
+      repoRoot: repoDir,
+      stateDir: path.join(repoDir, '.sdlc', 'r2', 'state'),
+      workspaceDir: path.join(repoDir, '.sdlc', 'r2', 'workspace'),
+    };
+    vi.mocked(loadConfig).mockReturnValue(config);
+    vi.mocked(prepareRun).mockResolvedValue({
+      runId: 'r2',
+      baseBranch: 'main',
+      currentSliceId: 's1',
+      createdAt: '',
+      updatedAt: '',
+    });
+    vi.mocked(loadCliRunContext).mockResolvedValue({
+      repoRoot: repoDir,
+      paths,
+      baseBranch: 'main',
+      config,
+      mergeStrategy: { merge: vi.fn() },
+    });
+    vi.mocked(selectProvider).mockReturnValue({ run: vi.fn() });
+    vi.mocked(runReconcilerPass).mockResolvedValueOnce({
+      blocked: true,
+      reason: 'run branch "sdlc/run/r2" is not yet merged into "main"',
+      complete: false,
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const program = new Command();
+    registerAutopilotCommands(program);
+    await program.parseAsync(['node', 'sdlc', 'autopilot', '--input', 'request.md']);
+
+    expect(await readRunResult(paths)).toEqual({
+      runId: 'r2',
+      complete: false,
+      blockedReason: 'run branch "sdlc/run/r2" is not yet merged into "main"',
+      passes: 1,
+    });
   });
 });

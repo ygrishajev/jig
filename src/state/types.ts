@@ -5,6 +5,13 @@ import { z } from 'zod';
 // than accepting arbitrary agent-provided text.
 export const sliceIdPattern = /^[a-z0-9-]+$/;
 
+// A run id becomes both a `.sdlc/<runId>` directory name and a
+// `sdlc/run/<runId>` git branch segment (see `runBranchFor`) — constrained
+// the same way as a slice id, since a caller-supplied `--run-id` (rather
+// than one of our own `generateRunId()` hex strings) is otherwise free-form
+// text that could break either.
+export const runIdPattern = /^[a-z0-9-]+$/;
+
 export const sliceStatusSchema = z.enum([
   'pending',
   'implementing',
@@ -55,6 +62,22 @@ export const runMetaSchema = z.object({
   updatedAt: z.string(),
 });
 export type RunMeta = z.infer<typeof runMetaSchema>;
+
+/**
+ * Written once `autopilot`/`resume` reaches a final outcome, so a CI
+ * workflow (or any other caller) can read a run's outcome from a stable,
+ * structured file instead of grepping the mixed human/agent text on stdout
+ * — see docker-cli.ts's provider.run, which pipes an agent's raw output
+ * straight through, for why that text can't be trusted to only ever
+ * contain sdlc's own log lines.
+ */
+export const runResultSchema = z.object({
+  runId: z.string().min(1),
+  complete: z.boolean(),
+  blockedReason: z.string().optional(),
+  passes: z.number().int().nonnegative(),
+});
+export type RunResult = z.infer<typeof runResultSchema>;
 
 /**
  * Every slice in a run commits onto this single branch — one branch per run,

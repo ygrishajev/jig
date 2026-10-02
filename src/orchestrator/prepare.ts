@@ -8,12 +8,13 @@ import type { AgentProvider } from '../strategies/provider/types.js';
 import {
   initializeRunState,
   readRunMeta,
+  runIdInUse,
   writeContext,
   writePlan,
   writeRunMeta,
   writeSlices,
 } from '../state/store.js';
-import { sliceIdPattern, type RunMeta, type Slice } from '../state/types.js';
+import { runIdPattern, sliceIdPattern, type RunMeta, type Slice } from '../state/types.js';
 import { logRun } from '../logging.js';
 import {
   buildContextPrompt,
@@ -27,6 +28,13 @@ export interface PrepareOptions {
   repoRoot: string;
   inputSource: InputSource;
   provider: AgentProvider;
+  /**
+   * Use this id instead of generating one — lets a caller (e.g. a CI
+   * workflow) know the run id, and therefore its branch name
+   * (`sdlc/run/<id>`), before `prepareRun` ever returns, instead of having
+   * to recover it afterwards from stdout.
+   */
+  runId?: string;
 }
 
 const contextOutputSchema = z.object({ classification: z.string(), repoSummary: z.string() });
@@ -56,6 +64,18 @@ export function generateRunId(): string {
   return randomBytes(4).toString('hex');
 }
 
+function assertRunIdIsUsable(repoRoot: string, runId: string): void {
+  if (!runIdPattern.test(runId)) {
+    throw new Error(
+      `Invalid --run-id "${runId}" — must be lowercase alphanumeric characters and ` +
+        'hyphens only (it becomes a directory name and a git branch segment).',
+    );
+  }
+  if (runIdInUse(repoRoot, runId)) {
+    throw new Error(`Run id "${runId}" already exists — pick a different --run-id.`);
+  }
+}
+
 /**
  * A provider that exits 0 but never writes the structured-output file
  * (ENOENT), writes malformed JSON, or writes the wrong shape is the most
@@ -82,10 +102,11 @@ async function readStepOutput<T>(
 }
 
 export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
-  const { repoRoot, inputSource, provider } = options;
+  const { repoRoot, inputSource, provider, runId: requestedRunId } = options;
   const rawRequest = await inputSource.resolve();
   const baseBranch = await getCurrentBranch(repoRoot);
-  const runId = generateRunId();
+  if (requestedRunId) assertRunIdIsUsable(repoRoot, requestedRunId);
+  const runId = requestedRunId ?? generateRunId();
   const paths = await initializeRunState(repoRoot, runId, baseBranch);
   logRun(runId, 'planning: context…');
 

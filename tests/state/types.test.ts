@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   runBranchFor,
   runMetaSchema,
+  runResultSchema,
   sliceSchema,
   sliceStatusSchema,
   slicesSchema,
@@ -99,5 +100,18 @@ describe('state schemas', () => {
   it('derives one stable branch name per run id, not per slice', () => {
     expect(runBranchFor('abc12345')).toBe('sdlc/run/abc12345');
     expect(runBranchFor('abc12345')).toBe(runBranchFor('abc12345'));
+  });
+
+  it('parses a run result, with blockedReason optional', () => {
+    const complete = runResultSchema.parse({ runId: 'abc12345', complete: true, passes: 2 });
+    expect(complete.blockedReason).toBeUndefined();
+
+    const blocked = runResultSchema.parse({
+      runId: 'abc12345',
+      complete: false,
+      blockedReason: 'slice "s1" is stuck',
+      passes: 3,
+    });
+    expect(blocked.blockedReason).toContain('stuck');
   });
 });

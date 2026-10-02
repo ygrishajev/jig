@@ -73,7 +73,7 @@ function buildImplementPrompt(slice: Slice): string {
     '',
     'Before writing a script to re-derive something a tool already reported (e.g. parsing a',
     "mutation-testing or coverage tool's own output by hand), re-read what it already printed.",
-    "Before re-running a slow check, check whether a later, more specific step already covers it",
+    'Before re-running a slow check, check whether a later, more specific step already covers it',
     '(e.g. a full test-suite run right before a tool that re-runs the same suite itself).',
   );
   return lines.join('\n');

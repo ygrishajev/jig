@@ -148,6 +148,20 @@ Optional `sdlc.config.json` in the repo root:
 `implement` and `review` are aliases of the same underlying reconciler
 step — each does whatever the current slice's status actually calls for.
 
+`prepare` and `autopilot` also accept `--run-id <id>` to use that id instead
+of generating one — e.g. a CI workflow can generate its own id up front and
+already know the run's branch name (`sdlc/run/<id>`) before calling `sdlc`
+at all, instead of having to recover the id from its output afterwards.
+Must be lowercase alphanumeric characters and hyphens only, and must not
+already be in use.
+
+`autopilot` and `resume` write their final outcome to
+`.sdlc/<runId>/state/result.json` (`{ runId, complete, blockedReason?,
+passes }`), alongside the existing human-readable summary line on stdout —
+read that file in a script instead of grepping stdout, which also carries
+whatever an agent itself printed during the run (see
+[Agent sandbox & credentials](#agent-sandbox--credentials)).
+
 ## Development
 
 ```bash

@@ -6,7 +6,13 @@ import { prepareRun } from '../../src/orchestrator/prepare.js';
 import { MarkdownFileInputSource } from '../../src/strategies/input-source/markdown-file.js';
 import { FakeAgentProvider } from '../../src/strategies/provider/fake.js';
 import { structuredOutputPath } from '../../src/orchestrator/structured-output.js';
-import { loadRunState, readContext, readPlan, readSlices } from '../../src/state/store.js';
+import {
+  initializeRunState,
+  loadRunState,
+  readContext,
+  readPlan,
+  readSlices,
+} from '../../src/state/store.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
 
 let repo: TempRepo;
@@ -402,6 +408,79 @@ describe('prepareRun', () => {
         provider,
       }),
     ).rejects.toThrow();
+  });
+
+  it('uses a caller-supplied run id instead of generating one', async () => {
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+
+    let call = 0;
+    const provider = new FakeAgentProvider(async (input) => {
+      call += 1;
+      const output =
+        call === 1
+          ? { classification: 'feature', repoSummary: 'An Express app.' }
+          : call === 2
+            ? { summary: 'Add /health endpoint', approach: 'Add a route', affectedAreas: ['src'] }
+            : call === 3
+              ? await writePlanningDocs(input.cwd)
+              : [
+                  {
+                    id: 'add-health-route',
+                    title: 'Add health route',
+                    description: 'Add GET /health',
+                  },
+                ];
+      await writeFile(structuredOutputPath(input.cwd), JSON.stringify(output));
+      return { success: true, output: 'done' };
+    });
+
+    const meta = await prepareRun({
+      repoRoot: repo.dir,
+      inputSource: new MarkdownFileInputSource(requestPath),
+      provider,
+      runId: 'my-chosen-run-id',
+    });
+
+    expect(meta.runId).toBe('my-chosen-run-id');
+  });
+
+  it('rejects a caller-supplied run id with characters unsafe for a directory name and branch segment', async () => {
+    repo = await createTempRepo();
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+    const provider = new FakeAgentProvider(async () => {
+      throw new Error('should not be called — invalid run id must be rejected first');
+    });
+
+    await expect(
+      prepareRun({
+        repoRoot: repo.dir,
+        inputSource: new MarkdownFileInputSource(requestPath),
+        provider,
+        runId: 'Not Safe/Id!',
+      }),
+    ).rejects.toThrow(/invalid --run-id/i);
+  });
+
+  it('rejects a caller-supplied run id that collides with an existing run', async () => {
+    repo = await createTempRepo();
+    await initializeRunState(repo.dir, 'taken-id', 'main');
+    const requestPath = path.join(repo.dir, 'request.md');
+    await writeFile(requestPath, '# Add a health check endpoint');
+    const provider = new FakeAgentProvider(async () => {
+      throw new Error('should not be called — a colliding run id must be rejected first');
+    });
+
+    await expect(
+      prepareRun({
+        repoRoot: repo.dir,
+        inputSource: new MarkdownFileInputSource(requestPath),
+        provider,
+        runId: 'taken-id',
+      }),
+    ).rejects.toThrow(/already exists/i);
   });
 });
 

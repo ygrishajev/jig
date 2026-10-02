@@ -7,8 +7,11 @@ import {
   initializeRunState,
   loadRunState,
   readRunMeta,
+  readRunResult,
   readSlices,
+  runIdInUse,
   writeRunMeta,
+  writeRunResult,
   writeSlices,
 } from '../../src/state/store.js';
 import {
@@ -71,6 +74,23 @@ describe('state store', () => {
   it('throws a clear error when the run does not exist', async () => {
     repo = await createTempRepo();
     await expect(loadRunState(repo.dir, 'no-such-run')).rejects.toThrow(/no-such-run/);
+  });
+
+  it('round-trips a run result through write and read', async () => {
+    repo = await createTempRepo();
+    const paths = await initializeRunState(repo.dir, 'run4', 'main');
+    await writeRunResult(paths, { runId: 'run4', complete: true, passes: 3 });
+
+    expect(await readRunResult(paths)).toEqual({ runId: 'run4', complete: true, passes: 3 });
+  });
+
+  it('reports whether a run id is already in use, for validating a caller-supplied --run-id', async () => {
+    repo = await createTempRepo();
+    expect(runIdInUse(repo.dir, 'run5')).toBe(false);
+
+    await initializeRunState(repo.dir, 'run5', 'main');
+
+    expect(runIdInUse(repo.dir, 'run5')).toBe(true);
   });
 
   it('self-ignores .sdlc/ in a target repo whose own .gitignore never mentions it', async () => {
