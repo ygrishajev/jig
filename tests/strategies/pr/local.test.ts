@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { FakeAgentProvider } from '../../../src/strategies/provider/fake.js';
 import { LocalPrCreateStrategy } from '../../../src/strategies/pr/local.js';
 import {
   initializeRunState,
@@ -79,9 +80,9 @@ describe('LocalPrCreateStrategy', () => {
     await new LocalPrCreateStrategy().create(paths);
 
     const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
-    expect(content).toContain('## Design');
+    expect(content).toContain('<summary>Design</summary>');
     expect(content).toContain('A route returning 200.');
-    expect(content).toContain('## Plan');
+    expect(content).toContain('<summary>Plan</summary>');
     expect(content).toContain('## Step 1 — Add health route');
     expect(content).toContain('- [x] s1 — Implements plan step 1. Adds GET /health returning 200.');
     expect(content).toContain('- [ ] s2 — Implements plan step 2. Wire the route into the app.');
@@ -137,8 +138,114 @@ describe('LocalPrCreateStrategy', () => {
     await new LocalPrCreateStrategy().create(paths);
 
     const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
-    expect(content).not.toContain('## Design');
-    expect(content).not.toContain('## Plan');
+    expect(content).not.toContain('<summary>Design</summary>');
+    expect(content).not.toContain('<summary>Plan</summary>');
     expect(content).toContain('Add health route');
+  });
+
+  it("uses the repository's pull request template and tucks the agent run into a collapsed section", async () => {
+    repo = await createTempRepo();
+    const paths = await initializeRunState(repo.dir, 'run5', 'main');
+    await mkdir(path.join(repo.dir, '.github'), { recursive: true });
+    await writeFile(
+      path.join(repo.dir, '.github', 'pull_request_template.md'),
+      '## What\n\n## Why\n',
+    );
+    await writePlan(paths, {
+      summary: 'Add health route',
+      approach: 'Adds GET /health returning 200.',
+      affectedAreas: ['src/routes'],
+    });
+    await writeSlices(paths, []);
+
+    await new LocalPrCreateStrategy().create(paths);
+
+    const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
+    expect(content.startsWith('## What\n\n## Why')).toBe(true);
+    expect(content).toContain('<summary>Agent run</summary>');
+    expect(content).toContain('Adds GET /health returning 200.');
+    expect(content).not.toContain('## Summary');
+  });
+
+  it('falls back to a readable default layout when the repository has no template', async () => {
+    repo = await createTempRepo();
+    const paths = await initializeRunState(repo.dir, 'run6', 'main');
+    await writePlan(paths, {
+      summary: 'Add health route',
+      approach: 'Adds GET /health returning 200.',
+      affectedAreas: ['src/routes'],
+    });
+    await writeSlices(paths, []);
+
+    await new LocalPrCreateStrategy().create(paths);
+
+    const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
+    expect(content).toContain('## Summary\n\nAdd health route');
+    expect(content).toContain('## Approach');
+    expect(content).not.toContain('<summary>Agent run</summary>');
+  });
+
+  describe('with a describer agent', () => {
+    async function preparedRun(runId: string) {
+      repo = await createTempRepo();
+      const paths = await initializeRunState(repo.dir, runId, 'main');
+      await writePlan(paths, {
+        summary: 'Add health route',
+        approach: 'Adds GET /health returning 200.',
+        affectedAreas: ['src/routes'],
+      });
+      await writeSlices(paths, []);
+      await mkdir(paths.workspaceDir, { recursive: true });
+      return paths;
+    }
+
+    it("hands the agent the repository's template and appends the agent run after its filled-in body", async () => {
+      const paths = await preparedRun('run7');
+      await mkdir(path.join(repo.dir, '.github'), { recursive: true });
+      await writeFile(
+        path.join(repo.dir, '.github', 'pull_request_template.md'),
+        '## What\n\n## Why\n',
+      );
+      let seenPrompt = '';
+      const provider = new FakeAgentProvider(async ({ cwd, prompt }) => {
+        seenPrompt = prompt;
+        await writeFile(
+          path.join(cwd, '.sdlc-step-output.json'),
+          JSON.stringify({ body: '## What\n\nA health check.\n\n## Why\n\nMonitoring.' }),
+        );
+        return { success: true, output: '' };
+      });
+
+      await new LocalPrCreateStrategy({ provider }).create(paths);
+
+      const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
+      expect(seenPrompt).toContain('## What\n\n## Why');
+      expect(content.startsWith('## What\n\nA health check.')).toBe(true);
+      expect(content).toContain('<summary>Agent run</summary>');
+    });
+
+    it('offers the default template when the repository has none', async () => {
+      const paths = await preparedRun('run8');
+      let seenPrompt = '';
+      const provider = new FakeAgentProvider(async ({ cwd, prompt }) => {
+        seenPrompt = prompt;
+        await writeFile(path.join(cwd, '.sdlc-step-output.json'), JSON.stringify({ body: 'ok' }));
+        return { success: true, output: '' };
+      });
+
+      await new LocalPrCreateStrategy({ provider }).create(paths);
+
+      expect(seenPrompt).toContain('## Deletions and deviations');
+    });
+
+    it('falls back to the plain layout when the agent fails or writes no valid output', async () => {
+      const paths = await preparedRun('run9');
+      const provider = new FakeAgentProvider(() => ({ success: true, output: '' }));
+
+      await new LocalPrCreateStrategy({ provider }).create(paths);
+
+      const content = await readFile(path.join(paths.stateDir, 'PR_DESCRIPTION.md'), 'utf-8');
+      expect(content).toContain('## Summary\n\nAdd health route');
+    });
   });
 });

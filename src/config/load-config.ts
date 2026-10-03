@@ -7,7 +7,7 @@ const stepConfigSchema = z.object({
   model: z.string().optional(),
 });
 export type StepConfig = z.infer<typeof stepConfigSchema>;
-export type StepName = 'planner' | 'implementer' | 'reviewer';
+export type StepName = 'planner' | 'implementer' | 'reviewer' | 'describer';
 
 // .strict() rejects unknown top-level keys — a typo like `implementer` vs
 // `implement` must fail loudly at load time, not silently fall back to the
@@ -38,6 +38,7 @@ const configSchema = z
     planner: stepConfigSchema.default({ provider: 'claude' }),
     implementer: stepConfigSchema.default({ provider: 'claude' }),
     reviewer: stepConfigSchema.default({ provider: 'claude' }),
+    describer: stepConfigSchema.default({ provider: 'claude' }),
   })
   .strict();
 export type SdlcConfig = z.infer<typeof configSchema>;
