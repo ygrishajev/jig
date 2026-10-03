@@ -40,7 +40,7 @@ export async function runImplementStep(input: ImplementStepInput): Promise<void>
   const result = await provider.run({
     cwd: paths.workspaceDir,
     repoRoot,
-    prompt: buildImplementPrompt(slice),
+    prompt: buildImplementPrompt(slice, baseBranch),
   });
   if (!result.success) {
     throw new ImplementStepFailedError(slice.id, result.output);
@@ -51,7 +51,7 @@ export async function runImplementStep(input: ImplementStepInput): Promise<void>
   slice.status = 'in_review';
 }
 
-function buildImplementPrompt(slice: Slice): string {
+function buildImplementPrompt(slice: Slice, baseBranch: string): string {
   const lines = [
     `You are implementing one slice of a larger, already-planned feature.`,
     '',
@@ -70,6 +70,12 @@ function buildImplementPrompt(slice: Slice): string {
     '',
     'Make the necessary code changes in this repository to complete this slice.',
     'Do not commit — leave the changes in the working tree.',
+    '',
+    `Before you finish, check whether "${baseBranch}" has moved on since this branch was cut:`,
+    `run \`git fetch origin ${baseBranch}\` and then \`git log HEAD..origin/${baseBranch}\`.`,
+    `If it has, run \`git stash\`, \`git rebase origin/${baseBranch}\` and \`git stash pop\`, resolve any`,
+    "conflicts so that both sides' intent survives, and re-run the checks you relied on.",
+    'Still do not commit.',
     '',
     'Before writing a script to re-derive something a tool already reported (e.g. parsing a',
     "mutation-testing or coverage tool's own output by hand), re-read what it already printed.",
