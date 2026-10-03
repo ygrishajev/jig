@@ -167,4 +167,25 @@ describe('runImplementStep', () => {
 
     expect(seenPrompt).toContain('verify the database connection');
   });
+
+  it('tells the agent to rebase onto the base branch if it moved before finishing', async () => {
+    repo = await createTempRepo();
+    const paths = getRunPaths(repo.dir, 'run5');
+    let seenPrompt = '';
+    const provider = new FakeAgentProvider(async (input) => {
+      seenPrompt = input.prompt;
+      await writeFile(path.join(input.cwd, 'health.ts'), 'export const health = () => "ok";\n');
+      return { success: true, output: 'implemented' };
+    });
+
+    await runImplementStep({
+      repoRoot: repo.dir,
+      paths,
+      slice: makeSlice(),
+      baseBranch: 'main',
+      provider,
+    });
+
+    expect(seenPrompt).toContain('git rebase origin/main');
+  });
 });
