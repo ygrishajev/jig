@@ -1,54 +1,59 @@
-import type { RunId } from './run-id.js';
-import type { Slice } from './slice.js';
+import { z } from 'zod';
+import { runIdSchema, type RunId } from './run-id.js';
+import { sliceSchema, type Slice } from './slice.js';
 
-export type RunPhase =
-  | 'context'
-  | 'planning'
-  | 'designing'
-  | 'slicing'
-  | 'gate'
-  | 'paused'
-  | 'slices'
-  | 'describing'
-  | 'merging'
-  | 'awaitingMerge'
-  | 'done'
-  | 'stuck';
+export const runPhaseSchema = z.enum([
+  'context',
+  'planning',
+  'designing',
+  'slicing',
+  'gate',
+  'paused',
+  'slices',
+  'describing',
+  'merging',
+  'awaitingMerge',
+  'done',
+  'stuck',
+]);
+export type RunPhase = z.infer<typeof runPhaseSchema>;
 
-export interface RunContext {
-  classification: string;
-  repoSummary: string;
-}
+export const runContextSchema = z.object({ classification: z.string(), repoSummary: z.string() });
+export type RunContext = z.infer<typeof runContextSchema>;
 
-export interface FeaturePlan {
-  summary: string;
-  approach: string;
-  affectedAreas: string[];
-}
+export const featurePlanSchema = z.object({
+  summary: z.string(),
+  approach: z.string(),
+  affectedAreas: z.array(z.string()),
+});
+export type FeaturePlan = z.infer<typeof featurePlanSchema>;
 
-export interface DesignDocs {
-  design: string;
-  plan: string;
-}
+export const designDocsSchema = z.object({ design: z.string().min(1), plan: z.string().min(1) });
+export type DesignDocs = z.infer<typeof designDocsSchema>;
 
-export interface RunState {
-  runId: RunId;
+/**
+ * A run as it is saved and loaded, so a hand-edited or stale file fails loudly at the boundary.
+ * A run saved before revisions were counted loads as revision 0.
+ */
+export const runStateSchema = z.object({
+  runId: runIdSchema,
   /**
    * How many times the run has been saved. When several stores hold a copy, the highest revision
    * is the freshest: a counter rather than a timestamp, because the machines saving it do not
    * share a clock.
    */
-  revision: number;
-  baseBranch: string;
-  request: string;
-  phase: RunPhase;
-  context?: RunContext;
-  plan?: FeaturePlan;
-  docs?: DesignDocs;
-  slices: Slice[];
-  prDescription?: string;
-  blockedReason?: string;
-}
+  revision: z.number().int().nonnegative().default(0),
+  baseBranch: z.string().min(1),
+  request: z.string(),
+  phase: runPhaseSchema,
+  context: runContextSchema.optional(),
+  plan: featurePlanSchema.optional(),
+  docs: designDocsSchema.optional(),
+  slices: z.array(sliceSchema),
+  prDescription: z.string().optional(),
+  blockedReason: z.string().optional(),
+});
+export type RunState = z.infer<typeof runStateSchema>;
 
 export function startRun(input: { runId: RunId; baseBranch: string; request: string }): RunState {
   return { ...input, revision: 0, phase: 'context', slices: [] };

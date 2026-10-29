@@ -8,7 +8,7 @@ import {
   MergeFailed,
 } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
-import type { RunPhase, RunState } from '../domain/run-state.js';
+import { runPhaseSchema, type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Workspace } from '../ports/workspace.js';
@@ -302,22 +302,8 @@ const unused: RunStep = async () => {
 
 function flowWith(nodes: Partial<RunFlow>): RunFlow {
   const filler = { step: unused, on: {} };
-  const phases: RunPhase[] = [
-    'context',
-    'planning',
-    'designing',
-    'slicing',
-    'gate',
-    'paused',
-    'slices',
-    'describing',
-    'merging',
-    'awaitingMerge',
-    'done',
-    'stuck',
-  ];
   return defineRunFlow({
-    ...(Object.fromEntries(phases.map((phase) => [phase, filler])) as RunFlow),
+    ...(Object.fromEntries(runPhaseSchema.options.map((phase) => [phase, filler])) as RunFlow),
     done: { final: 'done' },
     stuck: { final: 'stuck' },
     ...nodes,

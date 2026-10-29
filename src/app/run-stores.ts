@@ -6,8 +6,7 @@ import { CompositeRunStore } from '../adapters/run-store/composite-run-store.js'
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
-import type { RunState } from '../domain/run-state.js';
-import { runStateSchema } from '../adapters/local-store/run-state-schema.js';
+import { runStateSchema, type RunState } from '../domain/run-state.js';
 import type { RunStore } from '../ports/run-store.js';
 import type { AppCradle } from './container.js';
 

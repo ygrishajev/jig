@@ -5,12 +5,13 @@ import { MetricsLogCorrupt } from '../../domain/errors.js';
 import { runIdSchema, type RunId } from '../../domain/run-id.js';
 import type { MetricRecord } from '../../observers/metrics.js';
 import { stateDirectory } from './run-paths.js';
-import { runPhaseSchema } from './run-state-schema.js';
+import { runPhaseSchema } from '../../domain/run-state.js';
+import { sliceStatusSchema } from '../../domain/slice.js';
 
 const locationSchema = z.object({
   phase: runPhaseSchema,
   sliceId: z.string().optional(),
-  sliceStatus: z.string().optional(),
+  sliceStatus: sliceStatusSchema.optional(),
 });
 
 const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.discriminatedUnion(

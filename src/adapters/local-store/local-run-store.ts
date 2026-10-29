@@ -3,10 +3,9 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 import type { RunId } from '../../domain/run-id.js';
-import type { RunState } from '../../domain/run-state.js';
+import { runStateSchema, type RunState } from '../../domain/run-state.js';
 import type { RunStore } from '../../ports/run-store.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
-import { runStateSchema } from './run-state-schema.js';
 
 const STATE_FILE = 'run.json';
 

@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { AgentOutputInvalid } from '../domain/errors.js';
-import { produced } from '../domain/run-state.js';
-import { SLICE_ID_PATTERN } from '../domain/slice.js';
+import {
+  designDocsSchema,
+  featurePlanSchema,
+  produced,
+  runContextSchema,
+} from '../domain/run-state.js';
+import { plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
 import {
   contextPrompt,
@@ -10,33 +15,15 @@ import {
   slicePlanPrompt,
 } from '../prompts/planning.js';
 
-const contextSchema = z.object({ classification: z.string(), repoSummary: z.string() });
-
-const featurePlanSchema = z.object({
-  summary: z.string(),
-  approach: z.string(),
-  affectedAreas: z.array(z.string()),
-});
-
-const designDocsSchema = z.object({ design: z.string().min(1), plan: z.string().min(1) });
-
 const plannedSlicesSchema = z
-  .array(
-    z.object({
-      id: z
-        .string()
-        .regex(SLICE_ID_PATTERN, 'slice id must be lowercase letters, digits and hyphens'),
-      title: z.string().min(1),
-      description: z.string().min(1),
-    }),
-  )
+  .array(plannedSliceSchema)
   .min(1, 'the plan must produce at least one slice');
 
 export const buildContext: RunStep = async ({ state, ports }) => {
   const context = await ports.agent.runForOutput({
     role: 'planner',
     prompt: contextPrompt(state.request),
-    schema: contextSchema,
+    schema: runContextSchema,
   });
   return { type: 'contextBuilt', context };
 };
