@@ -547,10 +547,13 @@ adapter: `withArgs(agent, '--continue')` for retries and
    cache flag); `sdlc init` and `sdlc build`.
 8. ✅ Metrics observer; `git-remote` and custom run stores; OTel adapter.
 9. Cleanup: ✅ README and architecture map (`docs/sdlc Architecture Map.html`);
-   ✅ `docker/agent-sandbox/`, its publish job and `docker:build` removed.
-   Open: update firefly's workflow (it calls the removed `autopilot` and
-   `create-pr`, and passes `OPENCODE_AUTH_JSON`); try `SDLC_IMAGE_CACHE=gha`
-   in real CI.
+   ✅ `docker/agent-sandbox/`, its publish job and `docker:build` removed;
+   ✅ firefly's workflow moved to `sdlc run`, `OPENROUTER_API_KEY`, the
+   `status`/`phase` result fields and `SDLC_IMAGE_CACHE=gha`, with a
+   generated `.sandcastle/Dockerfile` (branch
+   `chore/sdlc-switch-to-sandcastle-run` in firefly).
+   Open: the gha cache has not run in real CI yet; firefly's first run is
+   the test.
 
 ## Deferred
 
