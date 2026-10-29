@@ -79,7 +79,11 @@ The orchestrator depends on sdlc's interface, not sandcastle's types:
 
 ```ts
 interface AgentSession {
-  run<T>(input: { prompt: string; agent: StepConfig; schema?: ZodType<T> }): Promise<AgentRunResult<T>>;
+  run<T>(input: {
+    prompt: string;
+    agent: StepConfig;
+    schema?: ZodType<T>;
+  }): Promise<AgentRunResult<T>>;
   exec(command: string): Promise<ExecResult>;
   close(): Promise<void>;
 }
@@ -100,8 +104,12 @@ A single registry replaces `provider-profiles.ts`:
 
 ```ts
 const AGENTS = {
-  claude:   { npm: '@anthropic-ai/claude-code', credentials: ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'], factory: claudeCode },
-  opencode: { npm: 'opencode-ai',               credentials: ['OPENROUTER_API_KEY'],                         factory: opencode },
+  claude: {
+    npm: '@anthropic-ai/claude-code',
+    credentials: ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
+    factory: claudeCode,
+  },
+  opencode: { npm: 'opencode-ai', credentials: ['OPENROUTER_API_KEY'], factory: opencode },
 };
 ```
 
@@ -151,11 +159,11 @@ image passed to docker({ imageName })
 
 **When `sdlc run` builds** — it inspects the image labels first:
 
-| Check | Mismatch → |
-|---|---|
+| Check                                              | Mismatch →            |
+| -------------------------------------------------- | --------------------- |
 | `sdlc.dockerfile-hash` vs `.sandcastle/Dockerfile` | rebuild base + agents |
-| `sdlc.agents` vs providers in config | rebuild agent layer |
-| `sdlc.agent-versions` vs target versions | rebuild agent layer |
+| `sdlc.agents` vs providers in config               | rebuild agent layer   |
+| `sdlc.agent-versions` vs target versions           | rebuild agent layer   |
 
 All match → no build.
 
@@ -231,14 +239,14 @@ sdlc status <id>                  # read-only
 
 `sdlc run` dispatch:
 
-| Request file | `--id` | Run exists | Result |
-|---|---|---|---|
-| yes | — | — | new run, generated id |
-| yes | yes | no | new run with that id |
-| — | yes | yes | resume |
-| — | yes | no | error: no such run |
-| yes | yes | yes | resume if file matches stored `rawRequest`, else error |
-| — | — | — | error: need a request file or an id |
+| Request file | `--id` | Run exists | Result                                                 |
+| ------------ | ------ | ---------- | ------------------------------------------------------ |
+| yes          | —      | —          | new run, generated id                                  |
+| yes          | yes    | no         | new run with that id                                   |
+| —            | yes    | yes        | resume                                                 |
+| —            | yes    | no         | error: no such run                                     |
+| yes          | yes    | yes        | resume if file matches stored `rawRequest`, else error |
+| —            | —      | —          | error: need a request file or an id                    |
 
 A run that exists but crashed before `context.json` was written re-plans.
 
@@ -258,6 +266,11 @@ Agent calls use sandcastle's idle timeout (default 600 s), configurable.
 - Dead code: `implementing` status, `mergeAttempts`, `conflictResolveCap`,
   `createBranchFrom`.
 - CLI version read from `package.json` (hardcoded `0.1.0`).
+- Slice commit messages become configurable, defaulting to a conventional
+  commit (`commitMessage: "feat(sdlc): {title}"`, with `{sliceId}` and
+  `{title}` placeholders). Today's fixed `sdlc: implement <id> — <title>`
+  fails commitlint in target repos — firefly's `validate` workflow and
+  commit hook both carry an exception just for it.
 - README: configuration and sandbox sections rewritten.
 - Removed from the package: `docker/`, `docker:build` script, ghcr
   sandbox-image publish job, `SDLC_AGENT_SANDBOX_IMAGE`.
@@ -296,21 +309,28 @@ simple-git.
 
 ```ts
 export const runFlow = defineFlow({
-  context:    { step: buildContext, on: { done: 'planning' } },
-  planning:   { step: planFeature,  on: { done: 'designing' } },
-  designing:  { step: writeDesign,  on: { done: 'slicing' } },
-  slicing:    { step: sliceThePlan, on: { done: 'gate' } },
-  gate:       { step: designGate,   on: { continue: 'slices', pause: 'paused' } },
-  slices:     { flow: sliceFlow, forEach: 'slice', on: { allApproved: 'describing', blocked: 'stuck' } },
-  describing: { step: describePr,   on: { done: 'merging' } },
-  merging:    { step: merge,        on: { merged: 'done', manual: 'awaitingMerge' } },
+  context: { step: buildContext, on: { done: 'planning' } },
+  planning: { step: planFeature, on: { done: 'designing' } },
+  designing: { step: writeDesign, on: { done: 'slicing' } },
+  slicing: { step: sliceThePlan, on: { done: 'gate' } },
+  gate: { step: designGate, on: { continue: 'slices', pause: 'paused' } },
+  slices: {
+    flow: sliceFlow,
+    forEach: 'slice',
+    on: { allApproved: 'describing', blocked: 'stuck' },
+  },
+  describing: { step: describePr, on: { done: 'merging' } },
+  merging: { step: merge, on: { merged: 'done', manual: 'awaitingMerge' } },
   // terminal: done, paused, stuck, awaitingMerge
 });
 
 export const sliceFlow = defineFlow({
-  pending:   { step: implement, on: { done: 'in_review' } },
-  in_review: { step: review,    on: { approved: 'verifying', rejected: 'pending', capReached: 'stuck' } },
-  verifying: { step: verify,    on: { passed: 'approved', failed: 'pending' } },
+  pending: { step: implement, on: { done: 'in_review' } },
+  in_review: {
+    step: review,
+    on: { approved: 'verifying', rejected: 'pending', capReached: 'stuck' },
+  },
+  verifying: { step: verify, on: { passed: 'approved', failed: 'pending' } },
   // terminal: approved, stuck
 });
 ```
@@ -331,12 +351,12 @@ a log or metrics call.
 **Errors** are a typed hierarchy classified by what happens next; the engine's
 policy decides, steps don't:
 
-| Class | Examples | Engine does |
-|---|---|---|
-| `retry` | container start failed, npm timeout | retry the step (bounded) |
+| Class      | Examples                                       | Engine does                        |
+| ---------- | ---------------------------------------------- | ---------------------------------- |
+| `retry`    | container start failed, npm timeout            | retry the step (bounded)           |
 | `feedback` | invalid output, verify failed, review rejected | return to the agent with the error |
-| `block` | review cap reached, merge conflict | stop; human needed |
-| `fatal` | missing config/credentials, bug | abort with a clear message |
+| `block`    | review cap reached, merge conflict             | stop; human needed                 |
+| `fatal`    | missing config/credentials, bug                | abort with a clear message         |
 
 **Replaceability**: every port is swappable in the composition root
 (code-level). The run store and observers are also user-pluggable from config
@@ -390,13 +410,13 @@ Replaces `state/store.ts`'s direct file I/O at call sites.
 
 ### 17. Metrics
 
-| Metric | Source |
-|---|---|
-| Tokens (input, output, cache read/write, reasoning) | raw-line tap on `parseStreamLine`: claude `result.usage`, opencode `step_finish.tokens` (spike #7) |
-| Cost | agent-reported via the same tap: claude `total_cost_usd`, opencode `step_finish.cost`; a price table with config overrides only for agents that report none |
-| Rounds | review cycles per slice, output-validation retries, `init` attempts, engine passes |
-| Durations | per phase, step, agent call; image build; setup; verify |
-| Outputs | diff size per slice (files, lines), verify pass/fail, first-pass approval, rejection reasons |
+| Metric                                              | Source                                                                                                                                                      |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tokens (input, output, cache read/write, reasoning) | raw-line tap on `parseStreamLine`: claude `result.usage`, opencode `step_finish.tokens` (spike #7)                                                          |
+| Cost                                                | agent-reported via the same tap: claude `total_cost_usd`, opencode `step_finish.cost`; a price table with config overrides only for agents that report none |
+| Rounds                                              | review cycles per slice, output-validation retries, `init` attempts, engine passes                                                                          |
+| Durations                                           | per phase, step, agent call; image build; setup; verify                                                                                                     |
+| Outputs                                             | diff size per slice (files, lines), verify pass/fail, first-pass approval, rejection reasons                                                                |
 
 Stored as `metrics.jsonl` (one record per agent call/step) plus a summary in
 `result.json` and a one-line PR description footer (e.g. "3 slices · 2 review
@@ -418,10 +438,10 @@ rounds · 412k tokens · $1.84 · 18 min"). Exported via OTel when enabled.
   "runStore": ["local"],
   "observers": [],
   "pricing": {},
-  "planner":     { "provider": "claude" },
+  "planner": { "provider": "claude" },
   "implementer": { "provider": "claude" },
-  "reviewer":    { "provider": "claude" },
-  "describer":   { "provider": "claude" }
+  "reviewer": { "provider": "claude" },
+  "describer": { "provider": "claude" }
 }
 ```
 
@@ -489,6 +509,7 @@ Agent calls (`spike/check-agents.ts`, `spike/check-usage.ts`; claude via
 
   Both agents report cost themselves, so no price table is needed for
   these two.
+
 - **#8 not run** — OTel nesting deferred with the OTel adapter.
 
 Two thin agent wrappers come out of this, both owned by the sandcastle
