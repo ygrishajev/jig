@@ -35,7 +35,7 @@ pino, zod, simple-git, execa, commander.
 ## Things that catch people out
 
 - **Agents run unattended only inside the sandbox.** Every agent call uses
-  `--dangerously-skip-permissions` (claude) / `--auto` (opencode). Never wire an agent call that
+  `--dangerously-skip-permissions`, for claude and opencode alike. Never wire an agent call that
   runs on the host, and never add a code path that does so "just for local dev".
 - **sdlc runs against other people's repos.** Its scratch in a target repo (`.sdlc/`, and
   `.sandcastle/` worktrees, logs and `.env`) must ignore itself, and nothing may touch the target's
