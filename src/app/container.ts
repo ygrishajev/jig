@@ -1,4 +1,5 @@
 import path from 'node:path';
+import pRetry from 'p-retry';
 import type { AgentProvider } from '@ai-hero/sandcastle';
 import { asFunction, asValue, createContainer, InjectionMode, type AwilixContainer } from 'awilix';
 import type { Tracer } from '@opentelemetry/api';
@@ -18,6 +19,7 @@ import { SandcastleSession } from '../adapters/sandcastle/sandcastle-session.js'
 import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
 import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
+import { SdlcError } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
@@ -155,7 +157,7 @@ export async function openRunScope(
     }).scoped(),
   });
 
-  const session = await app.cradle.openSession({ run, events: scope.cradle.events });
+  const session = await openSessionRetrying(scope.cradle);
   scope.register({
     session: asValue(session),
     workspace: asFunction(
@@ -172,6 +174,20 @@ export async function openRunScope(
     ).scoped(),
   });
   return scope;
+}
+
+/**
+ * A sandbox that failed to start for a reason that may pass — Docker, the network under the
+ * setup command — gets the same bounded retries as a step; a configuration problem does not.
+ */
+function openSessionRetrying({ openSession, run, events, settings, runLogger }: RunCradle) {
+  return pRetry(() => openSession({ run, events }), {
+    retries: settings.maxStepRetries,
+    minTimeout: settings.retryDelayMs,
+    shouldRetry: ({ error }) => error instanceof SdlcError && error.kind === 'retry',
+    onFailedAttempt: ({ error, attemptNumber }) =>
+      runLogger.warn({ err: error, attempt: attemptNumber }, 'the sandbox did not start'),
+  });
 }
 
 /** Closes the run's sandbox and then the rest of its scope. */

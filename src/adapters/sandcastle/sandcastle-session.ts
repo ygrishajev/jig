@@ -1,15 +1,24 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   createSandbox,
   type AgentProvider,
   type AgentStreamEvent,
+  type CreateSandboxOptions,
   type Sandbox,
 } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
-import type { ZodType } from 'zod';
-import { AgentOutputInvalid, AgentRunFailed, ConfigInvalid } from '../../domain/errors.js';
+import { z, type ZodType } from 'zod';
+import {
+  AgentOutputInvalid,
+  AgentRunFailed,
+  ConfigInvalid,
+  SandboxUnavailable,
+  SetupCommandFailed,
+  type SdlcError,
+} from '../../domain/errors.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type {
   AgentRole,
@@ -23,6 +32,29 @@ import { usageFromStreamLine } from './usage.js';
 
 /** How many times an agent is asked, in its own session, to correct output that did not parse. */
 const OUTPUT_CORRECTIONS = 1;
+
+/** How much of a failed setup command's output is kept; the end is where the error is. */
+const SETUP_OUTPUT_TAIL = 3000;
+
+/**
+ * Sandcastle runs on Effect, whose `runPromise` rejects with a FiberFailure carrying the cause
+ * under this symbol; a plain failure's cause names sandcastle's tagged error.
+ */
+const FIBER_FAILURE_CAUSE = Symbol.for('effect/Runtime/FiberFailure/Cause');
+
+const sandcastleFailureSchema = z.object({
+  _tag: z.literal('Fail'),
+  error: z.object({ _tag: z.string() }),
+});
+
+/**
+ * The sandcastle failures a retry cannot fix. Sandcastle reports a Docker daemon that is down, an
+ * image it cannot use and a git worktree it could not create all as `WorktreeError`, so only a
+ * repository path it cannot use is told apart; the rest is retried a bounded number of times.
+ */
+const CONFIGURATION_FAILURES = new Set(['CwdError']);
+
+export type SandboxFactory = (options: CreateSandboxOptions) => Promise<Sandbox>;
 
 export interface SandcastleSessionOptions {
   repoRoot: string;
@@ -54,21 +86,20 @@ export class SandcastleSession implements AgentSession {
    * The repository path is resolved first: git records a worktree's real path, so a repository
    * opened through a symlink would leave git unusable inside the container.
    */
-  static async open(options: SandcastleSessionOptions) {
+  static async open(options: SandcastleSessionOptions, start: SandboxFactory = createSandbox) {
     const repoRoot = await realpath(options.repoRoot);
     await ignoreSandcastleDirectory(repoRoot);
-    try {
-      const sandbox = await createSandbox({
-        branch: runBranchFor(options.runId),
-        baseBranch: options.baseBranch,
-        cwd: repoRoot,
-        sandbox: docker({ imageName: options.imageName, env: options.credentials }),
-        hooks: sandboxHooks(options),
-      });
-      return new SandcastleSession(sandbox, options);
-    } catch (error) {
-      throw new ConfigInvalid(`Could not start the sandbox: ${messageOf(error)}`);
-    }
+    const sandbox = await start({
+      branch: runBranchFor(options.runId),
+      baseBranch: options.baseBranch,
+      cwd: repoRoot,
+      sandbox: docker({ imageName: options.imageName, env: options.credentials }),
+      hooks: sandboxHooks(options),
+    }).catch((error: unknown) => {
+      throw sandboxStartFailure(error);
+    });
+    if (options.setupCommand) await runSetupCommand(sandbox, options.setupCommand, options);
+    return new SandcastleSession(sandbox, options);
   }
 
   get worktreePath() {
@@ -169,17 +200,60 @@ function correctionPrompt(problem: string) {
   ].join('\n');
 }
 
+/**
+ * Sandcastle's own `onSandboxReady` hooks ignore a command's exit code and timeout in
+ * `createSandbox`, so the setup command is run here, where both are checked.
+ */
 function sandboxHooks(options: SandcastleSessionOptions) {
-  return {
-    host: options.skipCommitSigning ? { onWorktreeReady: [disableSigning()] } : undefined,
-    sandbox: options.setupCommand
-      ? {
-          onSandboxReady: [
-            { command: options.setupCommand, timeoutMs: options.setupTimeoutSeconds * 1000 },
-          ],
-        }
-      : undefined,
-  };
+  return { host: options.skipCommitSigning ? { onWorktreeReady: [disableSigning()] } : undefined };
+}
+
+async function runSetupCommand(
+  sandbox: Sandbox,
+  command: string,
+  { setupTimeoutSeconds }: SandcastleSessionOptions,
+) {
+  const failure = await setupFailure(sandbox, command, setupTimeoutSeconds).catch(
+    (error: unknown) =>
+      new SandboxUnavailable(`Could not run the setup command: ${messageOf(error)}`),
+  );
+  if (!failure) return;
+  await sandbox.close();
+  throw failure;
+}
+
+async function setupFailure(sandbox: Sandbox, command: string, timeoutSeconds: number) {
+  const timer = new AbortController();
+  const finished = await Promise.race([
+    sandbox.exec(command),
+    delay(timeoutSeconds * 1000, undefined, { signal: timer.signal }),
+  ]).finally(() => timer.abort());
+  if (!finished) {
+    return new SetupCommandFailed(
+      `setupCommand "${command}" did not finish within ${timeoutSeconds}s`,
+      '',
+    );
+  }
+  if (finished.exitCode === 0) return undefined;
+  const output = `${finished.stdout}${finished.stderr}`.trim().slice(-SETUP_OUTPUT_TAIL);
+  return new SetupCommandFailed(
+    `setupCommand "${command}" exited with ${finished.exitCode}:\n${output}`,
+    output,
+  );
+}
+
+function sandboxStartFailure(error: unknown): SdlcError {
+  const message = `Could not start the sandbox: ${messageOf(error)}`;
+  const tag = sandcastleFailureTag(error);
+  return tag && CONFIGURATION_FAILURES.has(tag)
+    ? new ConfigInvalid(message)
+    : new SandboxUnavailable(message);
+}
+
+function sandcastleFailureTag(error: unknown) {
+  if (!(error instanceof Error)) return undefined;
+  const cause = sandcastleFailureSchema.safeParse(Reflect.get(error, FIBER_FAILURE_CAUSE));
+  return cause.success ? cause.data.error._tag : undefined;
 }
 
 function disableSigning() {

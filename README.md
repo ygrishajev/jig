@@ -79,6 +79,11 @@ expires after 30 seconds.
 - **Image.** `.sandcastle/Dockerfile` is the repository's: base tools, then the project's
   toolchain between the marked lines. sdlc adds a layer with the agent CLIs the config uses, at
   exact versions, built per machine with your UID. Labels on the image decide what to rebuild.
+- **Setup.** `setupCommand` runs once in the new sandbox and must exit 0 within
+  `setupTimeoutSeconds`. In a run, a sandbox that fails to start or a failing `setupCommand` is
+  tried twice more; a configuration problem such as missing credentials stops the run at once.
+  `init` hands a failing `setupCommand` or `verifyCommand` back to the planner, and stops on
+  anything else.
 - **Credentials** come from the environment and go into the container as env vars:
   claude needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`; opencode needs its provider's
   key, e.g. `OPENROUTER_API_KEY` for an `openrouter/...` model.

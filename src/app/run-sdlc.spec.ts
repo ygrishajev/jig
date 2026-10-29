@@ -7,7 +7,13 @@ import { simpleGit } from 'simple-git';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { loadConfig } from '../config/load-config.js';
-import { RunInProgress, RunRequestInvalid } from '../domain/errors.js';
+import {
+  ConfigInvalid,
+  RunInProgress,
+  RunRequestInvalid,
+  SandboxUnavailable,
+  SetupCommandFailed,
+} from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
 import {
   aContext,
@@ -84,6 +90,33 @@ describe('runSdlc', () => {
     expect(await runSdlc(app, { runId: id })).toMatchObject({ state: { phase: 'awaitingMerge' } });
   });
 
+  it('starts the sandbox again when it failed for a reason that may pass', async () => {
+    const { app, writeRequest, agentFor, failNextSessions } = await setup();
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+    const opened = failNextSessions(
+      new SandboxUnavailable(faker.lorem.sentence()),
+      new SetupCommandFailed(faker.lorem.sentence(), faker.lorem.sentence()),
+    );
+
+    const report = await runSdlc(app, { requestPath: await writeRequest(), runId: id });
+
+    expect(report.state.phase).toBe('awaitingMerge');
+    expect(opened()).toBe(3);
+  });
+
+  it('stops at once when the sandbox cannot start because of its configuration', async () => {
+    const { app, writeRequest, agentFor, failNextSessions } = await setup();
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+    const opened = failNextSessions(new ConfigInvalid(faker.lorem.sentence()));
+
+    await expect(
+      runSdlc(app, { requestPath: await writeRequest(), runId: id }),
+    ).rejects.toBeInstanceOf(ConfigInvalid);
+    expect(opened()).toBe(1);
+  });
+
   it('refuses to attach a different request to an existing run', async () => {
     const { app, writeRequest, agentFor } = await setup();
     const id = runId();
@@ -134,9 +167,21 @@ describe('runSdlc', () => {
       held = { opened, released };
       return { opened: openedPromise, release };
     };
+    let sessionFailures: Error[] = [];
+    let sessionsOpened = 0;
+    const failNextSessions = (...failures: Error[]) => {
+      sessionFailures = failures;
+      return () => sessionsOpened;
+    };
     app.register({
       config: asValue({ ...loadConfig(repo.dir), sandboxImage: `sandcastle:${faker.word.noun()}` }),
+    });
+    app.register({
+      settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),
       openSession: asValue(async ({ run }: OpenSessionInput) => {
+        sessionsOpened++;
+        const failure = sessionFailures.shift();
+        if (failure) throw failure;
         const agent = agents.get(run.runId);
         if (!agent) throw new Error(`No fake agent prepared for run ${run.runId}`);
         const holding = held;
@@ -152,7 +197,7 @@ describe('runSdlc', () => {
       await writeFile(file, `# ${faker.lorem.sentence()}\n\n${faker.lorem.paragraph()}`);
       return file;
     };
-    return { app, repo, writeRequest, agentFor, holdNextSession };
+    return { app, repo, writeRequest, agentFor, holdNextSession, failNextSessions };
   }
 });
 

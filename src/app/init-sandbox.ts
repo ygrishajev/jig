@@ -15,6 +15,7 @@ import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
 import { getCurrentBranch } from '../git/branch.js';
 import { openRepo } from '../git/repository.js';
+import { SetupCommandFailed } from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { observe, RunEvents } from '../observers/run-events.js';
@@ -107,7 +108,11 @@ async function proposeToolchain(app: AwilixContainer<AppCradle>, previousFailure
   );
 }
 
-/** Rebuilds the image and runs both commands in a fresh sandbox; returns what went wrong, if anything. */
+/**
+ * Rebuilds the image and runs both commands in a fresh sandbox; returns how either command
+ * failed, if one did. Anything else — Docker, credentials — is not the toolchain's fault and is
+ * thrown, rather than spending the planner's attempts on it.
+ */
 async function checkInSandbox(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | undefined,
@@ -121,8 +126,8 @@ async function checkInSandbox(
         : `verifyCommand "${verifyCommand}" exited with ${verify.exitCode}:\n${verify.output.slice(-3000)}`;
     });
   } catch (error) {
-    if (!(error instanceof Error)) throw error;
-    return error.message;
+    if (error instanceof SetupCommandFailed) return error.message;
+    throw error;
   }
 }
 
