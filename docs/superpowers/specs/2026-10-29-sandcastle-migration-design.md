@@ -288,6 +288,14 @@ rejected: both are frameworks the code would be written inside, which costs
 readability for a ~10-state flow. A clean ports-and-adapters core can be
 ported to Effect later if ever needed.
 
+Revisited after step 3, when hand-rolled utilities were replaced by
+libraries. `@xstate/store` would only replace the reducer and the event
+emitter, not the engine. An XState machine would replace all three and give
+resume through persisted snapshots, but ties saved runs to the machine's
+internal shape (snapshots would need versioning). Kept the own engine: it is
+~200 lines, fully specced, and saved runs stay plain JSON. Revisit if the flow
+grows parallel slices, timers as states, or deeper nesting.
+
 ```
 src/
   domain/      pure: Run, Slice, transitions, policies, errors, events   (no I/O)
