@@ -540,16 +540,15 @@ adapter: `withArgs(agent, '--continue')` for retries and
    old orchestrator could be deleted). Agents still run through the old
    Docker provider, wrapped as an `AgentSession` adapter.
 4. ✅ Sandcastle `AgentSession`: one sandbox per run, credentials through
-   `docker({ env })`, realpath fix. The old Docker adapter is removed; the old
-   `docker/agent-sandbox/` image and its publish job are still in the repo.
+   `docker({ env })`, realpath fix. The old Docker adapter is removed.
 5. ✅ Structured output as a tagged reply; one correction via `--continue`.
 6. ✅ Verify and planning inside the sandbox; `setupCommand`; idle timeout.
 7. ✅ Image build (generated agent layer, label and version checks, gha
    cache flag); `sdlc init` and `sdlc build`.
 8. ✅ Metrics observer; `git-remote` and custom run stores; OTel adapter.
-9. Cleanup: ✅ README and architecture map (`docs/sdlc Architecture Map.html`).
-   Open: remove `docker/agent-sandbox/`, its publish job and `docker:build`;
-   update firefly's workflow (it calls the removed `autopilot` and
+9. Cleanup: ✅ README and architecture map (`docs/sdlc Architecture Map.html`);
+   ✅ `docker/agent-sandbox/`, its publish job and `docker:build` removed.
+   Open: update firefly's workflow (it calls the removed `autopilot` and
    `create-pr`, and passes `OPENCODE_AUTH_JSON`); try `SDLC_IMAGE_CACHE=gha`
    in real CI.
 

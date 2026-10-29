@@ -11,8 +11,7 @@
   },
   "main": "./dist/cli/main.js",
   "files": [
-    "dist",
-    "docker"
+    "dist"
   ],
   "repository": {
     "type": "git",
@@ -31,7 +30,6 @@
     "test:watch": "vitest",
     "test:mutation": "stryker run",
     "secretlint": "secretlint '**/*'",
-    "docker:build": "docker build -t sdlc-agent-sandbox docker/agent-sandbox",
     "prepare": "husky || true",
     "typecheck": "tsc -p tsconfig.typecheck.json"
   },
