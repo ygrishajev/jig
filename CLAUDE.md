@@ -13,7 +13,7 @@ change — they are rules, not suggestions, and they override your defaults.
 - [`.claude/instructions/clean-code-over-comments.md`](.claude/instructions/clean-code-over-comments.md)
   — writing or changing any code — naming, structure, and why new code carries almost no comments
 - [`.claude/instructions/testing-conventions.md`](.claude/instructions/testing-conventions.md)
-  — writing or changing any spec — the `DEPENDENCIES` pattern, fakes over stubs, faker-built data, what not to assert
+  — writing or changing any spec — ports over module mocks, fakes over stubs, faker-built data, what not to assert
 - [`.claude/instructions/setup-function-instead-of-beforeeach-in-unit-service-level-tests.md`](.claude/instructions/setup-function-instead-of-beforeeach-in-unit-service-level-tests.md)
   — writing a spec — `setup` at the bottom of the root `describe`, never `beforeEach`
 - [`.claude/instructions/use-mock-instead-of-as-unknown-as-in-tests.md`](.claude/instructions/use-mock-instead-of-as-unknown-as-in-tests.md)

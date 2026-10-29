@@ -12,18 +12,8 @@
 
 - **Never mock a module.** No `vi.mock`, no monkey-patching `process` or `fs`. A unit that needs something it cannot have in a test — an agent, docker, the clock, the network — declares it, and the spec passes a stand-in.
 - **Pipeline code takes ports.** Steps and the engine receive their ports (`AgentSession`, `Workspace`, `RunStore`, `Clock`, …) as arguments; the composition root in `src/app/` is the only place that builds real adapters.
-- **Leaf functions use `DEPENDENCIES`.** A plain function with a dependency that isn't a port exports `DEPENDENCIES` and takes a `dependencies` parameter that defaults to it, aliased to `d`:
-  ```ts
-  export const DEPENDENCIES = { execa };
-
-  export async function runVerifyCommand(
-    command: string,
-    { dependencies: d = DEPENDENCIES }: { dependencies?: typeof DEPENDENCIES } = {},
-  ) {
-    return d.execa(command, { shell: true, reject: false });
-  }
-  ```
-- **Declare the narrow port, not the library's whole type.** `AgentSession` is what the pipeline calls, not sandcastle's `Sandbox`; `{ execa: RunCommand }` where `RunCommand` is only the call shape used. The real library still satisfies it, and a spy satisfies it without a cast.
+- **Every external call lives in an adapter.** A process spawn, a git command, a file write, a network request or a sandcastle call is never made from `domain/`, `flow/` or `steps/` — it sits behind a port in `adapters/`. If pipeline code needs something new from the outside world, add a method to a port (or a new port), not an import.
+- **Declare the narrow port, not the library's whole type.** `AgentSession` is what the pipeline calls, not sandcastle's `Sandbox`. The real adapter implements it, and a fake or a `mock<T>()` satisfies it without a cast.
 - **`mock<T>()` from `vitest-mock-extended`, never `as unknown as T`.** Override the fields the test cares about and let the rest be auto-mocked.
 
 ## Fakes over stubs
