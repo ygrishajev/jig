@@ -1,7 +1,5 @@
+import type { RunId } from './run-id.js';
 import type { Slice } from './slice.js';
-
-/** Run ids become a `.sdlc/<runId>` directory and a `sdlc/run/<runId>` branch segment. */
-export const RUN_ID_PATTERN = /^[a-z0-9-]+$/;
 
 export type RunPhase =
   | 'context'
@@ -34,7 +32,7 @@ export interface DesignDocs {
 }
 
 export interface RunState {
-  runId: string;
+  runId: RunId;
   /**
    * How many times the run has been saved. When several stores hold a copy, the highest revision
    * is the freshest: a counter rather than a timestamp, because the machines saving it do not
@@ -52,12 +50,12 @@ export interface RunState {
   blockedReason?: string;
 }
 
-export function startRun(input: { runId: string; baseBranch: string; request: string }): RunState {
+export function startRun(input: { runId: RunId; baseBranch: string; request: string }): RunState {
   return { ...input, revision: 0, phase: 'context', slices: [] };
 }
 
 /** Every slice commits onto this one branch, so the whole feature lands as one merge. */
-export function runBranchFor(runId: string) {
+export function runBranchFor(runId: RunId) {
   return `sdlc/run/${runId}`;
 }
 

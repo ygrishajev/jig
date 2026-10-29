@@ -1,3 +1,4 @@
+import type { RunId } from '../../domain/run-id.js';
 import type { RunState } from '../../domain/run-state.js';
 import type { RunStore } from '../../ports/run-store.js';
 
@@ -8,11 +9,11 @@ import type { RunStore } from '../../ports/run-store.js';
  * process never writes two different states under the same revision.
  */
 export class CompositeRunStore implements RunStore {
-  private readonly latestRevisions = new Map<string, number>();
+  private readonly latestRevisions = new Map<RunId, number>();
 
   constructor(private readonly stores: RunStore[]) {}
 
-  async load(runId: string) {
+  async load(runId: RunId) {
     let freshest: RunState | undefined;
     for (const store of this.stores) {
       const copy = await store.load(runId);

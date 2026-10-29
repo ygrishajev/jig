@@ -19,6 +19,7 @@ import {
   SetupCommandFailed,
   type SdlcError,
 } from '../../domain/errors.js';
+import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type {
   AgentRole,
@@ -58,7 +59,7 @@ export type SandboxFactory = (options: CreateSandboxOptions) => Promise<Sandbox>
 
 export interface SandcastleSessionOptions {
   repoRoot: string;
-  runId: string;
+  runId: RunId;
   baseBranch: string;
   imageName: string;
   credentials: Record<string, string>;

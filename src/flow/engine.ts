@@ -3,6 +3,7 @@ import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
 import { SdlcError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome } from '../domain/outcome.js';
+import type { RunId } from '../domain/run-id.js';
 import { currentSlice, type RunPhase, type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
@@ -144,7 +145,7 @@ class Engine {
    */
   private async attempt(
     at: StepLocation,
-    runId: string,
+    runId: RunId,
     step: () => Promise<Outcome>,
   ): Promise<Attempt> {
     try {
@@ -170,7 +171,7 @@ class Engine {
     }
   }
 
-  private async timed(at: StepLocation, runId: string, step: () => Promise<Outcome>) {
+  private async timed(at: StepLocation, runId: RunId, step: () => Promise<Outcome>) {
     const startedAt = this.d.clock.now();
     this.d.events.publish({ type: 'stepStarted', runId, at });
     const outcome = await step();

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { RunId } from '../../domain/run-id.js';
 import { RunStateConflict } from '../../domain/errors.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { aFeaturePlan, aRunState, aSlice } from '../../../tests/support/builders.js';
@@ -141,7 +142,7 @@ async function refsUnder(repo: string, prefix: string) {
   return refs.trim().split('\n').filter(Boolean);
 }
 
-async function commitOnRunBranch(repo: string, runId: string) {
+async function commitOnRunBranch(repo: string, runId: RunId) {
   const git = simpleGit({ baseDir: repo });
   const branch = runBranchFor(runId);
   const existing = await git.branchLocal();

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { MergeFailed } from '../../domain/errors.js';
+import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type { Workspace } from '../../ports/workspace.js';
 import { isBranchMergedInto, mergeBranchInto } from '../../git/merge.js';
@@ -9,7 +10,7 @@ import { commitAll, openRepo } from '../../git/repository.js';
 export interface GitWorkspaceOptions {
   repoRoot: string;
   worktreePath: string;
-  runId: string;
+  runId: RunId;
   baseBranch: string;
 }
 

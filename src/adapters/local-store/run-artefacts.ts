@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
+import type { RunId } from '../../domain/run-id.js';
 import type { RunState } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
@@ -26,12 +27,12 @@ export class RunArtefacts {
     await write('PR_DESCRIPTION.md', pullRequestDescription(state, metrics));
   }
 
-  documentPath(runId: string, name: RunDocument) {
+  documentPath(runId: RunId, name: RunDocument) {
     const file = path.join(stateDirectory(this.repoRoot, runId), name);
     return existsSync(file) ? file : undefined;
   }
 
-  private async makeStateDirectory(runId: string) {
+  private async makeStateDirectory(runId: RunId) {
     await makeRunDirectory(this.repoRoot, runId);
     const directory = stateDirectory(this.repoRoot, runId);
     await mkdir(directory, { recursive: true });

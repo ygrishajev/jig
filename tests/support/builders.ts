@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import type { Outcome } from '../../src/domain/outcome.js';
+import { runIdSchema } from '../../src/domain/run-id.js';
 import type { DesignDocs, FeaturePlan, RunContext, RunState } from '../../src/domain/run-state.js';
 import type { RunSettings } from '../../src/domain/settings.js';
 import type { PlannedSlice, Slice } from '../../src/domain/slice.js';
@@ -13,7 +14,7 @@ export function sliceId() {
 }
 
 export function runId() {
-  return faker.string.hexadecimal({ length: 8, casing: 'lower', prefix: '' });
+  return runIdSchema.parse(faker.string.hexadecimal({ length: 8, casing: 'lower', prefix: '' }));
 }
 
 export function aPlannedSlice({

@@ -1,3 +1,4 @@
+import type { RunId } from '../../src/domain/run-id.js';
 import { runBranchFor } from '../../src/domain/run-state.js';
 import {
   checkoutExistingBranch,
@@ -9,7 +10,7 @@ import { worktreeDirectory } from '../../src/adapters/local-store/run-paths.js';
 
 export interface RunWorktreeOptions {
   repoRoot: string;
-  runId: string;
+  runId: RunId;
   baseBranch: string;
   /** For repositories that sign commits through an agent the sandbox cannot reach. */
   skipCommitSigning: boolean;

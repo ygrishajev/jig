@@ -69,7 +69,7 @@ describe('summarizeMetrics', () => {
       {
         kind: 'retry',
         at: now(),
-        runId: 'r',
+        runId: runId(),
         location: { phase: 'context' },
         reason: faker.lorem.sentence(),
       },
@@ -111,7 +111,7 @@ function step(input: {
   return {
     kind: 'step',
     at: now(),
-    runId: 'r',
+    runId: runId(),
     location: { phase: 'slices', sliceId: input.sliceId },
     outcome: input.outcome,
     durationMs: input.durationMs,
@@ -120,7 +120,7 @@ function step(input: {
 }
 
 function call(input: { costUsd?: number; tokens: TokenUsage }): MetricRecord {
-  return { kind: 'agentCall', at: now(), runId: 'r', role: 'implementer', ...input };
+  return { kind: 'agentCall', at: now(), runId: runId(), role: 'implementer', ...input };
 }
 
 function someTokens(): TokenUsage {

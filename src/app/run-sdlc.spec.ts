@@ -14,6 +14,7 @@ import {
   SandboxUnavailable,
   SetupCommandFailed,
 } from '../domain/errors.js';
+import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import {
   aContext,
@@ -135,17 +136,6 @@ describe('runSdlc', () => {
     await expect(runSdlc(app, {})).rejects.toBeInstanceOf(RunRequestInvalid);
   });
 
-  it('refuses a run id that cannot become a directory and branch name', async () => {
-    const { app, writeRequest } = await setup();
-
-    await expect(
-      runSdlc(app, {
-        requestPath: await writeRequest(),
-        runId: `${faker.word.noun()} ${faker.word.noun()}`,
-      }),
-    ).rejects.toThrow('Invalid run id');
-  });
-
   async function setup() {
     const repo = await createTempRepo();
     const requests = await mkdtemp(path.join(tmpdir(), 'sdlc-request-'));
@@ -214,7 +204,7 @@ function scriptWholeRun(agent: FakeAgentSession) {
   agent.script('describer', { output: { body: faker.lorem.paragraph() } });
 }
 
-async function readResult(repoRoot: string, id: string) {
+async function readResult(repoRoot: string, id: RunId) {
   return JSON.parse(
     await readFile(path.join(stateDirectory(repoRoot, id), 'result.json'), 'utf-8'),
   );

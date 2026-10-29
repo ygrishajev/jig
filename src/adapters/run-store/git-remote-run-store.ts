@@ -1,6 +1,7 @@
 import { execa } from 'execa';
 import pRetry from 'p-retry';
 import { RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
+import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor, type RunState } from '../../domain/run-state.js';
 import type { RunStore } from '../../ports/run-store.js';
 import { runStateSchema } from '../local-store/run-state-schema.js';
@@ -34,14 +35,14 @@ interface RemoteRun {
  * what this store last saw on the remote, so a concurrent writer is refused rather than overwritten.
  */
 export class GitRemoteRunStore implements RunStore {
-  private readonly seenOnRemote = new Map<string, RemoteRun>();
+  private readonly seenOnRemote = new Map<RunId, RemoteRun>();
 
   constructor(
     private readonly repoRoot: string,
     private readonly remote = 'origin',
   ) {}
 
-  async load(runId: string) {
+  async load(runId: RunId) {
     const remoteRun = await this.fetchRun(runId);
     this.seenOnRemote.set(runId, remoteRun);
     if (!remoteRun.state) return undefined;
@@ -68,7 +69,7 @@ export class GitRemoteRunStore implements RunStore {
   }
 
   /** Brings the run's refs over from the remote; the run branch lands on a remote-tracking ref. */
-  private async fetchRun(runId: string): Promise<RemoteRun> {
+  private async fetchRun(runId: RunId): Promise<RemoteRun> {
     const listed = await this.remoteCall(
       ['ls-remote', '--exit-code', this.remote, stateRef(runId), branchRef(runId)],
       NO_MATCHING_REFS,
@@ -93,7 +94,7 @@ export class GitRemoteRunStore implements RunStore {
    * Moves the local run branch to the remote's when it is behind, keeps it when it is ahead with
    * commits not pushed yet, and refuses when the two have diverged.
    */
-  private async catchUpRunBranch(runId: string, remoteHead: string) {
+  private async catchUpRunBranch(runId: RunId, remoteHead: string) {
     const local = await this.revision(branchRef(runId));
     if (!local) return this.required(['update-ref', branchRef(runId), remoteHead, '']);
     if (await this.isAncestor(remoteHead, local)) return;
@@ -106,7 +107,7 @@ export class GitRemoteRunStore implements RunStore {
   }
 
   /** Git refuses to move a branch a worktree has checked out, so that worktree is moved instead. */
-  private async fastForward(runId: string, from: string, to: string) {
+  private async fastForward(runId: RunId, from: string, to: string) {
     const worktree = await this.worktreeWithCheckedOut(branchRef(runId));
     if (worktree) {
       await this.required(['-C', worktree, 'merge', '--ff-only', '--quiet', to]);
@@ -143,7 +144,7 @@ export class GitRemoteRunStore implements RunStore {
     return commit;
   }
 
-  private trackingRef(runId: string) {
+  private trackingRef(runId: RunId) {
     return `refs/remotes/${this.remote}/${runBranchFor(runId)}`;
   }
 
@@ -199,10 +200,10 @@ function isLeaseRejection(stderr: string) {
   return stderr.includes('[rejected]') || stderr.includes('stale info');
 }
 
-function stateRef(runId: string) {
+function stateRef(runId: RunId) {
   return `refs/sdlc/${runId}`;
 }
 
-function branchRef(runId: string) {
+function branchRef(runId: RunId) {
   return `refs/heads/${runBranchFor(runId)}`;
 }

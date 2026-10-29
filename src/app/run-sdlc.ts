@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import type { AwilixContainer } from 'awilix';
 import { getCurrentBranch } from '../git/branch.js';
 import { RunRequestInvalid } from '../domain/errors.js';
-import { RUN_ID_PATTERN, startRun, type RunState } from '../domain/run-state.js';
+import { runIdSchema, type RunId } from '../domain/run-id.js';
+import { startRun, type RunState } from '../domain/run-state.js';
 import { runEngine, type EngineStatus } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
 import { summarizeMetrics } from '../observers/metrics.js';
@@ -16,7 +17,7 @@ import type { RunStore } from '../ports/run-store.js';
 
 export interface RunSdlcInput {
   requestPath?: string;
-  runId?: string;
+  runId?: RunId;
 }
 
 export interface RunReport {
@@ -46,7 +47,7 @@ export async function runSdlc(
 async function runHoldingLock(
   app: AwilixContainer<AppCradle>,
   requestPath: string | undefined,
-  id: string,
+  id: RunId,
 ) {
   const runStore = await openRunStore(app.cradle);
   const state = await startOrResume(app, runStore, requestPath, id);
@@ -76,20 +77,14 @@ function runIdFor({ requestPath, runId }: RunSdlcInput) {
   if (!requestPath && !runId) {
     throw new RunRequestInvalid('Pass a request file to start a run, or --id to resume one.');
   }
-  const id = runId ?? randomBytes(4).toString('hex');
-  if (!RUN_ID_PATTERN.test(id)) {
-    throw new RunRequestInvalid(
-      `Invalid run id "${id}" — use lowercase letters, digits and hyphens (it becomes a directory and a branch name).`,
-    );
-  }
-  return id;
+  return runId ?? runIdSchema.parse(randomBytes(4).toString('hex'));
 }
 
 async function startOrResume(
   app: AwilixContainer<AppCradle>,
   store: RunStore,
   requestPath: string | undefined,
-  id: string,
+  id: RunId,
 ) {
   const request = requestPath ? await readFile(requestPath, 'utf-8') : undefined;
   const existing = await store.load(id);

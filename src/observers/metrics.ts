@@ -1,6 +1,7 @@
 import type { AgentRole } from '../domain/agent-role.js';
 import type { RunEvent, StepLocation } from '../domain/events.js';
 import type { OutcomeType } from '../domain/outcome.js';
+import type { RunId } from '../domain/run-id.js';
 import type { CommitSummary, TokenUsage } from '../domain/usage.js';
 import type { Clock } from '../ports/observability.js';
 
@@ -8,7 +9,7 @@ export type MetricRecord =
   | {
       kind: 'step';
       at: string;
-      runId: string;
+      runId: RunId;
       location: StepLocation;
       outcome: OutcomeType;
       durationMs: number;
@@ -17,13 +18,13 @@ export type MetricRecord =
   | {
       kind: 'agentCall';
       at: string;
-      runId: string;
+      runId: RunId;
       location?: StepLocation;
       role: AgentRole;
       costUsd?: number;
       tokens: TokenUsage;
     }
-  | { kind: 'retry'; at: string; runId: string; location: StepLocation; reason: string };
+  | { kind: 'retry'; at: string; runId: RunId; location: StepLocation; reason: string };
 
 /** Records one line per step, agent call and retry, attributing agent calls to the step they ran in. */
 export class MetricsObserver {

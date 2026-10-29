@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { aMetricsSummary, aRunState, aSlice, designDocs } from '../../../tests/support/builders.js';
+import type { RunId } from '../../domain/run-id.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { LocalRunStore } from './local-run-store.js';
 import { RunArtefacts } from './run-artefacts.js';
@@ -102,7 +103,7 @@ describe('RunArtefacts', () => {
   async function setup() {
     const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-artefacts-'));
     directories.push(repoRoot);
-    const read = (runId: string, name: string) =>
+    const read = (runId: RunId, name: string) =>
       readFile(path.join(stateDirectory(repoRoot, runId), name), 'utf-8');
     return { artefacts: new RunArtefacts(repoRoot), read, repoRoot };
   }

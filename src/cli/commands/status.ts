@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
 import { createAppContainer } from '../../app/container.js';
 import { readRunStatus, type RunStatus } from '../../app/run-status.js';
+import { parseRunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { withErrorHandling } from '../with-error-handling.js';
@@ -15,7 +16,7 @@ export function registerStatusCommand(program: Command) {
       withErrorHandling(async (id: string) => {
         const app = createAppContainer({ repoRoot: process.cwd(), logFormat: defaultLogFormat() });
         try {
-          const status = await readRunStatus(app, id);
+          const status = await readRunStatus(app, parseRunId(id));
           console.log(describeRun(status));
           if (status.metrics.steps > 0) console.log(`So far: ${formatSummary(status.metrics)}`);
         } finally {

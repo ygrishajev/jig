@@ -2,6 +2,7 @@ import type { AwilixContainer } from 'awilix';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import type { RunDocument } from '../adapters/local-store/run-artefacts.js';
 import { RunRequestInvalid } from '../domain/errors.js';
+import type { RunId } from '../domain/run-id.js';
 import type { RunState } from '../domain/run-state.js';
 import { summarizeMetrics, type MetricsSummary } from '../observers/metrics.js';
 import type { AppCradle } from './container.js';
@@ -18,7 +19,7 @@ export interface RunStatus {
 /** Where a run is, read from the same stores a run saves to; metrics are this machine's. */
 export async function readRunStatus(
   app: AwilixContainer<AppCradle>,
-  runId: string,
+  runId: RunId,
 ): Promise<RunStatus> {
   const state = await (await openRunStore(app.cradle)).load(runId);
   if (!state) throw new RunRequestInvalid(`No run found with id "${runId}".`);

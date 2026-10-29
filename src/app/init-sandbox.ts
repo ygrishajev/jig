@@ -16,6 +16,7 @@ import { updateConfigFile } from '../config/write-config.js';
 import { getCurrentBranch } from '../git/branch.js';
 import { openRepo } from '../git/repository.js';
 import { SetupCommandFailed } from '../domain/errors.js';
+import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { observe, RunEvents } from '../observers/run-events.js';
@@ -140,7 +141,7 @@ async function withSandbox<T>(
   const { repoRoot, logger } = app.cradle;
   await ensureSandboxImage(app.cradle);
   const run: RunIdentity = {
-    runId: `init-${randomBytes(3).toString('hex')}`,
+    runId: runIdSchema.parse(`init-${randomBytes(3).toString('hex')}`),
     baseBranch: await getCurrentBranch(repoRoot),
   };
   const events = new RunEvents();

@@ -19,6 +19,7 @@ import { SandcastleSession } from '../adapters/sandcastle/sandcastle-session.js'
 import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
 import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
+import type { RunId } from '../domain/run-id.js';
 import { SdlcError } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
@@ -40,7 +41,7 @@ const MAX_STEP_RETRIES = 2;
 const RETRY_DELAY_MS = 5000;
 
 export interface RunIdentity {
-  runId: string;
+  runId: RunId;
   baseBranch: string;
 }
 

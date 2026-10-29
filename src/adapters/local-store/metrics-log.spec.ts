@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { aCommit, runId, sliceId, tokenUsage } from '../../../tests/support/builders.js';
+import type { RunId } from '../../domain/run-id.js';
 import { MetricsLogCorrupt } from '../../domain/errors.js';
 import type { MetricRecord } from '../../observers/metrics.js';
 import { MetricsLog } from './metrics-log.js';
@@ -78,7 +79,7 @@ function tornLine(record: MetricRecord) {
   return line.slice(0, faker.number.int({ min: 1, max: line.length - 1 }));
 }
 
-function stepRecord(id: string): MetricRecord {
+function stepRecord(id: RunId): MetricRecord {
   return {
     kind: 'step',
     at: faker.date.recent().toISOString(),
@@ -90,7 +91,7 @@ function stepRecord(id: string): MetricRecord {
   };
 }
 
-function agentCallRecord(id: string): MetricRecord {
+function agentCallRecord(id: RunId): MetricRecord {
   return {
     kind: 'agentCall',
     at: faker.date.recent().toISOString(),
@@ -102,7 +103,7 @@ function agentCallRecord(id: string): MetricRecord {
   };
 }
 
-function retryRecord(id: string): MetricRecord {
+function retryRecord(id: RunId): MetricRecord {
   return {
     kind: 'retry',
     at: faker.date.recent().toISOString(),

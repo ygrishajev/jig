@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { RUN_ID_PATTERN, type RunState } from '../../domain/run-state.js';
+import { runIdSchema } from '../../domain/run-id.js';
+import type { RunState } from '../../domain/run-state.js';
 import { SLICE_ID_PATTERN } from '../../domain/slice.js';
 
 export const runPhaseSchema = z.enum([
@@ -33,7 +34,7 @@ const sliceSchema = z.object({
  * saved before revisions were counted loads as revision 0.
  */
 export const runStateSchema: z.ZodType<RunState, z.ZodTypeDef, unknown> = z.object({
-  runId: z.string().regex(RUN_ID_PATTERN),
+  runId: runIdSchema,
   revision: z.number().int().nonnegative().default(0),
   baseBranch: z.string().min(1),
   request: z.string(),

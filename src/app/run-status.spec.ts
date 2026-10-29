@@ -1,5 +1,5 @@
 import { asValue } from 'awilix';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
@@ -8,6 +8,7 @@ import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { loadConfig } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
+import { parseRunId } from '../domain/run-id.js';
 import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { createAppContainer } from './container.js';
@@ -51,6 +52,16 @@ describe('readRunStatus', () => {
     ).rejects.toBeInstanceOf(RunRequestInvalid);
   });
 
+  it('refuses an id that would lead outside the run directory', async () => {
+    const { cloneOf, statusIn } = await setup();
+    const here = await cloneOf();
+    const outside = path.join(here, 'x', 'state');
+    await mkdir(outside, { recursive: true });
+    await writeFile(path.join(outside, 'run.json'), JSON.stringify(aRunState()));
+
+    await expect(statusIn(here, ['local'], '../x')).rejects.toBeInstanceOf(RunRequestInvalid);
+  });
+
   async function setup() {
     const seed = await createTempRepo();
     const origin = await mkdtemp(path.join(tmpdir(), 'sdlc-origin-'));
@@ -66,7 +77,7 @@ describe('readRunStatus', () => {
       const app = createAppContainer({ repoRoot, logFormat: 'json', logLevel: 'silent' });
       cleanups.push(() => app.dispose());
       app.register({ config: asValue({ ...loadConfig(repoRoot), runStores }) });
-      return readRunStatus(app, id);
+      return readRunStatus(app, parseRunId(id));
     };
     return { cloneOf, statusIn };
   }
