@@ -2,6 +2,7 @@ import { faker } from '@faker-js/faker';
 import type { DesignDocs, FeaturePlan, RunContext, RunState } from '../../src/domain/run-state.js';
 import type { RunSettings } from '../../src/domain/settings.js';
 import type { PlannedSlice, Slice } from '../../src/domain/slice.js';
+import type { CommitSummary } from '../../src/domain/usage.js';
 
 export function sliceId() {
   return `${faker.word.verb()}-${faker.word.noun()}-${faker.string.alphanumeric({ length: 5, casing: 'lower' })}`
@@ -76,4 +77,13 @@ export function runSettings({
   verifyCommand,
 }: Partial<RunSettings> = {}): RunSettings {
   return { reviewCycleCap, maxStepRetries, retryDelayMs, designGate, mergeMode, verifyCommand };
+}
+
+export function aCommit({
+  sha = faker.git.commitSha(),
+  filesChanged = faker.number.int({ min: 1, max: 10 }),
+  insertions = faker.number.int({ min: 0, max: 200 }),
+  deletions = faker.number.int({ min: 0, max: 200 }),
+}: Partial<CommitSummary> = {}): CommitSummary {
+  return { sha, filesChanged, insertions, deletions };
 }
