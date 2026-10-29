@@ -35,6 +35,12 @@ export interface DesignDocs {
 
 export interface RunState {
   runId: string;
+  /**
+   * How many times the run has been saved. When several stores hold a copy, the highest revision
+   * is the freshest: a counter rather than a timestamp, because the machines saving it do not
+   * share a clock.
+   */
+  revision: number;
   baseBranch: string;
   request: string;
   phase: RunPhase;
@@ -47,7 +53,7 @@ export interface RunState {
 }
 
 export function startRun(input: { runId: string; baseBranch: string; request: string }): RunState {
-  return { ...input, phase: 'context', slices: [] };
+  return { ...input, revision: 0, phase: 'context', slices: [] };
 }
 
 /** Every slice commits onto this one branch, so the whole feature lands as one merge. */

@@ -105,6 +105,9 @@ expires after 30 seconds.
 ## CI and observability
 
 - `--log-format json` (default when not a TTY); every run also logs to `.sdlc/<id>/state/run.log`.
+- Run state is saved to every store in `runStores`, and `run` and `status` read the freshest
+  copy (the one saved most often). Everything else in `.sdlc/<id>/state/` is this machine's own
+  record of the invocations it ran and is never pushed.
 - `.sdlc/<id>/state/result.json`: `status`, `complete`, `blockedReason`, and `metrics`
   (cost, tokens, durations, review rounds). The same summary is the footer of
   `PR_DESCRIPTION.md`; `metrics.jsonl` has one line per step and agent call.

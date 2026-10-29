@@ -1,3 +1,4 @@
+import { faker } from '@faker-js/faker';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 import { aRunState } from '../../../tests/support/builders.js';
@@ -7,20 +8,60 @@ import type { RunStore } from '../../ports/run-store.js';
 import { CompositeRunStore } from './composite-run-store.js';
 
 describe('CompositeRunStore', () => {
-  it('loads from the first store that has the run, letting every store see it first', async () => {
-    const state = aRunState();
-    const { store, later } = await setup({ state });
+  it('loads the copy with the highest revision, whichever store holds it', async () => {
+    const stale = aRunState({ phase: 'planning', revision: 3 });
+    const fresher = aRunState({ runId: stale.runId, phase: 'slices', revision: 7 });
+    const { store } = await setup({ copies: [stale, fresher] });
 
-    expect(await store.load(state.runId)).toEqual(state);
-    expect(later.load).toHaveBeenCalledWith(state.runId);
+    expect(await store.load(stale.runId)).toEqual(fresher);
   });
 
-  async function setup(input: { state: RunState }) {
-    const first = new InMemoryRunStore();
-    await first.save(input.state);
-    const later = mock<RunStore>({
-      load: vi.fn().mockResolvedValue(aRunState({ runId: input.state.runId })),
-    });
-    return { store: new CompositeRunStore([first, later]), later };
+  it('lets every store see the run before anything is saved', async () => {
+    const state = aRunState();
+    const { store, stores } = await setup({ copies: [state, undefined] });
+
+    await store.load(state.runId);
+
+    for (const each of stores) expect(each.load).toHaveBeenCalledWith(state.runId);
+  });
+
+  it('saves the next revision to every store, past the freshest one it loaded', async () => {
+    const stale = aRunState({ revision: 2 });
+    const fresher = aRunState({ runId: stale.runId, revision: 9 });
+    const { store, stores } = await setup({ copies: [stale, fresher] });
+    await store.load(stale.runId);
+
+    await store.save({ ...stale, phase: 'done' });
+    await store.save({ ...stale, phase: 'stuck' });
+
+    for (const each of stores) {
+      expect(await each.load(stale.runId)).toMatchObject({
+        phase: 'stuck',
+        revision: fresher.revision + 2,
+      });
+    }
+  });
+
+  it('starts a run it never loaded from the revision it was given', async () => {
+    const state = aRunState({ revision: faker.number.int({ min: 0, max: 50 }) });
+    const { store, stores } = await setup({ copies: [undefined] });
+
+    await store.save(state);
+
+    expect(await stores[0].load(state.runId)).toEqual({ ...state, revision: state.revision + 1 });
+  });
+
+  async function setup(input: { copies: (RunState | undefined)[] }) {
+    const stores = await Promise.all(
+      input.copies.map(async (copy) => {
+        const memory = new InMemoryRunStore();
+        if (copy) await memory.save(copy);
+        return mock<RunStore>({
+          load: vi.fn((runId: string) => memory.load(runId)),
+          save: vi.fn((state: RunState) => memory.save(state)),
+        });
+      }),
+    );
+    return { store: new CompositeRunStore(stores), stores };
   }
 });

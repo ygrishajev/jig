@@ -1,8 +1,9 @@
 import { Command } from 'commander';
-import { LocalRunStore } from '../../adapters/local-store/local-run-store.js';
-import { MetricsLog } from '../../adapters/local-store/metrics-log.js';
-import { formatSummary, summarizeMetrics } from '../../observers/metrics.js';
-import { runBranchFor, type RunState } from '../../domain/run-state.js';
+import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
+import { createAppContainer } from '../../app/container.js';
+import { readRunStatus, type RunStatus } from '../../app/run-status.js';
+import { runBranchFor } from '../../domain/run-state.js';
+import { formatSummary } from '../../observers/metrics.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 export function registerStatusCommand(program: Command) {
@@ -12,22 +13,19 @@ export function registerStatusCommand(program: Command) {
     .argument('<id>', 'run id')
     .action(
       withErrorHandling(async (id: string) => {
-        const repoRoot = process.cwd();
-        const store = new LocalRunStore(repoRoot);
-        const state = await store.load(id);
-        if (!state) throw new Error(`No run found with id "${id}".`);
-        const metrics = summarizeMetrics(new MetricsLog(repoRoot, id).readAll());
-        console.log(describeRun(state, store));
-        if (metrics.steps > 0) console.log(`So far: ${formatSummary(metrics)}`);
+        const app = createAppContainer({ repoRoot: process.cwd(), logFormat: defaultLogFormat() });
+        try {
+          const status = await readRunStatus(app, id);
+          console.log(describeRun(status));
+          if (status.metrics.steps > 0) console.log(`So far: ${formatSummary(status.metrics)}`);
+        } finally {
+          await app.dispose();
+        }
       }),
     );
 }
 
-function describeRun(state: RunState, store: LocalRunStore) {
-  const documents = (['design.md', 'plan.md', 'PR_DESCRIPTION.md'] as const)
-    .map((name) => [name, store.documentPath(state.runId, name)] as const)
-    .filter((entry): entry is readonly [(typeof entry)[0], string] => entry[1] !== undefined)
-    .map(([name, file]) => `${name.padEnd(18)} ${file}`);
+function describeRun({ state, documents }: RunStatus) {
   const slices = [...state.slices]
     .sort((a, b) => a.order - b.order)
     .map((slice) => {
@@ -38,7 +36,7 @@ function describeRun(state: RunState, store: LocalRunStore) {
     `Run ${state.runId} — ${state.phase} (base: ${state.baseBranch})`,
     ...(state.blockedReason ? [`Blocked: ${state.blockedReason}`] : []),
     `${'branch'.padEnd(18)} ${runBranchFor(state.runId)}`,
-    ...documents,
+    ...documents.map((document) => `${document.name.padEnd(18)} ${document.path}`),
     ...(slices.length > 0 ? ['Slices:', ...slices] : []),
   ].join('\n');
 }

@@ -13,9 +13,13 @@ const sliceSchema = z.object({
   commit: z.string().optional(),
 });
 
-/** Validates a saved run on the way back in, so a hand-edited or stale file fails loudly. */
-export const runStateSchema: z.ZodType<RunState> = z.object({
+/**
+ * Validates a saved run on the way back in, so a hand-edited or stale file fails loudly. A run
+ * saved before revisions were counted loads as revision 0.
+ */
+export const runStateSchema: z.ZodType<RunState, z.ZodTypeDef, unknown> = z.object({
   runId: z.string().regex(RUN_ID_PATTERN),
+  revision: z.number().int().nonnegative().default(0),
   baseBranch: z.string().min(1),
   request: z.string(),
   phase: z.enum([

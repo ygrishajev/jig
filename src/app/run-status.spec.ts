@@ -1,0 +1,73 @@
+import { asValue } from 'awilix';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { simpleGit } from 'simple-git';
+import { afterEach, describe, expect, it } from 'vitest';
+import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
+import { loadConfig } from '../config/load-config.js';
+import { RunRequestInvalid } from '../domain/errors.js';
+import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
+import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { createAppContainer } from './container.js';
+import { readRunStatus } from './run-status.js';
+
+describe('readRunStatus', () => {
+  const cleanups: (() => Promise<void>)[] = [];
+
+  afterEach(async () => {
+    await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  });
+
+  it('finds a run that only the remote store holds', async () => {
+    const { cloneOf, statusIn } = await setup();
+    const state = aRunState({ phase: 'slices', slices: [aSlice()] });
+    await new GitRemoteRunStore(await cloneOf()).save(state);
+
+    const status = await statusIn(await cloneOf(), ['git-remote'], state.runId);
+
+    expect(status.state).toEqual(state);
+  });
+
+  it("shows the remote's copy when this machine's local copy is older", async () => {
+    const { cloneOf, statusIn } = await setup();
+    const here = await cloneOf();
+    const stale = aRunState({ phase: 'planning', revision: 1 });
+    await new LocalRunStore(here).save(stale);
+    const fresher = { ...stale, phase: 'slices' as const, revision: 5, slices: [aSlice()] };
+    await new GitRemoteRunStore(await cloneOf()).save(fresher);
+
+    const status = await statusIn(here, ['local', 'git-remote'], stale.runId);
+
+    expect(status.state).toEqual(fresher);
+  });
+
+  it('refuses a run that no configured store holds', async () => {
+    const { cloneOf, statusIn } = await setup();
+
+    await expect(
+      statusIn(await cloneOf(), ['local', 'git-remote'], runId()),
+    ).rejects.toBeInstanceOf(RunRequestInvalid);
+  });
+
+  async function setup() {
+    const seed = await createTempRepo();
+    const origin = await mkdtemp(path.join(tmpdir(), 'sdlc-origin-'));
+    cleanups.push(seed.cleanup, () => rm(origin, { recursive: true, force: true }));
+    await simpleGit().clone(seed.dir, origin, ['--bare']);
+    const cloneOf = async () => {
+      const directory = await mkdtemp(path.join(tmpdir(), 'sdlc-clone-'));
+      cleanups.push(() => rm(directory, { recursive: true, force: true }));
+      await simpleGit().clone(origin, directory);
+      return directory;
+    };
+    const statusIn = async (repoRoot: string, runStores: string[], id: string) => {
+      const app = createAppContainer({ repoRoot, logFormat: 'json', logLevel: 'silent' });
+      cleanups.push(() => app.dispose());
+      app.register({ config: asValue({ ...loadConfig(repoRoot), runStores }) });
+      return readRunStatus(app, id);
+    };
+    return { cloneOf, statusIn };
+  }
+});

@@ -413,8 +413,14 @@ interface RunStore {
     it checked out); saving pushes with `--force-with-lease` against what was
     loaded, so a concurrent writer blocks the run instead of being overwritten.
   - `custom` — a module from config implementing `RunStore`.
-  - `composite` — e.g. `[local, git-remote]`: save to all; load from the
-    first that has it, after every store has loaded it.
+  - `composite` — e.g. `[local, git-remote]`: save to all; load from every
+    store and take the copy with the highest `revision`, a counter each save
+    bumps (machines do not share a clock, so not a timestamp). A run saved
+    before revisions existed loads as revision 0.
+- `run`, `status` and the engine all read and write state through the one
+  store built from `runStores`. `result.json`, `metrics.jsonl`, the logs and
+  the markdown documents are per-machine artefacts in `.sdlc/<id>/state/`,
+  not part of the run, so they stay local.
 
 Replaces `state/store.ts`'s direct file I/O at call sites.
 

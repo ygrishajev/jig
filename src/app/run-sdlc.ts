@@ -10,7 +10,7 @@ import { summarizeMetrics } from '../observers/metrics.js';
 import { closeRunScope, openRunScope, type AppCradle } from './container.js';
 import { startTelemetry, telemetryEnabled } from '../adapters/telemetry/open-telemetry.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
-import { createRunStore } from './run-stores.js';
+import { openRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 import type { RunStore } from '../ports/run-store.js';
 
@@ -48,11 +48,7 @@ async function runHoldingLock(
   requestPath: string | undefined,
   id: string,
 ) {
-  const runStore = await createRunStore({
-    repoRoot: app.cradle.repoRoot,
-    names: app.cradle.config.runStores,
-    local: app.cradle.store,
-  });
+  const runStore = await openRunStore(app.cradle);
   const state = await startOrResume(app, runStore, requestPath, id);
   await ensureSandboxImage(app.cradle);
   const telemetry = telemetryEnabled(process.env) ? await startTelemetry() : undefined;

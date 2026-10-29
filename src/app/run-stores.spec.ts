@@ -3,11 +3,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { aRunState } from '../../tests/support/builders.js';
-import { InMemoryRunStore } from '../../tests/support/fakes.js';
-import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
-import { createRunStore } from './run-stores.js';
+import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { loadConfig } from '../config/load-config.js';
+import { ConfigInvalid } from '../domain/errors.js';
+import { openRunStore } from './run-stores.js';
 
-describe('createRunStore', () => {
+describe('openRunStore', () => {
   const directories: string[] = [];
 
   afterEach(async () => {
@@ -16,17 +17,21 @@ describe('createRunStore', () => {
     );
   });
 
-  it('uses the local store on its own by default', async () => {
-    const local = new InMemoryRunStore();
+  it('saves to the local store by default', async () => {
+    const repoRoot = await directory();
+    const store = await openRunStore({ repoRoot, config: loadConfig(repoRoot) });
+    const state = aRunState();
 
-    expect(await createRunStore({ repoRoot: await directory(), names: ['local'], local })).toBe(
-      local,
-    );
+    await store.save(state);
+
+    expect(await new LocalRunStore(repoRoot).load(state.runId)).toEqual({
+      ...state,
+      revision: state.revision + 1,
+    });
   });
 
-  it('saves to every configured store and loads from the first that has the run', async () => {
+  it('saves to every configured store, including one loaded from a module', async () => {
     const repoRoot = await directory();
-    const local = new InMemoryRunStore();
     await writeFile(
       path.join(repoRoot, 'memory-store.mjs'),
       `const saved = new Map();
@@ -35,32 +40,27 @@ describe('createRunStore', () => {
          save: async (state) => { saved.set(state.runId, state); },
        });`,
     );
-    const store = await createRunStore({ repoRoot, names: ['memory-store.mjs', 'local'], local });
+    const runStores = ['memory-store.mjs', 'local'];
+    const store = await openRunStore({ repoRoot, config: { ...loadConfig(repoRoot), runStores } });
     const state = aRunState();
 
     await store.save(state);
 
-    expect(await local.load(state.runId)).toEqual(state);
-    expect(await store.load(state.runId)).toEqual(state);
-  });
-
-  it('builds the git remote store by name', async () => {
-    const store = await createRunStore({
-      repoRoot: await directory(),
-      names: ['git-remote'],
-      local: new InMemoryRunStore(),
+    const saved = { ...state, revision: state.revision + 1 };
+    expect(await new LocalRunStore(repoRoot).load(state.runId)).toEqual(saved);
+    const reopened = await openRunStore({
+      repoRoot,
+      config: { ...loadConfig(repoRoot), runStores },
     });
-
-    expect(store).toBeInstanceOf(GitRemoteRunStore);
+    expect(await reopened.load(state.runId)).toEqual(saved);
   });
 
   it('refuses a module that does not export a store factory', async () => {
     const repoRoot = await directory();
     await writeFile(path.join(repoRoot, 'not-a-store.mjs'), 'export const store = {};');
+    const config = { ...loadConfig(repoRoot), runStores: ['not-a-store.mjs'] };
 
-    await expect(
-      createRunStore({ repoRoot, names: ['not-a-store.mjs'], local: new InMemoryRunStore() }),
-    ).rejects.toThrow('must default-export a function');
+    await expect(openRunStore({ repoRoot, config })).rejects.toBeInstanceOf(ConfigInvalid);
   });
 
   async function directory() {

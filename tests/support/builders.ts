@@ -60,13 +60,14 @@ export function designDocs({
 
 export function aRunState({
   runId: id = runId(),
+  revision = faker.number.int({ min: 0, max: 100 }),
   baseBranch = 'main',
   request = `# ${faker.lorem.sentence()}\n\n${faker.lorem.paragraph()}`,
   phase = 'context',
   slices = [],
   ...rest
 }: Partial<RunState> = {}): RunState {
-  return { runId: id, baseBranch, request, phase, slices, ...rest };
+  return { runId: id, revision, baseBranch, request, phase, slices, ...rest };
 }
 
 export function runSettings({
