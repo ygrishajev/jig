@@ -3,7 +3,8 @@ import type { Outcome } from '../../src/domain/outcome.js';
 import type { DesignDocs, FeaturePlan, RunContext, RunState } from '../../src/domain/run-state.js';
 import type { RunSettings } from '../../src/domain/settings.js';
 import type { PlannedSlice, Slice } from '../../src/domain/slice.js';
-import type { CommitSummary } from '../../src/domain/usage.js';
+import type { CommitSummary, TokenUsage } from '../../src/domain/usage.js';
+import type { MetricsSummary } from '../../src/observers/metrics.js';
 
 export function sliceId() {
   return `${faker.word.verb()}-${faker.word.noun()}-${faker.string.alphanumeric({ length: 5, casing: 'lower' })}`
@@ -92,4 +93,38 @@ export function aCommit({
 
 export function anImplementation({ commit = aCommit() }: { commit?: CommitSummary } = {}): Outcome {
   return { type: 'implemented', commit };
+}
+
+export function tokenUsage({
+  input = faker.number.int({ min: 0, max: 100_000 }),
+  output = faker.number.int({ min: 0, max: 100_000 }),
+  cacheRead = faker.number.int({ min: 0, max: 100_000 }),
+  cacheWrite = faker.number.int({ min: 0, max: 100_000 }),
+  reasoning = faker.number.int({ min: 0, max: 100_000 }),
+}: Partial<TokenUsage> = {}): TokenUsage {
+  return { input, output, cacheRead, cacheWrite, reasoning };
+}
+
+export function aMetricsSummary({
+  durationMs = faker.number.int({ min: 1000, max: 3_600_000 }),
+  steps = faker.number.int({ min: 1, max: 30 }),
+  agentCalls = faker.number.int({ min: 1, max: 30 }),
+  retries = faker.number.int({ min: 0, max: 3 }),
+  reviewRounds = faker.number.int({ min: 0, max: 5 }),
+  slicesCommitted = faker.number.int({ min: 0, max: 5 }),
+  linesChanged = faker.number.int({ min: 0, max: 2000 }),
+  costUsd = faker.number.float({ min: 0, max: 20, fractionDigits: 2 }),
+  tokens = tokenUsage(),
+}: Partial<MetricsSummary> = {}): MetricsSummary {
+  return {
+    durationMs,
+    steps,
+    agentCalls,
+    retries,
+    reviewRounds,
+    slicesCommitted,
+    linesChanged,
+    costUsd,
+    tokens,
+  };
 }

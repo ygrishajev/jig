@@ -1,16 +1,17 @@
 import type { AwilixContainer } from 'awilix';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
+import type { RunDocument } from '../adapters/local-store/run-artefacts.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunState } from '../domain/run-state.js';
 import { summarizeMetrics, type MetricsSummary } from '../observers/metrics.js';
 import type { AppCradle } from './container.js';
 import { openRunStore } from './run-stores.js';
 
-const DOCUMENTS = ['design.md', 'plan.md', 'PR_DESCRIPTION.md'] as const;
+const DOCUMENTS: RunDocument[] = ['design.md', 'plan.md', 'PR_DESCRIPTION.md'];
 
 export interface RunStatus {
   state: RunState;
-  documents: { name: (typeof DOCUMENTS)[number]; path: string }[];
+  documents: { name: RunDocument; path: string }[];
   metrics: MetricsSummary;
 }
 
@@ -21,9 +22,9 @@ export async function readRunStatus(
 ): Promise<RunStatus> {
   const state = await (await openRunStore(app.cradle)).load(runId);
   if (!state) throw new RunRequestInvalid(`No run found with id "${runId}".`);
-  const { repoRoot, store } = app.cradle;
+  const { repoRoot, artefacts } = app.cradle;
   const documents = DOCUMENTS.flatMap((name) => {
-    const found = store.documentPath(runId, name);
+    const found = artefacts.documentPath(runId, name);
     return found ? [{ name, path: found }] : [];
   });
   const metrics = summarizeMetrics(new MetricsLog(repoRoot, runId).readAll());

@@ -4,7 +4,7 @@ import { asFunction, asValue, createContainer, InjectionMode, type AwilixContain
 import type { Tracer } from '@opentelemetry/api';
 import type { Logger } from 'pino';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
-import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import {
   createConsoleLogger,
@@ -64,7 +64,7 @@ export interface AppCradle {
   settings: RunSettings;
   logger: Logger;
   clock: Clock;
-  store: LocalRunStore;
+  artefacts: RunArtefacts;
   images: DockerImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   openSession: (input: OpenSessionInput) => Promise<RunSession>;
@@ -101,7 +101,7 @@ export function createAppContainer(input: {
       createConsoleLogger(logFormat, logLevel),
     ).singleton(),
     clock: asValue({ now: () => Date.now() }),
-    store: asFunction(({ repoRoot }: AppCradle) => new LocalRunStore(repoRoot)).singleton(),
+    artefacts: asFunction(({ repoRoot }: AppCradle) => new RunArtefacts(repoRoot)).singleton(),
     images: asFunction(
       ({ logger }: AppCradle) =>
         new DockerImages({

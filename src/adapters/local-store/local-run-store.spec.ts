@@ -49,21 +49,6 @@ describe('LocalRunStore', () => {
     expect(await store.load(aRunState().runId)).toBeUndefined();
   });
 
-  it('writes the design, plan and pull request description beside the state for a person to read', async () => {
-    const { store, repoRoot } = await setup();
-    const docs = designDocs();
-    const prDescription = faker.lorem.paragraphs();
-    const state = aRunState({ docs, prDescription });
-
-    await store.save(state);
-
-    const directory = stateDirectory(repoRoot, state.runId);
-    expect(await readFile(path.join(directory, 'design.md'), 'utf-8')).toBe(docs.design);
-    expect(await readFile(path.join(directory, 'plan.md'), 'utf-8')).toBe(docs.plan);
-    expect(await readFile(path.join(directory, 'PR_DESCRIPTION.md'), 'utf-8')).toBe(prDescription);
-    expect(store.documentPath(state.runId, 'design.md')).toBe(path.join(directory, 'design.md'));
-  });
-
   it('keeps its own directory out of the operator repository', async () => {
     const { store, repoRoot } = await setup();
 
@@ -82,25 +67,6 @@ describe('LocalRunStore', () => {
     );
 
     await expect(store.load(state.runId)).rejects.toThrow();
-  });
-
-  it('summarises how a run ended for CI, naming a stuck slice', async () => {
-    const { store, repoRoot } = await setup();
-    const stuck = aSlice({ status: 'stuck' });
-    const state = aRunState({ phase: 'stuck', slices: [stuck] });
-
-    await store.writeResult(state, 'stuck');
-
-    const result = JSON.parse(
-      await readFile(path.join(stateDirectory(repoRoot, state.runId), 'result.json'), 'utf-8'),
-    );
-    expect(result).toEqual({
-      runId: state.runId,
-      status: 'stuck',
-      phase: 'stuck',
-      complete: false,
-      blockedReason: `slice "${stuck.id}" is stuck — needs human intervention`,
-    });
   });
 
   async function setup() {

@@ -62,7 +62,7 @@ async function runHoldingLock(
     try {
       const result = await runEngine(runFlow, state, scope.cradle.engineDependencies);
       const metrics = summarizeMetrics(scope.cradle.metricsLog.readAll());
-      await app.cradle.store.writeResult(result.state, result.status, metrics);
+      await app.cradle.artefacts.write(result.state, result.status, metrics);
       return result;
     } finally {
       await closeRunScope(scope);

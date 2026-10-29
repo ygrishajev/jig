@@ -109,8 +109,9 @@ expires after 30 seconds.
   copy (the one saved most often). Everything else in `.sdlc/<id>/state/` is this machine's own
   record of the invocations it ran and is never pushed.
 - `.sdlc/<id>/state/result.json`: `status`, `complete`, `blockedReason`, and `metrics`
-  (cost, tokens, durations, review rounds). The same summary is the footer of
-  `PR_DESCRIPTION.md`; `metrics.jsonl` has one line per step and agent call.
+  (cost, tokens, durations, review rounds). It is written, with `design.md`, `plan.md` and
+  `PR_DESCRIPTION.md` (whose footer is the same summary), each time `sdlc run` stops;
+  `metrics.jsonl` has one line per step and agent call.
 - `SDLC_IMAGE_CACHE=gha` builds through buildx with the GitHub Actions cache.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` exports the run as an OpenTelemetry trace and turns on
   Claude Code's own telemetry in the sandbox.
