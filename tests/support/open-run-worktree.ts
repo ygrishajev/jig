@@ -1,11 +1,11 @@
-import { runBranchFor } from '../../domain/run-state.js';
+import { runBranchFor } from '../../src/domain/run-state.js';
 import {
   checkoutExistingBranch,
   checkoutNewBranchAt,
   localBranchExists,
-} from '../../git/branch.js';
-import { addWorktreeForNewBranch, worktreeExists } from '../../git/worktree.js';
-import { worktreeDirectory } from '../local-store/run-paths.js';
+} from '../../src/git/branch.js';
+import { addWorktreeForNewBranch, worktreeExists } from '../../src/git/worktree.js';
+import { worktreeDirectory } from '../../src/adapters/local-store/run-paths.js';
 
 export interface RunWorktreeOptions {
   repoRoot: string;
@@ -16,8 +16,8 @@ export interface RunWorktreeOptions {
 }
 
 /**
- * Makes sure the run's worktree exists with the run branch checked out, creating the branch
- * from the base branch on first use. Safe to call again on resume.
+ * Stands in for sandcastle's worktree in tests: makes sure the run's worktree exists with the
+ * run branch checked out, creating the branch from the base branch on first use.
  */
 export async function openRunWorktree(options: RunWorktreeOptions) {
   const { repoRoot, runId, baseBranch, skipCommitSigning } = options;

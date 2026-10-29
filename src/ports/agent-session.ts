@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod';
+import type { AgentRole } from '../domain/agent-role.js';
 
-export type AgentRole = 'planner' | 'implementer' | 'reviewer' | 'describer';
+export type { AgentRole };
 
 export interface AgentRunInput {
   role: AgentRole;

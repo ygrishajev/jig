@@ -1,3 +1,4 @@
+import type { AgentRole } from './agent-role.js';
 import type { OutcomeType } from './outcome.js';
 import type { RunPhase } from './run-state.js';
 
@@ -23,4 +24,6 @@ export type RunEvent =
   | { type: 'sliceStatusChanged'; runId: string; sliceId: string; from: string; to: string }
   | { type: 'runHalted'; runId: string; phase: RunPhase }
   | { type: 'runBlocked'; runId: string; phase: RunPhase; reason: string }
-  | { type: 'runFinished'; runId: string; phase: RunPhase };
+  | { type: 'runFinished'; runId: string; phase: RunPhase }
+  | { type: 'agentMessage'; runId: string; role: AgentRole; text: string }
+  | { type: 'agentToolCall'; runId: string; role: AgentRole; tool: string; args: string };

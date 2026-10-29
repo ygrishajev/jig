@@ -2,39 +2,30 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
+export const CONFIG_FILE = 'sdlc.config.json';
+
 const stepConfigSchema = z.object({
   provider: z.enum(['claude', 'opencode']),
+  /** Passed to the agent CLI; claude falls back to a default, opencode requires one ("provider/model"). */
   model: z.string().optional(),
 });
 export type StepConfig = z.infer<typeof stepConfigSchema>;
 export type StepName = 'planner' | 'implementer' | 'reviewer' | 'describer';
 
-// .strict() rejects unknown top-level keys — a typo like `implementer` vs
-// `implement` must fail loudly at load time, not silently fall back to the
-// default while a run uses the wrong provider.
+/** Strict, so a misspelled key fails at load instead of silently falling back to a default. */
 const configSchema = z
   .object({
     mergeMode: z.enum(['manual', 'auto']).default('manual'),
     reviewCycleCap: z.number().int().positive().default(3),
-    conflictResolveCap: z.number().int().positive().default(3),
     verifyCommand: z.string().optional(),
-    inputSource: z.enum(['markdown-file']).default('markdown-file'),
-    // 'repo' (default): commits behave exactly as the repository is configured,
-    // including GPG signing. 'skip': sdlc disables signing in its slice
-    // worktrees — needed when the repo signs commits through an agent that is
-    // unreachable from the sandbox container (e.g. 1Password). The operator's
-    // own repo and merges are never touched in either mode.
+    /** `skip` disables signing in the run's worktree, for repos that sign through an agent the sandbox cannot reach. */
     commitSigning: z.enum(['repo', 'skip']).default('repo'),
-    // 'auto' (default): implementation starts immediately after planning.
-    // 'checkpoint': the autopilot command stops after planning so a human can
-    // read design.md/plan.md and resumes with `sdlc resume`.
+    /** `checkpoint` stops after planning so a person can read the design and plan before any code is written. */
     designGate: z.enum(['auto', 'checkpoint']).default('auto'),
-    // Per-step agent configuration. Provider names must stay in sync with the
-    // keys of PROVIDER_PROFILES in src/strategies/provider/provider-profiles.ts
-    // — not imported from here to keep config a lower-level module than the
-    // strategies built on top of it. `model` is passed to the provider CLI via
-    // its model flag (e.g. opencode's --model); unset means the CLI's own
-    // default.
+    /** The image sandcastle starts; defaults to sandcastle's own name for the repository. */
+    sandboxImage: z.string().optional(),
+    /** An agent that prints nothing for this long is considered hung and stopped. */
+    agentIdleTimeoutSeconds: z.number().int().positive().default(600),
     planner: stepConfigSchema.default({ provider: 'claude' }),
     implementer: stepConfigSchema.default({ provider: 'claude' }),
     reviewer: stepConfigSchema.default({ provider: 'claude' }),
@@ -44,7 +35,12 @@ const configSchema = z
 export type SdlcConfig = z.infer<typeof configSchema>;
 
 export function loadConfig(repoRoot: string): SdlcConfig {
-  const configPath = path.join(repoRoot, 'sdlc.config.json');
+  const configPath = path.join(repoRoot, CONFIG_FILE);
   if (!existsSync(configPath)) return configSchema.parse({});
   return configSchema.parse(JSON.parse(readFileSync(configPath, 'utf-8')));
+}
+
+export function configuredSteps(config: SdlcConfig): Record<StepName, StepConfig> {
+  const { planner, implementer, reviewer, describer } = config;
+  return { planner, implementer, reviewer, describer };
 }

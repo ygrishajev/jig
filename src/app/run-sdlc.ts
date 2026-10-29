@@ -6,7 +6,7 @@ import { RunRequestInvalid } from '../domain/errors.js';
 import { RUN_ID_PATTERN, startRun, type RunState } from '../domain/run-state.js';
 import { runEngine, type EngineStatus } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
-import { openRunScope, type AppCradle } from './container.js';
+import { closeRunScope, openRunScope, type AppCradle } from './container.js';
 
 export interface RunSdlcInput {
   requestPath?: string;
@@ -33,9 +33,9 @@ export async function runSdlc(
   try {
     const result = await runEngine(runFlow, state, scope.cradle.engineDependencies);
     await app.cradle.store.writeResult(result.state, result.status);
-    return { ...result, worktreePath: scope.cradle.worktreePath };
+    return { ...result, worktreePath: scope.cradle.session.worktreePath };
   } finally {
-    await scope.dispose();
+    await closeRunScope(scope);
   }
 }
 

@@ -1,10 +1,9 @@
 import path from 'node:path';
+import type { AgentProvider } from '@ai-hero/sandcastle';
+import { defaultImageName } from '@ai-hero/sandcastle/sandboxes/docker';
 import { asFunction, asValue, createContainer, InjectionMode, type AwilixContainer } from 'awilix';
 import type { Logger } from 'pino';
-import { DockerAgentSession } from '../adapters/docker-cli/docker-agent-session.js';
-import type { AgentProvider } from '../adapters/docker-cli/types.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
-import { openRunWorktree } from '../adapters/git/run-worktree.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import {
@@ -12,15 +11,17 @@ import {
   createRunLogger,
   type LogFormat,
 } from '../adapters/logging/create-logger.js';
-import { loadConfig, type SdlcConfig } from '../config/load-config.js';
+import { AGENTS, collectCredentials } from '../adapters/sandcastle/agents.js';
+import { SandcastleSession } from '../adapters/sandcastle/sandcastle-session.js';
+import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
+import type { AgentRole } from '../domain/agent-role.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { observe, RunEvents } from '../observers/run-events.js';
-import type { AgentRole, AgentSession } from '../ports/agent-session.js';
-import type { Clock } from '../ports/observability.js';
+import type { AgentSession } from '../ports/agent-session.js';
+import type { Clock, EventSink } from '../ports/observability.js';
 import type { Workspace } from '../ports/workspace.js';
-import { buildAgentProviders } from './agent-providers.js';
 
 /** How many times a step that failed transiently is tried again before the run blocks. */
 const MAX_STEP_RETRIES = 2;
@@ -33,9 +34,15 @@ export interface RunIdentity {
   baseBranch: string;
 }
 
-export interface AgentSessionOptions {
-  worktreePath: string;
-  repoRoot: string;
+/** The run's sandbox: where agents and commands run, and the worktree they share with the host. */
+export interface RunSession extends AgentSession {
+  readonly worktreePath: string;
+  close(): Promise<void>;
+}
+
+export interface OpenSessionInput {
+  run: RunIdentity;
+  events: EventSink;
 }
 
 /** Lives for the whole process: configuration and everything shared by every run. */
@@ -48,18 +55,16 @@ export interface AppCradle {
   logger: Logger;
   clock: Clock;
   store: LocalRunStore;
-  agentProviders: Record<AgentRole, AgentProvider>;
-  createAgentSession: (options: AgentSessionOptions) => AgentSession;
+  openSession: (input: OpenSessionInput) => Promise<RunSession>;
 }
 
-/** Lives for one run: its worktree, its sandbox, its log file. Disposed when the run stops. */
+/** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
 export interface RunCradle extends AppCradle {
   run: RunIdentity;
-  worktreePath: string;
   runLogger: Logger;
-  workspace: Workspace;
-  agent: AgentSession;
   events: RunEvents;
+  session: RunSession;
+  workspace: Workspace;
   engineDependencies: EngineDependencies;
 }
 
@@ -83,32 +88,22 @@ export function createAppContainer(input: {
     ).singleton(),
     clock: asValue({ now: () => Date.now() }),
     store: asFunction(({ repoRoot }: AppCradle) => new LocalRunStore(repoRoot)).singleton(),
-    agentProviders: asFunction(({ config }: AppCradle) => buildAgentProviders(config)).singleton(),
-    createAgentSession: asFunction(
-      ({ agentProviders }: AppCradle) =>
-        (options: AgentSessionOptions) =>
-          new DockerAgentSession({ providers: agentProviders, ...options }),
+    openSession: asFunction(({ repoRoot, config }: AppCradle) =>
+      sandcastleOpener(repoRoot, config),
     ).singleton(),
   });
   return container;
 }
 
-/** Opens a run's worktree and builds everything scoped to that run. Dispose the scope when done. */
+/** Starts the run's sandbox and builds everything scoped to the run. Dispose the scope when done. */
 export async function openRunScope(
   app: AwilixContainer<AppCradle>,
   run: RunIdentity,
 ): Promise<AwilixContainer<RunCradle>> {
-  const { repoRoot, config } = app.cradle;
-  const worktreePath = await openRunWorktree({
-    repoRoot,
-    ...run,
-    skipCommitSigning: config.commitSigning === 'skip',
-  });
-
+  const { repoRoot } = app.cradle;
   const scope = app.createScope<RunCradle>();
   scope.register({
     run: asValue(run),
-    worktreePath: asValue(worktreePath),
     runLogger: asFunction(({ logFormat, logLevel }: RunCradle) =>
       createRunLogger(
         logFormat,
@@ -117,13 +112,6 @@ export async function openRunScope(
       ).child({
         runId: run.runId,
       }),
-    ).scoped(),
-    workspace: asFunction(
-      ({ worktreePath: worktree }: RunCradle) =>
-        new GitWorkspace({ repoRoot, worktreePath: worktree, ...run }),
-    ).scoped(),
-    agent: asFunction(({ createAgentSession, worktreePath: worktree }: RunCradle) =>
-      createAgentSession({ worktreePath: worktree, repoRoot }),
     ).scoped(),
     events: asFunction(({ runLogger }: RunCradle) => {
       const events = new RunEvents();
@@ -135,9 +123,17 @@ export async function openRunScope(
       );
       return events;
     }).scoped(),
+  });
+
+  const session = await app.cradle.openSession({ run, events: scope.cradle.events });
+  scope.register({
+    session: asValue(session),
+    workspace: asFunction(
+      () => new GitWorkspace({ repoRoot, worktreePath: session.worktreePath, ...run }),
+    ).scoped(),
     engineDependencies: asFunction(
-      ({ agent, workspace, store, events, clock, settings }: RunCradle): EngineDependencies => ({
-        ports: { agent, workspace },
+      ({ workspace, store, events, clock, settings }: RunCradle): EngineDependencies => ({
+        ports: { agent: session, workspace },
         store,
         events,
         clock,
@@ -146,6 +142,42 @@ export async function openRunScope(
     ).scoped(),
   });
   return scope;
+}
+
+/** Closes the run's sandbox and then the rest of its scope. */
+export async function closeRunScope(scope: AwilixContainer<RunCradle>) {
+  try {
+    await scope.cradle.session.close();
+  } finally {
+    await scope.dispose();
+  }
+}
+
+function sandcastleOpener(repoRoot: string, config: SdlcConfig) {
+  return async ({ run, events }: OpenSessionInput): Promise<RunSession> => {
+    const steps = configuredSteps(config);
+    return SandcastleSession.open({
+      repoRoot,
+      ...run,
+      imageName: config.sandboxImage ?? defaultImageName(repoRoot),
+      credentials: collectCredentials(Object.values(steps), process.env),
+      agents: agentsFor(steps),
+      skipCommitSigning: config.commitSigning === 'skip',
+      idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
+      agentLogFile: path.join(stateDirectory(repoRoot, run.runId), 'agents.log'),
+      events,
+    });
+  };
+}
+
+function agentsFor(steps: ReturnType<typeof configuredSteps>): Record<AgentRole, AgentProvider> {
+  const agentFor = (role: AgentRole) => AGENTS[steps[role].provider].create(steps[role].model);
+  return {
+    planner: agentFor('planner'),
+    implementer: agentFor('implementer'),
+    reviewer: agentFor('reviewer'),
+    describer: agentFor('describer'),
+  };
 }
 
 function settingsFrom(config: SdlcConfig): RunSettings {

@@ -17,7 +17,8 @@ import {
 } from '../../tests/support/builders.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
-import { createAppContainer, type AgentSessionOptions } from './container.js';
+import { openRunWorktree } from '../../tests/support/open-run-worktree.js';
+import { createAppContainer, type OpenSessionInput } from './container.js';
 import { runSdlc } from './run-sdlc.js';
 
 describe('runSdlc', () => {
@@ -30,11 +31,13 @@ describe('runSdlc', () => {
   it('starts a run from a request file and stops once the work waits to be merged', async () => {
     const { app, writeRequest, agentFor, repo } = await setup();
     const id = runId();
-    scriptWholeRun(agentFor(id));
+    const agent = agentFor(id);
+    scriptWholeRun(agent);
 
     const report = await runSdlc(app, { requestPath: await writeRequest(), runId: id });
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
+    expect(agent.closed).toBe(true);
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'halted', complete: false });
   });
 
@@ -106,11 +109,10 @@ describe('runSdlc', () => {
       return agent;
     };
     app.register({
-      createAgentSession: asValue(({ worktreePath }: AgentSessionOptions) => {
-        const agent = [...agents.values()].find(
-          (candidate) => candidate.worktreePath === worktreePath,
-        );
-        if (!agent) throw new Error(`No fake agent prepared for ${worktreePath}`);
+      openSession: asValue(async ({ run }: OpenSessionInput) => {
+        const agent = agents.get(run.runId);
+        if (!agent) throw new Error(`No fake agent prepared for run ${run.runId}`);
+        await openRunWorktree({ repoRoot: repo.dir, ...run, skipCommitSigning: false });
         return agent;
       }),
     });

@@ -64,6 +64,12 @@ export class FakeAgentSession implements AgentSession {
     return this.execResult(command);
   }
 
+  closed = false;
+
+  async close() {
+    this.closed = true;
+  }
+
   private nextTurn(role: AgentRole) {
     const turn = this.queues.get(role)?.shift();
     if (!turn) throw new Error(`The fake agent has no turn scripted for ${role}`);
