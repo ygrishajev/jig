@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, truncateSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { agentRoleSchema } from '../../domain/agent-role.js';
 import { MetricsLogCorrupt } from '../../domain/errors.js';
 import { runIdSchema, type RunId } from '../../domain/run-id.js';
 import type { MetricRecord } from '../../observers/metrics.js';
@@ -45,7 +46,7 @@ const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.dis
       at: z.string(),
       runId: runIdSchema,
       location: stepLocationSchema.optional(),
-      role: z.enum(['planner', 'implementer', 'reviewer', 'describer']),
+      role: agentRoleSchema,
       costUsd: z.number().optional(),
       tokens: z.object({
         input: z.number(),

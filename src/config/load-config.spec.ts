@@ -67,6 +67,16 @@ describe('loadConfig', () => {
     expect(() => loadConfig(repoRoot)).toThrow();
   });
 
+  it('takes a version pin for a known agent and rejects one for an agent it does not know', async () => {
+    const version = faker.system.semver();
+
+    expect(loadConfig(await setup({ agents: { opencode: version } })).agents).toEqual({
+      opencode: version,
+    });
+    const repoRoot = await setup({ agents: { [faker.word.noun()]: version } });
+    expect(() => loadConfig(repoRoot)).toThrow();
+  });
+
   async function setup(contents?: Record<string, unknown>) {
     const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-config-'));
     directories.push(repoRoot);

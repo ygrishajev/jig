@@ -18,7 +18,7 @@ import { AGENTS, collectCredentials } from '../adapters/sandcastle/agents.js';
 import { SandcastleSession } from '../adapters/sandcastle/sandcastle-session.js';
 import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
 import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
-import type { AgentRole } from '../domain/agent-role.js';
+import { byRole, type AgentRole } from '../domain/agent-role.js';
 import type { RunId } from '../domain/run-id.js';
 import { SdlcError } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -223,13 +223,7 @@ function sandcastleOpener(repoRoot: string, config: SdlcConfig) {
 }
 
 function agentsFor(steps: ReturnType<typeof configuredSteps>): Record<AgentRole, AgentProvider> {
-  const agentFor = (role: AgentRole) => AGENTS[steps[role].provider].create(steps[role].model);
-  return {
-    planner: agentFor('planner'),
-    implementer: agentFor('implementer'),
-    reviewer: agentFor('reviewer'),
-    describer: agentFor('describer'),
-  };
+  return byRole((role) => AGENTS[steps[role].provider].create(steps[role].model));
 }
 
 function settingsFrom(config: SdlcConfig): RunSettings {

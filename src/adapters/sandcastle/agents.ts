@@ -1,5 +1,4 @@
 import { claudeCode, opencode, type AgentProvider } from '@ai-hero/sandcastle';
-import type { StepConfig } from '../../config/load-config.js';
 import { ConfigInvalid } from '../../domain/errors.js';
 
 /** Used when a step names claude without a model; the CLI accepts the alias. */
@@ -13,7 +12,8 @@ export interface AgentDefinition {
   create(model?: string): AgentProvider;
 }
 
-export const AGENTS: Record<StepConfig['provider'], AgentDefinition> = {
+/** Every agent sdlc can run; adding one here is all the config and the sandbox image need. */
+export const AGENTS = {
   claude: {
     npmPackage: '@anthropic-ai/claude-code',
     credentialKeys: () => ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
@@ -24,13 +24,25 @@ export const AGENTS: Record<StepConfig['provider'], AgentDefinition> = {
     credentialKeys: (model) => [`${modelProvider(requireModel(model)).toUpperCase()}_API_KEY`],
     create: (model) => opencode(requireModel(model)),
   },
-};
+} satisfies Record<string, AgentDefinition>;
+
+export type AgentName = keyof typeof AGENTS;
+
+/** Which agent serves a role, and with which model. */
+export interface AgentChoice {
+  provider: AgentName;
+  model?: string;
+}
+
+export function isAgentName(name: string): name is AgentName {
+  return Object.hasOwn(AGENTS, name);
+}
 
 /**
  * The env vars every configured step needs, read from `environment`. Fails before any
  * container starts, naming what to set, when a step's agent has no credential at all.
  */
-export function collectCredentials(steps: StepConfig[], environment: NodeJS.ProcessEnv) {
+export function collectCredentials(steps: AgentChoice[], environment: NodeJS.ProcessEnv) {
   const credentials: Record<string, string> = {};
   for (const step of steps) {
     const keys = AGENTS[step.provider].credentialKeys(step.model);
