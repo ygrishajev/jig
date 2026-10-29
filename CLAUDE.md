@@ -37,9 +37,11 @@ pino, zod, simple-git, execa, commander.
 - **Agents run unattended only inside the sandbox.** Every agent call uses
   `--dangerously-skip-permissions` (claude) / `--auto` (opencode). Never wire an agent call that
   runs on the host, and never add a code path that does so "just for local dev".
-- **sdlc runs against other people's repos.** Anything it writes into a target repo (`.sdlc/`,
-  `.sandcastle/`) must ignore itself, and nothing may touch the target's tracked files outside the
-  run's worktree. A dirty operator tree blocks the final merge.
+- **sdlc runs against other people's repos.** Its scratch in a target repo (`.sdlc/`, and
+  `.sandcastle/` worktrees, logs and `.env`) must ignore itself, and nothing may touch the target's
+  tracked files outside the run's worktree — a dirty operator tree blocks the final merge. The one
+  exception is `sdlc init`, which writes `.sandcastle/Dockerfile` and `sdlc.config.json` for the
+  operator to review and commit.
 - **Credentials never land in a file sdlc writes, a log line, or the image.** They come from the
   environment and go into the container as env vars. `spike/.env` is git-ignored; keep it that way.
 - **Tags publish.** Pushing a `v*.*.*` tag runs `.github/workflows/publish.yml`, which publishes

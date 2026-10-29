@@ -1,0 +1,990 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>sdlc Architecture Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: toolbar on top, one full-size zoomable SVG stage under it. Colours follow the layer: teal process, blue module, amber shared infra, grey external, rose failure. */
+:root{
+  --bg:#f5f7fa; --surface:#ffffff; --fg:#17202e; --fg2:#3a465a; --muted:#5a6578; --line:#cdd5e0; --arrow:#3b475b;
+  --iface:#0f766e; --iface-bg:#e3f3f0;
+  --dom:#2557d6; --dom-bg:#e6edfc;
+  --infra:#b45309; --infra-bg:#fcf0dc;
+  --fail:#be1e48; --fail-bg:#fdeaee;
+  --ext-bg:#eef1f5; --concept:#6d4fc2; --concept-bg:#efeafb;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141c; --surface:#161d28; --fg:#e4e9f1; --fg2:#c3ccda; --muted:#98a3b6; --line:#2c3748; --arrow:#9aa7bb;
+  --iface:#4fd1c0; --iface-bg:#0f2b29;
+  --dom:#7fa8ff; --dom-bg:#16233f;
+  --infra:#f2b35a; --infra-bg:#33260f;
+  --fail:#f48ca3; --fail-bg:#3a1722;
+  --ext-bg:#1a222e; --concept:#b8a1f5; --concept-bg:#251d3d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141c; --surface:#161d28; --fg:#e4e9f1; --fg2:#c3ccda; --muted:#98a3b6; --line:#2c3748; --arrow:#9aa7bb;
+  --iface:#4fd1c0; --iface-bg:#0f2b29;
+  --dom:#7fa8ff; --dom-bg:#16233f;
+  --infra:#f2b35a; --infra-bg:#33260f;
+  --fail:#f48ca3; --fail-bg:#3a1722;
+  --ext-bg:#1a222e; --concept:#b8a1f5; --concept-bg:#251d3d; color-scheme:dark}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 var(--sans)}
+#bar{position:absolute;inset:0 0 auto 0;height:52px;display:flex;align-items:center;gap:18px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--line);z-index:2;box-sizing:border-box}
+#bar .brand{font-weight:600;white-space:nowrap}
+#crumbs{display:flex;align-items:center;gap:6px;min-width:0;flex:1;overflow:hidden;white-space:nowrap}
+#crumbs button{border:0;background:none;padding:2px 4px;border-radius:4px;color:var(--muted);font:inherit;cursor:pointer}
+#crumbs button:hover{color:var(--fg);background:var(--ext-bg)}
+#crumbs button[aria-current="true"]{color:var(--fg);font-weight:600}
+#crumbs .sep{color:var(--line)}
+.group{display:flex;gap:4px;align-items:center}
+.group button{padding:5px 11px;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:6px;font:500 13px var(--sans);cursor:pointer}
+.group button:hover{color:var(--fg);border-color:var(--fg)}
+.group button[aria-pressed="true"]{color:var(--fg);border-color:var(--fg);background:var(--ext-bg)}
+button:focus-visible{outline:2px solid var(--dom);outline-offset:2px}
+#stage{position:absolute;left:0;right:0;top:52px;bottom:34px;width:100%;height:calc(100% - 86px);background:var(--bg);cursor:grab;touch-action:none;display:block}
+#stage.drag{cursor:grabbing}
+#foot{position:absolute;left:0;right:0;bottom:0;height:34px;display:flex;align-items:center;gap:20px;padding:0 16px;background:var(--surface);border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;box-sizing:border-box;z-index:2;white-space:nowrap;overflow:hidden}
+#foot span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:14px;height:14px;border-radius:3px;border:1.5px solid;display:inline-block}
+.sw.iface{background:var(--iface-bg);border-color:var(--iface)}
+.sw.dom{background:var(--dom-bg);border-color:var(--dom)}
+.sw.infra{background:var(--infra-bg);border-color:var(--infra)}
+.sw.ext{background:var(--ext-bg);border-color:var(--muted);border-style:dashed}
+.sw.concept{background:var(--concept-bg);border-color:var(--concept);border-style:dashed}
+.sw.fail{background:var(--fail-bg);border-color:var(--fail);border-style:dashed}
+.sw.stub{background:var(--surface);border-color:var(--dom);border-style:dashed}
+#foot .hint{margin-left:auto}
+svg text{font-family:var(--sans)}
+.nb{stroke-width:1.6;vector-effect:non-scaling-stroke}
+.k-process>.nb{fill:var(--iface-bg);stroke:var(--iface)}
+.k-module>.nb{fill:var(--dom-bg);stroke:var(--dom)}
+.k-domain>.nb{fill:var(--dom-bg);stroke:var(--dom)}
+.k-iface>.nb{fill:var(--iface-bg);stroke:var(--iface)}
+.k-infra>.nb{fill:var(--infra-bg);stroke:var(--infra)}
+.k-ext>.nb{fill:var(--ext-bg);stroke:var(--muted);stroke-dasharray:6 4}
+.k-concept>.nb{fill:var(--concept-bg);stroke:var(--concept);stroke-dasharray:6 4}
+.k-fail>.nb{fill:var(--fail-bg);stroke:var(--fail);stroke-dasharray:6 4}
+.k-stub>.nb{fill:var(--surface);stroke:var(--dom);stroke-dasharray:6 4}
+.k-step>.nb{fill:var(--surface);stroke:var(--line)}
+.has-inner>.nb{stroke-width:2.4}
+.has-inner,.k-stub{cursor:pointer}
+.has-inner:hover>.nb,.k-stub:hover>.nb{stroke-width:3.2}
+.tt{fill:var(--fg);font-weight:600}
+.tb{fill:var(--fg2);font-weight:400}
+.tm{fill:var(--muted)}
+.hd{fill:var(--fg);font-weight:600}
+.hs{fill:var(--fg2)}
+.kick{fill:var(--muted);font-family:var(--mono);letter-spacing:.04em}
+.flowlabel{fill:var(--fg);font-weight:600}
+.zoomhint{fill:var(--muted);font-family:var(--mono)}
+.pill rect{fill:var(--infra-bg);stroke:var(--infra);stroke-width:1.2;vector-effect:non-scaling-stroke}
+.pill{cursor:pointer}
+.pill:hover rect{fill:var(--surface);stroke-width:2}
+.pilltext{fill:var(--fg);font-weight:500}
+.sw.pill{background:var(--infra-bg);border-color:var(--infra);border-radius:7px;width:24px;height:11px}
+.off{opacity:0!important;pointer-events:none}
+.node{transition:opacity .25s}
+.node.selected>.nb{stroke-width:4}
+.idlehint{fill:var(--muted);font-weight:500}
+.k-band{pointer-events:none}
+.k-band>.nb{stroke-width:1.2;stroke-dasharray:none;opacity:.5}
+.tone-i>.nb{fill:var(--iface-bg);stroke:var(--iface)}
+.tone-d>.nb{fill:var(--dom-bg);stroke:var(--dom)}
+.tone-x>.nb{fill:var(--infra-bg);stroke:var(--infra);opacity:.38}
+.bandlabel{fill:var(--muted);font-family:var(--mono);font-weight:600;letter-spacing:.08em}
+.linkline{fill:none;stroke:var(--dom);stroke-width:1.9;vector-effect:non-scaling-stroke}
+.linkhead{fill:var(--dom)}
+.link.infra .linkline{stroke:var(--infra)}
+.link.infra .linkhead{fill:var(--infra)}
+.sw.linkinfra{background:var(--infra);border-color:var(--infra);height:3px;border-radius:2px;width:18px}
+.linklabel{fill:var(--dom);font-weight:600;paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.link{pointer-events:none}
+.sw.link{background:var(--dom);border-color:var(--dom);height:3px;border-radius:2px;width:18px}
+.edge{fill:none;stroke:var(--arrow);stroke-width:1.6;vector-effect:non-scaling-stroke}
+.edge.dot{stroke-dasharray:2 5;stroke-linecap:round}
+.head{fill:var(--arrow)}
+.el{fill:var(--fg2);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
+</style>
+<div id="bar">
+  <span class="brand">sdlc</span>
+  <nav id="crumbs" aria-label="Where you are"></nav>
+  <div class="group" id="levels" role="group" aria-label="Detail level">
+    <button type="button" data-level="1">1 Layers</button>
+    <button type="button" data-level="2">2 Inside</button>
+    <button type="button" data-level="3">3 Details</button>
+  </div>
+  <div class="group"><button type="button" id="showall" aria-pressed="true">Show all</button></div>
+  <div class="group" role="group" aria-label="Zoom">
+    <button type="button" id="zout" aria-label="Zoom out">−</button>
+    <button type="button" id="zin" aria-label="Zoom in">+</button>
+    <button type="button" id="zfit">Fit</button>
+  </div>
+</div>
+<svg id="stage" role="img" aria-label="Zoomable architecture map of sdlc: commands, core modules and infrastructure in layers, with the flows inside each module."><g id="world"></g></svg>
+<div id="foot">
+  <span><i class="sw iface"></i>command</span>
+  <span><i class="sw dom"></i>core module / flow step</span>
+  <span><i class="sw infra"></i>infrastructure</span>
+  <span><i class="sw ext"></i>external system</span>
+  <span><i class="sw concept"></i>concept, not a module</span>
+  <span><i class="sw fail"></i>failure path</span>
+  <span><i class="sw pill"></i>infra tag (click to jump)</span>
+  <span><i class="sw link"></i>a command and the flow it starts</span>
+  <span><i class="sw linkinfra"></i>a flow and what it uses</span>
+  <span class="hint">Click a box to open it · turn off Show all to reveal one module's dependencies at a time · scroll to zoom · Esc to go up</span>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var NS = "http://www.w3.org/2000/svg";
+  var CW = 1400, CH = 900;
+  var FS = [
+    { t: 20, b: 14, h: 34, d: 15, e: 12, k: 12 },
+    { t: 17, b: 13, h: 28, d: 14, e: 11, k: 11 },
+    { t: 15, b: 12, h: 24, d: 13, e: 10, k: 10 }
+  ];
+  var SANS = '"IBM Plex Sans", system-ui, sans-serif';
+
+  /* ---------- authoring helpers ---------- */
+  function leaf(id, title, kind, x, y, w, h, lines, extra) {
+    return Object.assign({ id: id, title: title, kind: kind, x: x, y: y, w: w, h: h, lines: lines || [] }, extra || {});
+  }
+  function cont(id, title, kind, x, y, w, lines, canvas, extra) {
+    return Object.assign({ id: id, title: title, kind: kind, x: x, y: y, w: w, h: Math.round(w * CH / CW), lines: lines || [], canvas: canvas }, extra || {});
+  }
+  function lbl(id, text, x, y) { return { id: id, title: text, kind: "label", x: x, y: y, w: 600, h: 24, lines: [] }; }
+  function cv(kicker, title, sub, nodes, edges) { return { kicker: kicker, title: title, sub: sub, nodes: nodes, edges: edges || [] }; }
+  function stub(id, title, x, y, w, h, lines, jump) { return leaf(id, title, "stub", x, y, w, h, lines, { jump: jump }); }
+
+  function vflow(prefix, x, y, w, steps, o) {
+    o = o || {};
+    var h = o.h || 60, gap = o.gap || 20, nodes = [], edges = [];
+    steps.forEach(function (s, i) {
+      nodes.push(leaf(prefix + i, s[0], s[2] || "step", x, y + i * (h + gap), w, h, s[1] ? [s[1]] : []));
+      if (i) edges.push({ from: prefix + (i - 1), to: prefix + i });
+    });
+    return { nodes: nodes, edges: edges };
+  }
+  function merge(parts, extraNodes, extraEdges) {
+    var nodes = (extraNodes || []).slice(), edges = (extraEdges || []).slice();
+    parts.forEach(function (p) { nodes = nodes.concat(p.nodes); edges = edges.concat(p.edges); });
+    return { nodes: nodes, edges: edges };
+  }
+
+  /* ---------- rows of boxes: one aligned row per module ---------- */
+  function rowLayout(n, gap, max) {
+    gap = gap || 24; max = max || 280;
+    var w = Math.min(max, Math.floor((1320 - (n - 1) * gap) / n));
+    var total = n * w + (n - 1) * gap, x0 = Math.round((CW - total) / 2), xs = [];
+    for (var i = 0; i < n; i++) xs.push(x0 + i * (w + gap));
+    return { w: w, h: Math.round(w * CH / CW), xs: xs };
+  }
+  function boxRow(items, y, kind, lay) {
+    return items.map(function (it, i) { return cont(it.id, it.title, it.kind || kind, lay.xs[i], y, lay.w, it.lines, it.canvas, it.pills ? { pills: it.pills } : {}); });
+  }
+  function elbow(a, b, laneY) {
+    return Math.abs(a.x - b.x) < 2 ? [[a.x, a.y], [b.x, b.y]] : [[a.x, a.y], [a.x, laneY], [b.x, laneY], [b.x, b.y]];
+  }
+
+  /* an interface module: sources on top, one row of trigger boxes at the bottom */
+  function ifaceCanvas(title, sub, items, sources, extraNodes, extraEdges) {
+    var lay = rowLayout(items.length), y = 800 - lay.h;
+    var nodes = boxRow(items, y, "iface", lay), edges = [];
+    sources.forEach(function (s, i) {
+      nodes.push(leaf(s.id, s.title, s.kind || "ext", lay.xs[i], 330, lay.w, 84, s.lines));
+      edges.push({ from: s.id, to: items[i].id });
+    });
+    return cv("Level 2 · Inside a module", title, sub, nodes.concat(extraNodes || []), edges.concat(extraEdges || []));
+  }
+
+  /* a domain module: one row of flow boxes. Arrows come in from the interface above and leave to the infrastructure below. */
+  function domainCanvas(title, flows) {
+    var lay = rowLayout(flows.length), y = 360;
+    var nodes = boxRow(flows, y, "module", lay);
+    var c = cv("Level 2 · Inside a module", title, "", nodes, []);
+    var c0 = lay.xs[0] + lay.w / 2, c1 = lay.xs[1] + lay.w / 2;
+    c.head = { x: c0 + 24, y: 150, w: c1 - 24 - (c0 + 24), size: 22 };
+    return c;
+  }
+
+  /* a flow inside a box: one vertical column of steps */
+  function flowCv(pfx, title, sub, steps, o) {
+    o = o || {};
+    var w = o.w || 720, x = Math.round((CW - w) / 2);
+    var f = vflow(pfx, x, o.y || 190, w, steps, { h: o.h || 70, gap: o.gap || 24 });
+    return cv("Level 3 · Flow", title, sub, f.nodes, f.edges);
+  }
+  function box(id, title, lines, canvas, pills) { return { id: id, title: title, lines: lines, canvas: canvas, pills: pills }; }
+
+  /* ---------- level 3: the flow inside each box ---------- */
+  var cTNew = flowCv("tn", "Start a run", "sdlc run request.md [--id <id>]. src/cli/commands/run.ts → src/app/run-sdlc.ts.", [
+    ["Parse the command", "commander: the request file, --id, --log-format.", "iface"],
+    ["Build the container", "awilix (src/app/container.ts): config, logger, stores, image builder, sandbox opener.", "step"],
+    ["Pick the run stores", "runStores: local, git-remote, or a module path (src/app/run-stores.ts).", "infra"],
+    ["Start the run", "a new id or --id; the base branch is the current branch; saved at phase context.", "domain"],
+    ["Make sure the image is current", "ensureSandboxImage rebuilds only what changed.", "domain"],
+    ["Open the run scope", "the sandbox, run.log, metrics.jsonl and the observers, scoped to this run.", "infra"],
+    ["runEngine(runFlow)", "until the run is done, halted, blocked or stuck.", "domain"],
+    ["Write the result", "result.json with metrics; a summary footer on PR_DESCRIPTION.md.", "infra"],
+    ["Close", "sandbox closed, scope disposed, traces flushed.", "step"]
+  ], { h: 62, gap: 14 });
+  var cTResume = flowCv("tr", "Resume a run", "sdlc run --id <id>, or the same request file with the same id.", [
+    ["Load the run", "from the first store that has it; git-remote fetches the state ref and the run branch.", "infra"],
+    ["Same request?", "a different request file with an existing id is refused (RunRequestInvalid).", "fail"],
+    ["Leave a halt or a block", "a halt moves to its resumeAt phase; a blocked reason is cleared.", "domain"],
+    ["Carry on from the saved phase", "everything after this is the same as a new run.", "domain"]
+  ]);
+  var cTStatus = flowCv("ts", "Show a run", "sdlc status <id>. Read-only: no sandbox, no agents.", [
+    ["Load run.json", "LocalRunStore, validated with zod.", "infra"],
+    ["Documents", "design.md, plan.md and PR_DESCRIPTION.md, when written.", "step"],
+    ["Slices", "status of each, with the last reviewer feedback.", "domain"],
+    ["So far", "a one-line summary of metrics.jsonl: slices, review rounds, tokens, cost, time.", "domain"]
+  ]);
+  var cTInitAgent = flowCv("ia", "sdlc init", "src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
+    ["Write the starter files", ".sandcastle/Dockerfile, its .gitignore, sdlc.config.json — only those missing.", "step"],
+    ["The planner proposes", "in a throwaway sandbox: toolchain lines, setupCommand, verifyCommand.", "infra"],
+    ["Write and rebuild", "the toolchain goes between the Dockerfile markers; the config is updated.", "domain"],
+    ["Check in a fresh sandbox", "setupCommand runs on start, then verifyCommand by exec.", "infra"],
+    ["It fails", "the output goes back to the planner, up to three attempts.", "fail"],
+    ["Verified", "commit .sandcastle/Dockerfile and sdlc.config.json.", "domain"]
+  ]);
+  var cTInitPlain = flowCv("ip", "sdlc init --no-agent", "Writes the starter files and checks what is already configured.", [
+    ["Write the starter files", "only those missing; a catch-all .gitignore is replaced.", "step"],
+    ["verifyCommand set?", "if not, there is nothing to check yet.", "step"],
+    ["Check in the sandbox", "setupCommand on start, then verifyCommand.", "infra"],
+    ["It fails", "exit code 1, with the output.", "fail"]
+  ]);
+  var cTBuild = flowCv("tb", "sdlc build [--pull-agents]", "Also run at the start of every sdlc run.", [
+    ["Decide what to build", "planImageBuild compares the image labels with the Dockerfile and agent versions.", "domain"],
+    ["--pull-agents", "take the latest agent releases even when agentUpdates is off.", "step"],
+    ["Build", "the base image, then the agent layer.", "infra"],
+    ["Nothing changed", "no build at all; well under a second.", "step"]
+  ]);
+
+  var cFLoop = flowCv("el", "Engine loop", "src/flow/engine.ts. The whole run is data in src/flow/run-flow.ts; this loop drives it.", [
+    ["Start from the saved phase", "a blocked reason is cleared; a halt moves on to its resumeAt.", "domain"],
+    ["Look up the phase's node", "a step, the slice loop, a halt or a final.", "domain"],
+    ["Run the step", "it gets state, ports and settings, and returns an Outcome. It never changes state.", "step"],
+    ["applyOutcome", "a pure reducer folds the outcome's data into the state.", "domain"],
+    ["Pick the next phase", "the node's transition for the outcome; guards take the first that holds.", "domain"],
+    ["Save", "RunStore.save after every transition — the checkpoint.", "infra"],
+    ["Publish events", "stepStarted, stepFinished, phaseChanged and the rest, to the observers.", "infra"],
+    ["Stop", "at a final (done, stuck) or a halt (paused, awaitingMerge).", "step"]
+  ], { h: 60, gap: 14 });
+  var cFFail = flowCv("ef", "Failure policy", "Steps throw typed errors (src/domain/errors.ts); the engine decides what happens next.", [
+    ["A step throws an SdlcError", "its kind decides.", "fail"],
+    ["retry — AgentRunFailed", "p-retry, up to maxStepRetries with backoff; a stepRetried event each time.", "domain"],
+    ["feedback — AgentOutputInvalid", "becomes changesRequested where the flow accepts one.", "domain"],
+    ["block — MergeFailed, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
+    ["fatal — ConfigInvalid, RunRequestInvalid", "aborts the run with a clear message.", "fail"],
+    ["Anything else", "a bug: it propagates unchanged.", "fail"]
+  ]);
+  var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/flow/run-flow.ts, nested in the slices phase.", [
+    ["Pick the current slice", "the first by order that is not approved.", "domain"],
+    ["pending → implement", "implemented → in_review.", "step"],
+    ["in_review → review", "approved → verifying; changesRequested → pending, or stuck at reviewCycleCap.", "step"],
+    ["verifying → verify", "verified → approved; changesRequested → pending, or stuck.", "step"],
+    ["All approved", "the run moves on to describing.", "domain"],
+    ["A slice is stuck", "the run is still described, then ends stuck.", "fail"]
+  ]);
+  var cFHalt = flowCv("eh", "Halts and resume", "Where a run stops and how it carries on.", [
+    ["Design checkpoint", "gate → paused when designGate is checkpoint; resume continues at slices.", "domain"],
+    ["Manual merge", "merging → awaitingMerge; resume checks the merge again.", "domain"],
+    ["Blocked", "the phase is kept and the reason saved; resume retries the step.", "fail"],
+    ["Crash", "the last save is the checkpoint; resume starts there.", "infra"]
+  ]);
+
+  var cFPlanning = flowCv("sp", "Planning", "src/steps/planning.ts. Four planner calls, each returning validated JSON.", [
+    ["buildContext", "→ { classification, repoSummary }.", "domain"],
+    ["planFeature", "→ { summary, approach, affectedAreas }.", "domain"],
+    ["writeDesign", "→ { design, plan } markdown, returned — never written to the worktree.", "domain"],
+    ["sliceThePlan", "→ slices with safe, unique ids; a repeated id is invalid output.", "domain"],
+    ["applyDesignGate", "checkpoint → pause, auto → continue.", "step"]
+  ]);
+  var cFImpl = flowCv("si", "Implement", "implementSlice in src/steps/slice.ts.", [
+    ["Prompt with the slice", "and the last feedback; rebase onto a moved base before finishing.", "step"],
+    ["The implementer works in the sandbox", "AgentSession.run: edits files, does not commit.", "infra"],
+    ["Commit everything", "Workspace.commitAll on the run branch: sha and diff stats.", "infra"],
+    ["implemented", "with the commit, or null when nothing changed.", "domain"]
+  ]);
+  var cFReview = flowCv("sr", "Review", "reviewSlice in src/steps/slice.ts.", [
+    ["The reviewer judges HEAD", "runForOutput → { approved, feedback }.", "infra"],
+    ["approved", "→ verifying.", "domain"],
+    ["changesRequested", "the feedback counts as a review cycle.", "domain"],
+    ["Unusable output", "corrected once in the same session, then treated as feedback.", "fail"]
+  ]);
+  var cFVerify = flowCv("sv", "Verify", "verifySlice in src/steps/slice.ts.", [
+    ["No verifyCommand", "verified straight away.", "step"],
+    ["Run it in the sandbox", "AgentSession.exec, in the same warm container.", "infra"],
+    ["Exit 0", "verified.", "domain"],
+    ["Anything else", "changesRequested with the tail of the output.", "fail"]
+  ]);
+  var cFDescribe = flowCv("sd", "Describe the PR", "describePullRequest in src/steps/finishing.ts.", [
+    ["Find the template", "the repository's own, or sdlc's default.", "step"],
+    ["The describer fills it in", "runForOutput → { body }.", "infra"],
+    ["Render", "plus the agent run, design and plan, collapsed; stuck slices keep their feedback.", "domain"],
+    ["The describer fails", "falls back to a description built from the run's state.", "fail"]
+  ]);
+  var cFMerge = flowCv("sm", "Merge", "mergeRunBranch in src/steps/finishing.ts.", [
+    ["Already merged?", "a person may have merged it by hand.", "step"],
+    ["mergeMode manual", "awaitingManualMerge → the run halts.", "domain"],
+    ["mergeMode auto", "merge the run branch into the base branch.", "infra"],
+    ["Conflict or dirty tree", "MergeFailed blocks the run; git merge --abort.", "fail"]
+  ]);
+
+  var cFPlanBuild = flowCv("ib", "Decide what to build", "planImageBuild in src/app/sandbox-image.ts — a pure function.", [
+    ["Read .sandcastle/Dockerfile", "missing → run sdlc init first.", "step"],
+    ["Hash it with your UID", "the image is built for the user that runs it.", "domain"],
+    ["Agent versions", "pinned in agents, else npm latest (3 s timeout, never blocks).", "infra"],
+    ["Compare the image labels", "all, agents only, or nothing; agentUpdates auto, warn or off.", "domain"]
+  ]);
+  var cFBuild = flowCv("bb", "Build", "DockerImages in src/adapters/sandbox-image.", [
+    ["Base image", "docker build .sandcastle with AGENT_UID/GID → <image>-base.", "infra"],
+    ["Agent layer", "generated: npm install -g each agent@version, then labels.", "infra"],
+    ["CI cache", "SDLC_IMAGE_CACHE=gha builds through buildx with the GitHub Actions cache.", "infra"],
+    ["sandboxImage set", "the named image is used as it is; nothing is built.", "step"]
+  ]);
+  var cFInit = flowCv("bi", "Toolchain loop", "initSandbox in src/app/init-sandbox.ts.", [
+    ["The planner proposes", "toolchain, setupCommand, verifyCommand.", "infra"],
+    ["Write and rebuild", "only the toolchain section of the Dockerfile changes.", "domain"],
+    ["Check in a fresh sandbox", "setup on start, verify by exec.", "infra"],
+    ["It fails", "back to the planner with the output, up to three attempts.", "fail"]
+  ]);
+
+  var cFLog = flowCv("ol", "Logging", "src/observers/logging-observer.ts.", [
+    ["RunEvents", "Node's EventEmitter; a failing observer never stops the run.", "domain"],
+    ["LoggingObserver", "a readable message, with the event as fields.", "domain"],
+    ["pino", "pretty at a terminal, JSON in CI.", "infra"],
+    ["run.log", "always JSON, one file per run.", "infra"]
+  ]);
+  var cFMetrics = flowCv("om", "Metrics", "src/observers/metrics.ts.", [
+    ["agentUsage events", "cost and tokens from each agent's own raw stream.", "infra"],
+    ["MetricsObserver", "attributes each agent call to the step it ran in.", "domain"],
+    ["metrics.jsonl", "one line per step, agent call and retry, across every invocation.", "infra"],
+    ["summarizeMetrics", "for result.json, the PR footer and sdlc status.", "domain"]
+  ]);
+  var cFTrace = flowCv("ot", "Tracing", "src/observers/tracing-observer.ts, src/adapters/telemetry.", [
+    ["OTEL endpoint set?", "otherwise the SDK is never loaded.", "step"],
+    ["TracingObserver", "a span per run and per step, GenAI token attributes.", "domain"],
+    ["OTLP/HTTP export", "NodeSDK, flushed when the run ends.", "ext"],
+    ["Sandbox telemetry", "OTEL_* forwarded; Claude Code's own telemetry switched on.", "infra"]
+  ]);
+
+  var cFOpen = flowCv("xo", "Open", "SandcastleSession.open in src/adapters/sandcastle.", [
+    ["Resolve the real repo path", "git inside the container breaks on a symlinked path otherwise.", "step"],
+    ["Scoped .sandcastle/.gitignore", "scratch ignored, the Dockerfile committable.", "step"],
+    ["createSandbox", "on branch sdlc/run/<id>; sandcastle owns the worktree.", "ext"],
+    ["Credentials", "docker({ env }): only what the configured agents need.", "infra"],
+    ["Hooks", "setupCommand on start; commit signing off when configured.", "infra"]
+  ]);
+  var cFCall = flowCv("xc", "Agent call", "run and runForOutput.", [
+    ["sandbox.run", "the agent for the role — claude or opencode — with an idle timeout.", "ext"],
+    ["Read the tagged result", "the last <sdlc-output> JSON in the reply, validated with zod.", "domain"],
+    ["Unusable result", "one correction with --continue, in the same agent session.", "fail"],
+    ["Stream events", "tool calls, messages and usage, published as run events.", "infra"]
+  ]);
+  var cFExec = flowCv("xe", "Exec", "Commands in the run's container.", [
+    ["sandbox.exec", "verifyCommand and init's checks, in the same warm container.", "ext"],
+    ["Result", "exit code and combined output.", "step"]
+  ]);
+  var cFClose = flowCv("xx", "Close", "When the run stops, whatever the reason.", [
+    ["sandbox.close", "the container stops; a clean worktree is removed.", "ext"],
+    ["The branch stays", "the work lives on sdlc/run/<id>.", "step"]
+  ]);
+
+  var cCOut = flowCv("co", "Outcomes, not mutations", "How one step moves a run.", [
+    ["A step returns an Outcome", "e.g. implemented { commit }, changesRequested { feedback }.", "step"],
+    ["applyOutcome folds in the data", "pure; the only place run state changes.", "domain"],
+    ["The flow picks what is next", "phase or slice status; guards for the review cap and stuck slices.", "domain"],
+    ["Saved, then published", "the checkpoint first, then the events.", "infra"]
+  ]);
+  var cCPhase = flowCv("cp", "The run's phases", "runFlow, top to bottom.", [
+    ["context → planning → designing → slicing", "four planner calls.", "domain"],
+    ["gate", "pause at a checkpoint, or continue.", "step"],
+    ["slices", "each slice: pending → in_review → verifying → approved.", "domain"],
+    ["describing → merging → done", "or awaitingMerge, or stuck.", "domain"]
+  ]);
+  var cCKinds = flowCv("ck", "Failure kinds", "What the engine does with an error.", [
+    ["retry", "transient: tried again with backoff.", "step"],
+    ["feedback", "back to the agent as a change request.", "domain"],
+    ["block", "stop and wait for a person.", "fail"],
+    ["fatal", "abort with a message.", "fail"]
+  ]);
+
+  /* ---------- level 2: commands, core modules, the sandbox ---------- */
+  var runCmd = ifaceCanvas("sdlc run", "Command. Starts or resumes a run. The awilix container builds a scope per run and disposes it when the run stops.", [
+    box("t-new", "Start a run", ["A request file, optional --id."], cTNew),
+    box("t-resume", "Resume a run", ["--id of a saved run."], cTResume)
+  ], [
+    { id: "s-req", title: "request.md", lines: ["sdlc run request.md"] },
+    { id: "s-id", title: "--id <runId>", lines: ["sdlc run --id <id>"] }
+  ]);
+  var buildCmd = ifaceCanvas("sdlc build", "Command. Builds the sandbox image when its Dockerfile or agents changed.", [
+    box("t-build", "Build the image", ["Base and agent layer, only what changed."], cTBuild)
+  ], [{ id: "s-build", title: "sdlc build", lines: ["--pull-agents optional"] }]);
+  var initCmd = ifaceCanvas("sdlc init", "Command. Sets up a repository's sandbox and proves its setup and verify commands inside it.", [
+    box("t-agent", "With the planner", ["Toolchain proposed, then checked."], cTInitAgent),
+    box("t-plain", "--no-agent", ["Starter files, then a check."], cTInitPlain)
+  ], [
+    { id: "s-init", title: "sdlc init", lines: ["default"] },
+    { id: "s-plain", title: "sdlc init --no-agent", lines: ["files only"] }
+  ]);
+  var statusCmd = ifaceCanvas("sdlc status", "Command. Read-only view of a run.", [
+    box("t-status", "Show a run", ["Phase, slices, documents, cost."], cTStatus)
+  ], [{ id: "s-status", title: "sdlc status <id>", lines: ["no sandbox, no agents"] }]);
+
+  var engineModule = domainCanvas("Flow engine", [
+    box("f-loop", "Engine loop", ["Step, reduce, transition, save, publish."], cFLoop),
+    box("f-fail", "Failure policy", ["retry, feedback, block, fatal."], cFFail),
+    box("f-slices", "Slice loop", ["Implement, review, verify, per slice."], cFSlices),
+    box("f-halt", "Halts and resume", ["Checkpoint, manual merge, blocked, crash."], cFHalt)
+  ]);
+  var stepsModule = domainCanvas("Steps", [
+    box("f-planning", "Planning", ["Context, plan, design, slices, gate."], cFPlanning),
+    box("f-impl", "Implement", ["Agent edits, host commits."], cFImpl),
+    box("f-review", "Review", ["Approve or request changes."], cFReview),
+    box("f-verify", "Verify", ["verifyCommand in the sandbox."], cFVerify),
+    box("f-describe", "Describe", ["Fill the PR template."], cFDescribe),
+    box("f-merge", "Merge", ["Auto, or wait for a person."], cFMerge)
+  ]);
+  var imageModule = domainCanvas("Sandbox image", [
+    box("f-plan-build", "Decide what to build", ["Labels vs Dockerfile and versions."], cFPlanBuild),
+    box("f-build", "Build", ["Base, then the agent layer."], cFBuild),
+    box("f-init", "Toolchain loop", ["Propose, rebuild, check, retry."], cFInit)
+  ]);
+  var obsModule = domainCanvas("Observers", [
+    box("f-log", "Logging", ["pino, readable or JSON."], cFLog),
+    box("f-metrics", "Metrics", ["Cost, tokens, timings."], cFMetrics),
+    box("f-trace", "Tracing", ["OpenTelemetry, optional."], cFTrace)
+  ]);
+  var sandboxModule = domainCanvas("Sandcastle sandbox", [
+    box("f-open", "Open", ["One container per run."], cFOpen),
+    box("f-call", "Agent call", ["Tagged result, one correction."], cFCall),
+    box("f-exec", "Exec", ["Commands in the container."], cFExec),
+    box("f-close", "Close", ["When the run stops."], cFClose)
+  ]);
+  var conceptCanvas = cv("Level 2 · Inside a module", "How a run moves", "A concept, not a module. The rules every part of the run follows.", [
+    cont("c-out", "Outcomes, not mutations", "concept", 60, 250, 380, ["Steps report; the engine changes state."], cCOut),
+    cont("c-phase", "The run's phases", "concept", 510, 250, 380, ["runFlow from request to merge."], cCPhase),
+    cont("c-kinds", "Failure kinds", "concept", 960, 250, 380, ["retry, feedback, block, fatal."], cCKinds)
+  ], []);
+
+  /* ---------- level 1: the layered map ---------- */
+  var root = cv("Level 1 · Layers", "sdlc", "Commands start the work, core modules hold the logic, and the sandbox, git, run state and external systems sit underneath. Click a box to open it.", [
+    leaf("band-i", "COMMANDS", "band", 24, 152, 1126, 210, [], { tone: "i" }),
+    leaf("band-d", "CORE MODULES", "band", 24, 384, 1126, 210, [], { tone: "d" }),
+    leaf("band-x", "INFRA & EXTERNAL", "band", 24, 616, 1126, 177, [], { tone: "x" }),
+    leaf("hint-idle", "Select a command above to see the modules and systems it uses.", "label", 190, 482, 800, 24, [], { idle: true }),
+    cont("i-run", "sdlc run", "iface", 60, 186, 236, ["Starts or resumes a run."], runCmd, { pills: [{ t: "Run state", go: "x-state" }, { t: "Image", go: "d-image" }] }),
+    cont("i-build", "sdlc build", "iface", 340, 186, 236, ["Builds the sandbox image."], buildCmd, { pills: [{ t: "Docker", go: "x-docker" }] }),
+    cont("i-init", "sdlc init", "iface", 620, 186, 236, ["Sets up and checks the sandbox."], initCmd, { pills: [{ t: "Sandbox", go: "b-sandbox" }] }),
+    cont("i-status", "sdlc status", "iface", 900, 186, 236, ["Where a run is, what it cost."], statusCmd, { pills: [{ t: "Run state", go: "x-state" }] }),
+    cont("d-engine", "Flow engine", "module", 60, 418, 236, ["The run as data, and its loop."], engineModule, { pills: [{ t: "Run state", go: "x-state" }, { t: "Observers", go: "d-obs" }] }),
+    cont("d-steps", "Steps", "module", 340, 418, 236, ["Plan, implement, review, verify, describe, merge."], stepsModule, { pills: [{ t: "Sandbox", go: "b-sandbox" }, { t: "Git", go: "x-git" }] }),
+    cont("d-image", "Sandbox image", "module", 620, 418, 236, ["Builds it, sets up the toolchain."], imageModule, { pills: [{ t: "Docker", go: "x-docker" }, { t: "Sandbox", go: "b-sandbox" }] }),
+    cont("d-obs", "Observers", "module", 900, 418, 236, ["Logging, metrics, tracing."], obsModule, { pills: [{ t: "Run state", go: "x-state" }, { t: "OTel", go: "x-otel" }] }),
+    leaf("x-state", "Run state", "infra", 47, 650, 170, 109, [".sdlc/<id>/state, git-remote"]),
+    cont("b-sandbox", "Sandcastle sandbox", "infra", 229, 650, 170, ["One container per run."], sandboxModule),
+    leaf("x-git", "Git", "infra", 411, 650, 170, 109, ["run branch, worktree, merge"]),
+    leaf("x-docker", "Docker", "ext", 593, 650, 170, 109, ["images, buildx cache, npm"]),
+    leaf("x-llm", "Agent APIs", "ext", 775, 650, 170, 109, ["Anthropic, OpenRouter — called from the sandbox"]),
+    leaf("x-otel", "OTel collector", "ext", 957, 650, 170, 109, ["optional, OTLP/HTTP"]),
+    cont("c-run", "How a run moves", "concept", 1170, 418, 190, ["A concept, not a module."], conceptCanvas)
+  ], [
+    { from: "i-run", to: "d-engine", route: [[178, 338], [178, 418]], label: "run / resume", at: [186, 384, "start"] },
+    { from: "i-build", to: "d-image", route: [[458, 338], [458, 372], [680, 372], [680, 418]], label: "build", at: [569, 366, "middle"] },
+    { from: "i-init", to: "d-image", route: [[790, 338], [790, 418]], label: "set up", at: [798, 384, "start"] },
+    { from: "i-status", to: "d-obs", route: [[1018, 338], [1018, 418]], label: "summary", at: [1026, 384, "start"] },
+    { from: "d-engine", to: "d-steps", route: [[296, 494], [340, 494]] },
+    { from: "d-engine", to: "x-state", route: [[205, 570], [205, 650]], label: "save", at: [213, 622, "start"] },
+    { from: "d-steps", to: "b-sandbox", route: [[360, 570], [360, 650]], label: "agents, verify", at: [368, 622, "start"] },
+    { from: "d-steps", to: "x-git", route: [[520, 570], [520, 650]], label: "commit, merge", at: [528, 622, "start"] },
+    { from: "d-image", to: "x-docker", route: [[700, 570], [700, 650]], label: "build", at: [708, 622, "start"] },
+    { from: "d-obs", to: "x-otel", route: [[1040, 570], [1040, 650]], label: "traces", at: [1048, 622, "start"] }
+  ]);
+
+  var LINKS = [
+    { from: "t-new", to: "f-loop", cluster: "run" }, { from: "t-resume", to: "f-halt", cluster: "run" },
+    { from: "t-build", to: "f-plan-build", cluster: "build" }, { from: "t-build", to: "f-build", cluster: "build" },
+    { from: "t-agent", to: "f-init", cluster: "init" }, { from: "t-plain", to: "f-init", cluster: "init" },
+    { from: "t-status", to: "f-metrics", cluster: "status" },
+    { from: "f-loop", to: "x-state", cluster: "infra" },
+    { from: "f-impl", to: "b-sandbox", cluster: "infra" }, { from: "f-review", to: "b-sandbox", cluster: "infra" }, { from: "f-verify", to: "b-sandbox", cluster: "infra" },
+    { from: "f-impl", to: "x-git", cluster: "infra" }, { from: "f-merge", to: "x-git", cluster: "infra" },
+    { from: "f-plan-build", to: "x-docker", cluster: "infra" }, { from: "f-build", to: "x-docker", cluster: "infra" },
+    { from: "f-log", to: "x-state", cluster: "infra" }, { from: "f-metrics", to: "x-state", cluster: "infra" }, { from: "f-trace", to: "x-otel", cluster: "infra" }
+  ];
+
+  /* ---------- engine ---------- */
+  var stage = document.getElementById("stage");
+  var world = document.getElementById("world");
+  var crumbsEl = document.getElementById("crumbs");
+  var recs = {};
+  var rootRecs = [];
+  var lod = [];
+  var CLAMP_PX = 30;
+  var rootEdges = [], idleEls = [];
+  var sel = null, showAll = true;
+  var overflow = [];
+  var cam = { x: 0, y: 0, s: 1 };
+  var view = { w: 1000, h: 600 };
+  var mctx = document.createElement("canvas").getContext("2d");
+
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function measure(text, font) { mctx.font = font; return mctx.measureText(text).width; }
+  function wrap(text, font, maxW) {
+    var words = String(text).split(" "), lines = [], cur = "";
+    words.forEach(function (w) {
+      var t = cur ? cur + " " + w : w;
+      if (cur && measure(t, font) > maxW) { lines.push(cur); cur = w; } else { cur = t; }
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  }
+  function ramp(v, a, b) { return v <= a ? 0 : v >= b ? 1 : (v - a) / (b - a); }
+
+  function text(parent, cls, x, y, size, str, anchor) {
+    var t = el("text", { class: cls, x: x, y: y, "font-size": size }, parent);
+    if (anchor) t.setAttribute("text-anchor", anchor);
+    t.textContent = str;
+    return t;
+  }
+
+  function buildCanvas(def, g, abs, depth, parentRec, siblings) {
+    var f = FS[Math.min(depth, FS.length - 1)];
+    var head = el("g", { class: "hdrg" }, g);
+    var hy = def.head ? def.head.y : 0, hw = def.head ? def.head.w : 1200, hx = def.head && def.head.x ? def.head.x : 40, hs = def.head && def.head.size ? def.head.size : f.h;
+    text(head, "kick", hx, hy + 26, f.k, def.kicker.toUpperCase());
+    text(head, "hd", hx, hy + 26 + hs + 6, hs, def.title);
+    var hf = '400 ' + f.d + 'px ' + SANS;
+    if (def.sub) wrap(def.sub, hf, hw).forEach(function (ln, i) { text(head, "hs", hx, hy + 26 + hs + 6 + 22 + i * (f.d * 1.4), f.d, ln); });
+    lod.push({ g: head, fs: abs.s, cs: true });
+
+    var map = {};
+    def.nodes.forEach(function (n) { map[n.id] = n; });
+    var edgeG = el("g", { class: "edges" }, g);
+    def.edges.forEach(function (e) { buildEdge(e, map, edgeG, abs, f, depth === 0 ? rootEdges : null); });
+    lod.push({ g: edgeG, fs: abs.s, cs: true });
+    def.nodes.forEach(function (n) { buildNode(n, g, abs, depth, parentRec, siblings); });
+  }
+
+  function buildNode(n, g, abs, depth, parentRec, siblings) {
+    var f = FS[Math.min(depth, FS.length - 1)];
+    var ng = el("g", { class: "node k-" + n.kind + (n.tone ? " tone-" + n.tone : "") + (n.canvas ? " has-inner" : ""), "data-id": n.id, transform: "translate(" + n.x + "," + n.y + ")" }, g);
+    if (n.kind === "label") {
+      var lt = text(ng, n.idle ? "flowlabel idlehint" : "flowlabel", 0, f.t, f.t, n.title);
+      if (n.idle) idleEls.push(ng);
+      lod.push({ g: ng, fs: f.t * abs.s });
+      return;
+    }
+    if (n.kind === "band") {
+      el("rect", { class: "nb", width: n.w, height: n.h, rx: 10 }, ng);
+      var bl = text(ng, "bandlabel", 16, 26, f.k + 2, n.title);
+      lod.push({ g: bl, fs: (f.k + 2) * abs.s });
+      return;
+    }
+    el("rect", { class: "nb", width: n.w, height: n.h, rx: 6 }, ng);
+    var lab = el("g", { class: "lab" }, ng);
+    var tf = '600 ' + f.t + 'px ' + SANS, bf = '400 ' + f.b + 'px ' + SANS;
+    var pad = 10, y = pad + f.t * 0.95, bottom = 0;
+    var titleW = n.w - 2 * pad - (n.canvas || n.jump ? 14 : 0);
+    wrap(n.title, tf, titleW).forEach(function (ln) { if (measure(ln, tf) > titleW + 1) overflow.push(n.id + " title too wide: " + ln); text(lab, "tt", pad, y, f.t, ln); bottom = y + f.t * 0.28; y += f.t * 1.25; });
+    y += 2;
+    n.lines.forEach(function (para) {
+      wrap(para, bf, n.w - 2 * pad).forEach(function (ln) { if (measure(ln, bf) > n.w - 2 * pad + 1) overflow.push(n.id + " line too wide: " + ln); text(lab, "tb", pad, y, f.b, ln); bottom = y + f.b * 0.28; y += f.b * 1.35; });
+    });
+    var pillRoom = 0, pillG = null;
+    if (n.pills && n.pills.length) {
+      pillG = el("g", { class: "pills" }, ng);
+      var pf = f.b - 1, ph = pf + 9, px0 = pad, py = n.h - 18 - ph;
+      pillRoom = ph + 18;
+      n.pills.forEach(function (pl) {
+        var tw = measure(pl.t, "500 " + pf + "px " + SANS) + 16;
+        var pg = el("g", { class: "pill", "data-go": pl.go, "data-owner": n.id }, pillG);
+        el("rect", { x: px0, y: py, width: tw, height: ph, rx: ph / 2 }, pg);
+        text(pg, "pilltext", px0 + 8, py + pf + 3, pf, pl.t);
+        px0 += tw + 6;
+      });
+    }
+    if (bottom + 4 > n.h - pillRoom) overflow.push(n.id + " needs " + Math.round(bottom + 4 + pillRoom) + " has " + n.h);
+    var hintG = null;
+    if (n.canvas || n.jump) { hintG = el("g", { class: "hint" }, ng); text(hintG, "zoomhint", n.w - 10, 6 + f.t * 0.9, f.t * 0.9, n.jump ? "↗" : "⊕", "end"); }
+
+    var rec = { n: n, g: ng, lab: lab, x: abs.x + n.x * abs.s, y: abs.y + n.y * abs.s, w: n.w * abs.s, h: n.h * abs.s, kids: [], parent: parentRec, depth: depth };
+    recs[n.id] = rec;
+    siblings.push(rec);
+    var item = { g: lab, fs: f.t * abs.s, rec: n.canvas ? rec : null, clamp: true };
+    lod.push(item);
+    if (pillG) lod.push({ g: pillG, fs: f.t * abs.s, fade: n.canvas ? rec : null });
+    if (hintG) lod.push({ g: hintG, fs: f.t * abs.s, fade: n.canvas ? rec : null });
+    if (n.canvas) {
+      var k = n.w / CW;
+      var inner = el("g", { class: "inner", transform: "scale(" + k + ")" }, ng);
+      rec.inner = inner;
+      item.inner = inner;
+      buildCanvas(n.canvas, inner, { x: rec.x, y: rec.y, s: abs.s * k }, depth + 1, rec, rec.kids);
+    }
+  }
+
+  function center(n) { return { x: n.x + n.w / 2, y: n.y + n.h / 2 }; }
+  function border(n, to) {
+    var c = center(n), dx = to.x - c.x, dy = to.y - c.y;
+    if (!dx && !dy) return c;
+    var sx = dx ? (n.w / 2) / Math.abs(dx) : Infinity, sy = dy ? (n.h / 2) / Math.abs(dy) : Infinity;
+    var t = Math.min(sx, sy);
+    return { x: c.x + dx * t, y: c.y + dy * t };
+  }
+  function headPoly(g, tip, from, size) {
+    var dx = tip.x - from.x, dy = tip.y - from.y, len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var ux = dx / len, uy = dy / len, px = -uy, py = ux;
+    var bx = tip.x - ux * size, by = tip.y - uy * size, hw = size * 0.42;
+    el("polygon", { class: "head", points: tip.x + "," + tip.y + " " + (bx + px * hw) + "," + (by + py * hw) + " " + (bx - px * hw) + "," + (by - py * hw) }, g);
+  }
+  function buildEdge(e, map, g, abs, f, bucket) {
+    var a = map[e.from], b = map[e.to], pts;
+    if (e.route) pts = e.route.map(function (p) { return { x: p[0], y: p[1] }; });
+    else pts = [border(a, center(b)), border(b, center(a))];
+    var eg = el("g", { class: "edge-g" }, g);
+    if (bucket) bucket.push({ eg: eg, from: e.from, to: e.to });
+    el("polyline", { class: "edge" + (e.dot ? " dot" : ""), points: pts.map(function (p) { return p.x + "," + p.y; }).join(" ") }, eg);
+    var size = f.t * 0.55, head = e.head || "end";
+    if (head === "end" || head === "both") headPoly(eg, pts[pts.length - 1], pts[pts.length - 2], size);
+    if (head === "start" || head === "both") headPoly(eg, pts[0], pts[1], size);
+    if (e.label) {
+      var lx, ly, anchor = "middle";
+      if (e.at) { lx = e.at[0]; ly = e.at[1]; anchor = e.at[2] || "middle"; }
+      else {
+        var p0 = pts[0], p1 = pts[pts.length - 1];
+        lx = (p0.x + p1.x) / 2; ly = (p0.y + p1.y) / 2 - 6;
+        if (Math.abs(p1.x - p0.x) < Math.abs(p1.y - p0.y) * 0.5) { lx += 8; anchor = "start"; ly += 4; }
+      }
+      text(eg, "el", lx, ly, f.e, e.label, anchor);
+      lod.push({ g: eg, fs: f.e * abs.s });
+    }
+  }
+
+  /* ---------- selection: reveal what a module uses ---------- */
+  var showAllBtn = document.getElementById("showall");
+  var ALWAYS = /^(i-|c-run)/;
+  function downstream(id) {
+    var out = [];
+    rootEdges.forEach(function (e) { if (e.from === id) out.push(e.to); });
+    var r = recs[id];
+    if (r && r.n.pills) r.n.pills.forEach(function (pl) { out.push(pl.go); });
+    return out;
+  }
+  function activeSet() {
+    var A = {};
+    if (showAll) { Object.keys(recs).forEach(function (id) { A[id] = true; }); return A; }
+    if (!sel) return A;
+    var stack = [sel];
+    while (stack.length) {
+      var id = stack.pop();
+      if (A[id]) continue;
+      A[id] = true;
+      downstream(id).forEach(function (t) { stack.push(t); });
+    }
+    rootEdges.forEach(function (e) { if (e.to === sel) A[e.from] = true; });
+    return A;
+  }
+  function applySelection() {
+    var A = activeSet();
+    rootRecs.forEach(function (r) {
+      var id = r.n.id;
+      r.g.classList.toggle("off", !(ALWAYS.test(id) || A[id]));
+      r.g.classList.toggle("selected", id === sel);
+    });
+    rootEdges.forEach(function (e) { e.eg.classList.toggle("off", !(A[e.from] && A[e.to])); });
+    idleEls.forEach(function (n) { n.classList.toggle("off", !!sel || showAll); });
+    [].forEach.call(document.querySelectorAll("#world .pill"), function (pg) {
+      var owner = rootOf(recs[pg.getAttribute("data-owner")]).n.id;
+      var show = /^i-/.test(owner) ? (owner === sel || showAll) : !!A[owner];
+      pg.classList.toggle("off", !show);
+    });
+    showAllBtn.setAttribute("aria-pressed", String(showAll));
+  }
+  showAllBtn.addEventListener("click", function () { showAll = !showAll; applySelection(); });
+
+  /* ---------- links: an interface box to the domain box it starts ---------- */
+  var linkItems = [];
+  var LANE_START = 14, LANE_STEP = 7;
+  function rootOf(rec) { while (rec.parent) rec = rec.parent; return rec; }
+  function buildLinks() {
+    var g = el("g", { class: "links" }, world);
+    var items = LINKS.map(function (lk) { return { src: recs[lk.from], dst: recs[lk.to], cluster: lk.cluster }; });
+    var clusters = {};
+    items.forEach(function (it) {
+      it.sx = it.src.x + it.src.w / 2; it.tx = it.dst.x + it.dst.w / 2; it.lane = -1;
+      var key = rootOf(it.src).n.id + ">" + it.dst.n.id;
+      var c = clusters[it.cluster] = clusters[it.cluster] || { groups: {} };
+      var grp = c.groups[key] = c.groups[key] || { items: [], sum: 0, tx: it.tx };
+      grp.items.push(it); grp.sum += it.sx;
+    });
+    Object.keys(clusters).forEach(function (k) {
+      var gs = Object.keys(clusters[k].groups).map(function (key) { return clusters[k].groups[key]; });
+      var bent = gs.filter(function (grp) {
+        grp.xs = grp.items.map(function (it) { return it.sx; });
+        grp.lo = Math.min.apply(null, grp.xs.concat([grp.tx]));
+        grp.hi = Math.max.apply(null, grp.xs.concat([grp.tx]));
+        return !(grp.items.length === 1 && Math.abs(grp.xs[0] - grp.tx) < 1);
+      });
+      function crossings(deeper, shallower) {
+        var c = 0;
+        deeper.xs.forEach(function (x) { if (x > shallower.lo + 0.5 && x < shallower.hi - 0.5) c++; });
+        if (shallower.tx > deeper.lo + 0.5 && shallower.tx < deeper.hi - 0.5) c++;
+        return c;
+      }
+      function cost(order) {
+        var total = 0;
+        for (var i = 0; i < order.length; i++) for (var j = i + 1; j < order.length; j++) total += crossings(order[j], order[i]);
+        return total;
+      }
+      var best = bent.slice().sort(function (p, q) { return p.lo - q.lo; }), bestCost = cost(best);
+      if (bent.length <= 7) {
+        (function permute(rest, chosen) {
+          if (!rest.length) { var c = cost(chosen); if (c < bestCost) { bestCost = c; best = chosen.slice(); } return; }
+          rest.forEach(function (g, i) { permute(rest.slice(0, i).concat(rest.slice(i + 1)), chosen.concat([g])); });
+        })(best.slice(), []);
+      }
+      best.forEach(function (grp, i) { grp.items.forEach(function (it) { it.lane = i; }); });
+    });
+    items.forEach(function (it) {
+      var host = rootOf(it.src), sy = it.src.y + it.src.h, ty = it.dst.y, ly = host.y + host.h + 10 + it.lane * LANE_STEP;
+      it.pts = it.lane < 0 ? [[it.sx, sy], [it.tx, ty]] : [[it.sx, sy], [it.sx, ly], [it.tx, ly], [it.tx, ty]];
+      it.g = el("g", { class: "link" + (it.cluster === "infra" ? " infra" : "") }, g);
+      el("polyline", { class: "linkline", points: it.pts.map(function (p) { return p.join(","); }).join(" ") }, it.g);
+      it.hd = el("polygon", { class: "linkhead" }, it.g);
+      linkItems.push(it);
+    });
+  }
+  function ioOf(rec) { return rec ? ramp(rec.w * cam.s, 560, 650) : 1; }
+  function updateLinks() {
+    linkItems.forEach(function (it) {
+      var op = Math.min(ioOf(it.src.parent), ioOf(it.dst.parent)) * (1 - ramp((it.dst.parent ? Math.max(it.src.w, it.dst.w) : it.src.w) * cam.s, 380, 640));
+      if (rootOf(it.src).g.classList.contains("off") || rootOf(it.dst).g.classList.contains("off")) op = 0;
+      if (op <= 0.01) { if (it.g._shown !== false) { it.g.style.display = "none"; it.g._shown = false; } return; }
+      it.g.style.display = ""; it.g._shown = true; it.g.style.opacity = op;
+      var tip = it.pts[it.pts.length - 1], from = it.pts[it.pts.length - 2];
+      var size = 10 / cam.s, hw = size * 0.45, dir = tip[1] >= from[1] ? 1 : -1;
+      it.hd.setAttribute("points", tip[0] + "," + tip[1] + " " + (tip[0] - hw) + "," + (tip[1] - dir * size) + " " + (tip[0] + hw) + "," + (tip[1] - dir * size));
+    });
+  }
+
+  /* ---------- camera ---------- */
+  function applyCam() { world.setAttribute("transform", "translate(" + cam.x + "," + cam.y + ") scale(" + cam.s + ")"); }
+  function update() {
+    var s = cam.s;
+    for (var i = 0; i < lod.length; i++) {
+      var it = lod[i], px = it.fs * s;
+      var op;
+      if (it.cs) op = 1 - ramp(it.fs * s, 1.5, 2.4);
+      else if (it.clamp) {
+        var k = px > CLAMP_PX ? CLAMP_PX / px : 1;
+        if (it.k !== k) { it.g.setAttribute("transform", k === 1 ? "" : "scale(" + k + ")"); it.k = k; }
+        op = ramp(Math.min(px, CLAMP_PX), 5.5, 8.5);
+      } else op = ramp(px, 5.5, 8.5) * (1 - ramp(px, 26, 40));
+      if (it.fade) op *= 1 - ramp(it.fade.w * s, 560, 650);
+      if (it.inner) {
+        var io = ramp(it.rec.w * s, 560, 650);
+        var show = io > 0.01;
+        if (it.inner._shown !== show) { it.inner.style.display = show ? "" : "none"; it.inner._shown = show; }
+        it.inner.style.opacity = io;
+        op *= (1 - io);
+      }
+      var vis = op > 0.01;
+      if (it.g._shown !== vis) { it.g.style.display = vis ? "" : "none"; it.g._shown = vis; }
+      it.g.style.opacity = op;
+    }
+    updateLinks();
+    updateChrome();
+  }
+  function setCam(x, y, s) { cam.x = x; cam.y = y; cam.s = s; applyCam(); update(); }
+  function fitScale(r, m) { return Math.min(view.w * (m || 0.92) / r.w, view.h * (m || 0.92) / r.h); }
+  function camFor(r) {
+    var s = fitScale(r);
+    return { x: view.w / 2 - (r.x + r.w / 2) * s, y: view.h / 2 - (r.y + r.h / 2) * s, s: s };
+  }
+  var rootRect = { x: 0, y: 0, w: CW, h: CH };
+  var minS = 0.2, maxS = 400, anim = null;
+  function clampS(s) { return Math.max(minS, Math.min(maxS, s)); }
+
+  function flyTo(r, instant) {
+    var t = camFor(r);
+    if (instant) { setCam(t.x, t.y, t.s); return; }
+    var c0 = { x: (view.w / 2 - cam.x) / cam.s, y: (view.h / 2 - cam.y) / cam.s, l: Math.log(cam.s) };
+    var c1 = { x: (view.w / 2 - t.x) / t.s, y: (view.h / 2 - t.y) / t.s, l: Math.log(t.s) };
+    var start = performance.now(), dur = 750;
+    if (anim) cancelAnimationFrame(anim);
+    function step(now) {
+      var p = Math.min(1, (now - start) / dur), e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+      var l = c0.l + (c1.l - c0.l) * e, s = Math.exp(l);
+      var cx = c0.x + (c1.x - c0.x) * e, cy = c0.y + (c1.y - c0.y) * e;
+      setCam(view.w / 2 - cx * s, view.h / 2 - cy * s, s);
+      anim = p < 1 ? requestAnimationFrame(step) : null;
+    }
+    anim = requestAnimationFrame(step);
+  }
+  function stopAnim() { if (anim) { cancelAnimationFrame(anim); anim = null; } }
+  function zoomAt(px, py, k) {
+    var ns = clampS(cam.s * k), r = ns / cam.s;
+    setCam(px - (px - cam.x) * r, py - (py - cam.y) * r, ns);
+  }
+
+  /* ---------- focus, breadcrumb, levels ---------- */
+  function focusPath() {
+    var cx = (view.w / 2 - cam.x) / cam.s, cy = (view.h / 2 - cam.y) / cam.s;
+    var path = [], list = rootRecs;
+    for (;;) {
+      var hit = null;
+      list.forEach(function (r) { if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h && r.w * cam.s >= 600) hit = r; });
+      if (!hit) break;
+      path.push(hit);
+      list = hit.kids;
+    }
+    return path;
+  }
+  var lastKey = null;
+  function updateChrome() {
+    var path = focusPath();
+    var key = path.map(function (r) { return r.n.id; }).join(">");
+    if (key === lastKey) return;
+    lastKey = key;
+    if (path.length && !showAll && sel !== path[0].n.id && downstream(path[0].n.id).length && !path[0].g.classList.contains("off")) { sel = path[0].n.id; applySelection(); }
+    crumbsEl.innerHTML = "";
+    function crumb(label, target, current) {
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = label;
+      if (current) b.setAttribute("aria-current", "true");
+      b.addEventListener("click", function () { flyTo(target); });
+      crumbsEl.appendChild(b);
+    }
+    function sep() { var s = document.createElement("span"); s.className = "sep"; s.textContent = "›"; crumbsEl.appendChild(s); }
+    crumb("All layers", rootRect, path.length === 0);
+    path.forEach(function (r, i) { sep(); crumb(r.n.title, r, i === path.length - 1); });
+    var level = Math.min(3, path.length + 1);
+    [].forEach.call(document.querySelectorAll("#levels button"), function (b) {
+      b.setAttribute("aria-pressed", String(Number(b.getAttribute("data-level")) === level));
+    });
+  }
+  function goLevel(level) {
+    if (level === 1) { flyTo(rootRect); return; }
+    var path = focusPath();
+    if (path.length >= level - 1) { flyTo(path[level - 2]); return; }
+    var cx = (view.w / 2 - cam.x) / cam.s, cy = (view.h / 2 - cam.y) / cam.s;
+    var list = path.length ? path[path.length - 1].kids : rootRecs, cur = path.length ? path[path.length - 1] : null;
+    while ((cur ? cur.depth + 1 : 0) < level - 1) {
+      var best = null, bd = Infinity;
+      list.forEach(function (r) {
+        if (!r.inner) return;
+        var d = Math.pow(r.x + r.w / 2 - cx, 2) + Math.pow(r.y + r.h / 2 - cy, 2);
+        if (d < bd) { bd = d; best = r; }
+      });
+      if (!best) break;
+      cur = best; list = best.kids;
+    }
+    if (cur) flyTo(cur);
+  }
+  function up() {
+    var path = focusPath();
+    if (path.length === 0 && sel) { sel = null; applySelection(); return; }
+    if (path.length <= 1) flyTo(rootRect); else flyTo(path[path.length - 2]);
+  }
+
+  /* ---------- input ---------- */
+  function stagePoint(e) { var r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  stage.addEventListener("wheel", function (e) {
+    e.preventDefault(); stopAnim();
+    var p = stagePoint(e);
+    zoomAt(p.x, p.y, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0016)));
+  }, { passive: false });
+  var drag = null;
+  stage.addEventListener("pointerdown", function (e) {
+    stopAnim();
+    drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false };
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener("pointermove", function (e) {
+    if (!drag) return;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; stage.classList.add("drag"); }
+    if (drag.moved) setCam(drag.cx + dx, drag.cy + dy, cam.s);
+  });
+  stage.addEventListener("pointerup", function (e) {
+    var d = drag; drag = null; stage.classList.remove("drag");
+    if (!d || d.moved) return;
+    var target = document.elementFromPoint(e.clientX, e.clientY);
+    var pill = target && target.closest ? target.closest(".pill") : null;
+    if (pill) {
+      var goTo = recs[pill.getAttribute("data-go")], owner = recs[pill.getAttribute("data-owner")];
+      if (owner && !showAll) { sel = rootOf(owner).n.id; applySelection(); }
+      if (goTo) flyTo(goTo);
+      return;
+    }
+    var node = target && target.closest ? target.closest(".node") : null;
+    if (!node) { if (sel && focusPath().length === 0) { sel = null; applySelection(); } return; }
+    var rec = recs[node.getAttribute("data-id")];
+    if (!rec) return;
+    if (rec.n.jump) { flyTo(recs[rec.n.jump]); return; }
+    if (rec.depth === 0 && !showAll && sel !== rec.n.id && downstream(rec.n.id).length) { sel = rec.n.id; applySelection(); return; }
+    if (rec.n.canvas && rec.w * cam.s < view.w * 0.8) flyTo(rec);
+  });
+  document.getElementById("zin").addEventListener("click", function () { zoomAt(view.w / 2, view.h / 2, 1.6); });
+  document.getElementById("zout").addEventListener("click", function () { zoomAt(view.w / 2, view.h / 2, 1 / 1.6); });
+  document.getElementById("zfit").addEventListener("click", function () { flyTo(rootRect); });
+  [].forEach.call(document.querySelectorAll("#levels button"), function (b) {
+    b.addEventListener("click", function () { goLevel(Number(b.getAttribute("data-level"))); });
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "+" || e.key === "=") zoomAt(view.w / 2, view.h / 2, 1.4);
+    else if (e.key === "-") zoomAt(view.w / 2, view.h / 2, 1 / 1.4);
+    else if (e.key === "0") flyTo(rootRect);
+    else if (e.key === "Escape") up();
+    else if (e.key === "ArrowLeft") setCam(cam.x + 60, cam.y, cam.s);
+    else if (e.key === "ArrowRight") setCam(cam.x - 60, cam.y, cam.s);
+    else if (e.key === "ArrowUp") setCam(cam.x, cam.y + 60, cam.s);
+    else if (e.key === "ArrowDown") setCam(cam.x, cam.y - 60, cam.s);
+  });
+  function measureView() { var r = stage.getBoundingClientRect(); view.w = r.width || 1000; view.h = r.height || 600; }
+  window.addEventListener("resize", function () { measureView(); update(); });
+
+  function build() {
+    measureView();
+    buildCanvas(root, world, { x: 0, y: 0, s: 1 }, 0, null, rootRecs);
+    buildLinks();
+    applySelection();
+    var fit = fitScale(rootRect);
+    minS = fit * 0.7;
+    var deepest = 1;
+    Object.keys(recs).forEach(function (id) { var r = recs[id]; if (r.n.canvas) deepest = Math.max(deepest, fitScale(r) * 1.6); });
+    maxS = deepest;
+    var c = camFor(rootRect);
+    setCam(c.x, c.y, c.s);
+    window.__map = {
+      select: function (id) { sel = id; showAll = false; applySelection(); },
+      showAll: function (on) { showAll = on; applySelection(); },
+      flyRect: function (r) { flyTo(r, true); },
+      linkState: function () { return linkItems.map(function (it) { return { from: it.src.n.id, to: it.dst.n.id, shown: it.g.style.display !== "none" && Number(it.g.style.opacity) > 0.5 }; }); },
+      linkEnds: function () { return linkItems.map(function (it) { return [!!it.src, !!it.dst]; }); },
+      flyTo: function (id, instant) { flyTo(id === "root" ? rootRect : recs[id], instant); },
+      cam: cam, recs: recs, overflow: overflow, focusPath: function () { return focusPath().map(function (r) { return r.n.id; }); },
+      lod: lod, goLevel: goLevel
+    };
+    window.__mapReady = true;
+  }
+  var go = function () { if (!window.__mapStarted) { window.__mapStarted = true; build(); } };
+  try {
+    Promise.race([
+      Promise.all([document.fonts.load('600 17px "IBM Plex Sans"'), document.fonts.load('400 13px "IBM Plex Sans"')]),
+      new Promise(function (r) { setTimeout(r, 1500); })
+    ]).then(go, go);
+  } catch (error) { go(); }
+})();
+</script>
+
+</body></html>
