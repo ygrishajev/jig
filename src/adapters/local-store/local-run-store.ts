@@ -23,6 +23,10 @@ export class LocalRunStore implements RunStore {
     return runStateSchema.parse(JSON.parse(await readFile(file, 'utf-8')));
   }
 
+  peek(runId: RunId) {
+    return this.load(runId);
+  }
+
   async save(state: RunState) {
     await makeRunDirectory(this.repoRoot, state.runId);
     const directory = stateDirectory(this.repoRoot, state.runId);

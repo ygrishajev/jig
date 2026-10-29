@@ -16,12 +16,15 @@ export interface RunStatus {
   metrics: MetricsSummary;
 }
 
-/** Where a run is, read from the same stores a run saves to; metrics are this machine's. */
+/**
+ * Where a run is, read from the same stores a run saves to without changing any of them or this
+ * machine's refs; metrics are this machine's.
+ */
 export async function readRunStatus(
   app: AwilixContainer<AppCradle>,
   runId: RunId,
 ): Promise<RunStatus> {
-  const state = await (await openRunStore(app.cradle)).load(runId);
+  const state = await (await openRunStore(app.cradle)).peek(runId);
   if (!state) throw new RunRequestInvalid(`No run found with id "${runId}".`);
   const { repoRoot, artefacts } = app.cradle;
   const documents = DOCUMENTS.flatMap((name) => {

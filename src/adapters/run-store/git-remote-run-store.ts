@@ -47,8 +47,22 @@ export class GitRemoteRunStore implements RunStore {
     this.seenOnRemote.set(runId, remoteRun);
     if (!remoteRun.state) return undefined;
     if (remoteRun.branch) await this.catchUpRunBranch(runId, remoteRun.branch);
-    const shown = await this.required(['show', `${stateRef(runId)}:${STATE_FILE}`]);
-    return runStateSchema.parse(JSON.parse(shown));
+    return parseState(await this.required(['show', `${stateRef(runId)}:${STATE_FILE}`]));
+  }
+
+  /** Reads the remote's copy without creating or moving a ref here, not even FETCH_HEAD. */
+  async peek(runId: RunId) {
+    const listed = await this.listOnRemote(runId);
+    const stateCommit = listed.get(stateRef(runId));
+    if (!stateCommit) return undefined;
+    await this.remoteCall([
+      'fetch',
+      '--quiet',
+      '--no-write-fetch-head',
+      this.remote,
+      stateRef(runId),
+    ]);
+    return parseState(await this.required(['show', `${stateCommit}:${STATE_FILE}`]));
   }
 
   async save(state: RunState) {
@@ -70,13 +84,9 @@ export class GitRemoteRunStore implements RunStore {
 
   /** Brings the run's refs over from the remote; the run branch lands on a remote-tracking ref. */
   private async fetchRun(runId: RunId): Promise<RemoteRun> {
-    const listed = await this.remoteCall(
-      ['ls-remote', '--exit-code', this.remote, stateRef(runId), branchRef(runId)],
-      NO_MATCHING_REFS,
-    );
-    const refsOnRemote = listed.stdout.split('\n').map((line) => line.split('\t')[1]);
-    if (!refsOnRemote.includes(stateRef(runId))) return {};
-    const hasBranch = refsOnRemote.includes(branchRef(runId));
+    const refsOnRemote = await this.listOnRemote(runId);
+    if (!refsOnRemote.has(stateRef(runId))) return {};
+    const hasBranch = refsOnRemote.has(branchRef(runId));
     await this.remoteCall([
       'fetch',
       '--quiet',
@@ -88,6 +98,22 @@ export class GitRemoteRunStore implements RunStore {
       state: await this.revision(stateRef(runId)),
       branch: hasBranch ? await this.revision(this.trackingRef(runId)) : undefined,
     };
+  }
+
+  /** The run's refs on the remote, each with the commit it points at. */
+  private async listOnRemote(runId: RunId) {
+    const listed = await this.remoteCall(
+      ['ls-remote', '--exit-code', this.remote, stateRef(runId), branchRef(runId)],
+      NO_MATCHING_REFS,
+    );
+    const entries = listed.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((line): [string, string] => {
+        const [commit = '', ref = ''] = line.split('\t');
+        return [ref, commit];
+      });
+    return new Map(entries);
   }
 
   /**
@@ -198,6 +224,10 @@ export class GitRemoteRunStore implements RunStore {
 /** Git reports a push whose lease no longer matches, or that is not a fast-forward, as rejected. */
 function isLeaseRejection(stderr: string) {
   return stderr.includes('[rejected]') || stderr.includes('stale info');
+}
+
+function parseState(shown: string) {
+  return runStateSchema.parse(JSON.parse(shown));
 }
 
 function stateRef(runId: RunId) {

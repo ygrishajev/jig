@@ -115,7 +115,10 @@ expires after 30 seconds.
 
 - `--log-format json` (default when not a TTY); every run also logs to `.sdlc/<id>/state/run.log`.
 - Run state is saved to every store in `runStores`, and `run` and `status` read the freshest
-  copy (the one saved most often). Everything else in `.sdlc/<id>/state/` is this machine's own
+  copy (the one saved most often). `status` only looks: it never moves a local branch or ref,
+  where `run` brings a stale run branch up to date with `origin`. A store module default-exports
+  `({ repoRoot }) => ({ load(runId), save(state), peek?(runId) })`; `peek` is the read `status`
+  uses and falls back to `load`, and whatever a module store returns is checked as a run. Everything else in `.sdlc/<id>/state/` is this machine's own
   record of the invocations it ran and is never pushed.
 - `.sdlc/<id>/state/result.json`: `status`, `complete`, `blockedReason`, and `metrics`
   (cost, tokens, durations, review rounds). It is written, with `design.md`, `plan.md` and

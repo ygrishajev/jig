@@ -55,6 +55,46 @@ describe('openRunStore', () => {
     expect(await reopened.load(state.runId)).toEqual(saved);
   });
 
+  it('peeks through a module store that has no peek of its own by loading from it', async () => {
+    const repoRoot = await directory();
+    const state = aRunState();
+    await writeFile(
+      path.join(repoRoot, 'load-only-store.mjs'),
+      `export default () => ({
+         load: async () => (${JSON.stringify(state)}),
+         save: async () => {},
+       });`,
+    );
+    const config = { ...loadConfig(repoRoot), runStores: ['load-only-store.mjs'] };
+
+    const store = await openRunStore({ repoRoot, config });
+
+    expect(await store.peek(state.runId)).toEqual(state);
+  });
+
+  it('refuses a run a module store hands back that is not a run', async () => {
+    const repoRoot = await directory();
+    await writeFile(
+      path.join(repoRoot, 'broken-store.mjs'),
+      `export default () => ({ load: async () => ({ phase: 'nowhere' }), save: async () => {} });`,
+    );
+    const config = { ...loadConfig(repoRoot), runStores: ['broken-store.mjs'] };
+    const store = await openRunStore({ repoRoot, config });
+
+    await expect(store.load(aRunState().runId)).rejects.toBeInstanceOf(ConfigInvalid);
+  });
+
+  it('refuses a module whose factory does not return a store with load and save', async () => {
+    const repoRoot = await directory();
+    await writeFile(
+      path.join(repoRoot, 'half-a-store.mjs'),
+      'export default () => ({ load: async () => undefined });',
+    );
+    const config = { ...loadConfig(repoRoot), runStores: ['half-a-store.mjs'] };
+
+    await expect(openRunStore({ repoRoot, config })).rejects.toBeInstanceOf(ConfigInvalid);
+  });
+
   it('refuses a module that does not export a store factory', async () => {
     const repoRoot = await directory();
     await writeFile(path.join(repoRoot, 'not-a-store.mjs'), 'export const store = {};');

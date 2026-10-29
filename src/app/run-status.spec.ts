@@ -1,3 +1,4 @@
+import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,8 @@ import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { loadConfig } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
-import { parseRunId } from '../domain/run-id.js';
+import { parseRunId, type RunId } from '../domain/run-id.js';
+import { runBranchFor } from '../domain/run-state.js';
 import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { createAppContainer } from './container.js';
@@ -29,6 +31,21 @@ describe('readRunStatus', () => {
     const status = await statusIn(await cloneOf(), ['git-remote'], state.runId);
 
     expect(status.state).toEqual(state);
+  });
+
+  it("reads the remote's copy without moving any of this clone's refs", async () => {
+    const { cloneOf, statusIn } = await setup();
+    const elsewhere = await cloneOf();
+    const state = aRunState({ phase: 'slices', slices: [aSlice()] });
+    await commitOnRunBranch(elsewhere, state.runId);
+    await new GitRemoteRunStore(elsewhere).save(state);
+    const here = await cloneOf();
+    const refsBefore = await allRefs(here);
+
+    const status = await statusIn(here, ['git-remote'], state.runId);
+
+    expect(status.state).toEqual(state);
+    expect(await allRefs(here)).toEqual(refsBefore);
   });
 
   it("shows the remote's copy when this machine's local copy is older", async () => {
@@ -71,6 +88,10 @@ describe('readRunStatus', () => {
       const directory = await mkdtemp(path.join(tmpdir(), 'sdlc-clone-'));
       cleanups.push(() => rm(directory, { recursive: true, force: true }));
       await simpleGit().clone(origin, directory);
+      const git = simpleGit({ baseDir: directory });
+      await git.addConfig('user.email', 'test@example.com');
+      await git.addConfig('user.name', 'Test');
+      await git.addConfig('commit.gpgsign', 'false');
       return directory;
     };
     const statusIn = async (repoRoot: string, runStores: string[], id: string) => {
@@ -82,3 +103,15 @@ describe('readRunStatus', () => {
     return { cloneOf, statusIn };
   }
 });
+
+async function allRefs(repo: string) {
+  return simpleGit({ baseDir: repo }).raw(['for-each-ref', '--format=%(refname) %(objectname)']);
+}
+
+async function commitOnRunBranch(repo: string, id: RunId) {
+  const git = simpleGit({ baseDir: repo });
+  await git.checkoutLocalBranch(runBranchFor(id));
+  await writeFile(path.join(repo, `${faker.word.noun()}.txt`), faker.lorem.sentence());
+  await git.add('-A').commit(faker.lorem.sentence());
+  await git.checkout('main');
+}
