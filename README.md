@@ -6,24 +6,20 @@ reviewed, merge-ready commits by driving an agentic coding CLI (e.g.
 plan the feature, slice it into small reviewable units, then for each
 slice — implement, review, merge, repeat.
 
-See the [design spec](docs/superpowers/specs/2026-09-25-agentic-sdlc-orchestrator-design.md)
-and [implementation plan](docs/superpowers/plans/2026-09-25-agentic-sdlc-orchestrator.md)
-for the full architecture and its documented v1 scope cuts. See the
-[manual end-to-end verification doc](docs/superpowers/plans/2026-09-25-agentic-sdlc-orchestrator-e2e-verification.md)
-for a walkthrough using a real agentic CLI.
+Agents run unattended inside a [sandcastle](https://github.com/mattpocock/sandcastle)
+Docker sandbox, one per run. The current design is in
+[the sandcastle migration spec](docs/superpowers/specs/2026-10-29-sandcastle-migration-design.md);
+the whole run is defined in one place, [`src/flow/run-flow.ts`](src/flow/run-flow.ts).
 
 ## Install
 
 ```bash
 npm install
 npm run build
-npm run docker:build   # builds the agent sandbox image (see below)
 npm link   # or: node dist/cli/main.js <command>
 ```
 
-Requires Node >=20 and Docker running locally. Every agent invocation runs
-inside a throwaway Docker container, never directly on your machine — see
-[Agent sandbox & credentials](#agent-sandbox--credentials).
+Requires Node >=20 and Docker running locally.
 
 ### Installing from another repo
 
@@ -51,116 +47,66 @@ repo secret), same as `registry-url` in `actions/setup-node`.
 
 ## Quickstart
 
+In the repository you want sdlc to work on:
+
 ```bash
-cd path/to/your/project        # any git repo — sdlc works IN a target repo,
-                                # not on itself
-echo "Add a health check endpoint at GET /health" > request.md
-sdlc autopilot --input request.md
+export CLAUDE_CODE_OAUTH_TOKEN=...   # from `claude setup-token` (or ANTHROPIC_API_KEY)
+sdlc init                            # sandbox Dockerfile + config, checked inside the sandbox
+git add .sandcastle sdlc.config.json && git commit -m "set up sdlc"
+sdlc run request.md                  # plan, implement, review, verify, describe, merge
 ```
-
-`sdlc` creates `.sdlc/` in the target repo to hold run state and a
-dedicated worktree for implementing slices — it self-gitignores that
-directory on first use, so nothing here needs to touch your project's own
-`.gitignore`.
-
-## Agent sandbox & credentials
-
-Every step that calls an agent runs `--dangerously-skip-permissions`
-(claude) / `--auto` (opencode) — full unattended file-write and bash
-access, with no human approval gate. That's inherent to what an unattended
-pipeline needs to do, so it's never run on the bare host: it only ever
-runs inside the Docker image built by `npm run docker:build`
-(`docker/agent-sandbox/Dockerfile`), with just the current step's working
-directory bind-mounted in.
-
-Set `providerCommand` in `sdlc.config.json` to pick which agent runs (see
-Configuration below). Set `implementProviderCommand` too if you want the
-implement step to use a _different_ agent than planning (`prepare`'s
-context/plan/slice-plan steps) and review — e.g. claude for
-planning/review, opencode for implementing. When both are set, you need
-each provider's credentials set up on the host. Each provider has its own
-one-time credential setup:
-
-- **`claude`** (default) — run `claude setup-token` on your host once (an
-  interactive, account-level action producing a long-lived token), then
-  `export CLAUDE_CODE_OAUTH_TOKEN="<the token>"` in your shell before
-  running `sdlc`. An `ANTHROPIC_API_KEY` env var works too, if you use one.
-- **`opencode`** — set `OPENCODE_AUTH_JSON` in your environment to its
-  credentials JSON (e.g. a CI secret — this is the one to use there; no file
-  needs to exist on the runner). Locally, running `opencode auth login` once
-  works too: without the env var, sdlc falls back to reading what it wrote
-  to `~/.local/share/opencode/auth.json`. Either way, the value reaches the
-  container as an env var — `$HOME` inside the sandbox is a tmpfs, so the
-  container's own entrypoint materializes it back to the file opencode
-  actually reads, not a host bind mount. Also set
-  `opencodeModel` (`"provider/model"`, e.g. what `opencode models` lists) —
-  a fresh sandbox container has no stored model preference, so without this
-  opencode falls back to its own default, which may not support tool use
-  (bash, file writes) on your OpenRouter account.
-
-`sdlc` fails fast with a clear message if the selected provider's
-credentials aren't available — it won't silently try to run a container
-that can't authenticate.
-
-Set `SDLC_AGENT_SANDBOX_IMAGE` to use a pre-built image instead of the one
-`npm run docker:build` produces locally — e.g. in CI, pulling a published
-image is faster than rebuilding it (installing the agent CLIs) on every run.
-
-## Configuration
-
-Optional `sdlc.config.json` in the repo root:
-
-```json
-{
-  "mergeMode": "manual",
-  "reviewCycleCap": 3,
-  "verifyCommand": "npm test",
-  "providerCommand": "claude",
-  "implementProviderCommand": "opencode",
-  "opencodeModel": "openrouter/~z-ai/glm-flash-latest"
-}
-```
-
-| Field                      | Default           | Meaning                                                                                                                                                                            |
-| -------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mergeMode`                | `"manual"`        | `"manual"`: the tool never merges the run's branch into your base branch itself — only detects that you did. `"auto"`: the tool merges automatically once every slice is approved. |
-| `reviewCycleCap`           | `3`               | How many implement→review round-trips a slice gets before it's marked `stuck` and needs human intervention.                                                                        |
-| `verifyCommand`            | _(none)_          | An optional shell command (e.g. `npm test`) that must also pass, alongside the AI reviewer's approval, before a slice is considered ready to merge.                                |
-| `inputSource`              | `"markdown-file"` | Only one supported in v1.                                                                                                                                                          |
-| `providerCommand`          | `"claude"`        | Which agent runs planning (`prepare`) and review: `"claude"` or `"opencode"` — see [Agent sandbox & credentials](#agent-sandbox--credentials).                                     |
-| `implementProviderCommand` | _(unset)_         | Overrides `providerCommand` for the implement step only. Falls back to `providerCommand` when unset.                                                                               |
-| `opencodeModel`            | _(unset)_         | `"provider/model"` passed to opencode via `-m`. See [Agent sandbox & credentials](#agent-sandbox--credentials) for why this matters in the sandbox.                                |
-| `conflictResolveCap`       | `3`               | Reserved for a future conflict-auto-resolution feature; not currently read by anything.                                                                                            |
 
 ## Commands
 
-| Command                         | What it does                                                                                                                         |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `sdlc prepare --input <file>`   | Reads the request, produces a plan and an ordered list of slices.                                                                    |
-| `sdlc implement --run <id>`     | Runs the implement step for the run's current slice.                                                                                 |
-| `sdlc review --run <id>`        | Runs the review (+ verify command) step for the current slice.                                                                       |
-| `sdlc merge --run <id>`         | Manually merges the run's branch (every slice's commits, as one unit) now, once every slice is approved — regardless of `mergeMode`. |
-| `sdlc create-pr --run <id>`     | Writes a local PR description for the whole run — every slice ships as one PR (no `gh` integration in v1).                           |
-| `sdlc status --run <id>`        | Shows the run's slices and their status.                                                                                             |
-| `sdlc autopilot --input <file>` | Runs `prepare`, then loops the reconciler until the run completes or something needs your attention.                                 |
-| `sdlc resume --run <id>`        | Re-enters the reconciler loop for an existing run (e.g. after a manual merge, or after fixing a `stuck` slice).                      |
+| Command                             | What it does                                                                                                                                                                                                                                                         |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sdlc init [--no-agent]`            | Writes `.sandcastle/Dockerfile`, its `.gitignore` and a starter `sdlc.config.json`. With an agent (default), the planner fills in the toolchain and `setupCommand`/`verifyCommand`, and they are accepted only once both pass inside the sandbox (up to 3 attempts). |
+| `sdlc build [--pull-agents]`        | Builds the sandbox image if the Dockerfile or the agents changed. `run` does this too.                                                                                                                                                                               |
+| `sdlc run [request.md] [--id <id>]` | Starts a run from a request file, or resumes one by id. With both, it resumes only if the file is the request the run started with.                                                                                                                                  |
+| `sdlc status <id>`                  | Where a run is, its slices and feedback, and its cost so far.                                                                                                                                                                                                        |
 
-`implement` and `review` are aliases of the same underlying reconciler
-step — each does whatever the current slice's status actually calls for.
+`run` stops (exit 0) when the work is merged, waits for a manual merge, pauses at the design
+checkpoint, blocks, or gets stuck; `result.json` says which. Resume with `sdlc run --id <id>`.
 
-`prepare` and `autopilot` also accept `--run-id <id>` to use that id instead
-of generating one — e.g. a CI workflow can generate its own id up front and
-already know the run's branch name (`sdlc/run/<id>`) before calling `sdlc`
-at all, instead of having to recover the id from its output afterwards.
-Must be lowercase alphanumeric characters and hyphens only, and must not
-already be in use.
+## The sandbox
 
-`autopilot` and `resume` write their final outcome to
-`.sdlc/<runId>/state/result.json` (`{ runId, complete, blockedReason?,
-passes }`), alongside the existing human-readable summary line on stdout —
-read that file in a script instead of grepping stdout, which also carries
-whatever an agent itself printed during the run (see
-[Agent sandbox & credentials](#agent-sandbox--credentials)).
+- **One sandbox per run.** Every agent call and the verify command run in the same container,
+  over a worktree sandcastle keeps for the run branch `sdlc/run/<id>`.
+- **Image.** `.sandcastle/Dockerfile` is the repository's: base tools, then the project's
+  toolchain between the marked lines. sdlc adds a layer with the agent CLIs the config uses, at
+  exact versions, built per machine with your UID. Labels on the image decide what to rebuild.
+- **Credentials** come from the environment and go into the container as env vars:
+  claude needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`; opencode needs its provider's
+  key, e.g. `OPENROUTER_API_KEY` for an `openrouter/...` model.
+
+## Configuration
+
+`sdlc.config.json` in the repository root (strict: unknown keys are errors).
+
+| Key                                               | Default                    |                                                                                                                                                                            |
+| ------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `planner`, `implementer`, `reviewer`, `describer` | `{ "provider": "claude" }` | Agent per step; `model` optional for claude (default `opus`), required for opencode (`provider/model`).                                                                    |
+| `setupCommand` / `setupTimeoutSeconds`            | — / `900`                  | Runs once in the sandbox before any agent, e.g. `npm ci`.                                                                                                                  |
+| `verifyCommand`                                   | —                          | Must pass in the sandbox before a reviewed slice is approved.                                                                                                              |
+| `mergeMode`                                       | `"manual"`                 | `auto` merges the run branch at the end.                                                                                                                                   |
+| `designGate`                                      | `"auto"`                   | `checkpoint` pauses after planning.                                                                                                                                        |
+| `reviewCycleCap`                                  | `3`                        | Rejections before a slice is stuck.                                                                                                                                        |
+| `commitSigning`                                   | `"repo"`                   | `skip` disables signing in the run's worktree.                                                                                                                             |
+| `sandboxImage`                                    | —                          | Use this image as-is instead of building one.                                                                                                                              |
+| `agents`                                          | `{}`                       | Pin agent CLI versions, e.g. `{ "claude": "2.1.312" }`.                                                                                                                    |
+| `agentUpdates`                                    | `"auto"`                   | `warn` or `off`; how unpinned agents follow new releases.                                                                                                                  |
+| `agentIdleTimeoutSeconds`                         | `600`                      | An agent silent this long is stopped.                                                                                                                                      |
+| `runStores`                                       | `["local"]`                | Add `"git-remote"` to push state (hidden `refs/sdlc/<id>`) and the run branch to `origin`, so another machine can resume; or a path to a module exporting a store factory. |
+
+## CI and observability
+
+- `--log-format json` (default when not a TTY); every run also logs to `.sdlc/<id>/state/run.log`.
+- `.sdlc/<id>/state/result.json`: `status`, `complete`, `blockedReason`, and `metrics`
+  (cost, tokens, durations, review rounds). The same summary is the footer of
+  `PR_DESCRIPTION.md`; `metrics.jsonl` has one line per step and agent call.
+- `SDLC_IMAGE_CACHE=gha` builds through buildx with the GitHub Actions cache.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` exports the run as an OpenTelemetry trace and turns on
+  Claude Code's own telemetry in the sandbox.
 
 ## Development
 
