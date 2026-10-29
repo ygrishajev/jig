@@ -358,6 +358,12 @@ policy decides, steps don't:
 | `block`    | review cap reached, merge conflict             | stop; human needed                 |
 | `fatal`    | missing config/credentials, bug                | abort with a clear message         |
 
+**Libraries over hand-rolled code.** Where a commonly used library does the
+job, use it: awilix for dependency injection (one container in `src/app/`,
+a scope per run; adapters stay plain classes wired by factory functions),
+Node's `EventEmitter` for publishing events, p-retry for step retries,
+write-file-atomic for state saves, pino for logging, zod for validation.
+
 **Replaceability**: every port is swappable in the composition root
 (code-level). The run store and observers are also user-pluggable from config
 (`"use": "./module.js"`), making those two interfaces public API.
@@ -518,21 +524,22 @@ adapter: `withArgs(agent, '--continue')` for retries and
 
 ## Order of work
 
-1. Spike `SandcastleSession` behind `AgentSession`; one real run end to end
-   (answers the spike list).
-2. Skeleton of the new layout: `domain/` (state, transitions, errors,
-   events), `ports/`, `flow/` engine with `runFlow`/`sliceFlow`, `app/`
-   composition root. Port existing steps onto it as outcome-returning steps.
-3. `RunStore` (local) behind the engine; logging observer (pino) replacing
-   `logRun`.
-4. Switch agent calls to `AgentSession`/sandcastle; remove the old sandbox.
-5. Structured output via tag + resume retries; design docs via output.
-6. Planning and verify in the sandbox; `setupCommand`; timeouts.
+1. ✅ Spike sandcastle; checks on macOS and Linux (see Spike findings).
+2. ✅ Flow engine, domain, ports and outcome-returning steps, beside the old
+   orchestrator.
+3. ✅ Local `RunStore`, pino logging observer, awilix composition root, and
+   the CLI switched to `run` / `status` (moved forward from step 8 so the
+   old orchestrator could be deleted). Agents still run through the old
+   Docker provider, wrapped as an `AgentSession` adapter.
+4. Replace the Docker adapter with a sandcastle `AgentSession`; remove the
+   old sandbox and image.
+5. Structured output via tag + resume retries.
+6. Verify and planning inside the sandbox; `setupCommand`; timeouts.
 7. Image build: generated agent layer, label checks, version checks, gha
-   cache.
-8. CLI: `run` / `status`; then `init` and `build`.
-9. Metrics observer; `git-remote` and custom run stores; OTel adapter.
-10. Cleanup and README.
+   cache; `sdlc init` and `sdlc build`.
+8. Metrics observer; `git-remote` and custom run stores; OTel adapter.
+9. Cleanup and README; update firefly's workflow (it calls the removed
+   `autopilot` and `create-pr`).
 
 ## Deferred
 

@@ -23,6 +23,15 @@ change — they are rules, not suggestions, and they override your defaults.
 - [`.claude/instructions/writing-requests-for-agents.md`](.claude/instructions/writing-requests-for-agents.md)
   — writing a request file, a GitHub issue, or a prompt sdlc sends — the text is an agent's entire input
 
+## Use the library, don't rebuild it
+
+Before writing a utility, check whether a commonly used package already does it — retries,
+events, atomic writes, DI, logging, validation, parsing. Use it, and keep any wrapper thin
+enough that the library's own docs still explain the behaviour. A hand-rolled version needs a
+reason in the PR (the library does not fit, or costs more than the code it replaces).
+Current picks: awilix (DI, `src/app/` only), Node `EventEmitter`, p-retry, write-file-atomic,
+pino, zod, simple-git, execa, commander.
+
 ## Things that catch people out
 
 - **Agents run unattended only inside the sandbox.** Every agent call uses
