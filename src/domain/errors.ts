@@ -48,3 +48,8 @@ export class RunRequestInvalid extends SdlcError {
 export class RunInProgress extends SdlcError {
   readonly kind = 'fatal';
 }
+
+/** A complete line of a run's metrics log is not a metric record: the file was edited or damaged. */
+export class MetricsLogCorrupt extends SdlcError {
+  readonly kind = 'fatal';
+}
