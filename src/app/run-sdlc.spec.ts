@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { afterEach, describe, expect, it } from 'vitest';
+import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { loadConfig } from '../config/load-config.js';
 import {
@@ -20,6 +21,7 @@ import {
   aContext,
   aFeaturePlan,
   aPlannedSlice,
+  aRunState,
   designDocs,
   runId,
 } from '../../tests/support/builders.js';
@@ -27,7 +29,7 @@ import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { openRunWorktree } from '../../tests/support/open-run-worktree.js';
 import { createAppContainer, type OpenSessionInput } from './container.js';
-import { runSdlc } from './run-sdlc.js';
+import { runInputFrom, runSdlc } from './run-sdlc.js';
 
 describe('runSdlc', () => {
   const cleanups: (() => Promise<void>)[] = [];
@@ -42,7 +44,7 @@ describe('runSdlc', () => {
     const agent = agentFor(id);
     scriptWholeRun(agent);
 
-    const report = await runSdlc(app, { requestPath: await writeRequest(), runId: id });
+    const report = await runSdlc(app, { start: await writeRequest(), runId: id });
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(agent.closed).toBe(true);
@@ -53,10 +55,10 @@ describe('runSdlc', () => {
     const { app, writeRequest, agentFor, repo } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    await runSdlc(app, { requestPath: await writeRequest(), runId: id });
+    await runSdlc(app, { start: await writeRequest(), runId: id });
     await simpleGit({ baseDir: repo.dir }).merge([runBranchFor(id), '--no-edit']);
 
-    const report = await runSdlc(app, { runId: id });
+    const report = await runSdlc(app, { resume: id });
 
     expect(report.status).toBe('done');
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'done', complete: true });
@@ -68,9 +70,9 @@ describe('runSdlc', () => {
     const agent = agentFor(id);
     scriptWholeRun(agent);
     const requestPath = await writeRequest();
-    await runSdlc(app, { requestPath, runId: id });
+    await runSdlc(app, { start: requestPath, runId: id });
 
-    await runSdlc(app, { requestPath, runId: id });
+    await runSdlc(app, { start: requestPath, runId: id });
 
     expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(4);
   });
@@ -81,14 +83,16 @@ describe('runSdlc', () => {
     scriptWholeRun(agentFor(id));
     const requestPath = await writeRequest();
     const held = holdNextSession();
-    const first = runSdlc(app, { requestPath, runId: id });
+    const first = runSdlc(app, { start: requestPath, runId: id });
     await held.opened;
 
-    await expect(runSdlc(app, { requestPath, runId: id })).rejects.toBeInstanceOf(RunInProgress);
+    await expect(runSdlc(app, { start: requestPath, runId: id })).rejects.toBeInstanceOf(
+      RunInProgress,
+    );
 
     held.release();
     await first;
-    expect(await runSdlc(app, { runId: id })).toMatchObject({ state: { phase: 'awaitingMerge' } });
+    expect(await runSdlc(app, { resume: id })).toMatchObject({ state: { phase: 'awaitingMerge' } });
   });
 
   it('starts the sandbox again when it failed for a reason that may pass', async () => {
@@ -100,7 +104,7 @@ describe('runSdlc', () => {
       new SetupCommandFailed(faker.lorem.sentence(), faker.lorem.sentence()),
     );
 
-    const report = await runSdlc(app, { requestPath: await writeRequest(), runId: id });
+    const report = await runSdlc(app, { start: await writeRequest(), runId: id });
 
     expect(report.state.phase).toBe('awaitingMerge');
     expect(opened()).toBe(3);
@@ -112,9 +116,9 @@ describe('runSdlc', () => {
     scriptWholeRun(agentFor(id));
     const opened = failNextSessions(new ConfigInvalid(faker.lorem.sentence()));
 
-    await expect(
-      runSdlc(app, { requestPath: await writeRequest(), runId: id }),
-    ).rejects.toBeInstanceOf(ConfigInvalid);
+    await expect(runSdlc(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
+      ConfigInvalid,
+    );
     expect(opened()).toBe(1);
   });
 
@@ -122,21 +126,46 @@ describe('runSdlc', () => {
     const { app, writeRequest, agentFor } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    await runSdlc(app, { requestPath: await writeRequest(), runId: id });
+    await runSdlc(app, { start: await writeRequest(), runId: id });
 
-    await expect(runSdlc(app, { requestPath: await writeRequest(), runId: id })).rejects.toThrow(
-      'started from a different request',
+    await expect(runSdlc(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
+      RunRequestInvalid,
     );
   });
 
-  it('refuses to resume a run that does not exist, or to run with nothing to go on', async () => {
+  it('refuses to resume a run that does not exist', async () => {
     const { app } = await setup();
 
-    await expect(runSdlc(app, { runId: runId() })).rejects.toThrow('No run found');
-    await expect(runSdlc(app, {})).rejects.toBeInstanceOf(RunRequestInvalid);
+    await expect(runSdlc(app, { resume: runId() })).rejects.toBeInstanceOf(RunRequestInvalid);
   });
 
-  async function setup() {
+  it('builds a start from a request, a resume from an id alone, and refuses neither or a bad id', () => {
+    const requestPath = faker.system.filePath();
+    const id = runId();
+
+    expect(runInputFrom(requestPath, undefined)).toEqual({ start: requestPath });
+    expect(runInputFrom(requestPath, id)).toEqual({ start: requestPath, runId: id });
+    expect(runInputFrom(undefined, id)).toEqual({ resume: id });
+    expect(() => runInputFrom(undefined, undefined)).toThrow(RunRequestInvalid);
+    expect(() => runInputFrom(requestPath, '../x')).toThrow(RunRequestInvalid);
+    expect(() => runInputFrom(undefined, '../x')).toThrow(RunRequestInvalid);
+  });
+
+  it.each(['done', 'stuck'] as const)(
+    'returns a %s run as it is, without building an image or starting a sandbox',
+    async (phase) => {
+      const { app, repo, sessionsOpened } = await setup({ managedImage: true });
+      const state = aRunState({ phase });
+      await new LocalRunStore(repo.dir).save(state);
+
+      const report = await runSdlc(app, { resume: state.runId });
+
+      expect(report).toMatchObject({ status: phase, state: { phase } });
+      expect(sessionsOpened()).toBe(0);
+    },
+  );
+
+  async function setup(options: { managedImage?: boolean } = {}) {
     const repo = await createTempRepo();
     const requests = await mkdtemp(path.join(tmpdir(), 'sdlc-request-'));
     cleanups.push(repo.cleanup, () => rm(requests, { recursive: true, force: true }));
@@ -163,9 +192,8 @@ describe('runSdlc', () => {
       sessionFailures = failures;
       return () => sessionsOpened;
     };
-    app.register({
-      config: asValue({ ...loadConfig(repo.dir), sandboxImage: `sandcastle:${faker.word.noun()}` }),
-    });
+    const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
+    app.register({ config: asValue({ ...loadConfig(repo.dir), sandboxImage }) });
     app.register({
       settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),
       openSession: asValue(async ({ run }: OpenSessionInput) => {
@@ -187,7 +215,15 @@ describe('runSdlc', () => {
       await writeFile(file, `# ${faker.lorem.sentence()}\n\n${faker.lorem.paragraph()}`);
       return file;
     };
-    return { app, repo, writeRequest, agentFor, holdNextSession, failNextSessions };
+    return {
+      app,
+      repo,
+      writeRequest,
+      agentFor,
+      holdNextSession,
+      failNextSessions,
+      sessionsOpened: () => sessionsOpened,
+    };
   }
 });
 

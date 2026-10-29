@@ -3,68 +3,101 @@ import { readFile } from 'node:fs/promises';
 import type { AwilixContainer } from 'awilix';
 import { getCurrentBranch } from '../git/branch.js';
 import { RunRequestInvalid } from '../domain/errors.js';
-import { runIdSchema, type RunId } from '../domain/run-id.js';
+import { parseRunId, runIdSchema, type RunId } from '../domain/run-id.js';
 import { startRun, type RunState } from '../domain/run-state.js';
-import { runEngine, type EngineStatus } from '../flow/engine.js';
+import { finalStatus } from '../flow/define-flow.js';
+import { runEngine, type EngineResult } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
 import { summarizeMetrics } from '../observers/metrics.js';
 import { closeRunScope, openRunScope, type AppCradle } from './container.js';
 import { startTelemetry, telemetryEnabled } from '../adapters/telemetry/open-telemetry.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
+import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { openRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 import type { RunStore } from '../ports/run-store.js';
 
-export interface RunSdlcInput {
-  requestPath?: string;
-  runId?: RunId;
-}
+/**
+ * Start a run from a request file — named `runId`, or a fresh id — or resume the run `resume`.
+ * Starting with the id of an existing run resumes it only when the file is the request it was
+ * started with, so a retried CI job resumes safely and a new request is never attached to an old run.
+ */
+export type RunSdlcInput = { start: string; runId?: RunId } | { resume: RunId };
 
-export interface RunReport {
-  state: RunState;
-  status: EngineStatus;
+export type RunReport = EngineResult;
+
+/** What `sdlc run [request] [--id <id>]` asks for; it needs at least one of the two. */
+export function runInputFrom(requestPath?: string, id?: string): RunSdlcInput {
+  const runId = id === undefined ? undefined : parseRunId(id);
+  if (requestPath !== undefined)
+    return runId ? { start: requestPath, runId } : { start: requestPath };
+  if (runId) return { resume: runId };
+  throw new RunRequestInvalid('Pass a request file to start a run, or --id to resume one.');
 }
 
 /**
- * Starts a run from a request file, or resumes an existing one by id. Passing both resumes only
- * when the file is the request the run was started with, so a retried CI job resumes safely and
- * a new request can never be attached to an old run. The whole run holds the run's lock, so a
- * second process for the same id fails with `RunInProgress` instead of writing over it.
+ * Runs `input` to its next stop. The whole run holds the run's lock, so a second process for the
+ * same id fails with `RunInProgress` instead of writing over it. A run that already ended is
+ * reported as it is, without touching the sandbox.
  */
 export async function runSdlc(
   app: AwilixContainer<AppCradle>,
   input: RunSdlcInput,
 ): Promise<RunReport> {
-  const id = runIdFor(input);
-  const releaseLock = await lockRun(app.cradle.repoRoot, id);
+  const runId = 'resume' in input ? input.resume : (input.runId ?? newRunId());
+  const releaseLock = await lockRun(app.cradle.repoRoot, runId);
   try {
-    return await runHoldingLock(app, input.requestPath, id);
+    const store = await openRunStore(app.cradle);
+    const state = await startOrResume(app.cradle, store, input, runId);
+    const finished = finalStatus(runFlow, state);
+    const report = finished ? { state, status: finished } : await advance(app, store, state);
+    await recordInvocation(app.cradle, report);
+    return report;
   } finally {
     await releaseLock();
   }
 }
 
-async function runHoldingLock(
-  app: AwilixContainer<AppCradle>,
-  requestPath: string | undefined,
-  id: RunId,
-) {
-  const runStore = await openRunStore(app.cradle);
-  const state = await startOrResume(app, runStore, requestPath, id);
+function newRunId() {
+  return runIdSchema.parse(randomBytes(4).toString('hex'));
+}
+
+async function startOrResume(
+  cradle: AppCradle,
+  store: RunStore,
+  input: RunSdlcInput,
+  runId: RunId,
+): Promise<RunState> {
+  const existing = await store.load(runId);
+  if ('resume' in input) {
+    if (!existing) throw new RunRequestInvalid(`No run found with id "${runId}".`);
+    return existing;
+  }
+  const request = await readFile(input.start, 'utf-8');
+  if (!existing) return startNewRun(cradle, store, runId, request);
+  if (request !== existing.request) {
+    throw new RunRequestInvalid(
+      `Run "${runId}" was started from a different request — pass a new --id to start a new run.`,
+    );
+  }
+  return existing;
+}
+
+async function startNewRun(cradle: AppCradle, store: RunStore, runId: RunId, request: string) {
+  const baseBranch = await getCurrentBranch(cradle.repoRoot);
+  const started = startRun({ runId, baseBranch, request });
+  await store.save(started);
+  return started;
+}
+
+async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: RunState) {
   await ensureSandboxImage(app.cradle);
   const telemetry = telemetryEnabled(process.env) ? await startTelemetry() : undefined;
   try {
-    const scope = await openRunScope(
-      app,
-      { runId: state.runId, baseBranch: state.baseBranch },
-      runStore,
-      { tracer: telemetry?.tracer },
-    );
+    const run = { runId: state.runId, baseBranch: state.baseBranch };
+    const scope = await openRunScope(app, run, store, { tracer: telemetry?.tracer });
     try {
-      const result = await runEngine(runFlow, state, scope.cradle.engineDependencies);
-      const metrics = summarizeMetrics(scope.cradle.metricsLog.readAll());
-      await app.cradle.artefacts.write(result.state, result.status, metrics);
-      return result;
+      return await runEngine(runFlow, state, scope.cradle.engineDependencies);
     } finally {
       await closeRunScope(scope);
     }
@@ -73,34 +106,8 @@ async function runHoldingLock(
   }
 }
 
-function runIdFor({ requestPath, runId }: RunSdlcInput) {
-  if (!requestPath && !runId) {
-    throw new RunRequestInvalid('Pass a request file to start a run, or --id to resume one.');
-  }
-  return runId ?? runIdSchema.parse(randomBytes(4).toString('hex'));
-}
-
-async function startOrResume(
-  app: AwilixContainer<AppCradle>,
-  store: RunStore,
-  requestPath: string | undefined,
-  id: RunId,
-) {
-  const request = requestPath ? await readFile(requestPath, 'utf-8') : undefined;
-  const existing = await store.load(id);
-
-  if (existing) {
-    if (request !== undefined && request !== existing.request) {
-      throw new RunRequestInvalid(
-        `Run "${existing.runId}" was started from a different request — pass a new --id to start a new run.`,
-      );
-    }
-    return existing;
-  }
-  if (request === undefined) throw new RunRequestInvalid(`No run found with id "${id}".`);
-
-  const baseBranch = await getCurrentBranch(app.cradle.repoRoot);
-  const started = startRun({ runId: id, baseBranch, request });
-  await store.save(started);
-  return started;
+/** Leaves this machine's record of where the invocation stopped; see `RunArtefacts`. */
+async function recordInvocation({ repoRoot, artefacts }: AppCradle, report: RunReport) {
+  const metrics = summarizeMetrics(new MetricsLog(repoRoot, report.state.runId).readAll());
+  await artefacts.write(report.state, report.status, metrics);
 }

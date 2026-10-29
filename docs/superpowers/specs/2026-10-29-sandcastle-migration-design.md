@@ -250,6 +250,10 @@ sdlc status <id>                  # read-only
 
 A run that exists but crashed before `context.json` was written re-plans.
 
+A run whose phase is final (`done`, or `stuck` — a slice hit `reviewCycleCap`) is returned as
+it is: no image check, no sandbox. `stuck` has no way out inside sdlc; the operator finishes the
+branch by hand or starts a new run, and the CLI says so.
+
 `run` ends with: all slices approved → PR description (describer agent) →
 merge if `mergeMode: "auto"`.
 

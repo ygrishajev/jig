@@ -67,6 +67,10 @@ sdlc run request.md                  # plan, implement, review, verify, describe
 
 `run` stops (exit 0) when the work is merged, waits for a manual merge, pauses at the design
 checkpoint, blocks, or gets stuck; `result.json` says which. Resume with `sdlc run --id <id>`.
+A stuck run is over: a slice hit `reviewCycleCap`, the run was still described, and
+`sdlc run --id` returns it as it is without starting a sandbox. Finish the work by hand on its
+branch (`sdlc status <id>` shows the reviewer's feedback, `PR_DESCRIPTION.md` the description),
+or start a new run. A finished run is likewise returned as it is.
 A resumed run sees a merge done by hand, whether plain, squash or rebase, and checks the base
 branch's remote too, so it is seen before the operator pulls it. One process at a time runs a
 given run: a second `sdlc run --id` for it fails at once, and a lock left by a crashed process

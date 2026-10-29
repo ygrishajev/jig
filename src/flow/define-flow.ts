@@ -72,3 +72,9 @@ export function defineSliceFlow(flow: SliceFlow) {
 export function defineRunFlow(flow: RunFlow) {
   return flow;
 }
+
+/** How the run ended, when its phase is one it never leaves; undefined while it can still move. */
+export function finalStatus(flow: RunFlow, state: RunState) {
+  const node = flow[state.phase];
+  return 'final' in node ? node.final : undefined;
+}
