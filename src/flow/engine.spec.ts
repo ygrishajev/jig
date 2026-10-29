@@ -177,43 +177,28 @@ describe('runEngine', () => {
     await expect(run(aRunState({ phase: 'context' }))).rejects.toBe(failure);
   });
 
-  it('turns invalid agent output into a change request where the flow accepts one', async () => {
+  it('retries invalid agent output and then blocks, even where the flow accepts a change request', async () => {
     const reason = faker.lorem.sentence();
+    const maxStepRetries = faker.number.int({ min: 0, max: 3 });
+    const review = vi.fn<SliceStep>(async () => {
+      throw new AgentOutputInvalid(reason);
+    });
     const { run } = setup({
       flow: sliceOnlyFlow({
-        pending: async () => ({ type: 'implemented', commit: null }),
-        in_review: async () => {
-          throw new AgentOutputInvalid(reason);
-        },
+        pending: async () => ({ type: 'implemented', commit: aCommit() }),
+        in_review: review,
       }),
-      settings: runSettings({ reviewCycleCap: 1 }),
+      settings: runSettings({ maxStepRetries }),
     });
 
-    const { state } = await run(
-      aRunState({ phase: 'slices', slices: [aSlice({ status: 'pending' })] }),
+    const { status, state } = await run(
+      aRunState({ phase: 'slices', slices: [aSlice({ status: 'pending', reviewCycles: 0 })] }),
     );
-
-    expect(state.slices[0]).toMatchObject({
-      status: 'stuck',
-      lastFeedback: reason,
-      reviewCycles: 1,
-    });
-  });
-
-  it('blocks on invalid agent output where the flow has no change request to fall back on', async () => {
-    const reason = faker.lorem.sentence();
-    const { run } = setup({
-      flow: linearFlow({
-        context: async () => {
-          throw new AgentOutputInvalid(reason);
-        },
-      }),
-    });
-
-    const { status, state } = await run(aRunState({ phase: 'context' }));
 
     expect(status).toBe('blocked');
     expect(state.blockedReason).toBe(reason);
+    expect(state.slices[0]).toMatchObject({ status: 'in_review', reviewCycles: 0 });
+    expect(review).toHaveBeenCalledTimes(maxStepRetries + 1);
   });
 
   it('works through slices in order and moves on once every slice is approved', async () => {

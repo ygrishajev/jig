@@ -74,6 +74,43 @@ describe('runFlow', () => {
     expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(feedback);
   });
 
+  it('asks the reviewer again after a malformed verdict instead of sending the slice back to the implementer', async () => {
+    const slice = aPlannedSlice();
+    const { agent, run, start } = await setup({ settings: runSettings({ maxStepRetries: 1 }) });
+    scriptPlanning(agent, [slice]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'b.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', malformedVerdict(), approve());
+    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.slices[0]).toMatchObject({ status: 'approved', reviewCycles: 0 });
+    expect(state.slices[0].lastFeedback).toBeUndefined();
+    expect(agent.calls.filter((call) => call.role === 'implementer')).toHaveLength(1);
+  });
+
+  it('blocks a run whose reviewer keeps producing malformed verdicts, without spending review cycles', async () => {
+    const maxStepRetries = faker.number.int({ min: 0, max: 2 });
+    const { agent, run, start } = await setup({ settings: runSettings({ maxStepRetries }) });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script(
+      'reviewer',
+      ...Array.from({ length: maxStepRetries + 1 }, () => malformedVerdict()),
+    );
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('blocked');
+    expect(state.slices[0]).toMatchObject({ status: 'in_review', reviewCycles: 0 });
+    expect(agent.calls.filter((call) => call.role === 'implementer')).toHaveLength(1);
+  });
+
   it('stops for a person after planning when the design gate is a checkpoint, then continues on resume', async () => {
     const slice = aPlannedSlice();
     const { agent, run, start } = await setup({
@@ -173,6 +210,10 @@ function scriptPlanning(agent: FakeAgentSession, slices: ReturnType<typeof aPlan
 
 function approve() {
   return { output: { approved: true, feedback: '' } };
+}
+
+function malformedVerdict() {
+  return { output: { verdict: faker.lorem.word() } };
 }
 
 function reject() {

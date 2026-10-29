@@ -359,12 +359,17 @@ a log or metrics call.
 **Errors** are a typed hierarchy classified by what happens next; the engine's
 policy decides, steps don't:
 
-| Class      | Examples                                       | Engine does                        |
-| ---------- | ---------------------------------------------- | ---------------------------------- |
-| `retry`    | container start failed, npm timeout            | retry the step (bounded)           |
-| `feedback` | invalid output, verify failed, review rejected | return to the agent with the error |
-| `block`    | review cap reached, merge conflict             | stop; human needed                 |
-| `fatal`    | missing config/credentials, bug                | abort with a clear message         |
+| Class   | Examples                                                    | Engine does                         |
+| ------- | ----------------------------------------------------------- | ----------------------------------- |
+| `retry` | container start failed, npm timeout, agent's output invalid | retry the step (bounded), then stop |
+| `block` | merge conflict                                              | stop; human needed                  |
+| `fatal` | missing config/credentials, bug                             | abort with a clear message          |
+
+A failure belongs to the step that failed. An agent whose reply is malformed has already had
+one in-session correction; after that the step is retried from scratch, never turned into
+feedback for another role — a reviewer's broken verdict must not send correct work back to
+the implementer. Review rejections and failed verify commands are not errors: they are the
+`changesRequested` outcome, and the flow sends the slice back with that feedback.
 
 **Libraries over hand-rolled code.** Where a commonly used library does the
 job, use it: awilix for dependency injection (one container in `src/app/`,

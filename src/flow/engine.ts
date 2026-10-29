@@ -92,9 +92,7 @@ class Engine {
     state: RunState,
   ): Promise<{ state: RunState } | { blockedReason: string }> {
     const at: StepLocation = { phase: state.phase };
-    const attempt = await this.attempt(at, node.on, state.runId, () =>
-      node.step(this.stepContext(state)),
-    );
+    const attempt = await this.attempt(at, state.runId, () => node.step(this.stepContext(state)));
     if ('blockedReason' in attempt) return attempt;
 
     const applied = applyOutcome(state, attempt.outcome);
@@ -116,7 +114,7 @@ class Engine {
     if ('final' in sliceNode) return { state: this.changePhase(state, node.on.sliceStuck) };
 
     const at: StepLocation = { phase: state.phase, sliceId: slice.id, sliceStatus: slice.status };
-    const attempt = await this.attempt(at, sliceNode.on, state.runId, () =>
+    const attempt = await this.attempt(at, state.runId, () =>
       sliceNode.step({ ...this.stepContext(state), slice }),
     );
     if ('blockedReason' in attempt) return attempt;
@@ -141,13 +139,11 @@ class Engine {
   }
 
   /**
-   * Runs a step under the failure policy: `retry` failures are retried up to `maxStepRetries`,
-   * `feedback` failures become a change request where the flow accepts one, `block` failures
-   * stop the run, and anything else propagates.
+   * Runs a step under the failure policy: `retry` failures are retried up to `maxStepRetries`
+   * and then block the run, `block` failures block it straight away, and anything else propagates.
    */
   private async attempt(
     at: StepLocation,
-    transitions: Transitions<string>,
     runId: string,
     step: () => Promise<Outcome>,
   ): Promise<Attempt> {
@@ -170,9 +166,6 @@ class Engine {
       return { outcome };
     } catch (error) {
       if (!(error instanceof SdlcError) || error.kind === 'fatal') throw error;
-      if (error.kind === 'feedback' && transitions.changesRequested) {
-        return { outcome: { type: 'changesRequested', feedback: error.message } };
-      }
       return { blockedReason: error.message };
     }
   }

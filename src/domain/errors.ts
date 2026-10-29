@@ -1,8 +1,8 @@
 /**
- * How the engine reacts to a failure: try the step again, send the work back to the agent,
- * stop and wait for a person, or abort the run.
+ * How the engine reacts to a failure: try the step again, stop and wait for a person, or abort
+ * the run. A failure is always the failing step's own; it never becomes work for another role.
  */
-export type FailureKind = 'retry' | 'feedback' | 'block' | 'fatal';
+export type FailureKind = 'retry' | 'block' | 'fatal';
 
 export abstract class SdlcError extends Error {
   abstract readonly kind: FailureKind;
@@ -17,8 +17,9 @@ export class AgentRunFailed extends SdlcError {
   readonly kind = 'retry';
 }
 
+/** The agent's own reply was malformed; a fresh attempt at the same step may well get it right. */
 export class AgentOutputInvalid extends SdlcError {
-  readonly kind = 'feedback';
+  readonly kind = 'retry';
 }
 
 export class MergeFailed extends SdlcError {
