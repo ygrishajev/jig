@@ -32,7 +32,8 @@
     "test:mutation": "stryker run",
     "secretlint": "secretlint '**/*'",
     "docker:build": "docker build -t sdlc-agent-sandbox docker/agent-sandbox",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "typecheck": "tsc -p tsconfig.typecheck.json"
   },
   "dependencies": {
     "commander": "^13.0.0",

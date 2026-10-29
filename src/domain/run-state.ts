@@ -1,0 +1,75 @@
+import type { Slice } from './slice.js';
+
+/** Run ids become a `.sdlc/<runId>` directory and a `sdlc/run/<runId>` branch segment. */
+export const RUN_ID_PATTERN = /^[a-z0-9-]+$/;
+
+export type RunPhase =
+  | 'context'
+  | 'planning'
+  | 'designing'
+  | 'slicing'
+  | 'gate'
+  | 'paused'
+  | 'slices'
+  | 'describing'
+  | 'merging'
+  | 'awaitingMerge'
+  | 'done'
+  | 'stuck';
+
+export interface RunContext {
+  classification: string;
+  repoSummary: string;
+}
+
+export interface FeaturePlan {
+  summary: string;
+  approach: string;
+  affectedAreas: string[];
+}
+
+export interface DesignDocs {
+  design: string;
+  plan: string;
+}
+
+export interface RunState {
+  runId: string;
+  baseBranch: string;
+  request: string;
+  phase: RunPhase;
+  context?: RunContext;
+  plan?: FeaturePlan;
+  docs?: DesignDocs;
+  slices: Slice[];
+  prDescription?: string;
+  blockedReason?: string;
+}
+
+export function startRun(input: { runId: string; baseBranch: string; request: string }): RunState {
+  return { ...input, phase: 'context', slices: [] };
+}
+
+/** Every slice commits onto this one branch, so the whole feature lands as one merge. */
+export function runBranchFor(runId: string) {
+  return `sdlc/run/${runId}`;
+}
+
+/** Reads a field an earlier phase must have produced; a missing one means the flow is out of order. */
+export function produced<K extends keyof RunState>(
+  state: RunState,
+  key: K,
+): NonNullable<RunState[K]> {
+  const value = state[key];
+  if (value === undefined || value === null) {
+    throw new Error(`Run ${state.runId} reached "${state.phase}" without its ${String(key)}`);
+  }
+  return value as NonNullable<RunState[K]>;
+}
+
+/** The first slice, by order, that has not been approved — a stuck slice stays current. */
+export function currentSlice(state: RunState): Slice | undefined {
+  return [...state.slices]
+    .sort((a, b) => a.order - b.order)
+    .find((slice) => slice.status !== 'approved');
+}
