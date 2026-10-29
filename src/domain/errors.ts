@@ -28,3 +28,7 @@ export class MergeFailed extends SdlcError {
 export class ConfigInvalid extends SdlcError {
   readonly kind = 'fatal';
 }
+
+export class RunRequestInvalid extends SdlcError {
+  readonly kind = 'fatal';
+}

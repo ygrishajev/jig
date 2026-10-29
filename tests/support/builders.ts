@@ -70,9 +70,10 @@ export function aRunState({
 export function runSettings({
   reviewCycleCap = 3,
   maxStepRetries = 2,
+  retryDelayMs = 0,
   designGate = 'auto',
   mergeMode = 'auto',
   verifyCommand,
 }: Partial<RunSettings> = {}): RunSettings {
-  return { reviewCycleCap, maxStepRetries, designGate, mergeMode, verifyCommand };
+  return { reviewCycleCap, maxStepRetries, retryDelayMs, designGate, mergeMode, verifyCommand };
 }

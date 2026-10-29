@@ -118,7 +118,7 @@ describe('runFlow', () => {
     expect(implementerPrompts.filter((prompt) => prompt.includes(slices[0].title))).toHaveLength(1);
   });
 
-  it('ends stuck once a slice runs out of review cycles', async () => {
+  it('describes a run whose slice ran out of review cycles, then ends it stuck', async () => {
     const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 2 }) });
     scriptPlanning(agent, [aPlannedSlice()]);
     agent.script(
@@ -127,11 +127,13 @@ describe('runFlow', () => {
       { files: { 'b.txt': faker.lorem.sentence() } },
     );
     agent.script('reviewer', reject(), reject());
+    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
 
     const { status, state } = await run(start);
 
     expect(status).toBe('stuck');
     expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: 2 });
+    expect(state.prDescription).toContain(state.slices[0].lastFeedback);
   });
 
   async function setup(input: { settings: RunSettings }) {

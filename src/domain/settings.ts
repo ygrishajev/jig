@@ -4,6 +4,8 @@ import type { Slice } from './slice.js';
 export interface RunSettings {
   reviewCycleCap: number;
   maxStepRetries: number;
+  /** Delay before the first retry of a failed step; later retries back off exponentially. */
+  retryDelayMs: number;
   designGate: 'auto' | 'checkpoint';
   mergeMode: 'auto' | 'manual';
   verifyCommand?: string;

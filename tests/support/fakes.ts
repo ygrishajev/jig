@@ -30,7 +30,7 @@ export class FakeAgentSession implements AgentSession {
   private readonly queues = new Map<AgentRole, AgentScript[]>();
 
   constructor(
-    private readonly worktreePath: string,
+    readonly worktreePath: string,
     private readonly execResult: (command: string) => ExecResult = () => ({
       exitCode: 0,
       output: '',
@@ -92,7 +92,7 @@ export class InMemoryRunStore implements RunStore {
 export class RecordingEventSink implements EventSink {
   readonly events: RunEvent[] = [];
 
-  emit(event: RunEvent) {
+  publish(event: RunEvent) {
     this.events.push(event);
   }
 

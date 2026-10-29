@@ -13,6 +13,8 @@ import { defineRunFlow, defineSliceFlow, type Guard } from './define-flow.js';
 const sliceReachedReviewCap: Guard = ({ slice, settings }) =>
   slice !== undefined && reviewCapReached(slice, settings);
 
+const someSliceStuck: Guard = ({ state }) => state.slices.some((slice) => slice.status === 'stuck');
+
 const backToImplementUnlessCapped = [
   { to: 'stuck', when: sliceReachedReviewCap },
   { to: 'pending' },
@@ -33,7 +35,10 @@ export const sliceFlow = defineSliceFlow({
   stuck: { final: 'stuck' },
 });
 
-/** A whole run: plan the work, deliver it slice by slice, describe it, merge it. */
+/**
+ * A whole run: plan the work, deliver it slice by slice, describe it, merge it. A run with a
+ * stuck slice is still described, so the reviewer's feedback reaches whoever picks it up.
+ */
 export const runFlow = defineRunFlow({
   context: { step: buildContext, on: { contextBuilt: 'planning' } },
   planning: { step: planFeature, on: { featurePlanned: 'designing' } },
@@ -41,8 +46,11 @@ export const runFlow = defineRunFlow({
   slicing: { step: sliceThePlan, on: { sliced: 'gate' } },
   gate: { step: applyDesignGate, on: { continue: 'slices', pause: 'paused' } },
   paused: { halt: true, resumeAt: 'slices' },
-  slices: { forEachSlice: sliceFlow, on: { allApproved: 'describing', sliceStuck: 'stuck' } },
-  describing: { step: describePullRequest, on: { described: 'merging' } },
+  slices: { forEachSlice: sliceFlow, on: { allApproved: 'describing', sliceStuck: 'describing' } },
+  describing: {
+    step: describePullRequest,
+    on: { described: [{ to: 'stuck', when: someSliceStuck }, { to: 'merging' }] },
+  },
   merging: { step: mergeRunBranch, on: { merged: 'done', awaitingManualMerge: 'awaitingMerge' } },
   awaitingMerge: { halt: true, resumeAt: 'merging' },
   done: { final: 'done' },

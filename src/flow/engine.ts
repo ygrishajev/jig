@@ -1,3 +1,4 @@
+import pRetry from 'p-retry';
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
 import { SdlcError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
@@ -55,7 +56,7 @@ class Engine {
   ) {}
 
   async run(initial: RunState): Promise<EngineResult> {
-    this.d.events.emit({ type: 'runResumed', runId: initial.runId, phase: initial.phase });
+    this.d.events.publish({ type: 'runResumed', runId: initial.runId, phase: initial.phase });
     let state = await this.leaveHaltOrBlock(initial);
 
     for (let pass = 0; pass < MAX_PASSES; pass++) {
@@ -127,7 +128,7 @@ class Engine {
       slice: updatedSlice,
       settings: this.d.settings,
     });
-    this.d.events.emit({
+    this.d.events.publish({
       type: 'sliceStatusChanged',
       runId: state.runId,
       sliceId: slice.id,
@@ -150,27 +151,39 @@ class Engine {
     runId: string,
     step: () => Promise<Outcome>,
   ): Promise<Attempt> {
-    for (let attempt = 1; ; attempt++) {
-      const startedAt = this.d.clock.now();
-      this.d.events.emit({ type: 'stepStarted', runId, at });
-      try {
-        const outcome = await step();
-        const durationMs = this.d.clock.now() - startedAt;
-        this.d.events.emit({ type: 'stepFinished', runId, at, outcome: outcome.type, durationMs });
-        return { outcome };
-      } catch (error) {
-        if (!(error instanceof SdlcError)) throw error;
-        if (error.kind === 'fatal') throw error;
-        if (error.kind === 'retry' && attempt <= this.d.settings.maxStepRetries) {
-          this.d.events.emit({ type: 'stepRetried', runId, at, attempt, reason: error.message });
-          continue;
-        }
-        if (error.kind === 'feedback' && transitions.changesRequested) {
-          return { outcome: { type: 'changesRequested', feedback: error.message } };
-        }
-        return { blockedReason: error.message };
+    try {
+      const outcome = await pRetry(() => this.timed(at, runId, step), {
+        retries: this.d.settings.maxStepRetries,
+        minTimeout: this.d.settings.retryDelayMs,
+        shouldRetry: ({ error }) => isTransient(error),
+        onFailedAttempt: ({ error, attemptNumber, retriesLeft }) => {
+          if (!isTransient(error) || retriesLeft === 0) return;
+          this.d.events.publish({
+            type: 'stepRetried',
+            runId,
+            at,
+            attempt: attemptNumber,
+            reason: error.message,
+          });
+        },
+      });
+      return { outcome };
+    } catch (error) {
+      if (!(error instanceof SdlcError) || error.kind === 'fatal') throw error;
+      if (error.kind === 'feedback' && transitions.changesRequested) {
+        return { outcome: { type: 'changesRequested', feedback: error.message } };
       }
+      return { blockedReason: error.message };
     }
+  }
+
+  private async timed(at: StepLocation, runId: string, step: () => Promise<Outcome>) {
+    const startedAt = this.d.clock.now();
+    this.d.events.publish({ type: 'stepStarted', runId, at });
+    const outcome = await step();
+    const durationMs = this.d.clock.now() - startedAt;
+    this.d.events.publish({ type: 'stepFinished', runId, at, outcome: outcome.type, durationMs });
+    return outcome;
   }
 
   private resolve<S extends string>(
@@ -194,25 +207,29 @@ class Engine {
 
   private changePhase(state: RunState, to: RunPhase): RunState {
     if (to !== state.phase) {
-      this.d.events.emit({ type: 'phaseChanged', runId: state.runId, from: state.phase, to });
+      this.d.events.publish({ type: 'phaseChanged', runId: state.runId, from: state.phase, to });
     }
     return { ...state, phase: to };
   }
 
   private finish(state: RunState, final: 'done' | 'stuck'): EngineResult {
-    this.d.events.emit({ type: 'runFinished', runId: state.runId, phase: state.phase });
+    this.d.events.publish({ type: 'runFinished', runId: state.runId, phase: state.phase });
     return { state, status: final };
   }
 
   private halt(state: RunState): EngineResult {
-    this.d.events.emit({ type: 'runHalted', runId: state.runId, phase: state.phase });
+    this.d.events.publish({ type: 'runHalted', runId: state.runId, phase: state.phase });
     return { state, status: 'halted' };
   }
 
   private async block(state: RunState, reason: string): Promise<EngineResult> {
     const blocked = { ...state, blockedReason: reason };
     await this.d.store.save(blocked);
-    this.d.events.emit({ type: 'runBlocked', runId: state.runId, phase: state.phase, reason });
+    this.d.events.publish({ type: 'runBlocked', runId: state.runId, phase: state.phase, reason });
     return { state: blocked, status: 'blocked' };
   }
+}
+
+function isTransient(error: unknown) {
+  return error instanceof SdlcError && error.kind === 'retry';
 }

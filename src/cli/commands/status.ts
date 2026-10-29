@@ -1,31 +1,41 @@
 import { Command } from 'commander';
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { loadRunState, readRunMeta, readSlices } from '../../state/store.js';
+import { LocalRunStore } from '../../adapters/local-store/local-run-store.js';
+import { worktreeDirectory } from '../../adapters/local-store/run-paths.js';
+import type { RunState } from '../../domain/run-state.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
-export function registerStatusCommand(program: Command): void {
+export function registerStatusCommand(program: Command) {
   program
     .command('status')
-    .requiredOption('--run <id>', 'run id')
+    .description('Show where a run is, without changing anything')
+    .argument('<id>', 'run id')
     .action(
-      withErrorHandling(async (opts: { run: string }) => {
-        const paths = await loadRunState(process.cwd(), opts.run);
-        const meta = await readRunMeta(paths);
-        const slices = await readSlices(paths);
-        console.log(
-          `Run ${meta.runId} (base: ${meta.baseBranch}, current: ${meta.currentSliceId ?? '—'})`,
-        );
-        for (const [label, filename] of [
-          ['Design', 'design.md'],
-          ['Plan', 'plan.md'],
-        ] as const) {
-          const docPath = path.join(paths.stateDir, filename);
-          if (existsSync(docPath)) console.log(`${label}: ${docPath}`);
-        }
-        for (const slice of slices) {
-          console.log(`  [${slice.status}] ${slice.id} — ${slice.title}`);
-        }
+      withErrorHandling(async (id: string) => {
+        const repoRoot = process.cwd();
+        const store = new LocalRunStore(repoRoot);
+        const state = await store.load(id);
+        if (!state) throw new Error(`No run found with id "${id}".`);
+        console.log(describeRun(state, store, worktreeDirectory(repoRoot, id)));
       }),
     );
+}
+
+function describeRun(state: RunState, store: LocalRunStore, worktree: string) {
+  const documents = (['design.md', 'plan.md', 'PR_DESCRIPTION.md'] as const)
+    .map((name) => [name, store.documentPath(state.runId, name)] as const)
+    .filter((entry): entry is readonly [(typeof entry)[0], string] => entry[1] !== undefined)
+    .map(([name, file]) => `${name.padEnd(18)} ${file}`);
+  const slices = [...state.slices]
+    .sort((a, b) => a.order - b.order)
+    .map((slice) => {
+      const line = `  [${slice.status}] ${slice.id} — ${slice.title}`;
+      return slice.lastFeedback ? `${line}\n      feedback: ${slice.lastFeedback}` : line;
+    });
+  return [
+    `Run ${state.runId} — ${state.phase} (base: ${state.baseBranch})`,
+    ...(state.blockedReason ? [`Blocked: ${state.blockedReason}`] : []),
+    `${'worktree'.padEnd(18)} ${worktree}`,
+    ...documents,
+    ...(slices.length > 0 ? ['Slices:', ...slices] : []),
+  ].join('\n');
 }
