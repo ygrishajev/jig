@@ -7,7 +7,7 @@ import { simpleGit } from 'simple-git';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { loadConfig } from '../config/load-config.js';
-import { RunRequestInvalid } from '../domain/errors.js';
+import { RunInProgress, RunRequestInvalid } from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
 import {
   aContext,
@@ -68,6 +68,22 @@ describe('runSdlc', () => {
     expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(4);
   });
 
+  it('refuses a second run of the same id while the first is going, and runs it once that one stops', async () => {
+    const { app, writeRequest, agentFor, holdNextSession } = await setup();
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+    const requestPath = await writeRequest();
+    const held = holdNextSession();
+    const first = runSdlc(app, { requestPath, runId: id });
+    await held.opened;
+
+    await expect(runSdlc(app, { requestPath, runId: id })).rejects.toBeInstanceOf(RunInProgress);
+
+    held.release();
+    await first;
+    expect(await runSdlc(app, { runId: id })).toMatchObject({ state: { phase: 'awaitingMerge' } });
+  });
+
   it('refuses to attach a different request to an existing run', async () => {
     const { app, writeRequest, agentFor } = await setup();
     const id = runId();
@@ -109,11 +125,24 @@ describe('runSdlc', () => {
       agents.set(id, agent);
       return agent;
     };
+    let held: { opened: () => void; released: Promise<void> } | undefined;
+    const holdNextSession = () => {
+      let release = () => {};
+      let opened = () => {};
+      const openedPromise = new Promise<void>((resolve) => (opened = resolve));
+      const released = new Promise<void>((resolve) => (release = resolve));
+      held = { opened, released };
+      return { opened: openedPromise, release };
+    };
     app.register({
       config: asValue({ ...loadConfig(repo.dir), sandboxImage: `sandcastle:${faker.word.noun()}` }),
       openSession: asValue(async ({ run }: OpenSessionInput) => {
         const agent = agents.get(run.runId);
         if (!agent) throw new Error(`No fake agent prepared for run ${run.runId}`);
+        const holding = held;
+        held = undefined;
+        holding?.opened();
+        await holding?.released;
         await openRunWorktree({ repoRoot: repo.dir, ...run, skipCommitSigning: false });
         return agent;
       }),
@@ -123,7 +152,7 @@ describe('runSdlc', () => {
       await writeFile(file, `# ${faker.lorem.sentence()}\n\n${faker.lorem.paragraph()}`);
       return file;
     };
-    return { app, repo, writeRequest, agentFor };
+    return { app, repo, writeRequest, agentFor, holdNextSession };
   }
 });
 

@@ -5,7 +5,7 @@ import writeFileAtomic from 'write-file-atomic';
 import type { RunState } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import type { RunStore } from '../../ports/run-store.js';
-import { SDLC_DIR, stateDirectory } from './run-paths.js';
+import { makeRunDirectory, stateDirectory } from './run-paths.js';
 import { runStateSchema } from './run-state-schema.js';
 
 const STATE_FILE = 'run.json';
@@ -26,9 +26,7 @@ export class LocalRunStore implements RunStore {
   }
 
   async save(state: RunState) {
-    const directory = stateDirectory(this.repoRoot, state.runId);
-    await mkdir(directory, { recursive: true });
-    await this.ignoreSdlcDirectory();
+    const directory = await this.makeStateDirectory(state.runId);
     await writeFileAtomic(path.join(directory, STATE_FILE), `${JSON.stringify(state, null, 2)}\n`);
     await writeOrRemove(path.join(directory, 'design.md'), state.docs?.design);
     await writeOrRemove(path.join(directory, 'plan.md'), state.docs?.plan);
@@ -48,8 +46,7 @@ export class LocalRunStore implements RunStore {
       blockedReason: state.blockedReason ?? stuckSliceReason(state),
       ...(metrics ? { metrics } : {}),
     };
-    const directory = stateDirectory(this.repoRoot, state.runId);
-    await mkdir(directory, { recursive: true });
+    const directory = await this.makeStateDirectory(state.runId);
     await writeFile(path.join(directory, RESULT_FILE), `${JSON.stringify(result, null, 2)}\n`);
     if (state.prDescription && metrics) {
       const footer = `\n\n---\n<sub>sdlc run ${state.runId}: ${formatSummary(metrics)}</sub>\n`;
@@ -62,10 +59,11 @@ export class LocalRunStore implements RunStore {
     return existsSync(file) ? file : undefined;
   }
 
-  /** The target repository has no reason to know about `.sdlc/`, and an untracked one would block the final merge. */
-  private async ignoreSdlcDirectory() {
-    const gitignore = path.join(this.repoRoot, SDLC_DIR, '.gitignore');
-    if (!existsSync(gitignore)) await writeFile(gitignore, '*\n');
+  private async makeStateDirectory(runId: string) {
+    await makeRunDirectory(this.repoRoot, runId);
+    const directory = stateDirectory(this.repoRoot, runId);
+    await mkdir(directory, { recursive: true });
+    return directory;
   }
 }
 

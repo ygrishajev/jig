@@ -38,3 +38,8 @@ export class ConfigInvalid extends SdlcError {
 export class RunRequestInvalid extends SdlcError {
   readonly kind = 'fatal';
 }
+
+/** Another sdlc process is already running this run; two writers would overwrite each other. */
+export class RunInProgress extends SdlcError {
+  readonly kind = 'fatal';
+}

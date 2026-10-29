@@ -9,6 +9,7 @@ import { runFlow } from '../flow/run-flow.js';
 import { summarizeMetrics } from '../observers/metrics.js';
 import { closeRunScope, openRunScope, type AppCradle } from './container.js';
 import { startTelemetry, telemetryEnabled } from '../adapters/telemetry/open-telemetry.js';
+import { lockRun } from '../adapters/local-store/run-lock.js';
 import { createRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 import type { RunStore } from '../ports/run-store.js';
@@ -26,18 +27,33 @@ export interface RunReport {
 /**
  * Starts a run from a request file, or resumes an existing one by id. Passing both resumes only
  * when the file is the request the run was started with, so a retried CI job resumes safely and
- * a new request can never be attached to an old run.
+ * a new request can never be attached to an old run. The whole run holds the run's lock, so a
+ * second process for the same id fails with `RunInProgress` instead of writing over it.
  */
 export async function runSdlc(
   app: AwilixContainer<AppCradle>,
   input: RunSdlcInput,
 ): Promise<RunReport> {
+  const id = runIdFor(input);
+  const releaseLock = await lockRun(app.cradle.repoRoot, id);
+  try {
+    return await runHoldingLock(app, input.requestPath, id);
+  } finally {
+    await releaseLock();
+  }
+}
+
+async function runHoldingLock(
+  app: AwilixContainer<AppCradle>,
+  requestPath: string | undefined,
+  id: string,
+) {
   const runStore = await createRunStore({
     repoRoot: app.cradle.repoRoot,
     names: app.cradle.config.runStores,
     local: app.cradle.store,
   });
-  const state = await startOrResume(app, runStore, input);
+  const state = await startOrResume(app, runStore, requestPath, id);
   await ensureSandboxImage(app.cradle);
   const telemetry = telemetryEnabled(process.env) ? await startTelemetry() : undefined;
   try {
@@ -60,17 +76,27 @@ export async function runSdlc(
   }
 }
 
-async function startOrResume(
-  app: AwilixContainer<AppCradle>,
-  store: RunStore,
-  { requestPath, runId }: RunSdlcInput,
-) {
-  const { repoRoot } = app.cradle;
+function runIdFor({ requestPath, runId }: RunSdlcInput) {
   if (!requestPath && !runId) {
     throw new RunRequestInvalid('Pass a request file to start a run, or --id to resume one.');
   }
+  const id = runId ?? randomBytes(4).toString('hex');
+  if (!RUN_ID_PATTERN.test(id)) {
+    throw new RunRequestInvalid(
+      `Invalid run id "${id}" — use lowercase letters, digits and hyphens (it becomes a directory and a branch name).`,
+    );
+  }
+  return id;
+}
+
+async function startOrResume(
+  app: AwilixContainer<AppCradle>,
+  store: RunStore,
+  requestPath: string | undefined,
+  id: string,
+) {
   const request = requestPath ? await readFile(requestPath, 'utf-8') : undefined;
-  const existing = runId ? await store.load(runId) : undefined;
+  const existing = await store.load(id);
 
   if (existing) {
     if (request !== undefined && request !== existing.request) {
@@ -80,15 +106,10 @@ async function startOrResume(
     }
     return existing;
   }
-  if (request === undefined) throw new RunRequestInvalid(`No run found with id "${runId}".`);
+  if (request === undefined) throw new RunRequestInvalid(`No run found with id "${id}".`);
 
-  const id = runId ?? randomBytes(4).toString('hex');
-  if (!RUN_ID_PATTERN.test(id)) {
-    throw new RunRequestInvalid(
-      `Invalid run id "${id}" — use lowercase letters, digits and hyphens (it becomes a directory and a branch name).`,
-    );
-  }
-  const started = startRun({ runId: id, baseBranch: await getCurrentBranch(repoRoot), request });
+  const baseBranch = await getCurrentBranch(app.cradle.repoRoot);
+  const started = startRun({ runId: id, baseBranch, request });
   await store.save(started);
   return started;
 }
