@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { writeFile } from 'node:fs/promises';
+import { faker } from '@faker-js/faker';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { simpleGit, type SimpleGit } from 'simple-git';
 import { isBranchMergedInto, mergeBranchInto } from '../../src/git/merge.js';
 import { checkoutNewBranchAt, checkoutExistingBranch } from '../../src/git/branch.js';
 import { commitAll } from '../../src/git/repository.js';
@@ -55,9 +58,133 @@ describe('mergeBranchInto and isBranchMergedInto', () => {
     await commitAll(repo.dir, 'change readme on main');
     await expect(mergeBranchInto(repo.dir, 'feature/p', 'main')).rejects.toThrow();
   });
-
-  it('returns false for a non-existent branch', async () => {
-    repo = await createTempRepo();
-    expect(await isBranchMergedInto(repo.dir, 'does-not-exist', 'main')).toBe(false);
-  });
 });
+
+describe('isBranchMergedInto', () => {
+  const cleanups: (() => Promise<void>)[] = [];
+
+  afterEach(async () => {
+    await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  });
+
+  it.each(['plain', 'squash', 'rebase'] as const)(
+    'sees the branch once the base took it in a %s merge',
+    async (strategy) => {
+      const { here, branch, mergeOnRemote, pullBase } = await setup();
+      await mergeOnRemote(strategy);
+      await pullBase();
+
+      expect(await isBranchMergedInto(here, branch, 'main')).toBe(true);
+    },
+  );
+
+  it('sees a merge that only the remote base has, before the local base is pulled', async () => {
+    const { here, branch, mergeOnRemote } = await setup();
+    await mergeOnRemote('squash');
+
+    expect(await isBranchMergedInto(here, branch, 'main')).toBe(true);
+  });
+
+  it('does not see a branch whose changes are not in the base', async () => {
+    const { here, branch, advanceRemoteBase, pullBase } = await setup();
+    await advanceRemoteBase();
+    await pullBase();
+
+    expect(await isBranchMergedInto(here, branch, 'main')).toBe(false);
+  });
+
+  it('does not see a branch that would conflict with the base', async () => {
+    const { here, branch, rewriteBranchFilesOnRemote, pullBase } = await setup();
+    await rewriteBranchFilesOnRemote();
+    await pullBase();
+
+    expect(await isBranchMergedInto(here, branch, 'main')).toBe(false);
+  });
+
+  it('counts a branch with no commits of its own as merged, since nothing is left to land', async () => {
+    const { here } = await setup();
+    const empty = `${faker.word.noun()}-${faker.string.alphanumeric(6).toLowerCase()}`;
+    await simpleGit({ baseDir: here }).branch([empty, 'main']);
+
+    expect(await isBranchMergedInto(here, empty, 'main')).toBe(true);
+  });
+
+  it('fails rather than answering for a branch that does not exist', async () => {
+    const { here } = await setup();
+
+    await expect(isBranchMergedInto(here, faker.string.uuid(), 'main')).rejects.toThrow();
+  });
+
+  async function setup() {
+    const seed = await createTempRepo();
+    const origin = await mkdtemp(path.join(tmpdir(), 'sdlc-origin-'));
+    cleanups.push(seed.cleanup, () => rm(origin, { recursive: true, force: true }));
+    await simpleGit().clone(seed.dir, origin, ['--bare']);
+    const here = await cloneOf(origin);
+    const elsewhere = await cloneOf(origin);
+    const branch = `run/${faker.string.alphanumeric(8).toLowerCase()}`;
+    await commitTwiceOnNewBranch(here, branch);
+    await simpleGit({ baseDir: here }).push('origin', branch);
+
+    const remote = simpleGit({ baseDir: elsewhere });
+    const advanceRemoteBase = async () => {
+      await commitFile(elsewhere);
+      await remote.push('origin', 'main');
+    };
+    const mergeOnRemote = async (strategy: keyof typeof mergeStrategies) => {
+      await remote.fetch('origin', branch);
+      await commitFile(elsewhere);
+      await mergeStrategies[strategy](remote, `origin/${branch}`);
+      await remote.push('origin', 'main');
+    };
+    const rewriteBranchFilesOnRemote = async () => {
+      const changed = await simpleGit({ baseDir: here }).diff(['--name-only', `main...${branch}`]);
+      for (const file of changed.trim().split('\n')) {
+        await writeFile(path.join(elsewhere, file), faker.lorem.paragraph());
+      }
+      await commitAll(elsewhere, faker.git.commitMessage());
+      await remote.push('origin', 'main');
+    };
+    const pullBase = () => simpleGit({ baseDir: here }).pull('origin', 'main');
+    return { here, branch, mergeOnRemote, advanceRemoteBase, rewriteBranchFilesOnRemote, pullBase };
+  }
+
+  async function cloneOf(origin: string) {
+    const directory = await mkdtemp(path.join(tmpdir(), 'sdlc-clone-'));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+    await simpleGit().clone(origin, directory);
+    const git = simpleGit({ baseDir: directory });
+    await git.addConfig('user.email', faker.internet.email());
+    await git.addConfig('user.name', faker.person.fullName());
+    await git.addConfig('commit.gpgsign', 'false');
+    await git.addConfig('pull.rebase', 'false');
+    return directory;
+  }
+});
+
+const mergeStrategies = {
+  plain: (git: SimpleGit, branch: string) => git.merge(['--no-ff', '--no-edit', branch]),
+  squash: async (git: SimpleGit, branch: string) => {
+    await git.merge(['--squash', branch]);
+    await git.commit(faker.git.commitMessage());
+  },
+  rebase: async (git: SimpleGit, branch: string) => {
+    const rebased = `rebased-${faker.string.alphanumeric(6).toLowerCase()}`;
+    await git.checkoutBranch(rebased, branch);
+    await git.rebase(['main']);
+    await git.checkout('main');
+    await git.merge(['--ff-only', rebased]);
+  },
+};
+
+async function commitTwiceOnNewBranch(repo: string, branch: string) {
+  await simpleGit({ baseDir: repo }).checkoutLocalBranch(branch);
+  await commitFile(repo);
+  await commitFile(repo);
+  await simpleGit({ baseDir: repo }).checkout('main');
+}
+
+async function commitFile(repo: string) {
+  await writeFile(path.join(repo, `${faker.string.uuid()}.txt`), faker.lorem.paragraph());
+  await commitAll(repo, faker.git.commitMessage());
+}

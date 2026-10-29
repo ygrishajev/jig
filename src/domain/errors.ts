@@ -22,6 +22,11 @@ export class AgentOutputInvalid extends SdlcError {
   readonly kind = 'retry';
 }
 
+/** A fetch or push to the remote failed; the network may well be back on the next attempt. */
+export class RemoteUnavailable extends SdlcError {
+  readonly kind = 'retry';
+}
+
 export class MergeFailed extends SdlcError {
   readonly kind = 'block';
 }

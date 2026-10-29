@@ -14,5 +14,6 @@ export interface Workspace {
   readRepoFile(relativePath: string): Promise<string | undefined>;
   /** Throws `MergeFailed` when the base branch is not checked out, is dirty, or conflicts. */
   mergeRunBranch(): Promise<void>;
+  /** Whether the run's changes are in the base, locally or on its remote, by any kind of merge. */
   isRunBranchMerged(): Promise<boolean>;
 }

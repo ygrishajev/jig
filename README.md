@@ -67,6 +67,8 @@ sdlc run request.md                  # plan, implement, review, verify, describe
 
 `run` stops (exit 0) when the work is merged, waits for a manual merge, pauses at the design
 checkpoint, blocks, or gets stuck; `result.json` says which. Resume with `sdlc run --id <id>`.
+A resumed run sees a merge done by hand, whether plain, squash or rebase, and checks the base
+branch's remote too, so it is seen before the operator pulls it.
 
 ## The sandbox
 
