@@ -1,0 +1,31 @@
+{
+  "extends": ["@commitlint/config-conventional"],
+  "rules": {
+    "scope-empty": [2, "never"],
+    "scope-enum": [
+      2,
+      "always",
+      [
+        "domain",
+        "flow",
+        "steps",
+        "prompts",
+        "agents",
+        "sandbox",
+        "state",
+        "git",
+        "cli",
+        "config",
+        "logging",
+        "telemetry",
+        "metrics",
+        "spike",
+        "ci",
+        "docs",
+        "deps",
+        "release",
+        "dx"
+      ]
+    ]
+  }
+}

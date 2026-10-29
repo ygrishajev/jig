@@ -31,7 +31,8 @@
     "test:watch": "vitest",
     "test:mutation": "stryker run",
     "secretlint": "secretlint '**/*'",
-    "docker:build": "docker build -t sdlc-agent-sandbox docker/agent-sandbox"
+    "docker:build": "docker build -t sdlc-agent-sandbox docker/agent-sandbox",
+    "prepare": "husky || true"
   },
   "dependencies": {
     "commander": "^13.0.0",
@@ -40,18 +41,23 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^9.17.0",
+    "@faker-js/faker": "^10.6.0",
     "@secretlint/secretlint-rule-preset-recommend": "^9.0.0",
     "@stryker-mutator/core": "^8.7.0",
     "@stryker-mutator/vitest-runner": "^8.7.0",
     "@types/node": "^22.10.0",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.7",
     "prettier": "^3.4.0",
     "secretlint": "^9.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.19.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "vitest-mock-extended": "^2.0.2"
   }
 }
