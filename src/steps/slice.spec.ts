@@ -27,7 +27,10 @@ describe('slice steps', () => {
     const outcome = await run(implementSlice, slice);
 
     const head = (await git.log([runBranch, '-1'])).latest;
-    expect(outcome).toEqual({ type: 'implemented', commit: head?.hash });
+    expect(outcome).toMatchObject({
+      type: 'implemented',
+      commit: { sha: head?.hash, filesChanged: 1, insertions: 1, deletions: 0 },
+    });
     expect(head?.message).toContain(slice.id);
   });
 

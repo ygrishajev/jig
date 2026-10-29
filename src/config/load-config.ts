@@ -28,6 +28,8 @@ const configSchema = z
     designGate: z.enum(['auto', 'checkpoint']).default('auto'),
     /** The image sandcastle starts; defaults to sandcastle's own name for the repository. */
     sandboxImage: z.string().optional(),
+    /** Where run state is saved: `local`, `git-remote` (push to origin), or a path to a store module. */
+    runStores: z.array(z.string()).min(1).default(['local']),
     /** Exact agent CLI versions to install; an agent without a pin follows `agentUpdates`. */
     agents: z
       .object({ claude: z.string().optional(), opencode: z.string().optional() })

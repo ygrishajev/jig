@@ -19,7 +19,7 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
     case 'implemented':
       return updateCurrentSlice(state, (slice) => ({
         ...slice,
-        commit: outcome.commit ?? slice.commit,
+        commit: outcome.commit?.sha ?? slice.commit,
       }));
     case 'changesRequested':
       return updateCurrentSlice(state, (slice) => ({

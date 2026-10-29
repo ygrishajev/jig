@@ -1,6 +1,7 @@
 import type { AgentRole } from './agent-role.js';
-import type { OutcomeType } from './outcome.js';
+import type { Outcome } from './outcome.js';
 import type { RunPhase } from './run-state.js';
+import type { TokenUsage } from './usage.js';
 
 export interface StepLocation {
   phase: RunPhase;
@@ -16,7 +17,7 @@ export type RunEvent =
       type: 'stepFinished';
       runId: string;
       at: StepLocation;
-      outcome: OutcomeType;
+      outcome: Outcome;
       durationMs: number;
     }
   | { type: 'stepRetried'; runId: string; at: StepLocation; attempt: number; reason: string }
@@ -26,4 +27,5 @@ export type RunEvent =
   | { type: 'runBlocked'; runId: string; phase: RunPhase; reason: string }
   | { type: 'runFinished'; runId: string; phase: RunPhase }
   | { type: 'agentMessage'; runId: string; role: AgentRole; text: string }
-  | { type: 'agentToolCall'; runId: string; role: AgentRole; tool: string; args: string };
+  | { type: 'agentToolCall'; runId: string; role: AgentRole; tool: string; args: string }
+  | { type: 'agentUsage'; runId: string; role: AgentRole; costUsd?: number; tokens: TokenUsage };

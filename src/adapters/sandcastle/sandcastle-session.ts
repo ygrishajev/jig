@@ -19,6 +19,7 @@ import type {
 } from '../../ports/agent-session.js';
 import type { EventSink } from '../../ports/observability.js';
 import { extractOutput, OUTPUT_TAG, outputInstruction } from './structured-output.js';
+import { usageFromStreamLine } from './usage.js';
 
 /** How many times an agent is asked, in its own session, to correct output that did not parse. */
 const OUTPUT_CORRECTIONS = 1;
@@ -134,6 +135,10 @@ export class SandcastleSession implements AgentSession {
     const { runId, events } = this.options;
     if (event.type === 'text')
       events.publish({ type: 'agentMessage', runId, role, text: event.message });
+    if (event.type === 'raw') {
+      const usage = usageFromStreamLine(event.line);
+      if (usage) events.publish({ type: 'agentUsage', runId, role, ...usage });
+    }
     if (event.type === 'toolCall') {
       events.publish({
         type: 'agentToolCall',

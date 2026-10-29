@@ -13,6 +13,7 @@ import type { RunSettings } from '../domain/settings.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Workspace } from '../ports/workspace.js';
 import {
+  aCommit,
   aContext,
   aFeaturePlan,
   aRunState,
@@ -223,7 +224,7 @@ describe('runEngine', () => {
       flow: sliceOnlyFlow({
         pending: async ({ slice }) => {
           implemented.push(slice.id);
-          return { type: 'implemented', commit: faker.git.commitSha() };
+          return { type: 'implemented', commit: aCommit() };
         },
         in_review: async () => ({ type: 'approved' }),
       }),
@@ -282,7 +283,7 @@ describe('runEngine', () => {
     await run(aRunState({ phase: 'context' }));
 
     expect(events.ofType('stepFinished')[0]).toMatchObject({
-      outcome: 'contextBuilt',
+      outcome: { type: 'contextBuilt' },
       durationMs: 10,
     });
   });

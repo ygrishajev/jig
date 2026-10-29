@@ -6,8 +6,12 @@ import { RunRequestInvalid } from '../domain/errors.js';
 import { RUN_ID_PATTERN, startRun, type RunState } from '../domain/run-state.js';
 import { runEngine, type EngineStatus } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
+import { summarizeMetrics } from '../observers/metrics.js';
 import { closeRunScope, openRunScope, type AppCradle } from './container.js';
+import { startTelemetry, telemetryEnabled } from '../adapters/telemetry/open-telemetry.js';
+import { createRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
+import type { RunStore } from '../ports/run-store.js';
 
 export interface RunSdlcInput {
   requestPath?: string;
@@ -17,7 +21,6 @@ export interface RunSdlcInput {
 export interface RunReport {
   state: RunState;
   status: EngineStatus;
-  worktreePath: string;
 }
 
 /**
@@ -29,23 +32,40 @@ export async function runSdlc(
   app: AwilixContainer<AppCradle>,
   input: RunSdlcInput,
 ): Promise<RunReport> {
-  const state = await startOrResume(app, input);
+  const runStore = await createRunStore({
+    repoRoot: app.cradle.repoRoot,
+    names: app.cradle.config.runStores,
+    local: app.cradle.store,
+  });
+  const state = await startOrResume(app, runStore, input);
   await ensureSandboxImage(app.cradle);
-  const scope = await openRunScope(app, { runId: state.runId, baseBranch: state.baseBranch });
+  const telemetry = telemetryEnabled(process.env) ? await startTelemetry() : undefined;
   try {
-    const result = await runEngine(runFlow, state, scope.cradle.engineDependencies);
-    await app.cradle.store.writeResult(result.state, result.status);
-    return { ...result, worktreePath: scope.cradle.session.worktreePath };
+    const scope = await openRunScope(
+      app,
+      { runId: state.runId, baseBranch: state.baseBranch },
+      runStore,
+      { tracer: telemetry?.tracer },
+    );
+    try {
+      const result = await runEngine(runFlow, state, scope.cradle.engineDependencies);
+      const metrics = summarizeMetrics(scope.cradle.metricsLog.readAll());
+      await app.cradle.store.writeResult(result.state, result.status, metrics);
+      return result;
+    } finally {
+      await closeRunScope(scope);
+    }
   } finally {
-    await closeRunScope(scope);
+    await telemetry?.shutdown();
   }
 }
 
 async function startOrResume(
   app: AwilixContainer<AppCradle>,
+  store: RunStore,
   { requestPath, runId }: RunSdlcInput,
 ) {
-  const { store, repoRoot } = app.cradle;
+  const { repoRoot } = app.cradle;
   if (!requestPath && !runId) {
     throw new RunRequestInvalid('Pass a request file to start a run, or --id to resume one.');
   }

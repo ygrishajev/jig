@@ -3,7 +3,7 @@ import { Writable } from 'node:stream';
 import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
 import type { RunEvent } from '../domain/events.js';
-import { runId, sliceId } from '../../tests/support/builders.js';
+import { aFeaturePlan, runId, sliceId } from '../../tests/support/builders.js';
 import { LoggingObserver } from './logging-observer.js';
 
 describe('LoggingObserver', () => {
@@ -15,7 +15,7 @@ describe('LoggingObserver', () => {
       type: 'stepFinished',
       runId: id,
       at: { phase: 'planning' },
-      outcome: 'featurePlanned',
+      outcome: { type: 'featurePlanned', plan: aFeaturePlan() },
       durationMs: 2500,
     });
 
@@ -23,7 +23,6 @@ describe('LoggingObserver', () => {
       level: 30,
       event: 'stepFinished',
       runId: id,
-      outcome: 'featurePlanned',
       msg: 'planning → featurePlanned (2.5s)',
     });
   });

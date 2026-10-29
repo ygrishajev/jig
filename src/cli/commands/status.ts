@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { LocalRunStore } from '../../adapters/local-store/local-run-store.js';
-import { worktreeDirectory } from '../../adapters/local-store/run-paths.js';
-import type { RunState } from '../../domain/run-state.js';
+import { MetricsLog } from '../../adapters/local-store/metrics-log.js';
+import { formatSummary, summarizeMetrics } from '../../observers/metrics.js';
+import { runBranchFor, type RunState } from '../../domain/run-state.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 export function registerStatusCommand(program: Command) {
@@ -15,12 +16,14 @@ export function registerStatusCommand(program: Command) {
         const store = new LocalRunStore(repoRoot);
         const state = await store.load(id);
         if (!state) throw new Error(`No run found with id "${id}".`);
-        console.log(describeRun(state, store, worktreeDirectory(repoRoot, id)));
+        const metrics = summarizeMetrics(new MetricsLog(repoRoot, id).readAll());
+        console.log(describeRun(state, store));
+        if (metrics.steps > 0) console.log(`So far: ${formatSummary(metrics)}`);
       }),
     );
 }
 
-function describeRun(state: RunState, store: LocalRunStore, worktree: string) {
+function describeRun(state: RunState, store: LocalRunStore) {
   const documents = (['design.md', 'plan.md', 'PR_DESCRIPTION.md'] as const)
     .map((name) => [name, store.documentPath(state.runId, name)] as const)
     .filter((entry): entry is readonly [(typeof entry)[0], string] => entry[1] !== undefined)
@@ -34,7 +37,7 @@ function describeRun(state: RunState, store: LocalRunStore, worktree: string) {
   return [
     `Run ${state.runId} — ${state.phase} (base: ${state.baseBranch})`,
     ...(state.blockedReason ? [`Blocked: ${state.blockedReason}`] : []),
-    `${'worktree'.padEnd(18)} ${worktree}`,
+    `${'branch'.padEnd(18)} ${runBranchFor(state.runId)}`,
     ...documents,
     ...(slices.length > 0 ? ['Slices:', ...slices] : []),
   ].join('\n');

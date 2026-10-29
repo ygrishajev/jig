@@ -182,7 +182,7 @@ class Engine {
     this.d.events.publish({ type: 'stepStarted', runId, at });
     const outcome = await step();
     const durationMs = this.d.clock.now() - startedAt;
-    this.d.events.publish({ type: 'stepFinished', runId, at, outcome: outcome.type, durationMs });
+    this.d.events.publish({ type: 'stepFinished', runId, at, outcome, durationMs });
     return outcome;
   }
 

@@ -2,6 +2,7 @@ import { Command, Option } from 'commander';
 import { createAppContainer } from '../../app/container.js';
 import { runSdlc, type RunReport } from '../../app/run-sdlc.js';
 import { defaultLogFormat, type LogFormat } from '../../adapters/logging/create-logger.js';
+import { runBranchFor } from '../../domain/run-state.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 const NEXT_STEP: Record<RunReport['status'], (report: RunReport) => string> = {
@@ -29,7 +30,7 @@ export function registerRunCommand(program: Command) {
           try {
             const report = await runSdlc(app, { requestPath: request, runId: options.id });
             app.cradle.logger.info(
-              { runId: report.state.runId, worktree: report.worktreePath },
+              { runId: report.state.runId, branch: runBranchFor(report.state.runId) },
               NEXT_STEP[report.status](report),
             );
           } finally {

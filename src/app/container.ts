@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { AgentProvider } from '@ai-hero/sandcastle';
 import { asFunction, asValue, createContainer, InjectionMode, type AwilixContainer } from 'awilix';
+import type { Tracer } from '@opentelemetry/api';
 import type { Logger } from 'pino';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
@@ -14,14 +15,19 @@ import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
 import { AGENTS, collectCredentials } from '../adapters/sandcastle/agents.js';
 import { SandcastleSession } from '../adapters/sandcastle/sandcastle-session.js';
+import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
 import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
+import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
+import { MetricsObserver } from '../observers/metrics.js';
+import { TracingObserver } from '../observers/tracing-observer.js';
 import { observe, RunEvents } from '../observers/run-events.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Clock, EventSink } from '../ports/observability.js';
+import type { RunStore } from '../ports/run-store.js';
 import type { Workspace } from '../ports/workspace.js';
 import { sandboxImageName } from './sandbox-image.js';
 
@@ -67,7 +73,9 @@ export interface AppCradle {
 /** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
 export interface RunCradle extends AppCradle {
   run: RunIdentity;
+  runStore: RunStore;
   runLogger: Logger;
+  metricsLog: MetricsLog;
   events: RunEvents;
   session: RunSession;
   workspace: Workspace;
@@ -113,11 +121,14 @@ export function createAppContainer(input: {
 export async function openRunScope(
   app: AwilixContainer<AppCradle>,
   run: RunIdentity,
+  runStore: RunStore,
+  options: { tracer?: Tracer } = {},
 ): Promise<AwilixContainer<RunCradle>> {
   const { repoRoot } = app.cradle;
   const scope = app.createScope<RunCradle>();
   scope.register({
     run: asValue(run),
+    runStore: asValue(runStore),
     runLogger: asFunction(({ logFormat, logLevel }: RunCradle) =>
       createRunLogger(
         logFormat,
@@ -127,14 +138,19 @@ export async function openRunScope(
         runId: run.runId,
       }),
     ).scoped(),
-    events: asFunction(({ runLogger }: RunCradle) => {
+    metricsLog: asFunction(() => new MetricsLog(repoRoot, run.runId)).scoped(),
+    events: asFunction(({ runLogger, metricsLog, clock }: RunCradle) => {
       const events = new RunEvents();
+      const onObserverError = (error: unknown) =>
+        runLogger.warn({ err: error }, 'an observer failed');
       const logging = new LoggingObserver(runLogger);
-      observe(
-        events,
-        (event) => logging.handle(event),
-        (error) => runLogger.warn({ err: error }, 'an observer failed'),
-      );
+      const metrics = new MetricsObserver((record) => metricsLog.append(record), clock);
+      observe(events, (event) => logging.handle(event), onObserverError);
+      observe(events, (event) => metrics.handle(event), onObserverError);
+      if (options.tracer) {
+        const tracing = new TracingObserver(options.tracer);
+        observe(events, (event) => tracing.handle(event), onObserverError);
+      }
       return events;
     }).scoped(),
   });
@@ -146,7 +162,7 @@ export async function openRunScope(
       () => new GitWorkspace({ repoRoot, worktreePath: session.worktreePath, ...run }),
     ).scoped(),
     engineDependencies: asFunction(
-      ({ workspace, store, events, clock, settings }: RunCradle): EngineDependencies => ({
+      ({ workspace, runStore: store, events, clock, settings }: RunCradle): EngineDependencies => ({
         ports: { agent: session, workspace },
         store,
         events,
@@ -174,7 +190,10 @@ function sandcastleOpener(repoRoot: string, config: SdlcConfig) {
       repoRoot,
       ...run,
       imageName: sandboxImageName(repoRoot, config),
-      credentials: collectCredentials(Object.values(steps), process.env),
+      credentials: {
+        ...collectCredentials(Object.values(steps), process.env),
+        ...sandboxTelemetryEnvironment(process.env),
+      },
       agents: agentsFor(steps),
       skipCommitSigning: config.commitSigning === 'skip',
       setupCommand: setupCommand === null ? undefined : (setupCommand ?? config.setupCommand),

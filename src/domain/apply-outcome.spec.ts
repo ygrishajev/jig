@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 import {
+  aCommit,
   aContext,
   aFeaturePlan,
   aPlannedSlice,
@@ -54,7 +55,7 @@ describe('applyOutcome', () => {
   it('remembers the commit an implementation produced, and keeps the earlier one when nothing changed', () => {
     const earlier = faker.git.commitSha();
     const slice = aSlice({ order: 0, commit: earlier });
-    const next = faker.git.commitSha();
+    const next = aCommit();
 
     const committed = applyOutcome(aRunState({ slices: [slice] }), {
       type: 'implemented',
@@ -65,7 +66,7 @@ describe('applyOutcome', () => {
       commit: null,
     });
 
-    expect(committed.slices[0].commit).toBe(next);
+    expect(committed.slices[0].commit).toBe(next.sha);
     expect(unchanged.slices[0].commit).toBe(earlier);
   });
 

@@ -37,6 +37,9 @@
   },
   "dependencies": {
     "@ai-hero/sandcastle": "^0.12.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
+    "@opentelemetry/sdk-node": "^0.223.0",
     "awilix": "^13.0.5",
     "commander": "^13.0.0",
     "execa": "^9.5.0",
@@ -54,6 +57,7 @@
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^9.17.0",
     "@faker-js/faker": "^10.6.0",
+    "@opentelemetry/sdk-trace-base": "^2.12.0",
     "@secretlint/secretlint-rule-preset-recommend": "^9.0.0",
     "@stryker-mutator/core": "^8.7.0",
     "@stryker-mutator/vitest-runner": "^8.7.0",

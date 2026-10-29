@@ -20,8 +20,16 @@ export class GitWorkspace implements Workspace {
     this.runBranch = runBranchFor(options.runId);
   }
 
-  commitAll(message: string) {
-    return commitAll(this.options.worktreePath, message);
+  async commitAll(message: string) {
+    const sha = await commitAll(this.options.worktreePath, message);
+    if (!sha) return null;
+    const diff = await openRepo(this.options.worktreePath).diffSummary([`${sha}^!`]);
+    return {
+      sha,
+      filesChanged: diff.changed,
+      insertions: diff.insertions,
+      deletions: diff.deletions,
+    };
   }
 
   async readRepoFile(relativePath: string) {

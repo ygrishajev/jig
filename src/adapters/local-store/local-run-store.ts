@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 import type { RunState } from '../../domain/run-state.js';
+import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import type { RunStore } from '../../ports/run-store.js';
 import { SDLC_DIR, stateDirectory } from './run-paths.js';
 import { runStateSchema } from './run-state-schema.js';
@@ -38,17 +39,22 @@ export class LocalRunStore implements RunStore {
    * A small, stable summary for CI to read instead of parsing output that also carries whatever
    * an agent printed. `complete` and `blockedReason` keep the shape earlier workflows read.
    */
-  async writeResult(state: RunState, status: string) {
+  async writeResult(state: RunState, status: string, metrics?: MetricsSummary) {
     const result = {
       runId: state.runId,
       status,
       phase: state.phase,
       complete: status === 'done',
       blockedReason: state.blockedReason ?? stuckSliceReason(state),
+      ...(metrics ? { metrics } : {}),
     };
     const directory = stateDirectory(this.repoRoot, state.runId);
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, RESULT_FILE), `${JSON.stringify(result, null, 2)}\n`);
+    if (state.prDescription && metrics) {
+      const footer = `\n\n---\n<sub>sdlc run ${state.runId}: ${formatSummary(metrics)}</sub>\n`;
+      await writeFile(path.join(directory, 'PR_DESCRIPTION.md'), `${state.prDescription}${footer}`);
+    }
   }
 
   documentPath(runId: string, name: 'design.md' | 'plan.md' | 'PR_DESCRIPTION.md') {

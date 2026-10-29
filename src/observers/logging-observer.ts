@@ -16,7 +16,7 @@ export class LoggingObserver {
       case 'stepFinished':
         return log.info(
           fields,
-          `${describe(event.at)} → ${event.outcome} (${seconds(event.durationMs)})`,
+          `${describe(event.at)} → ${event.outcome.type} (${seconds(event.durationMs)})`,
         );
       case 'stepRetried':
         return log.warn(
