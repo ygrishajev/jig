@@ -1,4 +1,6 @@
 import { execa } from 'execa';
+import pRetry from 'p-retry';
+import { RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
 import { runBranchFor, type RunState } from '../../domain/run-state.js';
 import type { RunStore } from '../../ports/run-store.js';
 import { runStateSchema } from '../local-store/run-state-schema.js';
@@ -13,63 +15,165 @@ const COMMITTER = {
   GIT_COMMITTER_EMAIL: 'sdlc@localhost',
 };
 
+/** How many more times a fetch or push that failed on the network is tried. */
+const REMOTE_RETRIES = 3;
+
+/** `git ls-remote --exit-code` exits with this when the remote has none of the refs asked for. */
+const NO_MATCHING_REFS = 2;
+
+/** What the remote held for a run when this store last looked or pushed; a save leases against it. */
+interface RemoteRun {
+  state?: string;
+  branch?: string;
+}
+
 /**
  * Keeps each run's state as a commit on a hidden `refs/sdlc/<runId>` ref and pushes it, with the
  * run branch, to a remote — so another machine, such as a retried CI job, can resume the run.
- * The hidden ref keeps state commits out of the repository's branch list.
+ * The hidden ref keeps state commits out of the repository's branch list. A save only replaces
+ * what this store last saw on the remote, so a concurrent writer is refused rather than overwritten.
  */
 export class GitRemoteRunStore implements RunStore {
+  private readonly seenOnRemote = new Map<string, RemoteRun>();
+
   constructor(
     private readonly repoRoot: string,
     private readonly remote = 'origin',
   ) {}
 
   async load(runId: string) {
-    const ref = stateRef(runId);
-    const fetched = await this.git(['fetch', '--quiet', this.remote, `+${ref}:${ref}`]);
-    if (fetched.exitCode !== 0) return undefined;
-    await this.git([
-      'fetch',
-      '--quiet',
-      this.remote,
-      `${runBranchFor(runId)}:${runBranchFor(runId)}`,
-    ]);
-    const shown = await this.git(['show', `${ref}:${STATE_FILE}`]);
-    if (shown.exitCode !== 0) return undefined;
-    return runStateSchema.parse(JSON.parse(shown.stdout));
+    const remoteRun = await this.fetchRun(runId);
+    this.seenOnRemote.set(runId, remoteRun);
+    if (!remoteRun.state) return undefined;
+    if (remoteRun.branch) await this.catchUpRunBranch(runId, remoteRun.branch);
+    const shown = await this.required(['show', `${stateRef(runId)}:${STATE_FILE}`]);
+    return runStateSchema.parse(JSON.parse(shown));
   }
 
   async save(state: RunState) {
+    const commit = await this.commitState(state);
+    const branch = await this.revision(branchRef(state.runId));
+    const lease = this.seenOnRemote.get(state.runId) ?? {};
+    await this.remoteCall([
+      'push',
+      '--quiet',
+      '--atomic',
+      `--force-with-lease=${stateRef(state.runId)}:${lease.state ?? ''}`,
+      ...(branch ? [`--force-with-lease=${branchRef(state.runId)}:${lease.branch ?? ''}`] : []),
+      this.remote,
+      `${stateRef(state.runId)}:${stateRef(state.runId)}`,
+      ...(branch ? [`${branchRef(state.runId)}:${branchRef(state.runId)}`] : []),
+    ]);
+    this.seenOnRemote.set(state.runId, { state: commit, branch: branch ?? lease.branch });
+  }
+
+  /** Brings the run's refs over from the remote; the run branch lands on a remote-tracking ref. */
+  private async fetchRun(runId: string): Promise<RemoteRun> {
+    const listed = await this.remoteCall(
+      ['ls-remote', '--exit-code', this.remote, stateRef(runId), branchRef(runId)],
+      NO_MATCHING_REFS,
+    );
+    const refsOnRemote = listed.stdout.split('\n').map((line) => line.split('\t')[1]);
+    if (!refsOnRemote.includes(stateRef(runId))) return {};
+    const hasBranch = refsOnRemote.includes(branchRef(runId));
+    await this.remoteCall([
+      'fetch',
+      '--quiet',
+      this.remote,
+      `+${stateRef(runId)}:${stateRef(runId)}`,
+      ...(hasBranch ? [`+${branchRef(runId)}:${this.trackingRef(runId)}`] : []),
+    ]);
+    return {
+      state: await this.revision(stateRef(runId)),
+      branch: hasBranch ? await this.revision(this.trackingRef(runId)) : undefined,
+    };
+  }
+
+  /**
+   * Moves the local run branch to the remote's when it is behind, keeps it when it is ahead with
+   * commits not pushed yet, and refuses when the two have diverged.
+   */
+  private async catchUpRunBranch(runId: string, remoteHead: string) {
+    const local = await this.revision(branchRef(runId));
+    if (!local) return this.required(['update-ref', branchRef(runId), remoteHead, '']);
+    if (await this.isAncestor(remoteHead, local)) return;
+    if (!(await this.isAncestor(local, remoteHead))) {
+      throw new RunStateConflict(
+        `The run branch "${runBranchFor(runId)}" here and on ${this.remote} have diverged.`,
+      );
+    }
+    await this.fastForward(runId, local, remoteHead);
+  }
+
+  /** Git refuses to move a branch a worktree has checked out, so that worktree is moved instead. */
+  private async fastForward(runId: string, from: string, to: string) {
+    const worktree = await this.worktreeWithCheckedOut(branchRef(runId));
+    if (worktree) {
+      await this.required(['-C', worktree, 'merge', '--ff-only', '--quiet', to]);
+    } else {
+      await this.required(['update-ref', branchRef(runId), to, from]);
+    }
+  }
+
+  private async worktreeWithCheckedOut(ref: string) {
+    const listed = await this.required(['worktree', 'list', '--porcelain']);
+    const entry = listed
+      .split('\n\n')
+      .map((block) => block.split('\n'))
+      .find((lines) => lines.includes(`branch ${ref}`));
+    return entry?.[0]?.replace(/^worktree /, '');
+  }
+
+  private async commitState(state: RunState) {
     const ref = stateRef(state.runId);
     const blob = await this.required(
       ['hash-object', '-w', '--stdin'],
       `${JSON.stringify(state, null, 2)}\n`,
     );
     const tree = await this.required(['mktree'], `100644 blob ${blob}\t${STATE_FILE}\n`);
-    const parent = await this.git(['rev-parse', '--verify', '--quiet', ref]);
+    const parent = await this.revision(ref);
     const commit = await this.required([
       'commit-tree',
       tree,
-      ...(parent.exitCode === 0 ? ['-p', parent.stdout] : []),
+      ...(parent ? ['-p', parent] : []),
       '-m',
       `sdlc run ${state.runId}: ${state.phase}`,
     ]);
     await this.required(['update-ref', ref, commit]);
-    await this.required([
-      'push',
-      '--quiet',
-      '--force',
-      this.remote,
-      ...(await this.refsToPush(state.runId)),
-    ]);
+    return commit;
   }
 
-  private async refsToPush(runId: string) {
-    const branch = `refs/heads/${runBranchFor(runId)}`;
-    const branchExists =
-      (await this.git(['rev-parse', '--verify', '--quiet', branch])).exitCode === 0;
-    const ref = stateRef(runId);
-    return [`${ref}:${ref}`, ...(branchExists ? [`${branch}:${branch}`] : [])];
+  private trackingRef(runId: string) {
+    return `refs/remotes/${this.remote}/${runBranchFor(runId)}`;
+  }
+
+  private async revision(ref: string) {
+    const parsed = await this.git(['rev-parse', '--verify', '--quiet', ref]);
+    return parsed.exitCode === 0 ? parsed.stdout.trim() : undefined;
+  }
+
+  private async isAncestor(ancestor: string, descendant: string) {
+    const checked = await this.git(['merge-base', '--is-ancestor', ancestor, descendant]);
+    return checked.exitCode === 0;
+  }
+
+  /** A remote operation, retried while the failure looks like the network rather than a conflict. */
+  private remoteCall(args: string[], alsoAcceptedExitCode?: number) {
+    return pRetry(
+      async () => {
+        const result = await this.git(args);
+        if (result.exitCode === 0 || result.exitCode === alsoAcceptedExitCode) return result;
+        throw isLeaseRejection(result.stderr)
+          ? new RunStateConflict(
+              `The run's state on ${this.remote} moved since it was loaded: ${result.stderr}`,
+            )
+          : new RemoteUnavailable(`git ${args[0]} to ${this.remote} failed: ${result.stderr}`);
+      },
+      {
+        retries: REMOTE_RETRIES,
+        shouldRetry: ({ error }) => error instanceof RemoteUnavailable,
+      },
+    );
   }
 
   private git(args: string[], input?: string) {
@@ -84,12 +188,21 @@ export class GitRemoteRunStore implements RunStore {
   private async required(args: string[], input?: string) {
     const result = await this.git(args, input);
     if (result.exitCode !== 0) {
-      throw new Error(`git ${args[0]} failed while saving run state: ${result.stderr}`);
+      throw new Error(`git ${args[0]} failed on the run's state: ${result.stderr}`);
     }
     return result.stdout.trim();
   }
 }
 
+/** Git reports a push whose lease no longer matches, or that is not a fast-forward, as rejected. */
+function isLeaseRejection(stderr: string) {
+  return stderr.includes('[rejected]') || stderr.includes('stale info');
+}
+
 function stateRef(runId: string) {
   return `refs/sdlc/${runId}`;
+}
+
+function branchRef(runId: string) {
+  return `refs/heads/${runBranchFor(runId)}`;
 }

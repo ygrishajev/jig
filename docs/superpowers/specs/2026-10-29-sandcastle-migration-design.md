@@ -409,9 +409,12 @@ interface RunStore {
   - `git-remote` — pushes the run branch, plus state on a hidden ref
     (`refs/sdlc/<id>`) so the user's branch list stays clean. Enables
     resuming on another machine, e.g. a retried CI job on a fresh runner.
+    Loading fast-forwards a stale local run branch (or the worktree that has
+    it checked out); saving pushes with `--force-with-lease` against what was
+    loaded, so a concurrent writer blocks the run instead of being overwritten.
   - `custom` — a module from config implementing `RunStore`.
   - `composite` — e.g. `[local, git-remote]`: save to all; load from the
-    first that has it.
+    first that has it, after every store has loaded it.
 
 Replaces `state/store.ts`'s direct file I/O at call sites.
 

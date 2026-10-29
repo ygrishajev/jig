@@ -27,6 +27,11 @@ export class RemoteUnavailable extends SdlcError {
   readonly kind = 'retry';
 }
 
+/** The remote copy of a run moved in a way this process cannot follow without losing someone's work. */
+export class RunStateConflict extends SdlcError {
+  readonly kind = 'block';
+}
+
 export class MergeFailed extends SdlcError {
   readonly kind = 'block';
 }
