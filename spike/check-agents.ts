@@ -66,7 +66,10 @@ if (env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_API_KEY) {
   agents.push({ name: 'claude', make: (extraEnv) => claudeCode('haiku', { env: extraEnv }) });
 }
 if (env.OPENROUTER_API_KEY && env.OPENCODE_MODEL) {
-  agents.push({ name: 'opencode', make: (extraEnv) => opencode(env.OPENCODE_MODEL!, { env: extraEnv }) });
+  agents.push({
+    name: 'opencode',
+    make: (extraEnv) => opencode(env.OPENCODE_MODEL!, { env: extraEnv }),
+  });
 }
 if (agents.length === 0) {
   console.error('No agent credentials in spike/.env — nothing to check.');
@@ -108,7 +111,9 @@ try {
       prompt: `What number did you put in your previous reply? Reply with exactly: <${TAG}>{"n": <that number>}</${TAG}>`,
     });
     const resumedTag = findLastTag(resumed.stdout);
-    console.log(`#5 --continue answer: ${resumedTag ?? '(none)'} (42 means the session was resumed)`);
+    console.log(
+      `#5 --continue answer: ${resumedTag ?? '(none)'} (42 means the session was resumed)`,
+    );
 
     // #2: agent-level env under createSandbox
     const envCheck = await sandbox.run({
@@ -117,7 +122,9 @@ try {
         'Run this shell command and report its exact output: echo "[$SPIKE_AGENT_ENV]". ' +
         `Reply with exactly: <${TAG}>{"out": "<the output>"}</${TAG}>`,
     });
-    console.log(`#2 agent-level env seen by agent: ${findLastTag(envCheck.stdout) ?? '(none)'} ("[]" means ignored)`);
+    console.log(
+      `#2 agent-level env seen by agent: ${findLastTag(envCheck.stdout) ?? '(none)'} ("[]" means ignored)`,
+    );
   }
 } finally {
   await sandbox.close();

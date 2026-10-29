@@ -39,10 +39,24 @@ const withRawTap = (agent: AgentProvider, onRaw: (line: string) => void): AgentP
 const lastTag = (text: string) =>
   [...text.matchAll(new RegExp(`<${TAG}>([\\s\\S]*?)</${TAG}>`, 'g'))].at(-1)?.[1]?.trim();
 
+interface RawPart {
+  type?: string;
+  cost?: number;
+  tokens?: unknown;
+}
+
+interface RawEvent {
+  type?: string;
+  total_cost_usd?: number;
+  usage?: unknown;
+  part?: RawPart;
+  properties?: { part?: RawPart };
+}
+
 function usageFromRaw(lines: string[]): unknown[] {
   const found: unknown[] = [];
   for (const line of lines) {
-    let event: any;
+    let event: RawEvent;
     try {
       event = JSON.parse(line);
     } catch {
@@ -61,7 +75,8 @@ function usageFromRaw(lines: string[]): unknown[] {
   return found;
 }
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
 const repo = realpathSync(mkdtempSync(path.join(tmpdir(), 'sdlc-spike-usage-')));
 git(repo, 'init', '-q', '-b', 'main');
 git(repo, 'config', 'user.email', 'spike@example.com');
@@ -98,7 +113,20 @@ try {
     console.log(`#7 raw lines captured: ${raw.length}`);
     console.log(`#7 usage/cost found in raw events: ${JSON.stringify(usageFromRaw(raw), null, 2)}`);
     if (usageFromRaw(raw).length === 0) {
-      console.log(`#7 raw event types: ${[...new Set(raw.map((l) => { try { const e = JSON.parse(l); return `${e.type}${e.part?.type ? '/' + e.part.type : ''}`; } catch { return 'non-json'; } }))].join(', ')}`);
+      console.log(
+        `#7 raw event types: ${[
+          ...new Set(
+            raw.map((l) => {
+              try {
+                const e = JSON.parse(l);
+                return `${e.type}${e.part?.type ? '/' + e.part.type : ''}`;
+              } catch {
+                return 'non-json';
+              }
+            }),
+          ),
+        ].join(', ')}`,
+      );
     }
 
     const resumed = await sandbox.run({
@@ -106,7 +134,9 @@ try {
       prompt: `Which number did I ask you to remember? Reply with exactly: <${TAG}>{"n": <the number>}</${TAG}>`,
     });
     const answer = lastTag(resumed.stdout);
-    console.log(`#5 --continue: expected ${secret}, got ${answer ?? '(none)'} → ${answer?.includes(String(secret)) ? 'RESUMED' : 'NOT resumed'}`);
+    console.log(
+      `#5 --continue: expected ${secret}, got ${answer ?? '(none)'} → ${answer?.includes(String(secret)) ? 'RESUMED' : 'NOT resumed'}`,
+    );
   }
 } finally {
   await sandbox.close();

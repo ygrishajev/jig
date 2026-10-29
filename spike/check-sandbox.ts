@@ -45,7 +45,12 @@ function linkTo(target: string): string {
 type Result = { scenario: string; check: string; ok: boolean; detail: string };
 const results: Result[] = [];
 
-async function runScenario(scenario: string, cwd: string, expectGit: 'pass' | 'fail', full: boolean) {
+async function runScenario(
+  scenario: string,
+  cwd: string,
+  expectGit: 'pass' | 'fail',
+  full: boolean,
+) {
   console.log(`\n=== ${scenario} (cwd: ${cwd}) ===`);
   const record = (check: string, ok: boolean, detail: string) => {
     results.push({ scenario, check, ok, detail });
@@ -66,13 +71,21 @@ async function runScenario(scenario: string, cwd: string, expectGit: 'pass' | 'f
 
     if (full) {
       const who = await sh('echo "uid=$(id -u) gid=$(id -g) home=$HOME pwd=$(pwd)"');
-      record('container runs as host uid', who.stdout.includes(`uid=${process.getuid?.()} `), who.stdout.trim());
+      record(
+        'container runs as host uid',
+        who.stdout.includes(`uid=${process.getuid?.()} `),
+        who.stdout.trim(),
+      );
       const home = await sh('mkdir -p "$HOME/.claude" && touch "$HOME/.claude/probe" && echo ok');
       record('$HOME writable', home.exitCode === 0, (home.stdout + home.stderr).trim());
       const clis = await sh('claude --version; opencode --version');
       record('agent CLIs run', clis.exitCode === 0, (clis.stdout + clis.stderr).trim());
       const env = await sh('echo "$SPIKE_ENV"');
-      record('docker({ env }) reaches container', env.stdout.trim() === 'reached', env.stdout.trim() || '(empty)');
+      record(
+        'docker({ env }) reaches container',
+        env.stdout.trim() === 'reached',
+        env.stdout.trim() || '(empty)',
+      );
     }
 
     const status = await sh('git status --short --branch && git log --oneline -3');
@@ -88,7 +101,11 @@ async function runScenario(scenario: string, cwd: string, expectGit: 'pass' | 'f
       'git config user.email agent@example.com && git config user.name agent && ' +
         'echo slice > slice.txt && git add -A && git commit -q -m "slice 1" && git log --oneline -1',
     );
-    record('commit inside container', commit.exitCode === 0, (commit.stdout + commit.stderr).trim());
+    record(
+      'commit inside container',
+      commit.exitCode === 0,
+      (commit.stdout + commit.stderr).trim(),
+    );
 
     writeFileSync(path.join(repo, `base-${scenario}.txt`), 'moved\n');
     git(repo, 'add', '-A');
