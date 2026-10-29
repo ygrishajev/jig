@@ -455,6 +455,12 @@ Run 2026-10-29, sandcastle 0.12.0, Docker 29.4, macOS, `spike/check-sandbox.ts`
   `gitdir:` pointer while sandcastle mounts `.git` at the path it was given:
   every git command fails with "not a git repository". Fix in sdlc:
   `realpath(repoRoot)` before `createSandbox`. Worth reporting upstream.
+  Not macOS-specific: reproduced on Linux by opening the repo through a
+  symlink, and fixed there by the same `realpath`.
+- **Linux (GitHub Actions `ubuntu-latest`, UID 1001,
+  [run 40900851055](https://github.com/ygrishajev/sdlc/actions/runs/40900851055))** —
+  15/15, same as macOS: direct path passes all checks, symlinked path
+  reproduces the git failure, resolved symlink passes.
 - **#2 confirmed** — `docker({ env })` reaches the container; agent-level
   `env` (`claudeCode(model, { env })`) is ignored under `createSandbox` for
   both agents. Credentials must go through `docker({ env })`.
