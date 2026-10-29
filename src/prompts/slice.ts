@@ -1,6 +1,6 @@
 import type { Slice } from '../domain/slice.js';
 
-export function implementPrompt(slice: Slice, baseBranch: string) {
+export function implementPrompt(slice: Slice) {
   return [
     'You are implementing one slice of a larger, already-planned feature.',
     '',
@@ -9,18 +9,20 @@ export function implementPrompt(slice: Slice, baseBranch: string) {
     ...previousFeedback(slice),
     '',
     'Make the necessary code changes in this repository to complete this slice.',
-    'Do not commit — leave the changes in the working tree.',
-    '',
-    `Before you finish, check whether "${baseBranch}" has moved on since this branch was cut:`,
-    `run \`git fetch origin ${baseBranch}\` and then \`git log HEAD..origin/${baseBranch}\`.`,
-    `If it has, run \`git stash\`, \`git rebase origin/${baseBranch}\` and \`git stash pop\`, resolve any`,
-    "conflicts so that both sides' intent survives, and re-run the checks you relied on.",
-    'Still do not commit.',
+    'Do not commit, and do not rebase or otherwise rewrite the commits already on this branch —',
+    'leave your changes in the working tree.',
     '',
     'Before writing a script to re-derive something a tool already reported (e.g. parsing a',
     "mutation-testing or coverage tool's own output by hand), re-read what it already printed.",
     'Before re-running a slow check, check whether a later, more specific step already covers it',
     '(e.g. a full test-suite run right before a tool that re-runs the same suite itself).',
+  ].join('\n');
+}
+
+export function nothingChangedFeedback(slice: Slice) {
+  return [
+    'The previous attempt at this slice left the working tree unchanged, so there was nothing to review.',
+    ...(slice.lastFeedback ? ['It was meant to address this feedback:', slice.lastFeedback] : []),
   ].join('\n');
 }
 
@@ -34,12 +36,14 @@ function previousFeedback(slice: Slice) {
   ];
 }
 
-export function reviewPrompt(slice: Slice) {
+/** `range` is a git revision range holding exactly this slice's commits, e.g. `<start>..HEAD`. */
+export function reviewPrompt(slice: Slice, range: string) {
   return [
     'You are the review step of an automated SDLC pipeline.',
-    'Review only the most recent commit (HEAD) on this branch for the slice below — that',
-    "commit is this slice's change. Earlier commits on this branch belong to already-approved",
-    'slices; treat them as existing context you can rely on, not something to judge or reject.',
+    `This slice's change is exactly the commits in \`${range}\` — review all of them together`,
+    `(\`git log ${range}\`, \`git diff ${range}\`), including earlier attempts that a previous`,
+    'review sent back. Commits before that range belong to already-approved slices; treat them',
+    'as existing context you can rely on, not something to judge or reject.',
     '',
     `Slice: ${slice.title}`,
     `Description: ${slice.description}`,

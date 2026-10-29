@@ -48,9 +48,7 @@ export class MetricsObserver {
           location: event.at,
           outcome: event.outcome.type,
           durationMs: event.durationMs,
-          ...(event.outcome.type === 'implemented' && event.outcome.commit
-            ? { commit: event.outcome.commit }
-            : {}),
+          ...(event.outcome.type === 'implemented' ? { commit: event.outcome.commit } : {}),
         });
       case 'agentUsage':
         return this.append({

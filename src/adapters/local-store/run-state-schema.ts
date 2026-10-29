@@ -10,6 +10,7 @@ const sliceSchema = z.object({
   status: z.enum(['pending', 'in_review', 'verifying', 'approved', 'stuck']),
   reviewCycles: z.number().int().nonnegative(),
   lastFeedback: z.string().optional(),
+  startCommit: z.string().optional(),
   commit: z.string().optional(),
 });
 

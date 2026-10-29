@@ -21,7 +21,7 @@ describe('slice steps', () => {
   it('commits what the implementer changed onto the run branch', async () => {
     const slice = aSlice();
     const { run, git, runBranch } = await setup({
-      implementer: { files: { 'feature.txt': faker.lorem.sentence() } },
+      implementer: [{ files: { 'feature.txt': faker.lorem.sentence() } }],
     });
 
     const outcome = await run(implementSlice, slice);
@@ -34,15 +34,64 @@ describe('slice steps', () => {
     expect(head?.message).toContain(slice.id);
   });
 
-  it('reports no commit when the implementer changed nothing', async () => {
-    const { run } = await setup({ implementer: { files: {} } });
+  it('records the run branch head the slice started from, and keeps it across attempts', async () => {
+    const { run, git, runBranch } = await setup({
+      implementer: [
+        { files: { 'first.txt': faker.lorem.sentence() } },
+        { files: { 'second.txt': faker.lorem.sentence() } },
+      ],
+    });
+    const branchHeadBeforeSlice = await git.revparse([runBranch]);
+    const slice = aSlice();
 
-    expect(await run(implementSlice, aSlice())).toEqual({ type: 'implemented', commit: null });
+    const first = await run(implementSlice, slice);
+    const startCommit = first.type === 'implemented' ? first.startCommit : undefined;
+    const second = await run(implementSlice, { ...slice, startCommit });
+
+    expect(first).toMatchObject({ type: 'implemented', startCommit: branchHeadBeforeSlice });
+    expect(second).toMatchObject({ type: 'implemented', startCommit: branchHeadBeforeSlice });
+  });
+
+  it('gives the reviewer every commit since the slice started, not just the latest fix', async () => {
+    const { run, agent, git, runBranch } = await setup({
+      implementer: [
+        { files: { 'first.txt': faker.lorem.sentence() } },
+        { files: { 'second.txt': faker.lorem.sentence() } },
+      ],
+      reviewer: [{ output: { approved: true, feedback: '' } }],
+    });
+    const slice = aSlice();
+    const first = await run(implementSlice, slice);
+    const startCommit = first.type === 'implemented' ? first.startCommit : undefined;
+    await run(implementSlice, { ...slice, startCommit, lastFeedback: faker.lorem.sentence() });
+
+    await run(reviewSlice, { ...slice, status: 'in_review', startCommit });
+
+    const reviewed = await git.log([`${startCommit}..${runBranch}`]);
+    expect(reviewed.total).toBe(2);
+    expect(agent.calls.at(-1)?.prompt).toContain(`${startCommit}..HEAD`);
+  });
+
+  it('sends the slice back to the implementer instead of to review when it changed nothing', async () => {
+    const { run } = await setup({ implementer: [{ files: {} }] });
+
+    const outcome = await run(implementSlice, aSlice());
+
+    expect(outcome).toMatchObject({ type: 'changesRequested' });
+  });
+
+  it('keeps the feedback the empty attempt was meant to address', async () => {
+    const lastFeedback = faker.lorem.sentence();
+    const { run } = await setup({ implementer: [{ files: {} }] });
+
+    const outcome = await run(implementSlice, aSlice({ lastFeedback }));
+
+    expect(outcome.type === 'changesRequested' && outcome.feedback).toContain(lastFeedback);
   });
 
   it('hands the reviewer feedback from the last attempt back to the implementer', async () => {
     const lastFeedback = faker.lorem.sentence();
-    const { run, agent } = await setup({ implementer: { files: {} } });
+    const { run, agent } = await setup({ implementer: [{ files: {} }] });
 
     await run(implementSlice, aSlice({ lastFeedback }));
 
@@ -51,10 +100,10 @@ describe('slice steps', () => {
 
   it("approves when the reviewer approves, and requests the reviewer's changes otherwise", async () => {
     const feedback = faker.lorem.sentence();
-    const approving = await setup({ reviewer: { output: { approved: true, feedback: '' } } });
+    const approving = await setup({ reviewer: [{ output: { approved: true, feedback: '' } }] });
     const approved = await approving.run(reviewSlice, aSlice());
     await approving.cleanup();
-    const rejecting = await setup({ reviewer: { output: { approved: false, feedback } } });
+    const rejecting = await setup({ reviewer: [{ output: { approved: false, feedback } }] });
 
     expect(approved).toEqual({ type: 'approved' });
     expect(await rejecting.run(reviewSlice, aSlice())).toEqual({
@@ -97,8 +146,8 @@ describe('slice steps', () => {
   });
 
   async function setup(input: {
-    implementer?: AgentScript;
-    reviewer?: AgentScript;
+    implementer?: AgentScript[];
+    reviewer?: AgentScript[];
     settings?: RunSettings;
     exec?: (command: string) => ExecResult;
   }) {
@@ -106,8 +155,8 @@ describe('slice steps', () => {
     const created = await createRunWorktree(id);
     worktree = created;
     const agent = new FakeAgentSession(created.worktreePath, input.exec);
-    if (input.implementer) agent.script('implementer', input.implementer);
-    if (input.reviewer) agent.script('reviewer', input.reviewer);
+    agent.script('implementer', ...(input.implementer ?? []));
+    agent.script('reviewer', ...(input.reviewer ?? []));
     const workspace = new GitWorkspace({
       repoRoot: created.repo.dir,
       worktreePath: created.worktreePath,

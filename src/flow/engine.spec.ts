@@ -13,7 +13,7 @@ import type { RunSettings } from '../domain/settings.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Workspace } from '../ports/workspace.js';
 import {
-  aCommit,
+  anImplementation,
   aContext,
   aFeaturePlan,
   aRunState,
@@ -185,7 +185,7 @@ describe('runEngine', () => {
     });
     const { run } = setup({
       flow: sliceOnlyFlow({
-        pending: async () => ({ type: 'implemented', commit: aCommit() }),
+        pending: async () => anImplementation(),
         in_review: review,
       }),
       settings: runSettings({ maxStepRetries }),
@@ -209,7 +209,7 @@ describe('runEngine', () => {
       flow: sliceOnlyFlow({
         pending: async ({ slice }) => {
           implemented.push(slice.id);
-          return { type: 'implemented', commit: aCommit() };
+          return anImplementation();
         },
         in_review: async () => ({ type: 'approved' }),
       }),
@@ -229,7 +229,7 @@ describe('runEngine', () => {
     ];
     const { run } = setup({
       flow: sliceOnlyFlow({
-        pending: async () => ({ type: 'implemented', commit: null }),
+        pending: async () => anImplementation(),
         in_review: async () => reviews.shift() as Outcome,
       }),
       settings: runSettings({ reviewCycleCap: 2 }),
@@ -246,7 +246,7 @@ describe('runEngine', () => {
     const feedback = faker.lorem.sentence();
     const { run } = setup({
       flow: sliceOnlyFlow({
-        pending: async () => ({ type: 'implemented', commit: null }),
+        pending: async () => anImplementation(),
         in_review: async () => ({ type: 'changesRequested', feedback }),
       }),
       settings: runSettings({ reviewCycleCap: 1 }),

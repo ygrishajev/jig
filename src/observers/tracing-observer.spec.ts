@@ -7,7 +7,7 @@ import {
 } from '@opentelemetry/sdk-trace-base';
 import { describe, expect, it } from 'vitest';
 import type { RunEvent } from '../domain/events.js';
-import { aFeaturePlan, runId, sliceId } from '../../tests/support/builders.js';
+import { aFeaturePlan, anImplementation, runId, sliceId } from '../../tests/support/builders.js';
 import { TracingObserver } from './tracing-observer.js';
 
 describe('TracingObserver', () => {
@@ -58,7 +58,7 @@ describe('TracingObserver', () => {
       type: 'stepFinished',
       runId: id,
       at,
-      outcome: { type: 'implemented', commit: null },
+      outcome: anImplementation(),
       durationMs: 1,
     });
 

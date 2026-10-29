@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import type { Outcome } from '../../src/domain/outcome.js';
 import type { DesignDocs, FeaturePlan, RunContext, RunState } from '../../src/domain/run-state.js';
 import type { RunSettings } from '../../src/domain/settings.js';
 import type { PlannedSlice, Slice } from '../../src/domain/slice.js';
@@ -30,9 +31,10 @@ export function aSlice({
   status = 'pending',
   reviewCycles = 0,
   lastFeedback,
+  startCommit,
   commit,
 }: Partial<Slice> = {}): Slice {
-  return { id, title, description, order, status, reviewCycles, lastFeedback, commit };
+  return { id, title, description, order, status, reviewCycles, lastFeedback, startCommit, commit };
 }
 
 export function aContext({
@@ -86,4 +88,11 @@ export function aCommit({
   deletions = faker.number.int({ min: 0, max: 200 }),
 }: Partial<CommitSummary> = {}): CommitSummary {
   return { sha, filesChanged, insertions, deletions };
+}
+
+export function anImplementation({
+  startCommit = faker.git.commitSha(),
+  commit = aCommit(),
+}: Partial<Omit<Extract<Outcome, { type: 'implemented' }>, 'type'>> = {}): Outcome {
+  return { type: 'implemented', startCommit, commit };
 }

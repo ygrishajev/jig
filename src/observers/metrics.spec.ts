@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 import type { RunEvent } from '../domain/events.js';
 import type { TokenUsage } from '../domain/usage.js';
-import { aCommit, runId, sliceId } from '../../tests/support/builders.js';
+import { aCommit, anImplementation, runId, sliceId } from '../../tests/support/builders.js';
 import { SteppingClock } from '../../tests/support/fakes.js';
 import { formatSummary, MetricsObserver, summarizeMetrics, type MetricRecord } from './metrics.js';
 
@@ -33,7 +33,7 @@ describe('MetricsObserver', () => {
       type: 'stepFinished',
       runId: runId(),
       at: { phase: 'slices', sliceId: sliceId() },
-      outcome: { type: 'implemented', commit },
+      outcome: anImplementation({ commit }),
       durationMs,
     });
 

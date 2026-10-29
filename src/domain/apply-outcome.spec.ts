@@ -2,6 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 import {
   aCommit,
+  anImplementation,
   aContext,
   aFeaturePlan,
   aPlannedSlice,
@@ -52,22 +53,17 @@ describe('applyOutcome', () => {
     expect(slices.find((slice) => slice.id === later.id)).toEqual(later);
   });
 
-  it('remembers the commit an implementation produced, and keeps the earlier one when nothing changed', () => {
-    const earlier = faker.git.commitSha();
-    const slice = aSlice({ order: 0, commit: earlier });
-    const next = aCommit();
+  it('remembers where an implementation started and the commit it produced', () => {
+    const slice = aSlice({ order: 0, commit: faker.git.commitSha() });
+    const startCommit = faker.git.commitSha();
+    const commit = aCommit();
 
-    const committed = applyOutcome(aRunState({ slices: [slice] }), {
-      type: 'implemented',
-      commit: next,
-    });
-    const unchanged = applyOutcome(aRunState({ slices: [slice] }), {
-      type: 'implemented',
-      commit: null,
-    });
+    const { slices } = applyOutcome(
+      aRunState({ slices: [slice] }),
+      anImplementation({ startCommit, commit }),
+    );
 
-    expect(committed.slices[0].commit).toBe(next.sha);
-    expect(unchanged.slices[0].commit).toBe(earlier);
+    expect(slices[0]).toMatchObject({ startCommit, commit: commit.sha });
   });
 
   it('forgets earlier feedback once a slice is verified', () => {

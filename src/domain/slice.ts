@@ -14,6 +14,8 @@ export interface Slice extends PlannedSlice {
   status: SliceStatus;
   reviewCycles: number;
   lastFeedback?: string;
+  /** The run branch head when the slice's first implementation began; its change is everything after it. */
+  startCommit?: string;
   commit?: string;
 }
 

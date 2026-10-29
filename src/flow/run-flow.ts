@@ -22,7 +22,10 @@ const backToImplementUnlessCapped = [
 
 /** One slice: implement it, have it reviewed, verify it — and loop back on any requested change. */
 export const sliceFlow = defineSliceFlow({
-  pending: { step: implementSlice, on: { implemented: 'in_review' } },
+  pending: {
+    step: implementSlice,
+    on: { implemented: 'in_review', changesRequested: backToImplementUnlessCapped },
+  },
   in_review: {
     step: reviewSlice,
     on: { approved: 'verifying', changesRequested: backToImplementUnlessCapped },

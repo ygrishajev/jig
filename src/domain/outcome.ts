@@ -10,7 +10,7 @@ export type Outcome =
   | { type: 'sliced'; slices: PlannedSlice[] }
   | { type: 'continue' }
   | { type: 'pause' }
-  | { type: 'implemented'; commit: CommitSummary | null }
+  | { type: 'implemented'; startCommit: string; commit: CommitSummary }
   | { type: 'approved' }
   | { type: 'changesRequested'; feedback: string }
   | { type: 'verified' }

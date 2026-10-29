@@ -32,6 +32,10 @@ export class GitWorkspace implements Workspace {
     };
   }
 
+  headCommit() {
+    return openRepo(this.options.worktreePath).revparse(['HEAD']);
+  }
+
   async readRepoFile(relativePath: string) {
     try {
       return await readFile(path.join(this.options.repoRoot, relativePath), 'utf-8');

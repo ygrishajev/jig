@@ -111,6 +111,21 @@ describe('runFlow', () => {
     expect(agent.calls.filter((call) => call.role === 'implementer')).toHaveLength(1);
   });
 
+  it('never sends an implementation that changed nothing to review, and gives up on it at the review cap', async () => {
+    const reviewCycleCap = faker.number.int({ min: 1, max: 3 });
+    const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap }) });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script('implementer', ...Array.from({ length: reviewCycleCap }, () => ({ files: {} })));
+    agent.script('reviewer', approve());
+    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('stuck');
+    expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: reviewCycleCap });
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(0);
+  });
+
   it('stops for a person after planning when the design gate is a checkpoint, then continues on resume', async () => {
     const slice = aPlannedSlice();
     const { agent, run, start } = await setup({
