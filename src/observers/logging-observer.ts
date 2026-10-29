@@ -42,7 +42,7 @@ export class LoggingObserver {
 }
 
 function describe(at: StepLocation) {
-  return at.sliceId ? `${at.sliceStatus} slice ${at.sliceId}` : at.phase;
+  return at.sliceId !== undefined ? `${at.sliceStatus} slice ${at.sliceId}` : at.phase;
 }
 
 function seconds(durationMs: number) {

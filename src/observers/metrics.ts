@@ -96,7 +96,9 @@ export function summarizeMetrics(records: MetricRecord[]): MetricsSummary {
     retries: records.filter((record) => record.kind === 'retry').length,
     reviewRounds: steps.filter((step) => step.outcome === 'changesRequested').length,
     slicesCommitted: new Set(
-      steps.filter((step) => step.commit).map((step) => step.location.sliceId),
+      steps.flatMap((step) =>
+        step.commit && step.location.sliceId !== undefined ? [step.location.sliceId] : [],
+      ),
     ).size,
     linesChanged: sum(commits.map((commit) => commit.insertions + commit.deletions)),
     costUsd: sum(calls.map((call) => call.costUsd ?? 0)),

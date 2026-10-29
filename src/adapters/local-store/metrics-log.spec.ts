@@ -54,6 +54,13 @@ describe('MetricsLog', () => {
   it.each([
     ['is not JSON', () => faker.lorem.word()],
     ['is not a metric record', () => JSON.stringify({ kind: faker.word.noun() })],
+    [
+      'names a slice without its status',
+      () => {
+        const { location, ...record } = retryRecord(runId());
+        return JSON.stringify({ ...record, location: { ...location, sliceId: sliceId() } });
+      },
+    ],
   ])('refuses a complete line in the middle that %s', async (_case, corruptLine) => {
     const { log, id, appendRaw } = await setup();
     log.append(stepRecord(id));

@@ -67,12 +67,14 @@ export class TracingObserver {
 }
 
 function stepName(at: StepLocation) {
-  return at.sliceId ? `sdlc.step ${at.sliceStatus}` : `sdlc.step ${at.phase}`;
+  return at.sliceId !== undefined ? `sdlc.step ${at.sliceStatus}` : `sdlc.step ${at.phase}`;
 }
 
 function locationAttributes(at: StepLocation) {
   return {
     'sdlc.phase': at.phase,
-    ...(at.sliceId ? { 'sdlc.slice.id': at.sliceId, 'sdlc.slice.status': at.sliceStatus } : {}),
+    ...(at.sliceId !== undefined
+      ? { 'sdlc.slice.id': at.sliceId, 'sdlc.slice.status': at.sliceStatus }
+      : {}),
   };
 }

@@ -5,14 +5,7 @@ import { MetricsLogCorrupt } from '../../domain/errors.js';
 import { runIdSchema, type RunId } from '../../domain/run-id.js';
 import type { MetricRecord } from '../../observers/metrics.js';
 import { stateDirectory } from './run-paths.js';
-import { runPhaseSchema } from '../../domain/run-state.js';
-import { sliceStatusSchema } from '../../domain/slice.js';
-
-const locationSchema = z.object({
-  phase: runPhaseSchema,
-  sliceId: z.string().optional(),
-  sliceStatus: sliceStatusSchema.optional(),
-});
+import { stepLocationSchema } from '../../domain/events.js';
 
 const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.discriminatedUnion(
   'kind',
@@ -21,7 +14,7 @@ const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.dis
       kind: z.literal('step'),
       at: z.string(),
       runId: runIdSchema,
-      location: locationSchema,
+      location: stepLocationSchema,
       outcome: z.enum([
         'contextBuilt',
         'featurePlanned',
@@ -51,7 +44,7 @@ const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.dis
       kind: z.literal('agentCall'),
       at: z.string(),
       runId: runIdSchema,
-      location: locationSchema.optional(),
+      location: stepLocationSchema.optional(),
       role: z.enum(['planner', 'implementer', 'reviewer', 'describer']),
       costUsd: z.number().optional(),
       tokens: z.object({
@@ -66,7 +59,7 @@ const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.dis
       kind: z.literal('retry'),
       at: z.string(),
       runId: runIdSchema,
-      location: locationSchema,
+      location: stepLocationSchema,
       reason: z.string(),
     }),
   ],

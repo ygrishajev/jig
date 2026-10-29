@@ -6,7 +6,6 @@ import type { Outcome } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
 import { currentSlice, type RunPhase, type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
-import type { Slice } from '../domain/slice.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
 import type {
@@ -121,10 +120,9 @@ class Engine {
     if ('blockedReason' in attempt) return attempt;
 
     const applied = applyOutcome(state, attempt.outcome);
-    const updatedSlice = applied.slices.find((candidate) => candidate.id === slice.id) as Slice;
     const nextStatus = this.resolve(sliceNode.on, attempt.outcome, {
       state: applied,
-      slice: updatedSlice,
+      slice: currentSlice(applied),
       settings: this.d.settings,
     });
     this.d.events.publish({

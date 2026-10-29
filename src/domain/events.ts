@@ -1,14 +1,17 @@
+import { z } from 'zod';
 import type { AgentRole } from './agent-role.js';
 import type { Outcome } from './outcome.js';
 import type { RunId } from './run-id.js';
-import type { RunPhase } from './run-state.js';
+import { runPhaseSchema, type RunPhase } from './run-state.js';
+import { sliceStatusSchema, type SliceStatus } from './slice.js';
 import type { TokenUsage } from './usage.js';
 
-export interface StepLocation {
-  phase: RunPhase;
-  sliceId?: string;
-  sliceStatus?: string;
-}
+/** Where a step ran: a run phase, or one slice's step inside it. The slice form comes first so it is not read as the bare phase. */
+export const stepLocationSchema = z.union([
+  z.object({ phase: runPhaseSchema, sliceId: z.string(), sliceStatus: sliceStatusSchema }),
+  z.object({ phase: runPhaseSchema, sliceId: z.undefined(), sliceStatus: z.undefined() }),
+]);
+export type StepLocation = z.infer<typeof stepLocationSchema>;
 
 /** Everything observable about a run. Logging, metrics and tracing subscribe to these. */
 export type RunEvent =
@@ -23,7 +26,13 @@ export type RunEvent =
     }
   | { type: 'stepRetried'; runId: RunId; at: StepLocation; attempt: number; reason: string }
   | { type: 'phaseChanged'; runId: RunId; from: RunPhase; to: RunPhase }
-  | { type: 'sliceStatusChanged'; runId: RunId; sliceId: string; from: string; to: string }
+  | {
+      type: 'sliceStatusChanged';
+      runId: RunId;
+      sliceId: string;
+      from: SliceStatus;
+      to: SliceStatus;
+    }
   | { type: 'runHalted'; runId: RunId; phase: RunPhase }
   | { type: 'runBlocked'; runId: RunId; phase: RunPhase; reason: string }
   | { type: 'runFinished'; runId: RunId; phase: RunPhase }

@@ -6,7 +6,7 @@ import {
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 import { describe, expect, it } from 'vitest';
-import type { RunEvent } from '../domain/events.js';
+import type { RunEvent, StepLocation } from '../domain/events.js';
 import { aFeaturePlan, anImplementation, runId, sliceId } from '../../tests/support/builders.js';
 import { TracingObserver } from './tracing-observer.js';
 
@@ -41,7 +41,7 @@ describe('TracingObserver', () => {
   it("puts an agent call's tokens and cost on the step it ran in", () => {
     const { observe, spans } = setup();
     const id = runId();
-    const at = { phase: 'slices' as const, sliceId: sliceId(), sliceStatus: 'pending' };
+    const at: StepLocation = { phase: 'slices', sliceId: sliceId(), sliceStatus: 'pending' };
     const input = faker.number.int({ min: 1, max: 9999 });
     const costUsd = faker.number.float({ min: 0.01, max: 1, fractionDigits: 4 });
 

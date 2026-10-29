@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
-import type { RunEvent } from '../domain/events.js';
+import type { RunEvent, StepLocation } from '../domain/events.js';
 import type { TokenUsage } from '../domain/usage.js';
 import { aCommit, anImplementation, runId, sliceId } from '../../tests/support/builders.js';
 import { SteppingClock } from '../../tests/support/fakes.js';
@@ -10,7 +10,7 @@ describe('MetricsObserver', () => {
   it('attributes an agent call to the step it ran in', () => {
     const { observe, records } = setup();
     const id = runId();
-    const at = { phase: 'slices' as const, sliceId: sliceId(), sliceStatus: 'pending' };
+    const at: StepLocation = { phase: 'slices', sliceId: sliceId(), sliceStatus: 'pending' };
     const tokens = someTokens();
 
     observe({ type: 'stepStarted', runId: id, at });
@@ -32,7 +32,7 @@ describe('MetricsObserver', () => {
     observe({
       type: 'stepFinished',
       runId: runId(),
-      at: { phase: 'slices', sliceId: sliceId() },
+      at: { phase: 'slices', sliceId: sliceId(), sliceStatus: 'pending' },
       outcome: anImplementation({ commit }),
       durationMs,
     });
@@ -112,7 +112,7 @@ function step(input: {
     kind: 'step',
     at: now(),
     runId: runId(),
-    location: { phase: 'slices', sliceId: input.sliceId },
+    location: { phase: 'slices', sliceId: input.sliceId, sliceStatus: 'pending' },
     outcome: input.outcome,
     durationMs: input.durationMs,
     ...(input.commit ? { commit: input.commit } : {}),
