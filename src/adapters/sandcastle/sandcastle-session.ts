@@ -31,6 +31,9 @@ export interface SandcastleSessionOptions {
   credentials: Record<string, string>;
   agents: Record<AgentRole, AgentProvider>;
   skipCommitSigning: boolean;
+  /** Runs once inside the sandbox before any agent, e.g. `npm ci`. */
+  setupCommand?: string;
+  setupTimeoutSeconds: number;
   idleTimeoutSeconds: number;
   agentLogFile: string;
   events: EventSink;
@@ -59,9 +62,7 @@ export class SandcastleSession implements AgentSession {
         baseBranch: options.baseBranch,
         cwd: repoRoot,
         sandbox: docker({ imageName: options.imageName, env: options.credentials }),
-        hooks: options.skipCommitSigning
-          ? { host: { onWorktreeReady: [disableSigning()] } }
-          : undefined,
+        hooks: sandboxHooks(options),
       });
       return new SandcastleSession(sandbox, options);
     } catch (error) {
@@ -161,6 +162,19 @@ function correctionPrompt(problem: string) {
     `Your result could not be used: ${problem}`,
     `Reply again with only the corrected result inside <${OUTPUT_TAG}></${OUTPUT_TAG}> tags.`,
   ].join('\n');
+}
+
+function sandboxHooks(options: SandcastleSessionOptions) {
+  return {
+    host: options.skipCommitSigning ? { onWorktreeReady: [disableSigning()] } : undefined,
+    sandbox: options.setupCommand
+      ? {
+          onSandboxReady: [
+            { command: options.setupCommand, timeoutMs: options.setupTimeoutSeconds * 1000 },
+          ],
+        }
+      : undefined,
+  };
 }
 
 function disableSigning() {

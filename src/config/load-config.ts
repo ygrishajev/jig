@@ -17,6 +17,10 @@ const configSchema = z
   .object({
     mergeMode: z.enum(['manual', 'auto']).default('manual'),
     reviewCycleCap: z.number().int().positive().default(3),
+    /** Prepares the sandbox once per run before any agent starts, e.g. `npm ci`. */
+    setupCommand: z.string().optional(),
+    setupTimeoutSeconds: z.number().int().positive().default(900),
+    /** Must pass inside the sandbox before a reviewed slice counts as approved. */
     verifyCommand: z.string().optional(),
     /** `skip` disables signing in the run's worktree, for repos that sign through an agent the sandbox cannot reach. */
     commitSigning: z.enum(['repo', 'skip']).default('repo'),

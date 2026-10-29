@@ -47,6 +47,14 @@ describe('loadConfig', () => {
     });
   });
 
+  it('takes the commands that prepare and check the sandbox', async () => {
+    const setupCommand = `npm ${faker.word.verb()}`;
+
+    const config = loadConfig(await setup({ setupCommand, setupTimeoutSeconds: 120 }));
+
+    expect(config).toMatchObject({ setupCommand, setupTimeoutSeconds: 120 });
+  });
+
   it('rejects a misspelled key instead of ignoring it', async () => {
     const repoRoot = await setup({ implement: { provider: 'claude' } });
 

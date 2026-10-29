@@ -163,6 +163,8 @@ function sandcastleOpener(repoRoot: string, config: SdlcConfig) {
       credentials: collectCredentials(Object.values(steps), process.env),
       agents: agentsFor(steps),
       skipCommitSigning: config.commitSigning === 'skip',
+      setupCommand: config.setupCommand,
+      setupTimeoutSeconds: config.setupTimeoutSeconds,
       idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
       agentLogFile: path.join(stateDirectory(repoRoot, run.runId), 'agents.log'),
       events,
