@@ -7,6 +7,7 @@ import { RUN_ID_PATTERN, startRun, type RunState } from '../domain/run-state.js'
 import { runEngine, type EngineStatus } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
 import { closeRunScope, openRunScope, type AppCradle } from './container.js';
+import { ensureSandboxImage } from './sandbox-image.js';
 
 export interface RunSdlcInput {
   requestPath?: string;
@@ -29,6 +30,7 @@ export async function runSdlc(
   input: RunSdlcInput,
 ): Promise<RunReport> {
   const state = await startOrResume(app, input);
+  await ensureSandboxImage(app.cradle);
   const scope = await openRunScope(app, { runId: state.runId, baseBranch: state.baseBranch });
   try {
     const result = await runEngine(runFlow, state, scope.cradle.engineDependencies);

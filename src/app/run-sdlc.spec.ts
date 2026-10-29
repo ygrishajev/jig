@@ -6,6 +6,7 @@ import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
+import { loadConfig } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
 import {
@@ -109,6 +110,7 @@ describe('runSdlc', () => {
       return agent;
     };
     app.register({
+      config: asValue({ ...loadConfig(repo.dir), sandboxImage: `sandcastle:${faker.word.noun()}` }),
       openSession: asValue(async ({ run }: OpenSessionInput) => {
         const agent = agents.get(run.runId);
         if (!agent) throw new Error(`No fake agent prepared for run ${run.runId}`);

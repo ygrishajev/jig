@@ -28,6 +28,13 @@ const configSchema = z
     designGate: z.enum(['auto', 'checkpoint']).default('auto'),
     /** The image sandcastle starts; defaults to sandcastle's own name for the repository. */
     sandboxImage: z.string().optional(),
+    /** Exact agent CLI versions to install; an agent without a pin follows `agentUpdates`. */
+    agents: z
+      .object({ claude: z.string().optional(), opencode: z.string().optional() })
+      .strict()
+      .default({}),
+    /** `auto` rebuilds the agent layer when a newer release is out, `warn` only says so, `off` never checks. */
+    agentUpdates: z.enum(['auto', 'warn', 'off']).default('auto'),
     /** An agent that prints nothing for this long is considered hung and stopped. */
     agentIdleTimeoutSeconds: z.number().int().positive().default(600),
     planner: stepConfigSchema.default({ provider: 'claude' }),

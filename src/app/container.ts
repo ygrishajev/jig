@@ -1,6 +1,5 @@
 import path from 'node:path';
 import type { AgentProvider } from '@ai-hero/sandcastle';
-import { defaultImageName } from '@ai-hero/sandcastle/sandboxes/docker';
 import { asFunction, asValue, createContainer, InjectionMode, type AwilixContainer } from 'awilix';
 import type { Logger } from 'pino';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
@@ -11,6 +10,8 @@ import {
   createRunLogger,
   type LogFormat,
 } from '../adapters/logging/create-logger.js';
+import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
+import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
 import { AGENTS, collectCredentials } from '../adapters/sandcastle/agents.js';
 import { SandcastleSession } from '../adapters/sandcastle/sandcastle-session.js';
 import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
@@ -22,6 +23,7 @@ import { observe, RunEvents } from '../observers/run-events.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { Workspace } from '../ports/workspace.js';
+import { sandboxImageName } from './sandbox-image.js';
 
 /** How many times a step that failed transiently is tried again before the run blocks. */
 const MAX_STEP_RETRIES = 2;
@@ -43,6 +45,8 @@ export interface RunSession extends AgentSession {
 export interface OpenSessionInput {
   run: RunIdentity;
   events: EventSink;
+  /** Overrides the configured setup command; `null` starts the sandbox without one. */
+  setupCommand?: string | null;
 }
 
 /** Lives for the whole process: configuration and everything shared by every run. */
@@ -55,6 +59,8 @@ export interface AppCradle {
   logger: Logger;
   clock: Clock;
   store: LocalRunStore;
+  images: DockerImages;
+  latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   openSession: (input: OpenSessionInput) => Promise<RunSession>;
 }
 
@@ -88,6 +94,14 @@ export function createAppContainer(input: {
     ).singleton(),
     clock: asValue({ now: () => Date.now() }),
     store: asFunction(({ repoRoot }: AppCradle) => new LocalRunStore(repoRoot)).singleton(),
+    images: asFunction(
+      ({ logger }: AppCradle) =>
+        new DockerImages({
+          cache: process.env.SDLC_IMAGE_CACHE === 'gha' ? 'gha' : undefined,
+          onOutput: (line) => logger.debug(line.trimEnd()),
+        }),
+    ).singleton(),
+    latestVersions: asValue(latestAgentVersions),
     openSession: asFunction(({ repoRoot, config }: AppCradle) =>
       sandcastleOpener(repoRoot, config),
     ).singleton(),
@@ -154,16 +168,16 @@ export async function closeRunScope(scope: AwilixContainer<RunCradle>) {
 }
 
 function sandcastleOpener(repoRoot: string, config: SdlcConfig) {
-  return async ({ run, events }: OpenSessionInput): Promise<RunSession> => {
+  return async ({ run, events, setupCommand }: OpenSessionInput): Promise<RunSession> => {
     const steps = configuredSteps(config);
     return SandcastleSession.open({
       repoRoot,
       ...run,
-      imageName: config.sandboxImage ?? defaultImageName(repoRoot),
+      imageName: sandboxImageName(repoRoot, config),
       credentials: collectCredentials(Object.values(steps), process.env),
       agents: agentsFor(steps),
       skipCommitSigning: config.commitSigning === 'skip',
-      setupCommand: config.setupCommand,
+      setupCommand: setupCommand === null ? undefined : (setupCommand ?? config.setupCommand),
       setupTimeoutSeconds: config.setupTimeoutSeconds,
       idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
       agentLogFile: path.join(stateDirectory(repoRoot, run.runId), 'agents.log'),

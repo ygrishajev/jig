@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   createSandbox,
@@ -184,13 +184,23 @@ function disableSigning() {
   };
 }
 
-/** Untracked `.sandcastle/` files would make the operator's tree dirty and block the final merge. */
-async function ignoreSandcastleDirectory(repoRoot: string) {
+/**
+ * What sandcastle writes under `.sandcastle/` is scratch; the Dockerfile there is the
+ * repository's own and gets committed. Untracked scratch would block the final merge.
+ */
+export const SANDCASTLE_GITIGNORE = 'worktrees/\nlogs/\n.env\n';
+
+/** Also replaces a catch-all `*`, which would hide the Dockerfile from the repository. */
+export async function ignoreSandcastleDirectory(repoRoot: string) {
   const directory = path.join(repoRoot, '.sandcastle');
   const gitignore = path.join(directory, '.gitignore');
-  if (existsSync(gitignore)) return;
+  if (existsSync(gitignore) && !ignoresEverything(await readFile(gitignore, 'utf-8'))) return;
   await mkdir(directory, { recursive: true });
-  await writeFile(gitignore, '*\n');
+  await writeFile(gitignore, SANDCASTLE_GITIGNORE);
+}
+
+function ignoresEverything(gitignore: string) {
+  return gitignore.split('\n').some((line) => line.trim() === '*');
 }
 
 function messageOf(error: unknown) {

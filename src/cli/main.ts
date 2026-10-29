@@ -3,11 +3,13 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { registerRunCommand } from './commands/run.js';
+import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';
 
 export function buildCli() {
   const program = new Command();
   program.name('sdlc').description('Agentic SDLC pipeline orchestrator').version(packageVersion());
+  registerSandboxCommands(program);
   registerRunCommand(program);
   registerStatusCommand(program);
   return program;

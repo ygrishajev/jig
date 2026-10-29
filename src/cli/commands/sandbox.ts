@@ -1,0 +1,53 @@
+import { Command } from 'commander';
+import { createAppContainer } from '../../app/container.js';
+import { initSandbox, type InitResult } from '../../app/init-sandbox.js';
+import { ensureSandboxImage } from '../../app/sandbox-image.js';
+import type { LogFormat } from '../../adapters/logging/create-logger.js';
+import { withErrorHandling } from '../with-error-handling.js';
+import { logFormatOption } from './run.js';
+
+const INIT_SUMMARY: Record<InitResult['status'], (result: InitResult) => string> = {
+  written: () =>
+    'Wrote .sandcastle/Dockerfile and sdlc.config.json — add your toolchain and a verifyCommand, then run sdlc init --no-agent to check them.',
+  verified: (result) =>
+    `Sandbox ready: setup and verify pass inside it${'attempts' in result && result.attempts > 1 ? ` (after ${result.attempts} attempts)` : ''}. Review and commit .sandcastle/Dockerfile and sdlc.config.json.`,
+  failed: (result) =>
+    `Setup or verify did not pass in the sandbox${'attempts' in result && result.attempts > 1 ? ` after ${result.attempts} attempts` : ''} — fix what this shows, then run sdlc init --no-agent:\n${'failure' in result ? result.failure : ''}`,
+};
+
+export function registerSandboxCommands(program: Command) {
+  program
+    .command('init')
+    .description("Set up this repository's sandbox and check its setup and verify commands in it")
+    .option('--no-agent', 'only write the starter files and check what is already configured')
+    .addOption(logFormatOption())
+    .action(
+      withErrorHandling(async (options: { agent: boolean; logFormat: LogFormat }) => {
+        const app = createAppContainer({ repoRoot: process.cwd(), logFormat: options.logFormat });
+        try {
+          const result = await initSandbox(app, { useAgent: options.agent });
+          app.cradle.logger.info(INIT_SUMMARY[result.status](result));
+          if (result.status === 'failed') process.exitCode = 1;
+        } finally {
+          await app.dispose();
+        }
+      }),
+    );
+
+  program
+    .command('build')
+    .description('Build the sandbox image if the Dockerfile or the agents changed')
+    .option('--pull-agents', 'install the latest agent releases even if updates are off')
+    .addOption(logFormatOption())
+    .action(
+      withErrorHandling(async (options: { pullAgents?: boolean; logFormat: LogFormat }) => {
+        const app = createAppContainer({ repoRoot: process.cwd(), logFormat: options.logFormat });
+        try {
+          const image = await ensureSandboxImage(app.cradle, { pullAgents: options.pullAgents });
+          app.cradle.logger.info(`Sandbox image ready: ${image}`);
+        } finally {
+          await app.dispose();
+        }
+      }),
+    );
+}
