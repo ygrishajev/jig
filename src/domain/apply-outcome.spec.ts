@@ -53,17 +53,13 @@ describe('applyOutcome', () => {
     expect(slices.find((slice) => slice.id === later.id)).toEqual(later);
   });
 
-  it('remembers where an implementation started and the commit it produced', () => {
+  it('remembers the commit an implementation ended on', () => {
     const slice = aSlice({ order: 0, commit: faker.git.commitSha() });
-    const startCommit = faker.git.commitSha();
     const commit = aCommit();
 
-    const { slices } = applyOutcome(
-      aRunState({ slices: [slice] }),
-      anImplementation({ startCommit, commit }),
-    );
+    const { slices } = applyOutcome(aRunState({ slices: [slice] }), anImplementation({ commit }));
 
-    expect(slices[0]).toMatchObject({ startCommit, commit: commit.sha });
+    expect(slices[0].commit).toBe(commit.sha);
   });
 
   it('forgets earlier feedback once a slice is verified', () => {

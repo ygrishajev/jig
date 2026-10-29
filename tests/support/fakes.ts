@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { simpleGit } from 'simple-git';
 import type { ZodType } from 'zod';
 import { AgentOutputInvalid } from '../../src/domain/errors.js';
 import type { RunEvent } from '../../src/domain/events.js';
@@ -17,7 +18,8 @@ import type { RunStore } from '../../src/ports/run-store.js';
  * What the fake agent does for one call: write files into the worktree, return structured output,
  * or fail the way a real agent would.
  */
-export type AgentScript = { files: Record<string, string> } | { output: unknown } | { fail: Error };
+export type AgentScript =
+  { files: Record<string, string>; commitMessage?: string } | { output: unknown } | { fail: Error };
 
 export interface AgentCall extends AgentRunInput {
   kind: 'run' | 'runForOutput';
@@ -46,7 +48,9 @@ export class FakeAgentSession implements AgentSession {
     this.calls.push({ ...input, kind: 'run' });
     const turn = this.nextTurn(input.role);
     if ('fail' in turn) throw turn.fail;
-    if ('files' in turn) await this.writeFiles(turn.files);
+    if (!('files' in turn)) return;
+    await this.writeFiles(turn.files);
+    if (turn.commitMessage) await this.commit(turn.commitMessage);
   }
 
   async runForOutput<T>(input: AgentRunInput & { schema: ZodType<T> }) {
@@ -74,6 +78,10 @@ export class FakeAgentSession implements AgentSession {
     const turn = this.queues.get(role)?.shift();
     if (!turn) throw new Error(`The fake agent has no turn scripted for ${role}`);
     return turn;
+  }
+
+  private async commit(message: string) {
+    await simpleGit({ baseDir: this.worktreePath }).add('-A').commit(message);
   }
 
   private async writeFiles(files: Record<string, string>) {

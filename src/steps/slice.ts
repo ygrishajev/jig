@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import type { RunState } from '../domain/run-state.js';
 import type { Slice } from '../domain/slice.js';
-import type { SliceStep } from '../flow/define-flow.js';
+import type { SliceStep, StepPorts } from '../flow/define-flow.js';
 import { implementPrompt, nothingChangedFeedback, reviewPrompt } from '../prompts/slice.js';
 
 const reviewVerdictSchema = z.object({ approved: z.boolean(), feedback: z.string() });
@@ -8,18 +9,21 @@ const reviewVerdictSchema = z.object({ approved: z.boolean(), feedback: z.string
 /** Enough of a failing verify command's output to act on, without flooding the next prompt. */
 const VERIFY_OUTPUT_LIMIT = 400;
 
-export const implementSlice: SliceStep = async ({ slice, ports }) => {
-  const startCommit = slice.startCommit ?? (await ports.workspace.headCommit());
+export const implementSlice: SliceStep = async ({ state, slice, ports }) => {
+  const { workspace } = ports;
+  const attemptStart = await workspace.headCommit();
   await ports.agent.run({ role: 'implementer', prompt: implementPrompt(slice) });
-  const commit = await ports.workspace.commitAll(`sdlc: implement ${slice.id} — ${slice.title}`);
-  if (!commit) return { type: 'changesRequested', feedback: nothingChangedFeedback(slice) };
-  return { type: 'implemented', startCommit, commit };
+  await workspace.commitAll(`sdlc: implement ${slice.id} — ${slice.title}`);
+  if ((await workspace.headCommit()) === (await sliceStart(state, slice, ports))) {
+    return { type: 'changesRequested', feedback: nothingChangedFeedback(slice) };
+  }
+  return { type: 'implemented', commit: await workspace.summariseCommitsSince(attemptStart) };
 };
 
-export const reviewSlice: SliceStep = async ({ slice, ports }) => {
+export const reviewSlice: SliceStep = async ({ state, slice, ports }) => {
   const verdict = await ports.agent.runForOutput({
     role: 'reviewer',
-    prompt: reviewPrompt(slice, reviewRange(slice)),
+    prompt: reviewPrompt(slice, `${await sliceStart(state, slice, ports)}..HEAD`),
     schema: reviewVerdictSchema,
   });
   return verdict.approved
@@ -39,9 +43,17 @@ export const verifySlice: SliceStep = async ({ settings, ports }) => {
   };
 };
 
-/** A slice saved before slices recorded their start is reviewed the old way: its latest commit only. */
-function reviewRange(slice: Slice) {
-  return slice.startCommit ? `${slice.startCommit}..HEAD` : 'HEAD~1..HEAD';
+/**
+ * Where a slice's commits begin: where the slice before it ended, or the run branch's fork point
+ * for the first. Derived from approved work rather than read from HEAD, so an attempt resumed
+ * after a crash still counts the commits the interrupted attempt left behind.
+ */
+async function sliceStart(state: RunState, slice: Slice, ports: StepPorts) {
+  const previousEnd = state.slices
+    .filter((candidate) => candidate.order < slice.order && candidate.commit)
+    .sort((a, b) => a.order - b.order)
+    .at(-1)?.commit;
+  return previousEnd ?? ports.workspace.forkPoint();
 }
 
 function truncate(text: string, limit: number) {

@@ -1,4 +1,6 @@
 import { faker } from '@faker-js/faker';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -34,42 +36,59 @@ describe('slice steps', () => {
     expect(head?.message).toContain(slice.id);
   });
 
-  it('records the run branch head the slice started from, and keeps it across attempts', async () => {
+  it("takes a commit the implementer made itself as the slice's change", async () => {
+    const commitMessage = faker.lorem.sentence();
     const { run, git, runBranch } = await setup({
-      implementer: [
-        { files: { 'first.txt': faker.lorem.sentence() } },
-        { files: { 'second.txt': faker.lorem.sentence() } },
-      ],
+      implementer: [{ files: { 'feature.txt': faker.lorem.sentence() }, commitMessage }],
     });
-    const branchHeadBeforeSlice = await git.revparse([runBranch]);
-    const slice = aSlice();
 
-    const first = await run(implementSlice, slice);
-    const startCommit = first.type === 'implemented' ? first.startCommit : undefined;
-    const second = await run(implementSlice, { ...slice, startCommit });
+    const outcome = await run(implementSlice, aSlice());
 
-    expect(first).toMatchObject({ type: 'implemented', startCommit: branchHeadBeforeSlice });
-    expect(second).toMatchObject({ type: 'implemented', startCommit: branchHeadBeforeSlice });
+    const head = (await git.log([runBranch, '-1'])).latest;
+    expect(head?.message).toBe(commitMessage);
+    expect(outcome).toMatchObject({ type: 'implemented', commit: { sha: head?.hash } });
   });
 
-  it('gives the reviewer every commit since the slice started, not just the latest fix', async () => {
+  it('gives the reviewer every commit since the run branch was cut when reviewing the first slice', async () => {
     const { run, agent, git, runBranch } = await setup({
       implementer: [
         { files: { 'first.txt': faker.lorem.sentence() } },
         { files: { 'second.txt': faker.lorem.sentence() } },
       ],
-      reviewer: [{ output: { approved: true, feedback: '' } }],
+      reviewer: [approval()],
     });
+    const forkPoint = await git.revparse([runBranch]);
     const slice = aSlice();
-    const first = await run(implementSlice, slice);
-    const startCommit = first.type === 'implemented' ? first.startCommit : undefined;
-    await run(implementSlice, { ...slice, startCommit, lastFeedback: faker.lorem.sentence() });
+    await run(implementSlice, slice);
+    await run(implementSlice, { ...slice, lastFeedback: faker.lorem.sentence() });
 
-    await run(reviewSlice, { ...slice, status: 'in_review', startCommit });
+    await run(reviewSlice, { ...slice, status: 'in_review' });
 
-    const reviewed = await git.log([`${startCommit}..${runBranch}`]);
-    expect(reviewed.total).toBe(2);
-    expect(agent.calls.at(-1)?.prompt).toContain(`${startCommit}..HEAD`);
+    expect((await git.log([`${forkPoint}..${runBranch}`])).total).toBe(2);
+    expect(agent.calls.at(-1)?.prompt).toContain(`${forkPoint}..HEAD`);
+  });
+
+  it('starts a slice where the previous slice ended, so a commit left by an interrupted attempt is still reviewed', async () => {
+    const { run, agent, git, runBranch, workspace, worktreePath } = await setup({
+      implementer: [{ files: { 'resumed.txt': faker.lorem.sentence() } }],
+      reviewer: [approval()],
+    });
+    await writeFile(path.join(worktreePath, 'previous.txt'), faker.lorem.sentence());
+    await workspace.commitAll(faker.lorem.sentence());
+    const previous = aSlice({
+      order: 0,
+      status: 'approved',
+      commit: await git.revparse([runBranch]),
+    });
+    await writeFile(path.join(worktreePath, 'interrupted.txt'), faker.lorem.sentence());
+    await workspace.commitAll(faker.lorem.sentence());
+    const slice = aSlice({ order: 1 });
+    await run(implementSlice, slice, [previous]);
+
+    await run(reviewSlice, { ...slice, status: 'in_review' }, [previous]);
+
+    expect((await git.log([`${previous.commit}..${runBranch}`])).total).toBe(2);
+    expect(agent.calls.at(-1)?.prompt).toContain(`${previous.commit}..HEAD`);
   });
 
   it('sends the slice back to the implementer instead of to review when it changed nothing', async () => {
@@ -164,13 +183,25 @@ describe('slice steps', () => {
       baseBranch: 'main',
     });
     const state = aRunState({ runId: id });
-    const run = (step: SliceStep, slice: Slice) =>
+    const run = (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>
       step({
-        state,
+        state: { ...state, slices: [...earlierSlices, slice] },
         slice,
         ports: { agent, workspace },
         settings: input.settings ?? runSettings(),
       });
-    return { run, agent, git: created.git, runBranch: created.runBranch, cleanup: created.cleanup };
+    return {
+      run,
+      agent,
+      workspace,
+      worktreePath: created.worktreePath,
+      git: created.git,
+      runBranch: created.runBranch,
+      cleanup: created.cleanup,
+    };
   }
 });
+
+function approval() {
+  return { output: { approved: true, feedback: '' } };
+}

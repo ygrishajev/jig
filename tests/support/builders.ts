@@ -31,10 +31,9 @@ export function aSlice({
   status = 'pending',
   reviewCycles = 0,
   lastFeedback,
-  startCommit,
   commit,
 }: Partial<Slice> = {}): Slice {
-  return { id, title, description, order, status, reviewCycles, lastFeedback, startCommit, commit };
+  return { id, title, description, order, status, reviewCycles, lastFeedback, commit };
 }
 
 export function aContext({
@@ -90,9 +89,6 @@ export function aCommit({
   return { sha, filesChanged, insertions, deletions };
 }
 
-export function anImplementation({
-  startCommit = faker.git.commitSha(),
-  commit = aCommit(),
-}: Partial<Omit<Extract<Outcome, { type: 'implemented' }>, 'type'>> = {}): Outcome {
-  return { type: 'implemented', startCommit, commit };
+export function anImplementation({ commit = aCommit() }: { commit?: CommitSummary } = {}): Outcome {
+  return { type: 'implemented', commit };
 }

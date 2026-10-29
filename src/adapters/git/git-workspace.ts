@@ -21,19 +21,31 @@ export class GitWorkspace implements Workspace {
   }
 
   async commitAll(message: string) {
-    const sha = await commitAll(this.options.worktreePath, message);
-    if (!sha) return null;
-    const diff = await openRepo(this.options.worktreePath).diffSummary([`${sha}^!`]);
+    await commitAll(this.options.worktreePath, message);
+  }
+
+  headCommit() {
+    return openRepo(this.options.worktreePath).revparse(['HEAD']);
+  }
+
+  async forkPoint() {
+    const forkPoint = await openRepo(this.options.worktreePath).raw([
+      'merge-base',
+      this.options.baseBranch,
+      'HEAD',
+    ]);
+    return forkPoint.trim();
+  }
+
+  async summariseCommitsSince(since: string) {
+    const sha = await this.headCommit();
+    const diff = await openRepo(this.options.worktreePath).diffSummary([since, sha]);
     return {
       sha,
       filesChanged: diff.changed,
       insertions: diff.insertions,
       deletions: diff.deletions,
     };
-  }
-
-  headCommit() {
-    return openRepo(this.options.worktreePath).revparse(['HEAD']);
   }
 
   async readRepoFile(relativePath: string) {

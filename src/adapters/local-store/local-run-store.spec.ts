@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -33,7 +33,6 @@ describe('LocalRunStore', () => {
         aSlice({
           status: 'in_review',
           lastFeedback: faker.lorem.sentence(),
-          startCommit: faker.git.commitSha(),
           commit: faker.git.commitSha(),
         }),
       ],
@@ -42,22 +41,6 @@ describe('LocalRunStore', () => {
     await store.save(state);
 
     expect(await store.load(state.runId)).toEqual(state);
-  });
-
-  it('loads a run saved before slices recorded the commit they started from', async () => {
-    const { store, repoRoot } = await setup();
-    const { startCommit: _, ...savedBeforeStartCommits } = aSlice({ status: 'in_review' });
-    const state = aRunState({ phase: 'slices', slices: [savedBeforeStartCommits] });
-    await mkdir(stateDirectory(repoRoot, state.runId), { recursive: true });
-    await writeFile(
-      path.join(stateDirectory(repoRoot, state.runId), 'run.json'),
-      JSON.stringify(state),
-    );
-
-    const loaded = await store.load(state.runId);
-
-    expect(loaded?.slices[0].id).toBe(savedBeforeStartCommits.id);
-    expect(loaded?.slices[0].startCommit).toBeUndefined();
   });
 
   it('knows nothing about a run it never saved', async () => {

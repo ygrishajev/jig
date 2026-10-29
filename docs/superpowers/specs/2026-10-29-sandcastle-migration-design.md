@@ -349,14 +349,17 @@ export const sliceFlow = defineFlow({
   emits events, and picks the next step. Resume is uniform: a crash in any
   phase (planning included) resumes at that state.
 - `sdlc flow --mermaid` (rendering the definition) is optional, not planned.
-- A slice records `startCommit`, the run branch head when its first
-  implementation began, and the reviewer reviews exactly `<startCommit>..HEAD`
-  — every attempt at the slice together, not just the latest fix. An
-  implementation that changes nothing never reaches review: it goes back to
-  the implementer as `changesRequested` and counts toward `reviewCycleCap`.
-  Agents never rebase the run branch (that would rewrite approved slices and
-  the recorded start); a base branch that moved on is reconciled by the final
-  merge, which blocks on conflict.
+- A slice's change is every commit after where it started — where the
+  previous approved slice ended, or the run branch's fork point for the first
+  slice — and the reviewer reviews exactly that range, every attempt
+  together. The start is derived from approved work, never read from HEAD, so
+  an attempt resumed after a crash still sees the commits the interrupted one
+  left. Whoever made the commits (sdlc or the agent) does not matter: a slice
+  whose range is empty never reaches review; it goes back to the implementer
+  as `changesRequested` and counts toward `reviewCycleCap`. Agents never
+  rewrite the run branch (that would move approved slices' ends); a base
+  branch that moved on is reconciled by the final merge, which blocks on
+  conflict.
 
 **Events** are typed domain events emitted by the engine and steps:
 `RunStarted`, `StepStarted`, `StepFinished`, `AgentCallFinished { usage,
