@@ -1,10 +1,11 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { faker } from '@faker-js/faker';
 import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import { loadConfig } from '../config/load-config.js';
+import { ConfigInvalid } from '../domain/errors.js';
 import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
 import {
   agentVersion,
@@ -32,6 +33,10 @@ class FakeSandboxImages implements SandboxImages {
 
   forget() {
     this.built.length = 0;
+  }
+
+  remove(tag: string) {
+    this.images.delete(tag);
   }
 }
 
@@ -78,6 +83,45 @@ describe('ensureSandboxImage', () => {
     expect(images.built).toEqual([]);
   });
 
+  it('rebuilds a base image that went missing when only the agents changed', async () => {
+    const latest = { value: faker.system.semver() };
+    const { ensure, images, image } = await setup({ latest: () => latest.value });
+    await ensure();
+    images.forget();
+    images.remove(baseImageName(image));
+
+    latest.value = faker.system.semver();
+    await ensure();
+
+    expect(images.built.map((spec) => spec.tag)).toEqual([baseImageName(image), image]);
+  });
+
+  it('builds both layers for the host user', async () => {
+    const { ensure, images } = await setup({});
+
+    await ensure();
+
+    const hostUser = { AGENT_UID: process.getuid?.(), AGENT_GID: process.getgid?.() };
+    expect(images.built.map((spec) => spec.buildArgs)).toEqual([hostUser, hostUser]);
+  });
+
+  it('does not ask the registry when agent updates are off, unless asked to pull agents', async () => {
+    const { ensure, lookups } = await setup({ agentUpdates: 'off' });
+
+    await ensure();
+    expect(lookups()).toBe(0);
+
+    await ensure({ pullAgents: true });
+    expect(lookups()).toBe(1);
+  });
+
+  it('refuses to build without a sandbox Dockerfile', async () => {
+    const { ensure, removeDockerfile } = await setup({});
+    await removeDockerfile();
+
+    await expect(ensure()).rejects.toBeInstanceOf(ConfigInvalid);
+  });
+
   it('uses an image named in the config as it is', async () => {
     const sandboxImage = faker.word.noun();
     const { ensure, images } = await setup({ sandboxImage });
@@ -86,27 +130,50 @@ describe('ensureSandboxImage', () => {
     expect(images.built).toEqual([]);
   });
 
-  async function setup(input: { sandboxImage?: string; latest?: () => string }) {
+  async function setup(input: {
+    sandboxImage?: string;
+    latest?: () => string;
+    agentUpdates?: AgentUpdatePolicy;
+  }) {
     const repoRoot = await tempDirectory('sdlc-image-');
     const writeDockerfile = async (contents: string) => {
       await mkdir(path.join(repoRoot, SANDBOX_DIRECTORY), { recursive: true });
       await writeFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), contents);
     };
     await writeDockerfile(faker.lorem.lines(3));
-    const config = { ...loadConfig(repoRoot), sandboxImage: input.sandboxImage };
+    const removeDockerfile = () => rm(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE));
+    const loaded = loadConfig(repoRoot);
+    const config = {
+      ...loaded,
+      sandboxImage: input.sandboxImage,
+      agentUpdates: input.agentUpdates ?? loaded.agentUpdates,
+    };
     const fixedLatest = faker.system.semver();
     const latestVersion = input.latest ?? (() => fixedLatest);
     const images = new FakeSandboxImages();
-    const ensure = () =>
-      ensureSandboxImage({
-        repoRoot,
-        config,
-        images,
-        latestVersions: async (packages) =>
-          Object.fromEntries(packages.map((npmPackage) => [npmPackage, latestVersion()])),
-        logger: pino({ level: 'silent' }),
-      });
-    return { ensure, images, image: sandboxImageName(repoRoot, config), writeDockerfile };
+    let lookups = 0;
+    const ensure = (options: { pullAgents?: boolean } = {}) =>
+      ensureSandboxImage(
+        {
+          repoRoot,
+          config,
+          images,
+          latestVersions: async (packages) => {
+            lookups++;
+            return Object.fromEntries(packages.map((npmPackage) => [npmPackage, latestVersion()]));
+          },
+          logger: pino({ level: 'silent' }),
+        },
+        options,
+      );
+    return {
+      ensure,
+      images,
+      image: sandboxImageName(repoRoot, config),
+      writeDockerfile,
+      removeDockerfile,
+      lookups: () => lookups,
+    };
   }
 });
 
@@ -167,6 +234,72 @@ describe('planImageBuild', () => {
 
     expect(result.action).toBe('none');
     expect(result.warnings[0]).toContain(newer);
+  });
+
+  it.each<QuietCase>([
+    { case: 'a pinned agent', pinned: true, policy: 'warn', latest: true, installed: true },
+    { case: 'automatic updates', pinned: false, policy: 'auto', latest: true, installed: true },
+    { case: 'updates turned off', pinned: false, policy: 'off', latest: true, installed: true },
+    {
+      case: 'an unknown latest release',
+      pinned: false,
+      policy: 'warn',
+      latest: false,
+      installed: true,
+    },
+    { case: 'nothing installed', pinned: false, policy: 'warn', latest: true, installed: false },
+  ])('does not warn about a newer release for $case', (input) => {
+    const current = version();
+    const { labels, hash } = installed(input.installed ? { claude: current } : {});
+
+    const result = plan({
+      labels: input.installed ? labels : undefined,
+      dockerfileHash: hash,
+      agents: [
+        claude({
+          pinned: input.pinned ? version() : undefined,
+          latest: input.latest ? `${current}-next` : undefined,
+        }),
+      ],
+      policy: input.policy,
+    });
+
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('does not warn when the latest release is the one installed', () => {
+    const current = version();
+    const { labels, hash } = installed({ claude: current });
+
+    const result = plan({
+      labels,
+      dockerfileHash: hash,
+      agents: [claude({ latest: current })],
+      policy: 'warn',
+    });
+
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('names only the agents whose version changes as the reason to rebuild', () => {
+    const claudeVersion = version();
+    const opencodeVersion = version();
+    const newer = `${claudeVersion}-next`;
+    const { labels, hash } = installed({ claude: claudeVersion, opencode: opencodeVersion });
+
+    const result = plan({
+      labels,
+      dockerfileHash: hash,
+      agents: [
+        claude({ latest: newer }),
+        { name: 'opencode', npmPackage: 'opencode-ai', latest: opencodeVersion },
+      ],
+    });
+
+    expect(result.action).toBe('agents');
+    expect(result.reason).toContain(claudeVersion);
+    expect(result.reason).toContain(newer);
+    expect(result.reason).not.toContain('opencode');
   });
 
   it('installs a pinned version whatever the latest release is', () => {
@@ -274,8 +407,17 @@ describe('baseImageName', () => {
 
     expect(baseImageName(`sandcastle:${repo}`)).toBe(`sandcastle:${repo}-base`);
     expect(baseImageName(`localhost:5000/${repo}`)).toBe(`localhost:5000/${repo}:base`);
+    expect(baseImageName(repo)).toBe(`${repo}:base`);
   });
 });
+
+interface QuietCase {
+  case: string;
+  pinned: boolean;
+  policy: AgentUpdatePolicy;
+  latest: boolean;
+  installed: boolean;
+}
 
 function version() {
   return faker.system.semver();
