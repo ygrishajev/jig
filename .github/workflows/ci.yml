@@ -1,0 +1,29 @@
+name: CI
+
+# Every check `npm run validate` runs except mutation testing, on a runner that has only the
+# repository, its lockfile and the pinned Node — the proof that nothing depends on a developer's
+# machine.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - run: npm ci
+      - run: npm run validate -- --skip test:mutation
