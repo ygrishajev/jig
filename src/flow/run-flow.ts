@@ -1,3 +1,4 @@
+import { stuckSlice } from '../domain/run-state.js';
 import { reviewCapReached } from '../domain/settings.js';
 import { describePullRequest, mergeRunBranch } from '../steps/finishing.js';
 import {
@@ -13,7 +14,7 @@ import { defineRunFlow, defineSliceFlow, type Guard } from './define-flow.js';
 const sliceReachedReviewCap: Guard = ({ slice, settings }) =>
   slice !== undefined && reviewCapReached(slice, settings);
 
-const someSliceStuck: Guard = ({ state }) => state.slices.some((slice) => slice.status === 'stuck');
+const someSliceStuck: Guard = ({ state }) => stuckSlice(state) !== undefined;
 
 const backToImplementUnlessCapped = [
   { to: 'stuck', when: sliceReachedReviewCap },

@@ -98,6 +98,11 @@ export function runBranchFor(runId: RunId) {
   return `sdlc/run/${runId}`;
 }
 
+/** The slice that hit the review cap; once there is one, the run ends and a person takes over. */
+export function stuckSlice(state: RunState): Slice | undefined {
+  return state.slices.find((slice) => slice.status === 'stuck');
+}
+
 /** The first slice, by order, that has not been approved — a stuck slice stays current. */
 export function currentSlice(state: RunState): Slice | undefined {
   return slicesInOrder(state.slices).find((slice) => slice.status !== 'approved');

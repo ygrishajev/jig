@@ -2,7 +2,7 @@ import { Command, Option } from 'commander';
 import { createAppContainer } from '../../app/container.js';
 import { runInputFrom, runSdlc, type RunReport } from '../../app/run-sdlc.js';
 import { defaultLogFormat, type LogFormat } from '../../adapters/logging/create-logger.js';
-import { runBranchFor, type RunState } from '../../domain/run-state.js';
+import { runBranchFor, stuckSlice, type RunState } from '../../domain/run-state.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 function nextStep(report: RunReport) {
@@ -23,7 +23,7 @@ function nextStep(report: RunReport) {
 
 function stuckMessage(state: RunState) {
   return (
-    `Stuck: slice "${state.slices.find((slice) => slice.status === 'stuck')?.id}" hit the review cap, so sdlc has ended this run and will not resume it. ` +
+    `Stuck: slice "${stuckSlice(state)?.id}" hit the review cap, so sdlc has ended this run and will not resume it. ` +
     `Finish that slice and the rest by hand on "${runBranchFor(state.runId)}" (its pull request description is in .sdlc/${state.runId}/state/PR_DESCRIPTION.md), ` +
     `or start a new run with a sharper request. The reviewer's feedback: sdlc status ${state.runId}`
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aRunState, aSlice } from '../../tests/support/builders.js';
-import { runPhaseSchema, runStateSchema } from './run-state.js';
+import { runPhaseSchema, runStateSchema, stuckSlice } from './run-state.js';
 import { sliceStatusSchema } from './slice.js';
 
 describe('runStateSchema', () => {
@@ -31,5 +31,21 @@ describe('runStateSchema', () => {
     const state = aRunState({ phase: 'slices', slices: [aSlice({ status })] });
 
     expect(runStateSchema.parse(state)).toEqual(state);
+  });
+});
+
+describe('stuckSlice', () => {
+  it('finds the slice that hit the review cap', () => {
+    const stuck = aSlice({ status: 'stuck' });
+    const state = aRunState({ slices: [aSlice({ status: 'approved' }), stuck] });
+
+    expect(stuckSlice(state)?.id).toBe(stuck.id);
+  });
+
+  it('finds none while every slice can still progress', () => {
+    const statuses = sliceStatusSchema.options.filter((status) => status !== 'stuck');
+    const state = aRunState({ slices: statuses.map((status) => aSlice({ status })) });
+
+    expect(stuckSlice(state)).toBeUndefined();
   });
 });

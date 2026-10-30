@@ -3,7 +3,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 import type { RunId } from '../../domain/run-id.js';
-import type { RunState } from '../../domain/run-state.js';
+import { stuckSlice, type RunState } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 
@@ -67,6 +67,6 @@ async function writeOrRemove(file: string, contents: string | undefined) {
 }
 
 function stuckSliceReason(state: RunState) {
-  const stuck = state.slices.find((slice) => slice.status === 'stuck');
+  const stuck = stuckSlice(state);
   return stuck ? `slice "${stuck.id}" is stuck — needs human intervention` : undefined;
 }
