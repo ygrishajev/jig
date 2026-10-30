@@ -76,7 +76,12 @@ describe('readRunStatus', () => {
   async function setup() {
     const { cloneOf } = await createRemote();
     const statusIn = async (repoRoot: string, runStores: string[], id: string) => {
-      const app = createAppContainer({ repoRoot, logFormat: 'json', logLevel: 'silent' });
+      const app = createAppContainer({
+        repoRoot,
+        logFormat: 'json',
+        logLevel: 'silent',
+        environment: {},
+      });
       onTestFinished(() => app.dispose());
       app.register({ config: asValue({ ...loadConfig(repoRoot), runStores }) });
       return readRunStatus(app, parseRunId(id));

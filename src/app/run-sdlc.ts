@@ -93,7 +93,8 @@ async function startNewRun(cradle: AppCradle, store: RunStore, runId: RunId, req
 
 async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: RunState) {
   await ensureSandboxImage(app.cradle);
-  const telemetry = telemetryEnabled(process.env) ? await startTelemetry() : undefined;
+  const { environment } = app.cradle;
+  const telemetry = telemetryEnabled(environment) ? await startTelemetry(environment) : undefined;
   try {
     const run = { runId: state.runId, baseBranch: state.baseBranch };
     const scope = await openRunScope(app, run, store, { tracer: telemetry?.tracer });

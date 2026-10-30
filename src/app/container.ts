@@ -66,6 +66,8 @@ export interface OpenSessionInput {
 /** Lives for the whole process: configuration and everything shared by every run. */
 export interface AppCradle {
   repoRoot: string;
+  /** The process environment, read once by the CLI; sdlc's code reads variables only from here. */
+  environment: NodeJS.ProcessEnv;
   logFormat: LogFormat;
   logLevel: string;
   config: SdlcConfig;
@@ -94,6 +96,7 @@ export function createAppContainer(input: {
   repoRoot: string;
   logFormat: LogFormat;
   logLevel?: string;
+  environment: NodeJS.ProcessEnv;
 }) {
   const container = createContainer<AppCradle>({
     injectionMode: InjectionMode.PROXY,
@@ -101,6 +104,7 @@ export function createAppContainer(input: {
   });
   container.register({
     repoRoot: asValue(input.repoRoot),
+    environment: asValue(input.environment),
     logFormat: asValue(input.logFormat),
     logLevel: asValue(input.logLevel ?? 'info'),
     config: asFunction(({ repoRoot }: AppCradle) => loadConfig(repoRoot)).singleton(),
@@ -111,15 +115,15 @@ export function createAppContainer(input: {
     clock: asValue({ now: () => Date.now() }),
     artefacts: asFunction(({ repoRoot }: AppCradle) => new RunArtefacts(repoRoot)).singleton(),
     images: asFunction(
-      ({ logger }: AppCradle) =>
+      ({ logger, environment }: AppCradle) =>
         new DockerImages({
-          cache: process.env.SDLC_IMAGE_CACHE === 'gha' ? 'gha' : undefined,
+          cache: environment.SDLC_IMAGE_CACHE === 'gha' ? 'gha' : undefined,
           onOutput: (line) => logger.debug(line.trimEnd()),
         }),
     ).singleton(),
     latestVersions: asValue(latestAgentVersions),
-    openSession: asFunction(({ repoRoot, config }: AppCradle) =>
-      sandcastleOpener(repoRoot, config),
+    openSession: asFunction(({ repoRoot, config, environment }: AppCradle) =>
+      sandcastleOpener(repoRoot, config, environment),
     ).singleton(),
   });
   return container;
@@ -205,9 +209,9 @@ export async function closeRunScope(scope: AwilixContainer<RunCradle>) {
   }
 }
 
-function sandcastleOpener(repoRoot: string, config: SdlcConfig) {
+function sandcastleOpener(repoRoot: string, config: SdlcConfig, environment: NodeJS.ProcessEnv) {
   return (input: OpenSessionInput): Promise<RunSession> =>
-    SandcastleSession.open(sandcastleSessionOptions(repoRoot, config, input, process.env));
+    SandcastleSession.open(sandcastleSessionOptions(repoRoot, config, input, environment));
 }
 
 /** What the run's sandbox is started with: the configured agents, their credentials and limits. */

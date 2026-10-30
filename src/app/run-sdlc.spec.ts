@@ -3,7 +3,7 @@ import { asValue } from 'awilix';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { scriptWholeRun } from '../../tests/support/agent-scripts.js';
 import { aRunState, runId } from '../../tests/support/builders.js';
@@ -26,6 +26,9 @@ import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, type OpenSessionInput } from './container.js';
 import { runInputFrom, runSdlc } from './run-sdlc.js';
 
+/** TEST-NET-1: routable nowhere, so an exporter aimed at it waits out its timeout. */
+const UNREACHABLE_COLLECTOR = 'http://192.0.2.1:4318';
+
 describe('runSdlc', () => {
   it('starts a run from a request file and stops once the work waits to be merged', async () => {
     const { app, writeRequest, agentFor, repo } = await setup();
@@ -38,6 +41,17 @@ describe('runSdlc', () => {
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(agent.closed).toBe(true);
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'halted', complete: false });
+  });
+
+  it("ignores telemetry settings in the process environment that the app wasn't given", async () => {
+    vi.stubEnv('OTEL_EXPORTER_OTLP_ENDPOINT', UNREACHABLE_COLLECTOR);
+    const { app, writeRequest, agentFor } = await setup();
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+
+    const report = await runSdlc(app, { start: await writeRequest(), runId: id });
+
+    expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
   });
 
   it('resumes by id and finishes once a person has merged the run branch', async () => {
@@ -165,7 +179,12 @@ describe('runSdlc', () => {
     const repo = await createTempRepo();
     const requests = await tempDirectory('sdlc-request-');
 
-    const app = createAppContainer({ repoRoot: repo.dir, logFormat: 'json', logLevel: 'silent' });
+    const app = createAppContainer({
+      repoRoot: repo.dir,
+      logFormat: 'json',
+      logLevel: 'silent',
+      environment: {},
+    });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
       const agent = new FakeAgentSession(path.join(repo.dir, '.sdlc', id, 'workspace'));

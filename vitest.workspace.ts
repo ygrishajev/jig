@@ -5,6 +5,7 @@ export const unitProject = defineProject({
     name: 'unit',
     include: ['src/**/*.spec.ts', 'scripts/**/*.spec.ts'],
     testTimeout: 20_000,
+    unstubEnvs: true,
   },
 });
 

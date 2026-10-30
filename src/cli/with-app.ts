@@ -8,7 +8,11 @@ export async function withApp<T>(
   logFormat: LogFormat,
   command: (app: AwilixContainer<AppCradle>) => Promise<T>,
 ) {
-  const app = createAppContainer({ repoRoot: process.cwd(), logFormat });
+  const app = createAppContainer({
+    repoRoot: process.cwd(),
+    logFormat,
+    environment: process.env,
+  });
   try {
     return await command(app);
   } finally {

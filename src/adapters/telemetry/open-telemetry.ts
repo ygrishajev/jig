@@ -16,14 +16,14 @@ export function telemetryEnabled(environment: NodeJS.ProcessEnv) {
  * Starts the OpenTelemetry SDK with an OTLP/HTTP trace exporter, configured from the standard
  * `OTEL_*` environment variables. Loaded lazily so a run without telemetry never pays for it.
  */
-export async function startTelemetry(): Promise<Telemetry> {
+export async function startTelemetry(environment: NodeJS.ProcessEnv): Promise<Telemetry> {
   const [{ NodeSDK }, { OTLPTraceExporter }, api] = await Promise.all([
     import('@opentelemetry/sdk-node'),
     import('@opentelemetry/exporter-trace-otlp-http'),
     import('@opentelemetry/api'),
   ]);
   const sdk = new NodeSDK({
-    serviceName: process.env.OTEL_SERVICE_NAME ?? 'sdlc',
+    serviceName: environment.OTEL_SERVICE_NAME ?? 'sdlc',
     traceExporter: new OTLPTraceExporter(),
     instrumentations: [],
   });

@@ -126,7 +126,12 @@ describe('initSandbox', () => {
     for (const proposal of input.proposals ?? []) agent.script('planner', { output: proposal });
 
     const checkSandboxFailures = [...(input.checkSandboxFailures ?? [])];
-    const app = createAppContainer({ repoRoot: repo.dir, logFormat: 'json', logLevel: 'silent' });
+    const app = createAppContainer({
+      repoRoot: repo.dir,
+      logFormat: 'json',
+      logLevel: 'silent',
+      environment: {},
+    });
     app.register({
       images: asValue(mock<SandboxImages>({ labels: vi.fn().mockResolvedValue(undefined) })),
       latestVersions: asValue(async () => ({})),
