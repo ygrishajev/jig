@@ -24,7 +24,7 @@ export function registerStatusCommand(program: Command) {
     );
 }
 
-function describeRun({ state, documents }: RunStatus) {
+export function describeRun({ state, documents }: RunStatus) {
   const slices = slicesInOrder(state.slices).map((slice) => {
     const line = `  [${slice.status}] ${slice.id} — ${slice.title}`;
     return slice.lastFeedback ? `${line}\n      feedback: ${slice.lastFeedback}` : line;

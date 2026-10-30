@@ -15,6 +15,10 @@ const INIT_SUMMARY: Record<InitResult['status'], (result: InitResult) => string>
     `Setup or verify did not pass in the sandbox${'attempts' in result && result.attempts > 1 ? ` after ${result.attempts} attempts` : ''} — fix what this shows, then run sdlc init --no-agent:\n${'failure' in result ? result.failure : ''}`,
 };
 
+export function initSummary(result: InitResult) {
+  return INIT_SUMMARY[result.status](result);
+}
+
 export function registerSandboxCommands(program: Command) {
   program
     .command('init')
@@ -25,7 +29,7 @@ export function registerSandboxCommands(program: Command) {
       withErrorHandling(async (options: { agent: boolean; logFormat: LogFormat }) => {
         await withApp(options.logFormat, async (app) => {
           const result = await initSandbox(app, { useAgent: options.agent });
-          app.cradle.logger.info(INIT_SUMMARY[result.status](result));
+          app.cradle.logger.info(initSummary(result));
           if (result.status === 'failed') process.exitCode = 1;
         });
       }),

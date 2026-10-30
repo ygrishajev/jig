@@ -5,7 +5,8 @@ import { runBranchFor, stuckSlice, type RunState } from '../../domain/run-state.
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
-function nextStep(report: RunReport) {
+/** What the operator does next, for where the run stopped. */
+export function nextStep(report: RunReport) {
   const { state } = report;
   switch (report.status) {
     case 'done':
