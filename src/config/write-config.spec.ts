@@ -1,21 +1,13 @@
 import { faker } from '@faker-js/faker';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ConfigInvalid } from '../domain/errors.js';
 import { CONFIG_FILE } from './load-config.js';
 import { updateConfigFile } from './write-config.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 
 describe('updateConfigFile', () => {
-  const directories: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(
-      directories.map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
   it('sets the given keys and keeps every other key as it was', async () => {
     const kept = { verifyCommand: `npm run ${faker.word.verb()}` };
     const setupCommand = `npm ${faker.word.verb()}`;
@@ -38,8 +30,7 @@ describe('updateConfigFile', () => {
   });
 
   async function setup(contents: string) {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-write-config-'));
-    directories.push(repoRoot);
+    const repoRoot = await tempDirectory('sdlc-write-config-');
     const file = path.join(repoRoot, CONFIG_FILE);
     await writeFile(file, contents);
     const read = async (): Promise<unknown> => JSON.parse(await readFile(file, 'utf-8'));

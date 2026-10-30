@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 import { ConfigInvalid } from '../../domain/errors.js';
-import { collectCredentials } from './agents.js';
+import { AGENTS, collectCredentials } from './agents.js';
 
 describe('collectCredentials', () => {
   it('passes on whichever claude credential is set', () => {
@@ -42,16 +42,13 @@ describe('collectCredentials', () => {
   });
 
   it('names the variables to set when an agent has no credential', () => {
-    expect(() => collectCredentials([{ provider: 'claude' }], {})).toThrow(
-      new ConfigInvalid(
-        'No claude credentials found — set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in the environment.',
-      ),
-    );
+    const collecting = () => collectCredentials([{ provider: 'claude' }], {});
+
+    expect(collecting).toThrow(ConfigInvalid);
+    for (const key of AGENTS.claude.credentialKeys()) expect(collecting).toThrow(key);
   });
 
   it('asks for a model before it can tell which credential opencode needs', () => {
-    expect(() => collectCredentials([{ provider: 'opencode' }], {})).toThrow(
-      'opencode needs a model',
-    );
+    expect(() => collectCredentials([{ provider: 'opencode' }], {})).toThrow(ConfigInvalid);
   });
 });

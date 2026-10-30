@@ -1,25 +1,17 @@
 import { faker } from '@faker-js/faker';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { aMetricsSummary, aRunState, aSlice, designDocs } from '../../../tests/support/builders.js';
 import type { RunId } from '../../domain/run-id.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { LocalRunStore } from './local-run-store.js';
 import { RunArtefacts } from './run-artefacts.js';
 import { stateDirectory } from './run-paths.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 
 describe('RunArtefacts', () => {
-  const directories: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(
-      directories.map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
   it('writes the design and plan for a person to read, and says where they are', async () => {
     const { artefacts, read } = await setup();
     const docs = designDocs();
@@ -97,8 +89,7 @@ describe('RunArtefacts', () => {
   });
 
   async function setup() {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-artefacts-'));
-    directories.push(repoRoot);
+    const repoRoot = await tempDirectory('sdlc-artefacts-');
     const read = (runId: RunId, name: string) =>
       readFile(path.join(stateDirectory(repoRoot, runId), name), 'utf-8');
     return { artefacts: new RunArtefacts(repoRoot), read, repoRoot };

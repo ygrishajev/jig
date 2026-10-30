@@ -1,25 +1,18 @@
 import { faker } from '@faker-js/faker';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { GitWorkspace } from '../adapters/git/git-workspace.js';
+import { describe, expect, it } from 'vitest';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
 import type { ExecResult } from '../ports/agent-session.js';
 import { aRunState, aSlice, runId, runSettings } from '../../tests/support/builders.js';
 import { FakeAgentSession, type AgentScript } from '../../tests/support/fakes.js';
-import { createRunWorktree, type RunWorktree } from '../../tests/support/run-worktree.js';
+import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { approval } from '../../tests/support/agent-scripts.js';
 import type { SliceStep } from '../flow/define-flow.js';
 import { implementSlice, reviewSlice, verifySlice } from './slice.js';
 
 describe('slice steps', () => {
-  let worktree: RunWorktree | undefined;
-
-  afterEach(async () => {
-    await worktree?.cleanup();
-    worktree = undefined;
-  });
-
   it('commits what the implementer changed onto the run branch', async () => {
     const slice = aSlice();
     const { run, git, runBranch } = await setup({
@@ -121,7 +114,6 @@ describe('slice steps', () => {
     const feedback = faker.lorem.sentence();
     const approving = await setup({ reviewer: [{ output: { approved: true, feedback: '' } }] });
     const approved = await approving.run(reviewSlice, aSlice());
-    await approving.cleanup();
     const rejecting = await setup({ reviewer: [{ output: { approved: false, feedback } }] });
 
     expect(approved).toEqual({ type: 'approved' });
@@ -172,16 +164,10 @@ describe('slice steps', () => {
   }) {
     const id = runId();
     const created = await createRunWorktree(id);
-    worktree = created;
+    const { workspace } = created;
     const agent = new FakeAgentSession(created.worktreePath, input.exec);
     agent.script('implementer', ...(input.implementer ?? []));
     agent.script('reviewer', ...(input.reviewer ?? []));
-    const workspace = new GitWorkspace({
-      repoRoot: created.repo.dir,
-      worktreePath: created.worktreePath,
-      runId: id,
-      baseBranch: 'main',
-    });
     const state = aRunState({ runId: id });
     const run = (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>
       step({
@@ -197,11 +183,6 @@ describe('slice steps', () => {
       worktreePath: created.worktreePath,
       git: created.git,
       runBranch: created.runBranch,
-      cleanup: created.cleanup,
     };
   }
 });
-
-function approval() {
-  return { output: { approved: true, feedback: '' } };
-}

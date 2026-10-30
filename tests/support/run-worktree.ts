@@ -1,29 +1,25 @@
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
+import { GitWorkspace } from '../../src/adapters/git/git-workspace.js';
 import type { RunId } from '../../src/domain/run-id.js';
 import { runBranchFor } from '../../src/domain/run-state.js';
-import { createTempRepo, type TempRepo } from './temp-repo.js';
+import { createTempRepo } from './temp-repo.js';
 
-export interface RunWorktree {
-  repo: TempRepo;
-  worktreePath: string;
-  runBranch: string;
-  git: ReturnType<typeof simpleGit>;
-  cleanup: () => Promise<void>;
-}
-
-/** A real repository with a run branch checked out in its own worktree, the way a run sees it. */
-export async function createRunWorktree(runId: RunId): Promise<RunWorktree> {
+/**
+ * A real repository with a run branch checked out in its own worktree, the way a run sees it,
+ * and the run's workspace on it; removed once the test that asked for it finishes.
+ */
+export async function createRunWorktree(runId: RunId) {
   const repo = await createTempRepo();
   const worktreePath = path.join(repo.dir, '.sdlc', runId, 'workspace');
   const runBranch = runBranchFor(runId);
   const git = simpleGit({ baseDir: repo.dir });
   await git.raw(['worktree', 'add', '-b', runBranch, worktreePath, 'main']);
-  return {
-    repo,
+  const workspace = new GitWorkspace({
+    repoRoot: repo.dir,
     worktreePath,
-    runBranch,
-    git,
-    cleanup: repo.cleanup,
-  };
+    runId,
+    baseBranch: 'main',
+  });
+  return { repo, worktreePath, runBranch, git, workspace };
 }

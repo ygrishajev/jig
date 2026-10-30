@@ -383,9 +383,10 @@ describe('runEngine', () => {
   it('refuses an outcome the flow has no transition for', async () => {
     const { run } = setup({ flow: linearFlow({ context: async () => ({ type: 'pause' }) }) });
 
-    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toMatchObject(
-      new FlowHasNoTransition('pause'),
-    );
+    const running = run(aDescribedRun({ phase: 'context' }));
+
+    await expect(running).rejects.toBeInstanceOf(FlowHasNoTransition);
+    await expect(running).rejects.toMatchObject({ outcome: 'pause' });
   });
 
   function setup(input: {

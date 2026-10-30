@@ -75,9 +75,10 @@ describe('planning steps', () => {
     const repeated = aPlannedSlice();
     const { run } = setup({ turn: { output: [repeated, aPlannedSlice({ id: repeated.id })] } });
 
-    await expect(run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }))).rejects.toThrow(
-      new AgentOutputInvalid(`The slice plan repeats slice ids: ${repeated.id}`),
-    );
+    const slicing = run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }));
+
+    await expect(slicing).rejects.toBeInstanceOf(AgentOutputInvalid);
+    await expect(slicing).rejects.toThrow(repeated.id);
   });
 
   it('rejects a slice plan with no slices or with an unsafe id', async () => {

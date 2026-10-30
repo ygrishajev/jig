@@ -1,25 +1,16 @@
 import { faker } from '@faker-js/faker';
 import { appendFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { aCommit, runId, sliceId, tokenUsage } from '../../../tests/support/builders.js';
 import type { RunId } from '../../domain/run-id.js';
 import { MetricsLogCorrupt } from '../../domain/errors.js';
 import type { MetricRecord } from '../../observers/metrics.js';
 import { MetricsLog } from './metrics-log.js';
 import { stateDirectory } from './run-paths.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 
 describe('MetricsLog', () => {
-  const directories: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(
-      directories.map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
   it('reads back every record it appended, in order', async () => {
     const { log, id } = await setup();
     const records = [stepRecord(id), agentCallRecord(id), retryRecord(id)];
@@ -75,8 +66,7 @@ describe('MetricsLog', () => {
   });
 
   async function setup() {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-metrics-'));
-    directories.push(repoRoot);
+    const repoRoot = await tempDirectory('sdlc-metrics-');
     const id = runId();
     const reopen = () => new MetricsLog(repoRoot, id);
     const appendRaw = (text: string) =>

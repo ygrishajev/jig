@@ -1,22 +1,14 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { aRunState } from '../../tests/support/builders.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { loadConfig } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { openRunStore } from './run-stores.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 
 describe('openRunStore', () => {
-  const directories: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(
-      directories.map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
   it('saves to the local store by default', async () => {
     const repoRoot = await directory();
     const store = await openRunStore({ repoRoot, config: loadConfig(repoRoot) });
@@ -104,8 +96,7 @@ describe('openRunStore', () => {
   });
 
   async function directory() {
-    const created = await mkdtemp(path.join(tmpdir(), 'sdlc-stores-'));
-    directories.push(created);
+    const created = await tempDirectory('sdlc-stores-');
     return created;
   }
 });

@@ -1,24 +1,15 @@
 import { faker } from '@faker-js/faker';
 import type { AgentProvider, Sandbox } from '@ai-hero/sandcastle';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 import { runId } from '../../../tests/support/builders.js';
 import { RecordingEventSink } from '../../../tests/support/fakes.js';
 import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../../domain/errors.js';
 import { SandcastleSession, type SandboxFactory } from './sandcastle-session.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 
 describe('SandcastleSession.open', () => {
-  const directories: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(
-      directories.map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
   it('treats a repository path sandcastle cannot use as a configuration problem', async () => {
     const { open } = await setup({ start: rejectingWith(sandcastleFailure('CwdError')) });
 
@@ -100,8 +91,7 @@ describe('SandcastleSession.open', () => {
     hangs?: boolean;
     execFails?: Error;
   }) {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-session-'));
-    directories.push(repoRoot);
+    const repoRoot = await tempDirectory('sdlc-session-');
     const result = { exitCode: input.exitCode ?? 0, stdout: '', stderr: input.stderr ?? '' };
     const sandbox = mock<Sandbox>({
       worktreePath: repoRoot,

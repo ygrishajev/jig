@@ -1,8 +1,8 @@
 import { faker } from '@faker-js/faker';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { ZodError } from 'zod';
 import {
   aContext,
   aFeaturePlan,
@@ -12,16 +12,9 @@ import {
 } from '../../../tests/support/builders.js';
 import { LocalRunStore } from './local-run-store.js';
 import { stateDirectory } from './run-paths.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 
 describe('LocalRunStore', () => {
-  const directories: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(
-      directories.map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
   it('loads back the run it saved', async () => {
     const { store } = await setup();
     const state = aRunState({
@@ -66,12 +59,11 @@ describe('LocalRunStore', () => {
       JSON.stringify({ ...state, phase: faker.word.noun() }),
     );
 
-    await expect(store.load(state.runId)).rejects.toThrow();
+    await expect(store.load(state.runId)).rejects.toBeInstanceOf(ZodError);
   });
 
   async function setup() {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-store-'));
-    directories.push(repoRoot);
+    const repoRoot = await tempDirectory('sdlc-store-');
     return { store: new LocalRunStore(repoRoot), repoRoot };
   }
 });

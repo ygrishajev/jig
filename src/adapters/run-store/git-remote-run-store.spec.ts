@@ -1,23 +1,17 @@
 import { faker } from '@faker-js/faker';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { RunId } from '../../domain/run-id.js';
 import { RunStateConflict } from '../../domain/errors.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { aFeaturePlan, aRunState, aSlice } from '../../../tests/support/builders.js';
-import { createTempRepo } from '../../../tests/support/temp-repo.js';
+import { createRemote } from '../../../tests/support/temp-repo.js';
 import { GitRemoteRunStore } from './git-remote-run-store.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 
 describe('GitRemoteRunStore', () => {
-  const cleanups: (() => Promise<void>)[] = [];
-
-  afterEach(async () => {
-    await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
-  });
-
   it('lets another clone pick up a run saved on this one, with its branch', async () => {
     const { origin, cloneOf } = await setup();
     const here = await cloneOf();
@@ -109,23 +103,9 @@ describe('GitRemoteRunStore', () => {
   });
 
   async function setup() {
-    const seed = await createTempRepo();
-    const origin = await mkdtemp(path.join(tmpdir(), 'sdlc-origin-'));
-    cleanups.push(seed.cleanup, () => rm(origin, { recursive: true, force: true }));
-    await simpleGit().clone(seed.dir, origin, ['--bare']);
-    const cloneOf = async () => {
-      const directory = await mkdtemp(path.join(tmpdir(), 'sdlc-clone-'));
-      cleanups.push(() => rm(directory, { recursive: true, force: true }));
-      await simpleGit().clone(origin, directory);
-      const git = simpleGit({ baseDir: directory });
-      await git.addConfig('user.email', 'test@example.com');
-      await git.addConfig('user.name', 'Test');
-      await git.addConfig('commit.gpgsign', 'false');
-      return directory;
-    };
+    const { origin, cloneOf } = await createRemote();
     const checkOutInWorktree = async (repo: string, branch: string) => {
-      const directory = await mkdtemp(path.join(tmpdir(), 'sdlc-worktree-'));
-      cleanups.push(() => rm(directory, { recursive: true, force: true }));
+      const directory = await tempDirectory('sdlc-worktree-');
       await simpleGit({ baseDir: repo }).raw(['worktree', 'add', directory, branch]);
       return directory;
     };

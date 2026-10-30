@@ -1,34 +1,25 @@
 import { faker } from '@faker-js/faker';
-import { afterEach, describe, expect, it } from 'vitest';
-import { GitWorkspace } from '../adapters/git/git-workspace.js';
+import { describe, expect, it } from 'vitest';
 import { startRun, type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import {
-  aContext,
-  aFeaturePlan,
-  aPlannedSlice,
-  designDocs,
-  runId,
-  runSettings,
-} from '../../tests/support/builders.js';
+  aDescription,
+  approval,
+  rejection,
+  scriptPlanning,
+} from '../../tests/support/agent-scripts.js';
+import { aPlannedSlice, runId, runSettings } from '../../tests/support/builders.js';
 import {
   FakeAgentSession,
   InMemoryRunStore,
   RecordingEventSink,
   SteppingClock,
 } from '../../tests/support/fakes.js';
-import { createRunWorktree, type RunWorktree } from '../../tests/support/run-worktree.js';
+import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { runEngine } from './engine.js';
 import { runFlow } from './run-flow.js';
 
 describe('runFlow', () => {
-  let worktree: RunWorktree | undefined;
-
-  afterEach(async () => {
-    await worktree?.cleanup();
-    worktree = undefined;
-  });
-
   it('takes a request from planning through two slices to a merged run branch', async () => {
     const slices = [aPlannedSlice(), aPlannedSlice()];
     const { agent, run, start, git } = await setup({
@@ -40,8 +31,8 @@ describe('runFlow', () => {
       { files: { [`${slices[0].id}.txt`]: faker.lorem.sentence() } },
       { files: { [`${slices[1].id}.txt`]: faker.lorem.sentence() } },
     );
-    agent.script('reviewer', approve(), approve());
-    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+    agent.script('reviewer', approval(), approval());
+    agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
@@ -63,8 +54,8 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'b.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', { output: { approved: false, feedback } }, approve());
-    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+    agent.script('reviewer', { output: { approved: false, feedback } }, approval());
+    agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
@@ -83,8 +74,8 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'b.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', malformedVerdict(), approve());
-    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+    agent.script('reviewer', malformedVerdict(), approval());
+    agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
@@ -116,8 +107,8 @@ describe('runFlow', () => {
     const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap }) });
     scriptPlanning(agent, [aPlannedSlice()]);
     agent.script('implementer', ...Array.from({ length: reviewCycleCap }, () => ({ files: {} })));
-    agent.script('reviewer', approve());
-    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+    agent.script('reviewer', approval());
+    agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
@@ -138,36 +129,39 @@ describe('runFlow', () => {
     expect(agent.calls.some((call) => call.role === 'implementer')).toBe(false);
 
     agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
-    agent.script('reviewer', approve());
-    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+    agent.script('reviewer', approval());
+    agent.script('describer', aDescription());
     const resumed = await run(paused.state);
     expect(resumed.status).toBe('done');
   });
 
-  it('finishes from saved state after an interruption without redoing finished work', async () => {
+  it('finishes from saved state after an interruption with the commits an uninterrupted run makes', async () => {
     const slices = [aPlannedSlice(), aPlannedSlice()];
-    const { agent, run, start, store } = await setup({
-      settings: runSettings({ mergeMode: 'auto' }),
-    });
-    scriptPlanning(agent, slices);
-    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
-    agent.script('reviewer', approve());
+    const files = slices.map((slice) => ({ [`${slice.id}.txt`]: faker.lorem.paragraph() }));
+    const settings = runSettings({ mergeMode: 'manual' });
+    const uninterrupted = await setup({ settings });
+    scriptPlanning(uninterrupted.agent, slices);
+    uninterrupted.agent.script('implementer', ...files.map((written) => ({ files: written })));
+    uninterrupted.agent.script('reviewer', approval(), approval());
+    uninterrupted.agent.script('describer', aDescription());
+    await uninterrupted.run(uninterrupted.start);
+    const interrupted = await setup({ settings });
+    const crash = new Error(faker.lorem.sentence());
+    scriptPlanning(interrupted.agent, slices);
+    interrupted.agent.script('implementer', ...files.map((written) => ({ files: written })));
+    interrupted.agent.script('reviewer', approval(), { fail: crash });
 
-    await expect(run(start)).rejects.toThrow('no turn scripted for implementer');
-    const saved = (await store.load(start.runId)) as RunState;
-    expect(saved.slices.map((slice) => slice.status)).toEqual(['approved', 'pending']);
+    await expect(interrupted.run(interrupted.start)).rejects.toBe(crash);
+    const saved = await interrupted.store.load(interrupted.start.runId);
+    expect(saved?.slices.map((slice) => slice.status)).toEqual(['approved', 'in_review']);
+    interrupted.agent.script('reviewer', approval());
+    interrupted.agent.script('describer', aDescription());
+    const finished = await interrupted.run(saved ?? interrupted.start);
 
-    agent.script('implementer', { files: { 'b.txt': faker.lorem.sentence() } });
-    agent.script('reviewer', approve());
-    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
-    const finished = await run(saved);
-
-    expect(finished.status).toBe('done');
-    const implementerPrompts = agent.calls
-      .filter((call) => call.role === 'implementer')
-      .map((call) => call.prompt);
-    expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(4);
-    expect(implementerPrompts.filter((prompt) => prompt.includes(slices[0].title))).toHaveLength(1);
+    expect(finished).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
+    const history = await uninterrupted.runBranchHistory();
+    expect(history).toContain(slices[1].id);
+    expect(await interrupted.runBranchHistory()).toBe(history);
   });
 
   it('describes a run whose slice ran out of review cycles, then ends it stuck', async () => {
@@ -178,8 +172,8 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'b.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', reject(), reject());
-    agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+    agent.script('reviewer', rejection(), rejection());
+    agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
@@ -190,16 +184,9 @@ describe('runFlow', () => {
 
   async function setup(input: { settings: RunSettings }) {
     const id = runId();
-    const created = await createRunWorktree(id);
-    worktree = created;
-    const agent = new FakeAgentSession(created.worktreePath);
+    const { worktreePath, workspace, git, runBranch } = await createRunWorktree(id);
+    const agent = new FakeAgentSession(worktreePath);
     const store = new InMemoryRunStore();
-    const workspace = new GitWorkspace({
-      repoRoot: created.repo.dir,
-      worktreePath: created.worktreePath,
-      runId: id,
-      baseBranch: 'main',
-    });
     const dependencies = {
       ports: { agent, workspace },
       store,
@@ -209,28 +196,12 @@ describe('runFlow', () => {
     };
     const start = startRun({ runId: id, baseBranch: 'main', request: faker.lorem.paragraph() });
     const run = (state: RunState) => runEngine(runFlow, state, dependencies);
-    return { agent, run, start, store, git: created.git };
+    const runBranchHistory = () =>
+      git.raw(['log', '--reverse', '--format=%s', '--patch', `main..${runBranch}`]);
+    return { agent, run, start, store, git, runBranchHistory };
   }
 });
 
-function scriptPlanning(agent: FakeAgentSession, slices: ReturnType<typeof aPlannedSlice>[]) {
-  agent.script(
-    'planner',
-    { output: aContext() },
-    { output: aFeaturePlan() },
-    { output: designDocs() },
-    { output: slices },
-  );
-}
-
-function approve() {
-  return { output: { approved: true, feedback: '' } };
-}
-
 function malformedVerdict() {
   return { output: { verdict: faker.lorem.word() } };
-}
-
-function reject() {
-  return { output: { approved: false, feedback: faker.lorem.sentence() } };
 }

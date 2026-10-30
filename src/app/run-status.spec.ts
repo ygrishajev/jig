@@ -1,10 +1,9 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { loadConfig } from '../config/load-config.js';
@@ -12,17 +11,11 @@ import { RunRequestInvalid } from '../domain/errors.js';
 import { parseRunId, type RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
-import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { createRemote } from '../../tests/support/temp-repo.js';
 import { createAppContainer } from './container.js';
 import { readRunStatus } from './run-status.js';
 
 describe('readRunStatus', () => {
-  const cleanups: (() => Promise<void>)[] = [];
-
-  afterEach(async () => {
-    await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
-  });
-
   it('finds a run that only the remote store holds', async () => {
     const { cloneOf, statusIn } = await setup();
     const state = aRunState({ phase: 'slices', slices: [aSlice()] });
@@ -80,23 +73,10 @@ describe('readRunStatus', () => {
   });
 
   async function setup() {
-    const seed = await createTempRepo();
-    const origin = await mkdtemp(path.join(tmpdir(), 'sdlc-origin-'));
-    cleanups.push(seed.cleanup, () => rm(origin, { recursive: true, force: true }));
-    await simpleGit().clone(seed.dir, origin, ['--bare']);
-    const cloneOf = async () => {
-      const directory = await mkdtemp(path.join(tmpdir(), 'sdlc-clone-'));
-      cleanups.push(() => rm(directory, { recursive: true, force: true }));
-      await simpleGit().clone(origin, directory);
-      const git = simpleGit({ baseDir: directory });
-      await git.addConfig('user.email', 'test@example.com');
-      await git.addConfig('user.name', 'Test');
-      await git.addConfig('commit.gpgsign', 'false');
-      return directory;
-    };
+    const { cloneOf } = await createRemote();
     const statusIn = async (repoRoot: string, runStores: string[], id: string) => {
       const app = createAppContainer({ repoRoot, logFormat: 'json', logLevel: 'silent' });
-      cleanups.push(() => app.dispose());
+      onTestFinished(() => app.dispose());
       app.register({ config: asValue({ ...loadConfig(repoRoot), runStores }) });
       return readRunStatus(app, parseRunId(id));
     };

@@ -1,19 +1,12 @@
 import { faker } from '@faker-js/faker';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { ZodError } from 'zod';
 import { CONFIG_FILE, loadConfig } from './load-config.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 
 describe('loadConfig', () => {
-  const directories: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(
-      directories.map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
   it('runs every step on claude, merging by hand, when the repository has no config', async () => {
     const config = loadConfig(await setup());
 
@@ -58,13 +51,13 @@ describe('loadConfig', () => {
   it('rejects a misspelled key instead of ignoring it', async () => {
     const repoRoot = await setup({ implement: { provider: 'claude' } });
 
-    expect(() => loadConfig(repoRoot)).toThrow();
+    expect(() => loadConfig(repoRoot)).toThrow(ZodError);
   });
 
   it('rejects an agent it does not know', async () => {
     const repoRoot = await setup({ reviewer: { provider: faker.word.noun() } });
 
-    expect(() => loadConfig(repoRoot)).toThrow();
+    expect(() => loadConfig(repoRoot)).toThrow(ZodError);
   });
 
   it('takes a version pin for a known agent and rejects one for an agent it does not know', async () => {
@@ -74,12 +67,11 @@ describe('loadConfig', () => {
       opencode: version,
     });
     const repoRoot = await setup({ agents: { [faker.word.noun()]: version } });
-    expect(() => loadConfig(repoRoot)).toThrow();
+    expect(() => loadConfig(repoRoot)).toThrow(ZodError);
   });
 
   async function setup(contents?: Record<string, unknown>) {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-config-'));
-    directories.push(repoRoot);
+    const repoRoot = await tempDirectory('sdlc-config-');
     if (contents) await writeFile(path.join(repoRoot, CONFIG_FILE), JSON.stringify(contents));
     return repoRoot;
   }

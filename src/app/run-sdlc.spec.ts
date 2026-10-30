@@ -1,10 +1,9 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { loadConfig } from '../config/load-config.js';
@@ -17,27 +16,16 @@ import {
 } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
-import {
-  aContext,
-  aFeaturePlan,
-  aPlannedSlice,
-  aRunState,
-  designDocs,
-  runId,
-} from '../../tests/support/builders.js';
+import { scriptWholeRun } from '../../tests/support/agent-scripts.js';
+import { aRunState, runId } from '../../tests/support/builders.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { openRunWorktree } from '../../tests/support/open-run-worktree.js';
 import { createAppContainer, type OpenSessionInput } from './container.js';
 import { runInputFrom, runSdlc } from './run-sdlc.js';
 
 describe('runSdlc', () => {
-  const cleanups: (() => Promise<void>)[] = [];
-
-  afterEach(async () => {
-    await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
-  });
-
   it('starts a run from a request file and stops once the work waits to be merged', async () => {
     const { app, writeRequest, agentFor, repo } = await setup();
     const id = runId();
@@ -65,16 +53,23 @@ describe('runSdlc', () => {
   });
 
   it('resumes instead of starting over when given the same request and id again', async () => {
-    const { app, writeRequest, agentFor } = await setup();
+    const { app, writeRequest, agentFor, repo } = await setup();
     const id = runId();
-    const agent = agentFor(id);
-    scriptWholeRun(agent);
+    scriptWholeRun(agentFor(id));
     const requestPath = await writeRequest();
-    await runSdlc(app, { start: requestPath, runId: id });
+    const first = await runSdlc(app, { start: requestPath, runId: id });
+    const commitsAfterFirst = await runBranchCommits(repo.dir, id);
 
-    await runSdlc(app, { start: requestPath, runId: id });
+    const second = await runSdlc(app, { start: requestPath, runId: id });
 
-    expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(4);
+    expect(second).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
+    expect(second.state.runId).toBe(id);
+    expect(second.state.plan).toEqual(first.state.plan);
+    expect(second.state.slices).toEqual(first.state.slices);
+    const saved = await new LocalRunStore(repo.dir).load(id);
+    expect(saved?.phase).toBe('awaitingMerge');
+    expect(saved?.slices).toEqual(first.state.slices);
+    expect(await runBranchCommits(repo.dir, id)).toEqual(commitsAfterFirst);
   });
 
   it('refuses a second run of the same id while the first is going, and runs it once that one stops', async () => {
@@ -167,8 +162,7 @@ describe('runSdlc', () => {
 
   async function setup(options: { managedImage?: boolean } = {}) {
     const repo = await createTempRepo();
-    const requests = await mkdtemp(path.join(tmpdir(), 'sdlc-request-'));
-    cleanups.push(repo.cleanup, () => rm(requests, { recursive: true, force: true }));
+    const requests = await tempDirectory('sdlc-request-');
 
     const app = createAppContainer({ repoRoot: repo.dir, logFormat: 'json', logLevel: 'silent' });
     const agents = new Map<string, FakeAgentSession>();
@@ -227,17 +221,9 @@ describe('runSdlc', () => {
   }
 });
 
-function scriptWholeRun(agent: FakeAgentSession) {
-  agent.script(
-    'planner',
-    { output: aContext() },
-    { output: aFeaturePlan() },
-    { output: designDocs() },
-    { output: [aPlannedSlice()] },
-  );
-  agent.script('implementer', { files: { [`${faker.word.noun()}.txt`]: faker.lorem.sentence() } });
-  agent.script('reviewer', { output: { approved: true, feedback: '' } });
-  agent.script('describer', { output: { body: faker.lorem.paragraph() } });
+async function runBranchCommits(repoRoot: string, id: RunId) {
+  const log = await simpleGit({ baseDir: repoRoot }).log([`main..${runBranchFor(id)}`]);
+  return log.all.map((commit) => commit.hash);
 }
 
 async function readResult(repoRoot: string, id: RunId) {

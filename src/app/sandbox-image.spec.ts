@@ -1,9 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { faker } from '@faker-js/faker';
 import { pino } from 'pino';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import { loadConfig } from '../config/load-config.js';
 import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
@@ -16,6 +15,7 @@ import {
   type AgentNeeded,
   type AgentUpdatePolicy,
 } from './sandbox-image.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 
 class FakeSandboxImages implements SandboxImages {
   readonly built: ImageBuildSpec[] = [];
@@ -36,13 +36,6 @@ class FakeSandboxImages implements SandboxImages {
 }
 
 describe('ensureSandboxImage', () => {
-  const directories: string[] = [];
-  afterEach(async () => {
-    await Promise.all(
-      directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-    );
-  });
-
   it('builds the base image and the agent layer when there is no image yet', async () => {
     const { ensure, images, image } = await setup({});
 
@@ -94,8 +87,7 @@ describe('ensureSandboxImage', () => {
   });
 
   async function setup(input: { sandboxImage?: string; latest?: () => string }) {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-image-'));
-    directories.push(repoRoot);
+    const repoRoot = await tempDirectory('sdlc-image-');
     const writeDockerfile = async (contents: string) => {
       await mkdir(path.join(repoRoot, SANDBOX_DIRECTORY), { recursive: true });
       await writeFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), contents);

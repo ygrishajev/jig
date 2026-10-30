@@ -1,8 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { GitWorkspace } from '../adapters/git/git-workspace.js';
+import { describe, expect, it } from 'vitest';
 import { AgentRunFailed, MergeFailed } from '../domain/errors.js';
 import type { RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -14,18 +13,11 @@ import {
   runSettings,
 } from '../../tests/support/builders.js';
 import { FakeAgentSession, type AgentScript } from '../../tests/support/fakes.js';
-import { createRunWorktree, type RunWorktree } from '../../tests/support/run-worktree.js';
+import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import type { RunStep } from '../flow/define-flow.js';
 import { describePullRequest, mergeRunBranch } from './finishing.js';
 
 describe('finishing steps', () => {
-  let worktree: RunWorktree | undefined;
-
-  afterEach(async () => {
-    await worktree?.cleanup();
-    worktree = undefined;
-  });
-
   describe('mergeRunBranch', () => {
     it('merges the run branch into the base branch in auto mode', async () => {
       const { run, commitOnRunBranch, isMerged } = await setup({
@@ -113,15 +105,9 @@ describe('finishing steps', () => {
   }) {
     const id = runId();
     const created = await createRunWorktree(id);
-    worktree = created;
+    const { workspace } = created;
     const agent = new FakeAgentSession(created.worktreePath);
     if (input.describer) agent.script('describer', input.describer);
-    const workspace = new GitWorkspace({
-      repoRoot: created.repo.dir,
-      worktreePath: created.worktreePath,
-      runId: id,
-      baseBranch: 'main',
-    });
     const state = aRunStateIn('describing', { runId: id, ...input.state });
     const run = (step: RunStep<'describing'>) =>
       step({ state, ports: { agent, workspace }, settings: input.settings ?? runSettings() });

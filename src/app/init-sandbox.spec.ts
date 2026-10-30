@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
 import type { ExecResult } from '../ports/agent-session.js';
@@ -14,12 +14,6 @@ import { createAppContainer, type OpenSessionInput } from './container.js';
 import { initSandbox } from './init-sandbox.js';
 
 describe('initSandbox', () => {
-  const cleanups: (() => Promise<void>)[] = [];
-
-  afterEach(async () => {
-    await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
-  });
-
   it('writes the sandbox Dockerfile, its gitignore and a starter config', async () => {
     const { init, file } = await setup({});
 
@@ -127,7 +121,6 @@ describe('initSandbox', () => {
     checkSandboxFailures?: Error[];
   }) {
     const repo = await createTempRepo();
-    cleanups.push(repo.cleanup);
     const agent = new FakeAgentSession(repo.dir, input.exec);
     for (const proposal of input.proposals ?? []) agent.script('planner', { output: proposal });
 
