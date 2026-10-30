@@ -1,11 +1,13 @@
 import { faker } from '@faker-js/faker';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
-import { commitAll, isWorkingTreeClean } from './repository.js';
+import { ConfigInvalid } from '../domain/errors.js';
+import { commitAll, ensureRepositoryRoot, isWorkingTreeClean } from './repository.js';
 
 describe('git repository helpers', () => {
   it('sees a tree as clean right after a commit', async () => {
@@ -42,6 +44,29 @@ describe('git repository helpers', () => {
 
     expect(await commitAll(repo, faker.git.commitMessage())).toBeNull();
     expect(await simpleGit({ baseDir: repo }).revparse(['HEAD'])).toBe(before);
+  });
+
+  it('accepts the root of a repository', async () => {
+    const { repo } = await setup();
+
+    await expect(ensureRepositoryRoot(repo)).resolves.toBeUndefined();
+  });
+
+  it('refuses a directory inside a repository, naming its root', async () => {
+    const { repo } = await setup();
+    const subdirectory = path.join(repo, faker.word.noun());
+    await mkdir(subdirectory);
+
+    const checking = ensureRepositoryRoot(subdirectory);
+
+    await expect(checking).rejects.toBeInstanceOf(ConfigInvalid);
+    await expect(checking).rejects.toThrow(path.basename(repo));
+  });
+
+  it('accepts a directory that is not a repository yet', async () => {
+    const directory = await tempDirectory('sdlc-not-a-repo-');
+
+    await expect(ensureRepositoryRoot(directory)).resolves.toBeUndefined();
   });
 
   async function setup() {

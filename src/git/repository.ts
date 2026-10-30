@@ -1,4 +1,7 @@
+import { realpath } from 'node:fs/promises';
 import { type SimpleGit, simpleGit } from 'simple-git';
+
+import { ConfigInvalid } from '../domain/errors.js';
 
 export function openRepo(cwd: string): SimpleGit {
   return simpleGit({ baseDir: cwd });
@@ -15,4 +18,17 @@ export async function commitAll(cwd: string, message: string): Promise<string | 
   await git.add('-A');
   const result = await git.commit(message);
   return result.commit;
+}
+
+/**
+ * sdlc works on the repository in the directory it was started in. Started further down, it would
+ * miss the config and hand the sandbox no git directory, so that is refused; a directory that is
+ * not a repository yet is left for `init` and git itself to judge.
+ */
+export async function ensureRepositoryRoot(cwd: string) {
+  const root = await openRepo(cwd)
+    .revparse(['--show-toplevel'])
+    .catch(() => undefined);
+  if (root === undefined || root === (await realpath(cwd))) return;
+  throw new ConfigInvalid(`Run sdlc from the repository's root, ${root} — not from ${cwd}.`);
 }
