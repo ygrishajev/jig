@@ -22,7 +22,7 @@ const configSchema = z
   .object({
     mergeMode: z.enum(['manual', 'auto']).default('manual'),
     reviewCycleCap: z.number().int().positive().default(3),
-    /** Prepares the sandbox once per run before any agent starts, e.g. `npm ci`. */
+    /** Runs once per run, before any agent starts, e.g. `npm ci`. */
     setupCommand: z.string().optional(),
     setupTimeoutSeconds: z.number().int().positive().default(900),
     /** Must pass inside the sandbox before a reviewed slice counts as approved. */
@@ -31,7 +31,7 @@ const configSchema = z
     commitSigning: z.enum(['repo', 'skip']).default('repo'),
     /** `checkpoint` stops after planning so a person can read the design and plan before any code is written. */
     designGate: z.enum(['auto', 'checkpoint']).default('auto'),
-    /** The image sandcastle starts; defaults to sandcastle's own name for the repository. */
+    /** An image managed elsewhere: sdlc starts it as it is and never builds it. */
     sandboxImage: z.string().optional(),
     /** Where run state is saved: `local`, `git-remote` (push to origin), or a path to a store module. */
     runStores: z.array(z.string()).min(1).default(['local']),
@@ -39,7 +39,7 @@ const configSchema = z
     agents: z.record(agentNameSchema, z.string()).default({}),
     /** `auto` rebuilds the agent layer when a newer release is out, `warn` only says so, `off` never checks. */
     agentUpdates: z.enum(['auto', 'warn', 'off']).default('auto'),
-    /** An agent that prints nothing for this long is considered hung and stopped. */
+    /** Silence this long means the agent hung; it is stopped. */
     agentIdleTimeoutSeconds: z.number().int().positive().default(600),
     ...byRole(() => stepConfigSchema.default({ provider: 'claude' })),
   })
