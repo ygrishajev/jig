@@ -1,10 +1,10 @@
 import { faker } from '@faker-js/faker';
-import { writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 import type { RunId } from '../../domain/run-id.js';
-import { RunStateConflict } from '../../domain/errors.js';
+import { RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { aFeaturePlan, aRunState, aSlice } from '../../../tests/support/builders.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
@@ -76,6 +76,68 @@ describe('GitRemoteRunStore', () => {
     expect(await simpleGit({ baseDir: worktree }).revparse(['HEAD'])).toBe(advancedHead);
     expect(await simpleGit({ baseDir: origin }).revparse([runBranchFor(state.runId)])).toBe(
       advancedHead,
+    );
+  });
+
+  it('catches a stale run branch up with the remote when no worktree has it checked out', async () => {
+    const { cloneOf } = await setup();
+    const here = await cloneOf();
+    const state = aRunState({ phase: 'slices' });
+    await commitOnRunBranch(here, state.runId);
+    await new GitRemoteRunStore(here).save(state);
+    const elsewhere = await cloneOf();
+    const elsewhereStore = new GitRemoteRunStore(elsewhere);
+    await elsewhereStore.load(state.runId);
+    const advancedHead = await commitOnRunBranch(elsewhere, state.runId);
+    await elsewhereStore.save(state);
+
+    await new GitRemoteRunStore(here).load(state.runId);
+
+    expect(await simpleGit({ baseDir: here }).revparse([runBranchFor(state.runId)])).toBe(
+      advancedHead,
+    );
+  });
+
+  it('keeps a local run branch that is ahead of the remote with commits not pushed yet', async () => {
+    const { cloneOf } = await setup();
+    const here = await cloneOf();
+    const state = aRunState({ phase: 'slices' });
+    await commitOnRunBranch(here, state.runId);
+    await new GitRemoteRunStore(here).save(state);
+    const aheadHead = await commitOnRunBranch(here, state.runId);
+
+    await new GitRemoteRunStore(here).load(state.runId);
+
+    expect(await simpleGit({ baseDir: here }).revparse([runBranchFor(state.runId)])).toBe(
+      aheadHead,
+    );
+  });
+
+  it('refuses a run whose branch here and on the remote have diverged', async () => {
+    const { cloneOf } = await setup();
+    const here = await cloneOf();
+    const state = aRunState({ phase: 'slices' });
+    await commitOnRunBranch(here, state.runId);
+    await new GitRemoteRunStore(here).save(state);
+    const elsewhere = await cloneOf();
+    const elsewhereStore = new GitRemoteRunStore(elsewhere);
+    await elsewhereStore.load(state.runId);
+    await commitOnRunBranch(elsewhere, state.runId);
+    await elsewhereStore.save(state);
+    await commitOnRunBranch(here, state.runId);
+
+    await expect(new GitRemoteRunStore(here).load(state.runId)).rejects.toBeInstanceOf(
+      RunStateConflict,
+    );
+  });
+
+  it('reports a remote it cannot reach as unavailable, after retrying', async () => {
+    const { cloneOf, origin } = await setup();
+    const here = await cloneOf();
+    await rm(origin, { recursive: true, force: true });
+
+    await expect(new GitRemoteRunStore(here).load(aRunState().runId)).rejects.toBeInstanceOf(
+      RemoteUnavailable,
     );
   });
 
