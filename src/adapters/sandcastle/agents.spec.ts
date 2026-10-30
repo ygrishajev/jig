@@ -67,3 +67,13 @@ describe('collectCredentials', () => {
     expect(() => collectCredentials([{ provider: 'opencode' }], {})).toThrow(ConfigInvalid);
   });
 });
+
+describe('AGENTS', () => {
+  it("leaves every agent's transcripts in the sandbox instead of copying them to the host", () => {
+    const model = `openrouter/${faker.word.noun()}`;
+
+    for (const agent of Object.values(AGENTS)) {
+      expect(agent.create(model).captureSessions).toBe(false);
+    }
+  });
+});

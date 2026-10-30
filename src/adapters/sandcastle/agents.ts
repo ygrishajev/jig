@@ -18,7 +18,7 @@ export const AGENTS = {
   claude: {
     npmPackage: '@anthropic-ai/claude-code',
     credentialKeys: () => ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
-    create: (model) => claudeCode(model ?? DEFAULT_CLAUDE_MODEL),
+    create: (model) => claudeCode(model ?? DEFAULT_CLAUDE_MODEL, { captureSessions: false }),
   },
   opencode: {
     npmPackage: 'opencode-ai',
