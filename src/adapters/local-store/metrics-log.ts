@@ -3,6 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { agentRoleSchema } from '../../domain/agent-role.js';
 import { MetricsLogCorrupt } from '../../domain/errors.js';
+import { outcomeTypeSchema } from '../../domain/outcome.js';
 import { runIdSchema, type RunId } from '../../domain/run-id.js';
 import type { MetricRecord } from '../../observers/metrics.js';
 import { stateDirectory } from './run-paths.js';
@@ -16,21 +17,7 @@ const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.dis
       at: z.string(),
       runId: runIdSchema,
       location: stepLocationSchema,
-      outcome: z.enum([
-        'contextBuilt',
-        'featurePlanned',
-        'designWritten',
-        'sliced',
-        'continue',
-        'pause',
-        'implemented',
-        'approved',
-        'changesRequested',
-        'verified',
-        'described',
-        'merged',
-        'awaitingManualMerge',
-      ]),
+      outcome: outcomeTypeSchema,
       durationMs: z.number(),
       commit: z
         .object({

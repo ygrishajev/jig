@@ -61,6 +61,10 @@ describe('MetricsLog', () => {
         return JSON.stringify({ ...record, location: { ...location, sliceId: sliceId() } });
       },
     ],
+    [
+      'names an outcome no step reports',
+      () => JSON.stringify({ ...stepRecord(runId()), outcome: faker.lorem.word() }),
+    ],
   ])('refuses a complete line in the middle that %s', async (_case, corruptLine) => {
     const { log, id, appendRaw } = await setup();
     log.append(stepRecord(id));
