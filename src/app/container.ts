@@ -15,7 +15,10 @@ import {
 import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
 import { AGENTS, collectCredentials } from '../adapters/sandcastle/agents.js';
-import { SandcastleSession } from '../adapters/sandcastle/sandcastle-session.js';
+import {
+  SandcastleSession,
+  type SandcastleSessionOptions,
+} from '../adapters/sandcastle/sandcastle-session.js';
 import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
 import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
 import { byRole, type AgentRole } from '../domain/agent-role.js';
@@ -202,24 +205,33 @@ export async function closeRunScope(scope: AwilixContainer<RunCradle>) {
 }
 
 function sandcastleOpener(repoRoot: string, config: SdlcConfig) {
-  return async ({ run, events, setupCommand }: OpenSessionInput): Promise<RunSession> => {
-    const steps = configuredSteps(config);
-    return SandcastleSession.open({
-      repoRoot,
-      ...run,
-      imageName: sandboxImageName(repoRoot, config),
-      credentials: {
-        ...collectCredentials(Object.values(steps), process.env),
-        ...sandboxTelemetryEnvironment(process.env),
-      },
-      agents: agentsFor(steps),
-      skipCommitSigning: config.commitSigning === 'skip',
-      setupCommand: setupCommand === null ? undefined : (setupCommand ?? config.setupCommand),
-      setupTimeoutSeconds: config.setupTimeoutSeconds,
-      idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
-      agentLogFile: path.join(stateDirectory(repoRoot, run.runId), 'agents.log'),
-      events,
-    });
+  return (input: OpenSessionInput): Promise<RunSession> =>
+    SandcastleSession.open(sandcastleSessionOptions(repoRoot, config, input, process.env));
+}
+
+/** What the run's sandbox is started with: the configured agents, their credentials and limits. */
+export function sandcastleSessionOptions(
+  repoRoot: string,
+  config: SdlcConfig,
+  { run, events, setupCommand }: OpenSessionInput,
+  environment: NodeJS.ProcessEnv,
+): SandcastleSessionOptions {
+  const steps = configuredSteps(config);
+  return {
+    repoRoot,
+    ...run,
+    imageName: sandboxImageName(repoRoot, config),
+    credentials: {
+      ...collectCredentials(Object.values(steps), environment),
+      ...sandboxTelemetryEnvironment(environment),
+    },
+    agents: agentsFor(steps),
+    skipCommitSigning: config.commitSigning === 'skip',
+    setupCommand: setupCommand === null ? undefined : (setupCommand ?? config.setupCommand),
+    setupTimeoutSeconds: config.setupTimeoutSeconds,
+    idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
+    agentLogFile: path.join(stateDirectory(repoRoot, run.runId), 'agents.log'),
+    events,
   };
 }
 
