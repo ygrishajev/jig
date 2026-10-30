@@ -1,11 +1,12 @@
 import { faker } from '@faker-js/faker';
-import { writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { GitResponseError, simpleGit, type SimpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 import { createRemote, createTempRepo } from '../../tests/support/temp-repo.js';
 import { GitCommandFailed, isBranchMergedInto, mergeBranchInto, MergeRefused } from './merge.js';
 import { commitAll } from './repository.js';
+import { RemoteUnavailable } from '../domain/errors.js';
 
 describe('mergeBranchInto', () => {
   it('merges a branch into the checked-out base and returns the merge commit', async () => {
@@ -109,6 +110,15 @@ describe('isBranchMergedInto', () => {
     expect(await isBranchMergedInto(here, empty, 'main')).toBe(true);
   });
 
+  it('reports a remote it cannot reach as unavailable rather than answering', async () => {
+    const { here, branch, loseRemote } = await setup();
+    await loseRemote();
+
+    await expect(isBranchMergedInto(here, branch, 'main')).rejects.toBeInstanceOf(
+      RemoteUnavailable,
+    );
+  });
+
   it('fails rather than answering for a branch that does not exist', async () => {
     const { here } = await setup();
 
@@ -118,7 +128,7 @@ describe('isBranchMergedInto', () => {
   });
 
   async function setup() {
-    const { cloneOf } = await createRemote();
+    const { origin, cloneOf } = await createRemote();
     const here = await cloneOf();
     const elsewhere = await cloneOf();
     const branch = `run/${faker.string.alphanumeric(8).toLowerCase()}`;
@@ -145,7 +155,16 @@ describe('isBranchMergedInto', () => {
       await remote.push('origin', 'main');
     };
     const pullBase = () => simpleGit({ baseDir: here }).pull('origin', 'main');
-    return { here, branch, mergeOnRemote, advanceRemoteBase, rewriteBranchFilesOnRemote, pullBase };
+    const loseRemote = () => rm(origin, { recursive: true, force: true });
+    return {
+      here,
+      branch,
+      mergeOnRemote,
+      advanceRemoteBase,
+      rewriteBranchFilesOnRemote,
+      pullBase,
+      loseRemote,
+    };
   }
 });
 
