@@ -8,6 +8,18 @@ import type { RunEvent, StepLocation } from '../domain/events.js';
 import { LoggingObserver } from './logging-observer.js';
 
 describe('LoggingObserver', () => {
+  it.each(['runResumed', 'runHalted', 'runFinished'] as const)(
+    'logs %s at info with the run and phase',
+    (type) => {
+      const { observe, lines } = setup();
+      const id = runId();
+      observe({ type, runId: id, phase: 'planning' });
+      expect(lines()).toEqual([
+        expect.objectContaining({ level: 30, event: type, runId: id, phase: 'planning' }),
+      ]);
+    },
+  );
+
   it('logs a finished step at info, keeping the event as fields', () => {
     const id = runId();
     const durationMs = faker.number.int({ min: 1, max: 60_000 });

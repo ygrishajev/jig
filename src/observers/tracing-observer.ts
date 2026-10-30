@@ -15,34 +15,13 @@ export class TracingObserver {
 
   handle(event: RunEvent) {
     switch (event.type) {
-      case 'runResumed':
-        this.runSpan = this.tracer.startSpan('sdlc.run', {
-          attributes: { 'sdlc.run_id': event.runId, 'sdlc.phase.start': event.phase },
-        });
-        return;
       case 'stepStarted':
-        this.stepSpan = this.tracer.startSpan(
-          stepName(event.at),
-          { attributes: locationAttributes(event.at) },
-          this.runSpan ? trace.setSpan(context.active(), this.runSpan) : undefined,
-        );
-        return;
+        return this.startStep(event.at);
       case 'agentUsage':
-        this.stepSpan?.addEvent('agent call', {
-          'gen_ai.agent.name': event.role,
-          'gen_ai.usage.input_tokens': event.tokens.input,
-          'gen_ai.usage.output_tokens': event.tokens.output,
-          'sdlc.usage.cache_read_tokens': event.tokens.cacheRead,
-          'sdlc.usage.cache_write_tokens': event.tokens.cacheWrite,
-          'sdlc.usage.reasoning_tokens': event.tokens.reasoning,
-          ...(event.costUsd !== undefined ? { 'sdlc.usage.cost_usd': event.costUsd } : {}),
-        });
-        return;
+        return this.recordAgentUsage(event);
       case 'stepFailed':
         this.stepSpan?.setStatus({ code: SpanStatusCode.ERROR, message: event.reason });
-        this.stepSpan?.end();
-        this.stepSpan = undefined;
-        return;
+        return this.endStep();
       case 'stepRetried':
         this.runSpan?.addEvent('retry', {
           'sdlc.retry.attempt': event.attempt,
@@ -51,8 +30,18 @@ export class TracingObserver {
         return;
       case 'stepFinished':
         this.stepSpan?.setAttribute('sdlc.outcome', event.outcome.type);
-        this.stepSpan?.end();
-        this.stepSpan = undefined;
+        return this.endStep();
+      default:
+        return this.handleRunLifecycle(event);
+    }
+  }
+
+  private handleRunLifecycle(event: RunEvent) {
+    switch (event.type) {
+      case 'runResumed':
+        this.runSpan = this.tracer.startSpan('sdlc.run', {
+          attributes: { 'sdlc.run_id': event.runId, 'sdlc.phase.start': event.phase },
+        });
         return;
       case 'runBlocked':
       case 'runFailed':
@@ -62,6 +51,31 @@ export class TracingObserver {
       case 'runFinished':
         return this.endRun(event.phase);
     }
+  }
+
+  private startStep(at: StepLocation) {
+    this.stepSpan = this.tracer.startSpan(
+      stepName(at),
+      { attributes: locationAttributes(at) },
+      this.runSpan ? trace.setSpan(context.active(), this.runSpan) : undefined,
+    );
+  }
+
+  private recordAgentUsage(event: Extract<RunEvent, { type: 'agentUsage' }>) {
+    this.stepSpan?.addEvent('agent call', {
+      'gen_ai.agent.name': event.role,
+      'gen_ai.usage.input_tokens': event.tokens.input,
+      'gen_ai.usage.output_tokens': event.tokens.output,
+      'sdlc.usage.cache_read_tokens': event.tokens.cacheRead,
+      'sdlc.usage.cache_write_tokens': event.tokens.cacheWrite,
+      'sdlc.usage.reasoning_tokens': event.tokens.reasoning,
+      ...(event.costUsd !== undefined ? { 'sdlc.usage.cost_usd': event.costUsd } : {}),
+    });
+  }
+
+  private endStep() {
+    this.stepSpan?.end();
+    this.stepSpan = undefined;
   }
 
   private endRun(phase: string) {

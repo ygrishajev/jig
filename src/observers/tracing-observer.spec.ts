@@ -12,6 +12,19 @@ import type { RunEvent, StepLocation } from '../domain/events.js';
 import { TracingObserver } from './tracing-observer.js';
 
 describe('TracingObserver', () => {
+  it('ends a halted run without marking it as an error', () => {
+    const { observe, spans } = setup();
+    const id = runId();
+    observe({ type: 'runResumed', runId: id, phase: 'planning' });
+    observe({ type: 'runHalted', runId: id, phase: 'designing' });
+    expect(spans()).toEqual([
+      expect.objectContaining({
+        attributes: expect.objectContaining({ 'sdlc.phase.end': 'designing' }),
+        status: { code: SpanStatusCode.UNSET },
+      }),
+    ]);
+  });
+
   it('nests each step under the run, with its outcome', () => {
     const { observe, spans } = setup();
     const id = runId();

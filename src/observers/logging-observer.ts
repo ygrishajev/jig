@@ -10,8 +10,6 @@ export class LoggingObserver {
     const { type, ...fields } = event;
     const log = this.logger.child({ event: type });
     switch (event.type) {
-      case 'runResumed':
-        return log.info(fields, `run ${event.runId} at ${event.phase}`);
       case 'stepStarted':
         return log.info(fields, `${describe(event.at)}…`);
       case 'stepFinished':
@@ -33,19 +31,28 @@ export class LoggingObserver {
         return log.debug(fields, `${event.from} → ${event.to}`);
       case 'sliceStatusChanged':
         return log.info(fields, `slice ${event.sliceId}: ${event.from} → ${event.to}`);
-      case 'runHalted':
-        return log.info(fields, `run ${event.runId} waiting at ${event.phase}`);
-      case 'runBlocked':
-        return log.error(fields, `run ${event.runId} blocked at ${event.phase}: ${event.reason}`);
-      case 'runFinished':
-        return log.info(fields, `run ${event.runId} finished: ${event.phase}`);
-      case 'runFailed':
-        return log.error(fields, `run ${event.runId} failed at ${event.phase}: ${event.reason}`);
       case 'agentMessage':
         return log.debug(fields, `${event.role}: ${event.text}`);
       case 'agentToolCall':
         return log.info(fields, `${event.role} → ${event.tool} ${event.args}`);
+      default:
+        return logRunLifecycle(log, event, fields);
     }
+  }
+}
+
+function logRunLifecycle(log: Logger, event: RunEvent, fields: object) {
+  switch (event.type) {
+    case 'runResumed':
+      return log.info(fields, `run ${event.runId} at ${event.phase}`);
+    case 'runHalted':
+      return log.info(fields, `run ${event.runId} waiting at ${event.phase}`);
+    case 'runBlocked':
+      return log.error(fields, `run ${event.runId} blocked at ${event.phase}: ${event.reason}`);
+    case 'runFinished':
+      return log.info(fields, `run ${event.runId} finished: ${event.phase}`);
+    case 'runFailed':
+      return log.error(fields, `run ${event.runId} failed at ${event.phase}: ${event.reason}`);
   }
 }
 

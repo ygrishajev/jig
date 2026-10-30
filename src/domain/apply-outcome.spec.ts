@@ -14,6 +14,14 @@ import {
 import { applyOutcome, NoCurrentSlice } from './apply-outcome.js';
 
 describe('applyOutcome', () => {
+  it.each(['continue', 'pause', 'approved', 'merged', 'awaitingManualMerge'] as const)(
+    'preserves state for the %s control outcome',
+    (type) => {
+      const state = aRunState();
+      expect(applyOutcome(state, { type })).toBe(state);
+    },
+  );
+
   it('records what the planning steps produced', () => {
     const context = aContext();
     const plan = aFeaturePlan();

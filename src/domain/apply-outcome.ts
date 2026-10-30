@@ -31,11 +31,7 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
       return updateCurrentSlice(state, (slice) => ({ ...slice, lastFeedback: undefined }));
     case 'described':
       return { ...state, prDescription: outcome.body };
-    case 'continue':
-    case 'pause':
-    case 'approved':
-    case 'merged':
-    case 'awaitingManualMerge':
+    default:
       return state;
   }
 }
