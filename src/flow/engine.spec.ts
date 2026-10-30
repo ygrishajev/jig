@@ -13,7 +13,7 @@ import {
   MergeFailed,
 } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
-import { PhaseOutOfOrder, runPhaseSchema, type RunState } from '../domain/run-state.js';
+import { PhaseOutOfOrder, type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
@@ -38,7 +38,7 @@ import {
   type SliceFlow,
   type SliceStep,
 } from './define-flow.js';
-import { runEngine } from './engine.js';
+import { FlowHasNoTransition, runEngine } from './engine.js';
 
 describe('runEngine', () => {
   it('walks phases by the outcome each step returns and finishes done', async () => {
@@ -71,36 +71,39 @@ describe('runEngine', () => {
   });
 
   it('starts from the saved phase without re-running earlier steps', async () => {
-    const buildContext = vi.fn<RunStep>();
-    const { run } = setup({
+    const context = aContext();
+    const plan = aFeaturePlan();
+    const { run, events } = setup({
       flow: linearFlow({
-        context: buildContext,
-        planning: async () => ({ type: 'featurePlanned', plan: aFeaturePlan() }),
+        context: async () => ({ type: 'contextBuilt', context: aContext() }),
+        planning: async () => ({ type: 'featurePlanned', plan }),
       }),
     });
 
-    await run(aDescribedRun({ phase: 'planning', context: aContext() }));
+    const { status, state } = await run(aDescribedRun({ phase: 'planning', context }));
 
-    expect(buildContext).not.toHaveBeenCalled();
+    expect(status).toBe('done');
+    expect(state).toMatchObject({ phase: 'done', context, plan });
+    expect(events.ofType('stepStarted').map((event) => event.at)).toEqual([{ phase: 'planning' }]);
   });
 
   it('stops at a halt and carries on from its resume phase on the next invocation', async () => {
-    const afterHalt = vi.fn<RunStep>(async () => ({
-      type: 'featurePlanned',
-      plan: aFeaturePlan(),
-    }));
-    const { run } = setup({
-      flow: haltingFlow({ beforeHalt: async () => ({ type: 'pause' }), afterHalt }),
+    const plan = aFeaturePlan();
+    const { run, store } = setup({
+      flow: haltingFlow({
+        beforeHalt: async () => ({ type: 'pause' }),
+        afterHalt: async () => ({ type: 'featurePlanned', plan }),
+      }),
     });
+    const initial = aDescribedRun({ phase: 'gate' });
 
-    const first = await run(aDescribedRun({ phase: 'gate' }));
-    expect(first.status).toBe('halted');
-    expect(first.state.phase).toBe('paused');
-    expect(afterHalt).not.toHaveBeenCalled();
+    const first = await run(initial);
+    expect(first).toMatchObject({ status: 'halted', state: { phase: 'paused' } });
+    expect(first.state.plan).toEqual(initial.plan);
 
     const second = await run(first.state);
-    expect(second.status).toBe('done');
-    expect(afterHalt).toHaveBeenCalledOnce();
+    expect(second).toMatchObject({ status: 'done', state: { phase: 'done', plan } });
+    expect(store.saved.map((saved) => saved.phase)).toEqual(['paused', 'planning', 'done']);
   });
 
   it('retries a step that failed transiently, up to the configured number of retries', async () => {
@@ -149,16 +152,19 @@ describe('runEngine', () => {
   });
 
   it('reports a failed attempt before a fatal error propagates', async () => {
+    const failure = new Error(faker.lorem.sentence());
     const { run, events } = setup({
       flow: linearFlow({
         context: async () => {
-          throw new Error(faker.lorem.sentence());
+          throw failure;
         },
       }),
     });
 
-    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toThrow();
-    expect(events.ofType('stepFailed')).toHaveLength(1);
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toBe(failure);
+    expect(events.ofType('stepFailed')).toMatchObject([
+      { at: { phase: 'context' }, reason: failure.message },
+    ]);
   });
 
   it('reports a fatal failure as the run failing at the phase it was in', async () => {
@@ -319,7 +325,7 @@ describe('runEngine', () => {
     const { run } = setup({
       flow: sliceOnlyFlow({
         pending: async () => anImplementation(),
-        in_review: async () => reviews.shift() as Outcome,
+        in_review: async () => reviews.shift() ?? { type: 'approved' },
       }),
       settings: runSettings({ reviewCycleCap: 2 }),
     });
@@ -350,7 +356,9 @@ describe('runEngine', () => {
   });
 
   it('reports how long each step took', async () => {
+    const clockStepMs = faker.number.int({ min: 1, max: 1000 });
     const { run, events } = setup({
+      clockStepMs,
       flow: linearFlow({ context: async () => ({ type: 'contextBuilt', context: aContext() }) }),
     });
 
@@ -358,7 +366,7 @@ describe('runEngine', () => {
 
     expect(events.ofType('stepFinished')[0]).toMatchObject({
       outcome: { type: 'contextBuilt' },
-      durationMs: 10,
+      durationMs: clockStepMs,
     });
   });
 
@@ -375,19 +383,24 @@ describe('runEngine', () => {
   it('refuses an outcome the flow has no transition for', async () => {
     const { run } = setup({ flow: linearFlow({ context: async () => ({ type: 'pause' }) }) });
 
-    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toThrow(
-      'no transition for outcome "pause"',
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toMatchObject(
+      new FlowHasNoTransition('pause'),
     );
   });
 
-  function setup(input: { flow: RunFlow; settings?: RunSettings; events?: EventSink }) {
+  function setup(input: {
+    flow: RunFlow;
+    settings?: RunSettings;
+    events?: EventSink;
+    clockStepMs?: number;
+  }) {
     const store = new InMemoryRunStore();
     const events = new RecordingEventSink();
     const dependencies = {
       ports: { agent: mock<AgentSession>(), workspace: mock<Workspace>() },
       store,
       events: input.events ?? events,
-      clock: new SteppingClock(),
+      clock: new SteppingClock(input.clockStepMs ?? faker.number.int({ min: 1, max: 1000 })),
       settings: input.settings ?? runSettings(),
     };
     const run = (state: RunState) => runEngine(input.flow, state, dependencies);
@@ -416,7 +429,16 @@ const unused: RunStep = async () => {
 function flowWith(nodes: Partial<RunFlow>): RunFlow {
   const filler = { step: unused, on: {} };
   return defineRunFlow({
-    ...(Object.fromEntries(runPhaseSchema.options.map((phase) => [phase, filler])) as RunFlow),
+    context: filler,
+    planning: filler,
+    designing: filler,
+    slicing: filler,
+    gate: filler,
+    paused: filler,
+    slices: filler,
+    describing: filler,
+    merging: filler,
+    awaitingMerge: filler,
     done: { final: 'done' },
     stuck: { final: 'stuck' },
     ...nodes,

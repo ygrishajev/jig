@@ -2,7 +2,7 @@ import pRetry from 'p-retry';
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
 import { messageOf, SdlcError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
-import type { Outcome } from '../domain/outcome.js';
+import type { Outcome, OutcomeType } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
 import {
   currentSlice,
@@ -45,6 +45,15 @@ export type EngineResult =
 const MAX_PASSES = 1000;
 
 type Attempt = { outcome: Outcome } | { blockedReason: string };
+
+/** The flow leaves an outcome a step can return with nowhere to go: a bug in the flow, not the run. */
+export class FlowHasNoTransition extends SdlcError {
+  readonly kind = 'fatal';
+
+  constructor(readonly outcome: OutcomeType) {
+    super(`The flow has no transition for outcome "${outcome}"`);
+  }
+}
 
 /** Drives a run through `flow` from its saved phase until it finishes, halts, or blocks. */
 export async function runEngine(
@@ -229,12 +238,10 @@ class Engine {
     context: GuardContext,
   ): S {
     const target: Target<S> | undefined = transitions[outcome.type];
-    if (target === undefined) {
-      throw new Error(`The flow has no transition for outcome "${outcome.type}"`);
-    }
+    if (target === undefined) throw new FlowHasNoTransition(outcome.type);
     if (typeof target === 'string') return target;
     const match = target.find((entry) => !entry.when || entry.when(context));
-    if (!match) throw new Error(`No guarded transition matched outcome "${outcome.type}"`);
+    if (!match) throw new FlowHasNoTransition(outcome.type);
     return match.to;
   }
 

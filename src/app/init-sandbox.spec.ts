@@ -71,13 +71,10 @@ describe('initSandbox', () => {
 
   it('hands a failing check back to the planner and accepts the corrected toolchain', async () => {
     const failure = faker.lorem.sentence();
-    const results: ExecResult[] = [
-      { exitCode: 1, output: failure },
-      { exitCode: 0, output: '' },
-    ];
+    const results: ExecResult[] = [{ exitCode: 1, output: failure }];
     const { init, agent } = await setup({
       proposals: [toolchainProposal(), toolchainProposal()],
-      exec: () => results.shift() as ExecResult,
+      exec: () => results.shift() ?? { exitCode: 0, output: '' },
     });
 
     expect(await init({ useAgent: true })).toEqual({ status: 'verified', attempts: 2 });
