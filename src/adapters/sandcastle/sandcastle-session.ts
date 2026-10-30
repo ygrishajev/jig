@@ -15,6 +15,7 @@ import {
   AgentOutputInvalid,
   AgentRunFailed,
   ConfigInvalid,
+  messageOf,
   SandboxUnavailable,
   SetupCommandFailed,
   type SdlcError,
@@ -281,8 +282,4 @@ export async function ignoreSandcastleDirectory(repoRoot: string) {
 
 function ignoresEverything(gitignore: string) {
   return gitignore.split('\n').some((line) => line.trim() === '*');
-}
-
-function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }

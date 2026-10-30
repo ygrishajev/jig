@@ -4,6 +4,11 @@
  */
 export type FailureKind = 'retry' | 'block' | 'fatal';
 
+/** JavaScript can throw anything, not only an `Error`. */
+export function messageOf(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export abstract class SdlcError extends Error {
   abstract readonly kind: FailureKind;
 

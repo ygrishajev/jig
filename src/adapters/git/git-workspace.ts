@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { MergeFailed } from '../../domain/errors.js';
+import { MergeFailed, messageOf } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type { Workspace } from '../../ports/workspace.js';
@@ -63,8 +63,9 @@ export class GitWorkspace implements Workspace {
       await mergeBranchInto(repoRoot, this.runBranch, baseBranch);
     } catch (error) {
       await abortMergeInProgress(repoRoot);
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new MergeFailed(`Merging "${this.runBranch}" into "${baseBranch}" failed: ${reason}`);
+      throw new MergeFailed(
+        `Merging "${this.runBranch}" into "${baseBranch}" failed: ${messageOf(error)}`,
+      );
     }
   }
 
