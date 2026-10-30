@@ -34,6 +34,25 @@ describe('extractOutput', () => {
     ).toEqual(verdict);
   });
 
+  it('accepts a fenced result with blank lines around it inside the tag', () => {
+    const verdict = { approved: true, feedback: faker.lorem.sentence() };
+
+    expect(
+      extractOutput(tagged(`\n  \`\`\`json\n${JSON.stringify(verdict)}\n\`\`\`\n`), verdictSchema),
+    ).toEqual(verdict);
+  });
+
+  it('rejects a fenced result with other text beside the fence', () => {
+    const fenced = `\`\`\`json\n${JSON.stringify({ approved: true, feedback: '' })}\n\`\`\``;
+
+    expect(() => extractOutput(tagged(`${faker.lorem.word()} ${fenced}`), verdictSchema)).toThrow(
+      AgentOutputInvalid,
+    );
+    expect(() => extractOutput(tagged(`${fenced} ${faker.lorem.word()}`), verdictSchema)).toThrow(
+      AgentOutputInvalid,
+    );
+  });
+
   it('rejects a reply without a result, with a result that is not JSON, or with the wrong shape', () => {
     const missing = () => extractOutput(faker.lorem.paragraph(), verdictSchema);
     const notJson = () => extractOutput(tagged(faker.lorem.sentence()), verdictSchema);
