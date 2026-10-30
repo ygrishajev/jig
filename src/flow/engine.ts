@@ -46,6 +46,15 @@ const MAX_PASSES = 1000;
 
 type Attempt = { outcome: Outcome } | { blockedReason: string };
 
+/** The flow cycles without ever finishing, halting or blocking: a bug in the flow, not the run. */
+export class FlowDoesNotSettle extends SdlcError {
+  readonly kind = 'fatal';
+
+  constructor(readonly runId: RunId) {
+    super(`Run ${runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`);
+  }
+}
+
 /** The flow leaves an outcome a step can return with nowhere to go: a bug in the flow, not the run. */
 export class FlowHasNoTransition extends SdlcError {
   readonly kind = 'fatal';
@@ -99,9 +108,7 @@ class Engine {
       await this.d.store.save(state);
       onSaved(state);
     }
-    throw new Error(
-      `Run ${state.runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`,
-    );
+    throw new FlowDoesNotSettle(state.runId);
   }
 
   /** One step of the run from `phase`; generic so the phase's step sees what `phase` guarantees. */

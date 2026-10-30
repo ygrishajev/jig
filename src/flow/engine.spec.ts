@@ -38,7 +38,7 @@ import {
   type SliceFlow,
   type SliceStep,
 } from './define-flow.js';
-import { FlowHasNoTransition, runEngine } from './engine.js';
+import { FlowDoesNotSettle, FlowHasNoTransition, runEngine } from './engine.js';
 
 describe('runEngine', () => {
   it('walks phases by the outcome each step returns and finishes done', async () => {
@@ -149,6 +149,124 @@ describe('runEngine', () => {
       at: { phase: 'context' },
       reason,
     });
+    expect(events.ofType('stepRetried').map((event) => event.attempt)).toEqual(
+      Array.from({ length: retries }, (_, index) => index + 1),
+    );
+  });
+
+  it('reports a run from resuming through each phase change to its finish', async () => {
+    const { run, events } = setup({
+      flow: linearFlow({
+        context: async () => ({ type: 'contextBuilt', context: aContext() }),
+        planning: async () => ({ type: 'featurePlanned', plan: aFeaturePlan() }),
+      }),
+    });
+    const initial = aDescribedRun({ phase: 'context' });
+    const { runId } = initial;
+
+    await run(initial);
+
+    expect(events.events.map((event) => event.type)).toEqual([
+      'runResumed',
+      'stepStarted',
+      'stepFinished',
+      'phaseChanged',
+      'stepStarted',
+      'stepFinished',
+      'phaseChanged',
+      'runFinished',
+    ]);
+    expect(events.ofType('runResumed')).toEqual([{ type: 'runResumed', runId, phase: 'context' }]);
+    expect(events.ofType('phaseChanged')).toEqual([
+      { type: 'phaseChanged', runId, from: 'context', to: 'planning' },
+      { type: 'phaseChanged', runId, from: 'planning', to: 'done' },
+    ]);
+    expect(events.ofType('runFinished')).toEqual([{ type: 'runFinished', runId, phase: 'done' }]);
+  });
+
+  it('reports a run that stops at a halt or blocks, with where and why', async () => {
+    const reason = faker.lorem.sentence();
+    const halting = setup({
+      flow: haltingFlow({ beforeHalt: async () => ({ type: 'pause' }), afterHalt: unused }),
+    });
+    const blocking = setup({
+      settings: runSettings({ maxStepRetries: 0 }),
+      flow: linearFlow({
+        context: async () => {
+          throw new MergeFailed(reason);
+        },
+      }),
+    });
+    const halted = aDescribedRun({ phase: 'gate' });
+    const blocked = aDescribedRun({ phase: 'context' });
+
+    await halting.run(halted);
+    await blocking.run(blocked);
+
+    expect(halting.events.ofType('runHalted')).toEqual([
+      { type: 'runHalted', runId: halted.runId, phase: 'paused' },
+    ]);
+    expect(blocking.events.ofType('runBlocked')).toEqual([
+      { type: 'runBlocked', runId: blocked.runId, phase: 'context', reason },
+    ]);
+  });
+
+  it('reports each slice moving from one status to the next', async () => {
+    const slice = aSlice({ status: 'pending' });
+    const { run, events } = setup({
+      flow: sliceOnlyFlow({
+        pending: async () => anImplementation(),
+        in_review: async () => ({ type: 'approved' }),
+      }),
+    });
+    const initial = aDescribedRun({ phase: 'slices', slices: [slice] });
+
+    await run(initial);
+
+    expect(events.ofType('sliceStatusChanged')).toEqual([
+      {
+        type: 'sliceStatusChanged',
+        runId: initial.runId,
+        sliceId: slice.id,
+        from: 'pending',
+        to: 'in_review',
+      },
+      {
+        type: 'sliceStatusChanged',
+        runId: initial.runId,
+        sliceId: slice.id,
+        from: 'in_review',
+        to: 'approved',
+      },
+    ]);
+  });
+
+  it('gives up on a flow that never settles', async () => {
+    const { run } = setup({
+      flow: flowWith({
+        context: { step: async () => ({ type: 'continue' }), on: { continue: 'planning' } },
+        planning: { step: async () => ({ type: 'continue' }), on: { continue: 'context' } },
+      }),
+    });
+
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toBeInstanceOf(
+      FlowDoesNotSettle,
+    );
+  });
+
+  it('refuses an outcome whose guarded transitions all decline', async () => {
+    const { run } = setup({
+      flow: flowWith({
+        context: {
+          step: async () => ({ type: 'contextBuilt', context: aContext() }),
+          on: { contextBuilt: [{ to: 'done', when: () => false }] },
+        },
+      }),
+    });
+
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toBeInstanceOf(
+      FlowHasNoTransition,
+    );
   });
 
   it('reports a failed attempt before a fatal error propagates', async () => {
