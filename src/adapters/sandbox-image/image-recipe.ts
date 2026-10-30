@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { ConfigInvalid } from '../../domain/errors.js';
 
 export const SANDBOX_DIRECTORY = '.sandcastle';
 export const DOCKERFILE = 'Dockerfile';
@@ -61,7 +62,7 @@ export function withToolchain(dockerfile: string, toolchain: string) {
   const start = dockerfile.indexOf(TOOLCHAIN_START);
   const end = dockerfile.indexOf(TOOLCHAIN_END);
   if (start === -1 || end === -1 || end < start) {
-    throw new Error(`The Dockerfile has no "${TOOLCHAIN_START}" section to fill in.`);
+    throw new ConfigInvalid(`The Dockerfile has no "${TOOLCHAIN_START}" section to fill in.`);
   }
   const body = toolchain.trim();
   return [

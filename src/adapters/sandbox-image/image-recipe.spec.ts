@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+import { ConfigInvalid } from '../../domain/errors.js';
 import {
   agentLayerDockerfile,
   BASE_DOCKERFILE,
@@ -32,7 +33,7 @@ describe('image recipe', () => {
   });
 
   it('refuses a Dockerfile without the toolchain markers', () => {
-    expect(() => withToolchain('FROM node:22', 'RUN true')).toThrow('no "');
+    expect(() => withToolchain('FROM node:22', 'RUN true')).toThrow(ConfigInvalid);
   });
 
   it('installs each agent at its exact version on top of the base image', () => {
