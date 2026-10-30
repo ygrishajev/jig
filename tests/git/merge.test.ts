@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { isBranchMergedInto, mergeBranchInto } from '../../src/git/merge.js';
-import { checkoutNewBranchAt, checkoutExistingBranch } from '../../src/git/branch.js';
 import { commitAll } from '../../src/git/repository.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
 
@@ -18,10 +17,10 @@ afterEach(async () => {
 describe('mergeBranchInto and isBranchMergedInto', () => {
   it('merges a clean branch and reports it as merged', async () => {
     repo = await createTempRepo();
-    await checkoutNewBranchAt(repo.dir, 'feature/m', 'main');
+    await simpleGit({ baseDir: repo.dir }).checkoutBranch('feature/m', 'main');
     await writeFile(path.join(repo.dir, 'm.txt'), 'hi');
     await commitAll(repo.dir, 'add m.txt');
-    await checkoutExistingBranch(repo.dir, 'main');
+    await simpleGit({ baseDir: repo.dir }).checkout('main');
     expect(await isBranchMergedInto(repo.dir, 'feature/m', 'main')).toBe(false);
     const sha = await mergeBranchInto(repo.dir, 'feature/m', 'main');
     expect(sha).toMatch(/^[0-9a-f]{7,40}$/);
@@ -30,7 +29,7 @@ describe('mergeBranchInto and isBranchMergedInto', () => {
 
   it('refuses to merge when the target branch is not checked out', async () => {
     repo = await createTempRepo();
-    await checkoutNewBranchAt(repo.dir, 'feature/n', 'main');
+    await simpleGit({ baseDir: repo.dir }).checkoutBranch('feature/n', 'main');
     await writeFile(path.join(repo.dir, 'n.txt'), 'hi');
     await commitAll(repo.dir, 'add n.txt');
     await expect(mergeBranchInto(repo.dir, 'feature/n', 'main')).rejects.toThrow(/not checked out/);
@@ -38,10 +37,10 @@ describe('mergeBranchInto and isBranchMergedInto', () => {
 
   it('refuses to merge with a dirty working tree', async () => {
     repo = await createTempRepo();
-    await checkoutNewBranchAt(repo.dir, 'feature/o', 'main');
+    await simpleGit({ baseDir: repo.dir }).checkoutBranch('feature/o', 'main');
     await writeFile(path.join(repo.dir, 'o.txt'), 'hi');
     await commitAll(repo.dir, 'add o.txt');
-    await checkoutExistingBranch(repo.dir, 'main');
+    await simpleGit({ baseDir: repo.dir }).checkout('main');
     await writeFile(path.join(repo.dir, 'dirty.txt'), 'uncommitted');
     await expect(mergeBranchInto(repo.dir, 'feature/o', 'main')).rejects.toThrow(
       /uncommitted changes/,
@@ -50,10 +49,10 @@ describe('mergeBranchInto and isBranchMergedInto', () => {
 
   it('throws a plain git error when the branches actually conflict', async () => {
     repo = await createTempRepo();
-    await checkoutNewBranchAt(repo.dir, 'feature/p', 'main');
+    await simpleGit({ baseDir: repo.dir }).checkoutBranch('feature/p', 'main');
     await writeFile(path.join(repo.dir, 'README.md'), 'from branch\n');
     await commitAll(repo.dir, 'change readme on branch');
-    await checkoutExistingBranch(repo.dir, 'main');
+    await simpleGit({ baseDir: repo.dir }).checkout('main');
     await writeFile(path.join(repo.dir, 'README.md'), 'from main\n');
     await commitAll(repo.dir, 'change readme on main');
     await expect(mergeBranchInto(repo.dir, 'feature/p', 'main')).rejects.toThrow();

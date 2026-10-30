@@ -14,10 +14,6 @@ export function stateDirectory(repoRoot: string, runId: RunId) {
   return path.join(runDirectory(repoRoot, runId), 'state');
 }
 
-export function worktreeDirectory(repoRoot: string, runId: RunId) {
-  return path.join(runDirectory(repoRoot, runId), 'workspace');
-}
-
 /** Creates the run's directory under `.sdlc/`, which ignores itself so it never dirties the target repo. */
 export async function makeRunDirectory(repoRoot: string, runId: RunId) {
   const directory = runDirectory(repoRoot, runId);

@@ -206,7 +206,7 @@ describe('runSdlc', () => {
         held = undefined;
         holding?.opened();
         await holding?.released;
-        await openRunWorktree({ repoRoot: repo.dir, ...run, skipCommitSigning: false });
+        await openRunWorktree({ repoRoot: repo.dir, ...run });
         return agent;
       }),
     });
