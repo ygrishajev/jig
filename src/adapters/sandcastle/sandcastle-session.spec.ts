@@ -1,15 +1,143 @@
 import { faker } from '@faker-js/faker';
-import type { AgentProvider, Sandbox } from '@ai-hero/sandcastle';
+import type {
+  AgentProvider,
+  AgentStreamEvent,
+  Sandbox,
+  SandboxRunOptions,
+} from '@ai-hero/sandcastle';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
+import { z } from 'zod';
 import { runId } from '../../../tests/support/builders.js';
 import { RecordingEventSink } from '../../../tests/support/fakes.js';
-import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../../domain/errors.js';
-import { SandcastleSession, type SandboxFactory } from './sandcastle-session.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import {
+  AgentOutputInvalid,
+  AgentRunFailed,
+  ConfigInvalid,
+  SandboxUnavailable,
+  SetupCommandFailed,
+} from '../../domain/errors.js';
+import type { AgentRole } from '../../ports/agent-session.js';
+import { SandcastleSession, type SandboxFactory } from './sandcastle-session.js';
+import { OUTPUT_TAG } from './structured-output.js';
 
-describe('SandcastleSession.open', () => {
+describe('SandcastleSession', () => {
+  it('returns the result the agent tagged in its reply', async () => {
+    const answer = { summary: faker.lorem.sentence() };
+    const { open } = await setup({ replies: [{ stdout: tagged(answer) }] });
+
+    expect(await (await open()).runForOutput(outputCall())).toEqual(answer);
+  });
+
+  it('asks the same agent, in its own conversation, to correct a reply that did not parse', async () => {
+    const answer = { summary: faker.lorem.sentence() };
+    const { open, runs, printCommand } = await setup({
+      replies: [{ stdout: faker.lorem.paragraph() }, { stdout: tagged(answer) }],
+    });
+
+    const result = await (await open()).runForOutput(outputCall());
+
+    expect(result).toEqual(answer);
+    expect(runs).toHaveLength(2);
+    expect(runs[0].agent.buildPrintCommand(printOptions()).command).toBe(printCommand);
+    expect(runs[1].agent.buildPrintCommand(printOptions()).command).toBe(
+      `${printCommand} --continue`,
+    );
+    expect(runs[1].prompt).toContain(OUTPUT_TAG);
+  });
+
+  it('gives up with invalid output once the correction does not parse either', async () => {
+    const { open, runs } = await setup({
+      replies: [{ stdout: tagged({ wrong: 1 }) }, { stdout: tagged({ wrong: 2 }) }],
+    });
+
+    await expect((await open()).runForOutput(outputCall())).rejects.toBeInstanceOf(
+      AgentOutputInvalid,
+    );
+    expect(runs).toHaveLength(2);
+  });
+
+  it('reports an agent the sandbox could not run as a failed agent run', async () => {
+    const { open } = await setup({ replies: [{ fail: new Error(faker.lorem.sentence()) }] });
+
+    await expect(
+      (await open()).run({ role: 'implementer', prompt: faker.lorem.paragraph() }),
+    ).rejects.toBeInstanceOf(AgentRunFailed);
+  });
+
+  it("runs each role's own agent with the prompt it was given", async () => {
+    const prompt = faker.lorem.paragraph();
+    const { open, runs, agents } = await setup({ replies: [{ stdout: '' }] });
+
+    await (await open()).run({ role: 'reviewer', prompt });
+
+    expect(runs[0]).toMatchObject({ agent: agents.reviewer, prompt });
+  });
+
+  it("publishes the agent's messages, tool calls and usage as run events for its role", async () => {
+    const text = faker.lorem.sentence();
+    const tool = faker.word.verb();
+    const args = faker.lorem.words();
+    const costUsd = faker.number.float({ min: 0.01, max: 1, fractionDigits: 4 });
+    const input = faker.number.int({ min: 1, max: 10_000 });
+    const { open, events, id } = await setup({
+      replies: [
+        {
+          stdout: '',
+          events: [
+            { type: 'text', message: text, iteration: 1, timestamp: new Date() },
+            {
+              type: 'toolCall',
+              name: tool,
+              formattedArgs: args,
+              iteration: 1,
+              timestamp: new Date(),
+            },
+            { type: 'raw', line: faker.lorem.sentence(), iteration: 1, timestamp: new Date() },
+            {
+              type: 'raw',
+              line: JSON.stringify({
+                type: 'result',
+                total_cost_usd: costUsd,
+                usage: { input_tokens: input },
+              }),
+              iteration: 1,
+              timestamp: new Date(),
+            },
+          ],
+        },
+      ],
+    });
+
+    await (await open()).run({ role: 'implementer', prompt: faker.lorem.paragraph() });
+
+    expect(events.events).toEqual([
+      { type: 'agentMessage', runId: id, role: 'implementer', text },
+      { type: 'agentToolCall', runId: id, role: 'implementer', tool, args },
+      {
+        type: 'agentUsage',
+        runId: id,
+        role: 'implementer',
+        costUsd,
+        tokens: { input, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      },
+    ]);
+  });
+
+  it("returns a command's exit code with its stdout and stderr together", async () => {
+    const stdout = faker.lorem.sentence();
+    const stderr = faker.lorem.sentence();
+    const exitCode = faker.number.int({ min: 0, max: 255 });
+    const { open } = await setup({ exitCode, stdout: `  ${stdout}`, stderr: `${stderr}\n` });
+
+    expect(await (await open()).exec(faker.lorem.word())).toEqual({
+      exitCode,
+      output: `${stdout}${stderr}`,
+    });
+  });
+
   it('treats a repository path sandcastle cannot use as a configuration problem', async () => {
     const { open } = await setup({ start: rejectingWith(sandcastleFailure('CwdError')) });
 
@@ -87,41 +215,69 @@ describe('SandcastleSession.open', () => {
     setupCommand?: string;
     setupTimeoutSeconds?: number;
     exitCode?: number;
+    stdout?: string;
     stderr?: string;
     hangs?: boolean;
     execFails?: Error;
+    replies?: Reply[];
   }) {
     const repoRoot = await tempDirectory('sdlc-session-');
-    const result = { exitCode: input.exitCode ?? 0, stdout: '', stderr: input.stderr ?? '' };
+    const id = runId();
+    const events = new RecordingEventSink();
+    const replies = [...(input.replies ?? [])];
+    const runs: SandboxRunOptions[] = [];
+    const result = {
+      exitCode: input.exitCode ?? 0,
+      stdout: input.stdout ?? '',
+      stderr: input.stderr ?? '',
+    };
     const sandbox = mock<Sandbox>({
       worktreePath: repoRoot,
       exec: vi.fn<Sandbox['exec']>(async () => {
         if (input.execFails) throw input.execFails;
         return input.hangs ? new Promise(() => {}) : result;
       }),
+      run: vi.fn<Sandbox['run']>(async (options) => {
+        runs.push(options);
+        const reply = replies.shift();
+        if (!reply) throw new Error('No sandbox reply scripted');
+        if ('fail' in reply) throw reply.fail;
+        for (const event of reply.events ?? []) {
+          if (options.logging?.type === 'file') options.logging.onAgentStreamEvent?.(event);
+        }
+        return { iterations: [], stdout: reply.stdout, commits: [] };
+      }),
       close: vi.fn<Sandbox['close']>().mockResolvedValue({}),
     });
     const start: SandboxFactory = input.start ?? (async () => sandbox);
-    const agent = mock<AgentProvider>();
+    const printCommand = `${faker.word.noun()} -p`;
+    const anAgent = () =>
+      mock<AgentProvider>({ buildPrintCommand: () => ({ command: printCommand }) });
+    const agents: Record<AgentRole, AgentProvider> = {
+      planner: anAgent(),
+      implementer: anAgent(),
+      reviewer: anAgent(),
+      describer: anAgent(),
+    };
     const open = () =>
       SandcastleSession.open(
         {
           repoRoot,
-          runId: runId(),
+          runId: id,
           baseBranch: 'main',
           imageName: `sandcastle:${faker.word.noun()}`,
           credentials: {},
-          agents: { planner: agent, implementer: agent, reviewer: agent, describer: agent },
+          agents,
           skipCommitSigning: false,
           setupCommand: input.setupCommand,
           setupTimeoutSeconds: input.setupTimeoutSeconds ?? 60,
           idleTimeoutSeconds: 60,
           agentLogFile: path.join(repoRoot, 'agents.log'),
-          events: new RecordingEventSink(),
+          events,
         },
         start,
       );
-    return { open, sandbox };
+    return { open, sandbox, runs, agents, printCommand, events, id };
   }
 });
 
@@ -135,6 +291,23 @@ function sandcastleFailure(tag: string) {
     value: { _tag: 'Fail', error: { _tag: tag, message: failure.message } },
   });
   return failure;
+}
+
+type Reply = { stdout: string; events?: AgentStreamEvent[] } | { fail: Error };
+
+const answerSchema = z.object({ summary: z.string() });
+
+function outputCall() {
+  const role: AgentRole = 'planner';
+  return { role, prompt: faker.lorem.paragraph(), schema: answerSchema };
+}
+
+function tagged(value: unknown) {
+  return `${faker.lorem.sentence()}\n<${OUTPUT_TAG}>${JSON.stringify(value)}</${OUTPUT_TAG}>`;
+}
+
+function printOptions() {
+  return { prompt: faker.lorem.sentence(), dangerouslySkipPermissions: true };
 }
 
 function rejectingWith(error: Error): SandboxFactory {
