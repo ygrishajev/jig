@@ -6,6 +6,8 @@ export const unitProject = defineProject({
     include: ['src/**/*.spec.ts', 'scripts/**/*.spec.ts'],
     testTimeout: 20_000,
     unstubEnvs: true,
+    /** Temp repositories must not pick up the developer's git config: hooks, signing, templates. */
+    env: { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
   },
 });
 
