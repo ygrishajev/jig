@@ -6,7 +6,7 @@ import type { Logger } from 'pino';
 import {
   agentLayerDockerfile,
   DOCKERFILE,
-  formatAgentVersions,
+  imageLabels,
   LABELS,
   parseAgentVersions,
   recipeHash,
@@ -31,14 +31,15 @@ export interface ImageBuildPlan {
   action: 'none' | 'agents' | 'all';
   reason: string;
   agents: AgentInstall[];
+  /** The labels the rebuilt image carries; the next plan compares an image's labels with these. */
+  labels: Record<string, string>;
   warnings: string[];
 }
 
 /**
  * Decides what to rebuild from the image's labels: everything when the Dockerfile changed or
  * there is no image, only the agent layer when the agents or their versions changed, nothing
- * otherwise. Without a pin, an agent follows `policy`: `auto` takes the latest release, `warn`
- * keeps the installed one and says a newer one exists, `off` never looks.
+ * otherwise.
  */
 export function planImageBuild(input: {
   labels: Record<string, string> | undefined;
@@ -46,45 +47,66 @@ export function planImageBuild(input: {
   agentsNeeded: AgentNeeded[];
   policy: AgentUpdatePolicy;
 }): ImageBuildPlan {
-  const { labels, dockerfileHash, agentsNeeded, policy } = input;
-  const installed = parseAgentVersions(labels?.[LABELS.agentVersions]);
-  const warnings: string[] = [];
-  const agents = agentsNeeded.map((agent) => {
-    const current = installed[agent.name];
-    const newer = agent.latest && current && agent.latest !== current ? agent.latest : undefined;
-    if (!agent.pinned && policy === 'warn' && newer) {
-      warnings.push(
-        `${agent.name} ${newer} is available (installed: ${current}) — run sdlc build --pull-agents`,
-      );
-    }
-    const version =
-      agent.pinned ??
-      (policy === 'auto' ? (agent.latest ?? current) : (current ?? agent.latest)) ??
-      'latest';
-    return { name: agent.name, npmPackage: agent.npmPackage, version };
-  });
+  const installed = parseAgentVersions(input.labels?.[LABELS.agentVersions]);
+  const agents = input.agentsNeeded.map((agent) => ({
+    name: agent.name,
+    npmPackage: agent.npmPackage,
+    version: agentVersion(agent, installed[agent.name], input.policy),
+  }));
+  const warnings = input.agentsNeeded.flatMap((agent) =>
+    newerReleaseWarning(agent, installed[agent.name], input.policy),
+  );
+  const labels = imageLabels(input.dockerfileHash, agents);
+  const decision = rebuildDecision(input.labels, labels, versionChanges(installed, agents));
+  return { ...decision, agents, labels, warnings };
+}
 
-  const wantedAgents = agents
-    .map((agent) => agent.name)
-    .sort()
-    .join(',');
-  const changedVersions = agents
+/**
+ * A pin always wins. Without one, `auto` takes the latest release, `warn` and `off` keep the
+ * installed one; either falls back to the other, and to npm's `latest` when neither is known.
+ */
+export function agentVersion(
+  agent: AgentNeeded,
+  installed: string | undefined,
+  policy: AgentUpdatePolicy,
+) {
+  if (agent.pinned !== undefined) return agent.pinned;
+  const preferred = policy === 'auto' ? [agent.latest, installed] : [installed, agent.latest];
+  return preferred.find((version) => version !== undefined) ?? 'latest';
+}
+
+function newerReleaseWarning(
+  agent: AgentNeeded,
+  installed: string | undefined,
+  policy: AgentUpdatePolicy,
+) {
+  if (agent.pinned !== undefined || policy !== 'warn') return [];
+  if (!agent.latest || !installed || agent.latest === installed) return [];
+  return [
+    `${agent.name} ${agent.latest} is available (installed: ${installed}) — run sdlc build --pull-agents`,
+  ];
+}
+
+function rebuildDecision(
+  installed: Record<string, string> | undefined,
+  wanted: Record<string, string>,
+  changedVersions: string,
+): Pick<ImageBuildPlan, 'action' | 'reason'> {
+  if (!installed) return { action: 'all', reason: 'no sandbox image yet' };
+  if (installed[LABELS.dockerfileHash] !== wanted[LABELS.dockerfileHash])
+    return { action: 'all', reason: 'the sandbox Dockerfile changed' };
+  if (installed[LABELS.agents] !== wanted[LABELS.agents])
+    return { action: 'agents', reason: `agents changed to ${wanted[LABELS.agents]}` };
+  if (installed[LABELS.agentVersions] !== wanted[LABELS.agentVersions])
+    return { action: 'agents', reason: changedVersions };
+  return { action: 'none', reason: 'the sandbox image is up to date' };
+}
+
+function versionChanges(installed: Record<string, string>, agents: AgentInstall[]) {
+  return agents
     .filter((agent) => installed[agent.name] !== agent.version)
-    .map((agent) => `${agent.name} ${installed[agent.name] ?? 'none'} → ${agent.version}`);
-
-  const plan = (action: ImageBuildPlan['action'], reason: string) => ({
-    action,
-    reason,
-    agents,
-    warnings,
-  });
-  if (!labels) return plan('all', 'no sandbox image yet');
-  if (labels[LABELS.dockerfileHash] !== dockerfileHash)
-    return plan('all', 'the sandbox Dockerfile changed');
-  if (labels[LABELS.agents] !== wantedAgents)
-    return plan('agents', `agents changed to ${wantedAgents}`);
-  if (changedVersions.length > 0) return plan('agents', changedVersions.join(', '));
-  return plan('none', 'the sandbox image is up to date');
+    .map((agent) => `${agent.name} ${installed[agent.name] ?? 'none'} → ${agent.version}`)
+    .join(', ');
 }
 
 export function sandboxImageName(repoRoot: string, config: SdlcConfig) {
@@ -116,22 +138,27 @@ export async function ensureSandboxImage(
   const image = sandboxImageName(d.repoRoot, d.config);
   if (d.config.sandboxImage) return image;
 
-  const dockerfile = await readSandboxDockerfile(d.repoRoot);
-  const uid = process.getuid?.() ?? 1000;
-  const gid = process.getgid?.() ?? 1000;
-  const policy: AgentUpdatePolicy = options.pullAgents ? 'auto' : d.config.agentUpdates;
+  const recipe = await readRecipe(d.repoRoot);
+  const policy = options.pullAgents ? 'auto' : d.config.agentUpdates;
   const plan = planImageBuild({
     labels: await d.images.labels(image),
-    dockerfileHash: recipeHash(dockerfile, uid, gid),
+    dockerfileHash: recipe.dockerfileHash,
     agentsNeeded: await agentsNeeded(d, policy),
     policy,
   });
   for (const warning of plan.warnings) d.logger.warn(warning);
-  if (plan.action === 'none') return image;
+  if (plan.action !== 'none') await buildImage(d, image, plan, recipe.buildArgs);
+  return image;
+}
 
+async function buildImage(
+  d: EnsureImageDependencies,
+  image: string,
+  plan: ImageBuildPlan,
+  buildArgs: Record<string, number>,
+) {
   d.logger.info(`building the sandbox image ${image}: ${plan.reason}`);
   const base = baseImageName(image);
-  const buildArgs = { AGENT_UID: uid, AGENT_GID: gid };
   if (plan.action === 'all' || !(await d.images.labels(base))) {
     await d.images.build({ tag: base, contextDirectory: sandboxDirectory(d.repoRoot), buildArgs });
   }
@@ -139,16 +166,19 @@ export async function ensureSandboxImage(
     tag: image,
     dockerfile: agentLayerDockerfile(base, plan.agents),
     buildArgs,
-    labels: {
-      [LABELS.dockerfileHash]: recipeHash(dockerfile, uid, gid),
-      [LABELS.agents]: plan.agents
-        .map((agent) => agent.name)
-        .sort()
-        .join(','),
-      [LABELS.agentVersions]: formatAgentVersions(plan.agents),
-    },
+    labels: plan.labels,
   });
-  return image;
+}
+
+/** The image is built for the host user, so files the agent writes in the worktree stay the operator's. */
+async function readRecipe(repoRoot: string) {
+  const dockerfile = await readSandboxDockerfile(repoRoot);
+  const uid = process.getuid?.() ?? 1000;
+  const gid = process.getgid?.() ?? 1000;
+  return {
+    dockerfileHash: recipeHash(dockerfile, uid, gid),
+    buildArgs: { AGENT_UID: uid, AGENT_GID: gid },
+  };
 }
 
 async function agentsNeeded(d: EnsureImageDependencies, policy: AgentUpdatePolicy) {

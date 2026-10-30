@@ -83,6 +83,21 @@ export function formatAgentVersions(agents: AgentInstall[]) {
     .join(',');
 }
 
+/** What the sandbox image is labelled with, and what a later run compares against to decide what to rebuild. */
+export function imageLabels(
+  dockerfileHash: string,
+  agents: AgentInstall[],
+): Record<string, string> {
+  return {
+    [LABELS.dockerfileHash]: dockerfileHash,
+    [LABELS.agents]: agents
+      .map((agent) => agent.name)
+      .sort()
+      .join(','),
+    [LABELS.agentVersions]: formatAgentVersions(agents),
+  };
+}
+
 /** Reads the label `formatAgentVersions` wrote; an entry without a version counts as not installed. */
 export function parseAgentVersions(label: string | undefined): Record<string, string> {
   if (!label) return {};

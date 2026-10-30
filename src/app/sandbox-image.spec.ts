@@ -8,6 +8,7 @@ import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image
 import { loadConfig } from '../config/load-config.js';
 import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
 import {
+  agentVersion,
   baseImageName,
   ensureSandboxImage,
   planImageBuild,
@@ -215,6 +216,17 @@ describe('planImageBuild', () => {
     ).toBe('none');
   });
 
+  it('labels the image so that planning again against it builds nothing', () => {
+    const dockerfileHash = faker.string.hexadecimal({ length: 16 });
+    const agents = [
+      claude({ latest: version() }),
+      { name: 'opencode', npmPackage: 'opencode-ai', latest: version() },
+    ];
+    const first = plan({ labels: undefined, dockerfileHash, agents });
+
+    expect(plan({ labels: first.labels, dockerfileHash, agents }).action).toBe('none');
+  });
+
   function plan(input: {
     labels: Record<string, string> | undefined;
     dockerfileHash?: string;
@@ -228,6 +240,40 @@ describe('planImageBuild', () => {
       policy: input.policy ?? 'auto',
     });
   }
+});
+
+describe('agentVersion', () => {
+  it('installs the pin whatever the policy', () => {
+    const pinned = version();
+    const policy = faker.helpers.arrayElement<AgentUpdatePolicy>(['auto', 'warn', 'off']);
+
+    expect(agentVersion(claude({ pinned, latest: version() }), version(), policy)).toBe(pinned);
+  });
+
+  it('takes the latest release when updates are automatic', () => {
+    const latest = version();
+
+    expect(agentVersion(claude({ latest }), version(), 'auto')).toBe(latest);
+  });
+
+  it('keeps the installed version when updates are not automatic', () => {
+    const installed = version();
+    const policy = faker.helpers.arrayElement<AgentUpdatePolicy>(['warn', 'off']);
+
+    expect(agentVersion(claude({ latest: version() }), installed, policy)).toBe(installed);
+  });
+
+  it('installs the latest release when nothing is installed yet', () => {
+    const latest = version();
+
+    expect(agentVersion(claude({ latest }), undefined, 'off')).toBe(latest);
+  });
+
+  it('asks npm for its latest tag when no version is known', () => {
+    const policy = faker.helpers.arrayElement<AgentUpdatePolicy>(['auto', 'warn', 'off']);
+
+    expect(agentVersion(claude({}), undefined, policy)).toBe('latest');
+  });
 });
 
 describe('baseImageName', () => {
