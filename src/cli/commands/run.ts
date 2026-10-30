@@ -1,8 +1,8 @@
 import { Command, Option } from 'commander';
-import { createAppContainer } from '../../app/container.js';
 import { runInputFrom, runSdlc, type RunReport } from '../../app/run-sdlc.js';
 import { defaultLogFormat, type LogFormat } from '../../adapters/logging/create-logger.js';
 import { runBranchFor, stuckSlice, type RunState } from '../../domain/run-state.js';
+import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 function nextStep(report: RunReport) {
@@ -39,16 +39,13 @@ export function registerRunCommand(program: Command) {
     .action(
       withErrorHandling(
         async (request: string | undefined, options: { id?: string; logFormat: LogFormat }) => {
-          const app = createAppContainer({ repoRoot: process.cwd(), logFormat: options.logFormat });
-          try {
+          await withApp(options.logFormat, async (app) => {
             const report = await runSdlc(app, runInputFrom(request, options.id));
             app.cradle.logger.info(
               { runId: report.state.runId, branch: runBranchFor(report.state.runId) },
               nextStep(report),
             );
-          } finally {
-            await app.dispose();
-          }
+          });
         },
       ),
     );

@@ -1,11 +1,11 @@
 import { Command } from 'commander';
 import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
-import { createAppContainer } from '../../app/container.js';
 import { readRunStatus, type RunStatus } from '../../app/run-status.js';
 import { parseRunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { slicesInOrder } from '../../domain/slice.js';
 import { formatSummary } from '../../observers/metrics.js';
+import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
 export function registerStatusCommand(program: Command) {
@@ -15,14 +15,11 @@ export function registerStatusCommand(program: Command) {
     .argument('<id>', 'run id')
     .action(
       withErrorHandling(async (id: string) => {
-        const app = createAppContainer({ repoRoot: process.cwd(), logFormat: defaultLogFormat() });
-        try {
+        await withApp(defaultLogFormat(), async (app) => {
           const status = await readRunStatus(app, parseRunId(id));
           console.log(describeRun(status));
           if (status.metrics.steps > 0) console.log(`So far: ${formatSummary(status.metrics)}`);
-        } finally {
-          await app.dispose();
-        }
+        });
       }),
     );
 }
