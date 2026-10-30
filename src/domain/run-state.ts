@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { runIdSchema, type RunId } from './run-id.js';
-import { sliceSchema, type Slice } from './slice.js';
+import { sliceSchema, slicesInOrder, type Slice } from './slice.js';
 
 export const runPhaseSchema = z.enum([
   'context',
@@ -100,7 +100,5 @@ export function runBranchFor(runId: RunId) {
 
 /** The first slice, by order, that has not been approved — a stuck slice stays current. */
 export function currentSlice(state: RunState): Slice | undefined {
-  return [...state.slices]
-    .sort((a, b) => a.order - b.order)
-    .find((slice) => slice.status !== 'approved');
+  return slicesInOrder(state.slices).find((slice) => slice.status !== 'approved');
 }

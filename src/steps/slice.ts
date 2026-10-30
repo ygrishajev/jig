@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { RunState } from '../domain/run-state.js';
-import type { Slice } from '../domain/slice.js';
+import { slicesInOrder, type Slice } from '../domain/slice.js';
 import type { SliceStep, StepPorts } from '../flow/define-flow.js';
 import { implementPrompt, nothingChangedFeedback, reviewPrompt } from '../prompts/slice.js';
 
@@ -49,9 +49,8 @@ export const verifySlice: SliceStep = async ({ settings, ports }) => {
  * after a crash still counts the commits the interrupted attempt left behind.
  */
 async function sliceStart(state: RunState, slice: Slice, ports: StepPorts) {
-  const previousEnd = state.slices
+  const previousEnd = slicesInOrder(state.slices)
     .filter((candidate) => candidate.order < slice.order && candidate.commit)
-    .sort((a, b) => a.order - b.order)
     .at(-1)?.commit;
   return previousEnd ?? ports.workspace.forkPoint();
 }

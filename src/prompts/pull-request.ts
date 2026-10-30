@@ -1,5 +1,5 @@
 import type { FeaturePlan } from '../domain/run-state.js';
-import type { Slice } from '../domain/slice.js';
+import { slicesInOrder, type Slice } from '../domain/slice.js';
 
 export interface PullRequestPromptInput {
   template: string;
@@ -49,10 +49,8 @@ export function pullRequestPrompt(input: PullRequestPromptInput) {
 
 function sliceLines(slices: Slice[]) {
   if (slices.length === 0) return ['(none)'];
-  return [...slices]
-    .sort((a, b) => a.order - b.order)
-    .map((slice) => {
-      const line = `- [${slice.status}] ${slice.id}: ${slice.description.split('\n')[0]}`;
-      return slice.lastFeedback ? `${line}\n  reviewer feedback: ${slice.lastFeedback}` : line;
-    });
+  return slicesInOrder(slices).map((slice) => {
+    const line = `- [${slice.status}] ${slice.id}: ${slice.description.split('\n')[0]}`;
+    return slice.lastFeedback ? `${line}\n  reviewer feedback: ${slice.lastFeedback}` : line;
+  });
 }

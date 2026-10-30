@@ -1,5 +1,5 @@
 import type { RunStateIn } from '../domain/run-state.js';
-import type { Slice } from '../domain/slice.js';
+import { slicesInOrder, type Slice } from '../domain/slice.js';
 
 export const DEFAULT_PR_TEMPLATE = [
   '## What',
@@ -55,16 +55,14 @@ function collapsed(title: string, body: string) {
 
 /** A blocked run is read from here alone, so a stuck slice keeps its reviewer feedback under it. */
 function sliceChecklist(slices: Slice[]) {
-  const lines = [...slices]
-    .sort((a, b) => a.order - b.order)
-    .flatMap((slice) => {
-      const line = `- [${slice.status === 'approved' ? 'x' : ' '}] ${slice.id} — ${slice.description.split('\n')[0]}`;
-      if (!slice.lastFeedback) return [line];
-      const quoted = slice.lastFeedback
-        .split('\n')
-        .map((feedbackLine) => `  > ${feedbackLine}`)
-        .join('\n');
-      return [line, `  **[${slice.status}]** reviewer feedback:`, quoted];
-    });
+  const lines = slicesInOrder(slices).flatMap((slice) => {
+    const line = `- [${slice.status === 'approved' ? 'x' : ' '}] ${slice.id} — ${slice.description.split('\n')[0]}`;
+    if (!slice.lastFeedback) return [line];
+    const quoted = slice.lastFeedback
+      .split('\n')
+      .map((feedbackLine) => `  > ${feedbackLine}`)
+      .join('\n');
+    return [line, `  **[${slice.status}]** reviewer feedback:`, quoted];
+  });
   return ['### Slices', '', ...lines].join('\n');
 }

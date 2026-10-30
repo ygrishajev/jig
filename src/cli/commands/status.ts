@@ -4,6 +4,7 @@ import { createAppContainer } from '../../app/container.js';
 import { readRunStatus, type RunStatus } from '../../app/run-status.js';
 import { parseRunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
+import { slicesInOrder } from '../../domain/slice.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
@@ -27,12 +28,10 @@ export function registerStatusCommand(program: Command) {
 }
 
 function describeRun({ state, documents }: RunStatus) {
-  const slices = [...state.slices]
-    .sort((a, b) => a.order - b.order)
-    .map((slice) => {
-      const line = `  [${slice.status}] ${slice.id} — ${slice.title}`;
-      return slice.lastFeedback ? `${line}\n      feedback: ${slice.lastFeedback}` : line;
-    });
+  const slices = slicesInOrder(state.slices).map((slice) => {
+    const line = `  [${slice.status}] ${slice.id} — ${slice.title}`;
+    return slice.lastFeedback ? `${line}\n      feedback: ${slice.lastFeedback}` : line;
+  });
   return [
     `Run ${state.runId} — ${state.phase} (base: ${state.baseBranch})`,
     ...(state.blockedReason ? [`Blocked: ${state.blockedReason}`] : []),

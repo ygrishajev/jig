@@ -26,6 +26,6 @@ export function sliceFromPlan(planned: PlannedSlice, order: number): Slice {
   return { ...planned, order, status: 'pending', reviewCycles: 0 };
 }
 
-export function isSliceFinished(slice: Slice) {
-  return slice.status === 'approved' || slice.status === 'stuck';
+export function slicesInOrder(slices: readonly Slice[]): Slice[] {
+  return [...slices].sort((a, b) => a.order - b.order);
 }
