@@ -1,5 +1,5 @@
 import type { Outcome, OutcomeType } from '../domain/outcome.js';
-import type { RunPhase, RunState } from '../domain/run-state.js';
+import type { RunPhase, RunState, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice, SliceStatus } from '../domain/slice.js';
 import type { AgentSession } from '../ports/agent-session.js';
@@ -10,8 +10,9 @@ export interface StepPorts {
   workspace: Workspace;
 }
 
-export interface RunStepContext {
-  state: RunState;
+/** What a step in phase `P` sees: the run with everything `P` guarantees. */
+export interface RunStepContext<P extends RunPhase = RunPhase> {
+  state: RunStateIn<P>;
   ports: StepPorts;
   settings: RunSettings;
 }
@@ -20,7 +21,9 @@ export interface SliceStepContext extends RunStepContext {
   slice: Slice;
 }
 
-export type RunStep = (context: RunStepContext) => Promise<Outcome>;
+export type RunStep<P extends RunPhase = RunPhase> = (
+  context: RunStepContext<P>,
+) => Promise<Outcome>;
 export type SliceStep = (context: SliceStepContext) => Promise<Outcome>;
 
 export interface GuardContext {
@@ -59,11 +62,13 @@ export interface ForEachSliceNode<S extends string> {
 
 export type SliceFlowNode = StepNode<SliceStatus, SliceStep> | FinalNode;
 
-export type RunFlowNode =
-  StepNode<RunPhase, RunStep> | FinalNode | HaltNode<RunPhase> | ForEachSliceNode<RunPhase>;
+export type RunFlowNode<P extends RunPhase = RunPhase> =
+  StepNode<RunPhase, RunStep<P>> | FinalNode | HaltNode<RunPhase> | ForEachSliceNode<RunPhase>;
 
 export type SliceFlow = Record<SliceStatus, SliceFlowNode>;
-export type RunFlow = Record<RunPhase, RunFlowNode>;
+
+/** Each phase's node; a phase's step is typed by what that phase guarantees. */
+export type RunFlow = { [P in RunPhase]: RunFlowNode<P> };
 
 export function defineSliceFlow(flow: SliceFlow) {
   return flow;

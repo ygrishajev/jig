@@ -114,7 +114,9 @@ const AGENTS = {
 ```
 
 Adding codex/pi later is one entry (install line copied from sandcastle's
-templates, which aren't exported).
+templates, which aren't exported): the config's provider names and version
+pins are derived from the registry's keys. Roles are one list
+(`agentRoleSchema`) and `byRole` builds every per-role record from it.
 
 ### 5. Credentials
 
@@ -400,10 +402,19 @@ write-file-atomic for state saves, pino for logging, zod for validation.
 
 ```ts
 interface RunStore {
-  load(runId: string): Promise<RunSnapshot | undefined>;
-  save(snapshot: { runId; state: RunState; branchHead: string; reason: string }): Promise<void>;
+  load(runId: RunId): Promise<RunState | undefined>; // may update local refs (git-remote)
+  peek(runId: RunId): Promise<RunState | undefined>; // changes nothing; what `status` reads
+  save(state: RunState): Promise<void>;
 }
 ```
+
+- A `RunId` is parsed once where it comes in (CLI, generated, loaded), so no
+  store, path or ref is built from an unchecked string.
+- `RunState` is a union keyed on phase groups: from `planning` the run has its
+  `context`, from `designing` its `plan`, from `slicing` its `docs`, from
+  `merging` its `prDescription`. The schema rejects a saved run that lacks what
+  its phase guarantees, the engine checks it on every phase change, and each
+  step is typed by the phase it runs in.
 
 - State and branch head are saved together, so a resume never sees state
   ahead of or behind the code.
@@ -416,7 +427,8 @@ interface RunStore {
     Loading fast-forwards a stale local run branch (or the worktree that has
     it checked out); saving pushes with `--force-with-lease` against what was
     loaded, so a concurrent writer blocks the run instead of being overwritten.
-  - `custom` — a module from config implementing `RunStore`.
+  - `custom` — a module from config whose factory returns `load`, `save` and
+    optionally `peek` (falls back to `load`); what it returns is parsed.
   - `composite` — e.g. `[local, git-remote]`: save to all; load from every
     store and take the copy with the highest `revision`, a counter each save
     bumps (machines do not share a clock, so not a timestamp). A run saved

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { SdlcError } from '../domain/errors.js';
-import { produced, type RunState } from '../domain/run-state.js';
+import type { RunStateIn } from '../domain/run-state.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
 import { pullRequestPrompt } from '../prompts/pull-request.js';
 import { DEFAULT_PR_TEMPLATE, renderPullRequest } from './pull-request-description.js';
@@ -14,7 +14,7 @@ const TEMPLATE_PATHS = [
 ];
 
 /** Best effort: if the describer fails, the run still gets a description built from its own state. */
-export const describePullRequest: RunStep = async ({ state, ports, settings }) => {
+export const describePullRequest: RunStep<'describing'> = async ({ state, ports, settings }) => {
   const template = await findTemplate(ports);
   const filled = await fillTemplate(
     state,
@@ -41,7 +41,7 @@ async function findTemplate(ports: StepPorts) {
 }
 
 async function fillTemplate(
-  state: RunState,
+  state: RunStateIn<'describing'>,
   ports: StepPorts,
   template: string,
   verifyCommand?: string,
@@ -51,9 +51,9 @@ async function fillTemplate(
       role: 'describer',
       prompt: pullRequestPrompt({
         template,
-        plan: produced(state, 'plan'),
+        plan: state.plan,
         slices: state.slices,
-        design: state.docs?.design,
+        design: state.docs.design,
         verifyCommand,
       }),
       schema: descriptionSchema,

@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import { AgentOutputInvalid } from '../domain/errors.js';
-import {
-  designDocsSchema,
-  featurePlanSchema,
-  produced,
-  runContextSchema,
-} from '../domain/run-state.js';
+import { designDocsSchema, featurePlanSchema, runContextSchema } from '../domain/run-state.js';
 import { plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
 import {
@@ -28,32 +23,28 @@ export const buildContext: RunStep = async ({ state, ports }) => {
   return { type: 'contextBuilt', context };
 };
 
-export const planFeature: RunStep = async ({ state, ports }) => {
+export const planFeature: RunStep<'planning'> = async ({ state, ports }) => {
   const plan = await ports.agent.runForOutput({
     role: 'planner',
-    prompt: featurePlanPrompt(state.request, produced(state, 'context').repoSummary),
+    prompt: featurePlanPrompt(state.request, state.context.repoSummary),
     schema: featurePlanSchema,
   });
   return { type: 'featurePlanned', plan };
 };
 
-export const writeDesign: RunStep = async ({ state, ports }) => {
+export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
   const docs = await ports.agent.runForOutput({
     role: 'planner',
-    prompt: designPrompt(
-      state.request,
-      produced(state, 'context').repoSummary,
-      produced(state, 'plan'),
-    ),
+    prompt: designPrompt(state.request, state.context.repoSummary, state.plan),
     schema: designDocsSchema,
   });
   return { type: 'designWritten', docs };
 };
 
-export const sliceThePlan: RunStep = async ({ state, ports }) => {
+export const sliceThePlan: RunStep<'slicing'> = async ({ state, ports }) => {
   const slices = await ports.agent.runForOutput({
     role: 'planner',
-    prompt: slicePlanPrompt(produced(state, 'docs').plan),
+    prompt: slicePlanPrompt(state.docs.plan),
     schema: plannedSlicesSchema,
   });
   assertUniqueIds(slices.map((slice) => slice.id));

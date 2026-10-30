@@ -44,7 +44,7 @@ describe('GitRemoteRunStore', () => {
     const here = await cloneOf();
     const store = new GitRemoteRunStore(here);
     const first = aRunState({ phase: 'planning' });
-    const latest = { ...first, phase: 'designing' as const, plan: aFeaturePlan() };
+    const latest = aRunState({ ...first, phase: 'designing', plan: aFeaturePlan() });
 
     await store.save(first);
     await store.save(latest);
@@ -77,7 +77,7 @@ describe('GitRemoteRunStore', () => {
 
     const store = new GitRemoteRunStore(here);
     expect(await store.load(state.runId)).toEqual(advanced);
-    await store.save({ ...advanced, phase: 'describing' });
+    await store.save(aRunState({ ...advanced, phase: 'describing' }));
 
     expect(await simpleGit({ baseDir: worktree }).revparse(['HEAD'])).toBe(advancedHead);
     expect(await simpleGit({ baseDir: origin }).revparse([runBranchFor(state.runId)])).toBe(
@@ -93,10 +93,10 @@ describe('GitRemoteRunStore', () => {
     await store.save(state);
     const elsewhere = new GitRemoteRunStore(await cloneOf());
     await elsewhere.load(state.runId);
-    const theirs = { ...state, phase: 'designing' as const, plan: aFeaturePlan() };
+    const theirs = aRunState({ ...state, phase: 'designing', plan: aFeaturePlan() });
     await elsewhere.save(theirs);
 
-    await expect(store.save({ ...state, phase: 'designing' })).rejects.toBeInstanceOf(
+    await expect(store.save(aRunState({ ...state, phase: 'designing' }))).rejects.toBeInstanceOf(
       RunStateConflict,
     );
     expect(await new GitRemoteRunStore(await cloneOf()).load(state.runId)).toEqual(theirs);

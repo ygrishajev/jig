@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 import { AgentOutputInvalid } from '../domain/errors.js';
-import type { RunState } from '../domain/run-state.js';
+import type { RunPhase, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Workspace } from '../ports/workspace.js';
 import {
@@ -10,6 +10,7 @@ import {
   aFeaturePlan,
   aPlannedSlice,
   aRunState,
+  aRunStateIn,
   designDocs,
   runSettings,
 } from '../../tests/support/builders.js';
@@ -39,7 +40,7 @@ describe('planning steps', () => {
     const context = aContext();
     const { run, agent } = setup({ turn: { output: plan } });
 
-    expect(await run(planFeature, aRunState({ context }))).toEqual({
+    expect(await run(planFeature, aRunStateIn('planning', { context }))).toEqual({
       type: 'featurePlanned',
       plan,
     });
@@ -52,7 +53,7 @@ describe('planning steps', () => {
 
     const outcome = await run(
       writeDesign,
-      aRunState({ context: aContext(), plan: aFeaturePlan() }),
+      aRunStateIn('designing', { context: aContext(), plan: aFeaturePlan() }),
     );
 
     expect(outcome).toEqual({ type: 'designWritten', docs });
@@ -63,7 +64,10 @@ describe('planning steps', () => {
     const docs = designDocs();
     const { run, agent } = setup({ turn: { output: slices } });
 
-    expect(await run(sliceThePlan, aRunState({ docs }))).toEqual({ type: 'sliced', slices });
+    expect(await run(sliceThePlan, aRunStateIn('slicing', { docs }))).toEqual({
+      type: 'sliced',
+      slices,
+    });
     expect(agent.calls[0].prompt).toContain(docs.plan);
   });
 
@@ -71,7 +75,7 @@ describe('planning steps', () => {
     const repeated = aPlannedSlice();
     const { run } = setup({ turn: { output: [repeated, aPlannedSlice({ id: repeated.id })] } });
 
-    await expect(run(sliceThePlan, aRunState({ docs: designDocs() }))).rejects.toThrow(
+    await expect(run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }))).rejects.toThrow(
       new AgentOutputInvalid(`The slice plan repeats slice ids: ${repeated.id}`),
     );
   });
@@ -82,11 +86,11 @@ describe('planning steps', () => {
       turn: { output: [aPlannedSlice({ id: `${faker.word.noun()} ${faker.word.noun()}` })] },
     });
 
-    await expect(empty.run(sliceThePlan, aRunState({ docs: designDocs() }))).rejects.toBeInstanceOf(
-      AgentOutputInvalid,
-    );
     await expect(
-      unsafe.run(sliceThePlan, aRunState({ docs: designDocs() })),
+      empty.run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() })),
+    ).rejects.toBeInstanceOf(AgentOutputInvalid);
+    await expect(
+      unsafe.run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() })),
     ).rejects.toBeInstanceOf(AgentOutputInvalid);
   });
 
@@ -98,19 +102,11 @@ describe('planning steps', () => {
     expect(await automatic.run(applyDesignGate, aRunState())).toEqual({ type: 'continue' });
   });
 
-  it('refuses to plan before the context exists', async () => {
-    const { run } = setup({ turn: { output: aFeaturePlan() } });
-
-    await expect(run(planFeature, aRunState({ phase: 'planning' }))).rejects.toThrow(
-      'without its context',
-    );
-  });
-
   function setup(input: { turn?: AgentScript; settings?: RunSettings }) {
     const agent = new FakeAgentSession(faker.system.directoryPath());
     if (input.turn) agent.script('planner', input.turn);
     const ports = { agent, workspace: mock<Workspace>() };
-    const run = (step: RunStep, state: RunState) =>
+    const run = <P extends RunPhase>(step: RunStep<P>, state: RunStateIn<P>) =>
       step({ state, ports, settings: input.settings ?? runSettings() });
     return { run, agent };
   }

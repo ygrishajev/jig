@@ -52,7 +52,7 @@ describe('RunArtefacts', () => {
     const state = aRunState({ prDescription: faker.lorem.paragraphs() });
     await artefacts.write(state, 'halted', metrics);
 
-    await new LocalRunStore(repoRoot).save({ ...state, phase: 'done' });
+    await new LocalRunStore(repoRoot).save(aRunState({ ...state, phase: 'done' }));
 
     expect(await read(state.runId, 'PR_DESCRIPTION.md')).toContain(formatSummary(metrics));
   });
@@ -62,11 +62,7 @@ describe('RunArtefacts', () => {
     const state = aRunState({ docs: designDocs(), prDescription: faker.lorem.paragraph() });
     await artefacts.write(state, 'halted', aMetricsSummary());
 
-    await artefacts.write(
-      { ...state, docs: undefined, prDescription: undefined },
-      'halted',
-      aMetricsSummary(),
-    );
+    await artefacts.write(aRunState({ runId: state.runId }), 'halted', aMetricsSummary());
 
     const directory = stateDirectory(repoRoot, state.runId);
     for (const name of ['design.md', 'plan.md', 'PR_DESCRIPTION.md']) {

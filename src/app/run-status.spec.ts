@@ -53,7 +53,7 @@ describe('readRunStatus', () => {
     const here = await cloneOf();
     const stale = aRunState({ phase: 'planning', revision: 1 });
     await new LocalRunStore(here).save(stale);
-    const fresher = { ...stale, phase: 'slices' as const, revision: 5, slices: [aSlice()] };
+    const fresher = aRunState({ ...stale, phase: 'slices', revision: 5, slices: [aSlice()] });
     await new GitRemoteRunStore(await cloneOf()).save(fresher);
 
     const status = await statusIn(here, ['local', 'git-remote'], stale.runId);

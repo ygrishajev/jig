@@ -1,4 +1,4 @@
-import { produced, type RunState } from '../domain/run-state.js';
+import type { RunStateIn } from '../domain/run-state.js';
 import type { Slice } from '../domain/slice.js';
 
 export const DEFAULT_PR_TEMPLATE = [
@@ -27,30 +27,26 @@ export const DEFAULT_PR_TEMPLATE = [
  * The describer's filled-in template, or — when it failed — the repo's own template, or a plain
  * summary; followed by the agent run, design and plan, collapsed.
  */
-export function renderPullRequest(state: RunState, input: { filled?: string; template?: string }) {
+export function renderPullRequest(
+  state: RunStateIn<'describing'>,
+  input: { filled?: string; template?: string },
+) {
   const lead = input.filled ?? input.template ?? plainSummary(state);
   return [lead, '', collapsed('Agent run', agentRun(state)), '', ...planningDocs(state)]
     .join('\n')
     .trimEnd();
 }
 
-function plainSummary(state: RunState) {
-  const plan = produced(state, 'plan');
+function plainSummary({ plan }: RunStateIn<'describing'>) {
   return ['## Summary', '', plan.summary, '', '## Approach', '', plan.approach].join('\n');
 }
 
-function agentRun(state: RunState) {
-  const plan = produced(state, 'plan');
-  return [`**${plan.summary}**`, '', plan.approach, '', sliceChecklist(state.slices)].join('\n');
+function agentRun({ plan, slices }: RunStateIn<'describing'>) {
+  return [`**${plan.summary}**`, '', plan.approach, '', sliceChecklist(slices)].join('\n');
 }
 
-function planningDocs(state: RunState) {
-  if (!state.docs) return [];
-  return [
-    collapsed('Design', state.docs.design.trim()),
-    '',
-    collapsed('Plan', state.docs.plan.trim()),
-  ];
+function planningDocs({ docs }: RunStateIn<'describing'>) {
+  return [collapsed('Design', docs.design.trim()), '', collapsed('Plan', docs.plan.trim())];
 }
 
 function collapsed(title: string, body: string) {

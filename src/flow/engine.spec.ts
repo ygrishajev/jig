@@ -8,7 +8,7 @@ import {
   MergeFailed,
 } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
-import { runPhaseSchema, type RunState } from '../domain/run-state.js';
+import { PhaseOutOfOrder, runPhaseSchema, type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Workspace } from '../ports/workspace.js';
@@ -18,6 +18,7 @@ import {
   aFeaturePlan,
   aRunState,
   aSlice,
+  designDocs,
   runSettings,
 } from '../../tests/support/builders.js';
 import { InMemoryRunStore, RecordingEventSink, SteppingClock } from '../../tests/support/fakes.js';
@@ -42,7 +43,7 @@ describe('runEngine', () => {
       }),
     });
 
-    const { state, status } = await run(aRunState({ phase: 'context' }));
+    const { state, status } = await run(aDescribedRun({ phase: 'context' }));
 
     expect(status).toBe('done');
     expect(state).toMatchObject({ phase: 'done', context, plan });
@@ -56,7 +57,7 @@ describe('runEngine', () => {
       }),
     });
 
-    await run(aRunState({ phase: 'context' }));
+    await run(aDescribedRun({ phase: 'context' }));
 
     expect(store.saved.map((saved) => saved.phase)).toEqual(['planning', 'done']);
   });
@@ -70,7 +71,7 @@ describe('runEngine', () => {
       }),
     });
 
-    await run(aRunState({ phase: 'planning', context: aContext() }));
+    await run(aDescribedRun({ phase: 'planning', context: aContext() }));
 
     expect(buildContext).not.toHaveBeenCalled();
   });
@@ -84,7 +85,7 @@ describe('runEngine', () => {
       flow: haltingFlow({ beforeHalt: async () => ({ type: 'pause' }), afterHalt }),
     });
 
-    const first = await run(aRunState({ phase: 'gate' }));
+    const first = await run(aDescribedRun({ phase: 'gate' }));
     expect(first.status).toBe('halted');
     expect(first.state.phase).toBe('paused');
     expect(afterHalt).not.toHaveBeenCalled();
@@ -110,7 +111,7 @@ describe('runEngine', () => {
       }),
     });
 
-    const { status, state } = await run(aRunState({ phase: 'planning' }));
+    const { status, state } = await run(aDescribedRun({ phase: 'planning' }));
 
     expect(status).toBe('done');
     expect(state.plan).toEqual(plan);
@@ -128,7 +129,7 @@ describe('runEngine', () => {
       }),
     });
 
-    const { status, state } = await run(aRunState({ phase: 'context' }));
+    const { status, state } = await run(aDescribedRun({ phase: 'context' }));
 
     expect(status).toBe('blocked');
     expect(state).toMatchObject({ phase: 'context', blockedReason: reason });
@@ -141,7 +142,7 @@ describe('runEngine', () => {
     });
 
     const { state } = await run(
-      aRunState({ phase: 'context', blockedReason: faker.lorem.sentence() }),
+      aDescribedRun({ phase: 'context', blockedReason: faker.lorem.sentence() }),
     );
 
     expect(state.blockedReason).toBeUndefined();
@@ -157,7 +158,7 @@ describe('runEngine', () => {
       flow: linearFlow({ context: merge }),
     });
 
-    const { status, state } = await run(aRunState({ phase: 'context' }));
+    const { status, state } = await run(aDescribedRun({ phase: 'context' }));
 
     expect(status).toBe('blocked');
     expect(state.blockedReason).toBe(reason);
@@ -174,7 +175,7 @@ describe('runEngine', () => {
       }),
     });
 
-    await expect(run(aRunState({ phase: 'context' }))).rejects.toBe(failure);
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toBe(failure);
   });
 
   it('retries invalid agent output and then blocks, even where the flow accepts a change request', async () => {
@@ -192,7 +193,7 @@ describe('runEngine', () => {
     });
 
     const { status, state } = await run(
-      aRunState({ phase: 'slices', slices: [aSlice({ status: 'pending', reviewCycles: 0 })] }),
+      aDescribedRun({ phase: 'slices', slices: [aSlice({ status: 'pending', reviewCycles: 0 })] }),
     );
 
     expect(status).toBe('blocked');
@@ -215,7 +216,9 @@ describe('runEngine', () => {
       }),
     });
 
-    const { status, state } = await run(aRunState({ phase: 'slices', slices: [second, first] }));
+    const { status, state } = await run(
+      aDescribedRun({ phase: 'slices', slices: [second, first] }),
+    );
 
     expect(status).toBe('done');
     expect(implemented).toEqual([first.id, second.id]);
@@ -236,7 +239,7 @@ describe('runEngine', () => {
     });
 
     const { state } = await run(
-      aRunState({ phase: 'slices', slices: [aSlice({ status: 'pending' })] }),
+      aDescribedRun({ phase: 'slices', slices: [aSlice({ status: 'pending' })] }),
     );
 
     expect(state.slices[0]).toMatchObject({ status: 'approved', reviewCycles: 1 });
@@ -253,7 +256,7 @@ describe('runEngine', () => {
     });
 
     const { status, state } = await run(
-      aRunState({ phase: 'slices', slices: [aSlice({ status: 'pending' })] }),
+      aDescribedRun({ phase: 'slices', slices: [aSlice({ status: 'pending' })] }),
     );
 
     expect(status).toBe('stuck');
@@ -265,7 +268,7 @@ describe('runEngine', () => {
       flow: linearFlow({ context: async () => ({ type: 'contextBuilt', context: aContext() }) }),
     });
 
-    await run(aRunState({ phase: 'context' }));
+    await run(aDescribedRun({ phase: 'context' }));
 
     expect(events.ofType('stepFinished')[0]).toMatchObject({
       outcome: { type: 'contextBuilt' },
@@ -273,10 +276,20 @@ describe('runEngine', () => {
     });
   });
 
+  it('refuses to move a run into a phase whose guarantees it lacks', async () => {
+    const { run } = setup({
+      flow: flowWith({
+        context: { step: async () => ({ type: 'continue' }), on: { continue: 'designing' } },
+      }),
+    });
+
+    await expect(run(aRunState({ phase: 'context' }))).rejects.toBeInstanceOf(PhaseOutOfOrder);
+  });
+
   it('refuses an outcome the flow has no transition for', async () => {
     const { run } = setup({ flow: linearFlow({ context: async () => ({ type: 'pause' }) }) });
 
-    await expect(run(aRunState({ phase: 'context' }))).rejects.toThrow(
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toThrow(
       'no transition for outcome "pause"',
     );
   });
@@ -295,6 +308,20 @@ describe('runEngine', () => {
     return { run, store, events };
   }
 });
+
+/**
+ * The test flows jump between phases freely, so their runs carry everything every phase
+ * guarantees; the real flow's order is run-flow.spec's concern.
+ */
+function aDescribedRun(overrides: Parameters<typeof aRunState>[0] = {}) {
+  return aRunState({
+    context: aContext(),
+    plan: aFeaturePlan(),
+    docs: designDocs(),
+    prDescription: faker.lorem.paragraph(),
+    ...overrides,
+  });
+}
 
 const unused: RunStep = async () => {
   throw new Error('This phase is not part of the test flow');

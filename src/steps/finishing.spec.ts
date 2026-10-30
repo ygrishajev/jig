@@ -8,9 +8,8 @@ import type { RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import {
   aFeaturePlan,
-  aRunState,
+  aRunStateIn,
   aSlice,
-  designDocs,
   runId,
   runSettings,
 } from '../../tests/support/builders.js';
@@ -110,7 +109,7 @@ describe('finishing steps', () => {
   async function setup(input: {
     settings?: RunSettings;
     describer?: AgentScript;
-    state?: Partial<RunState>;
+    state?: Partial<Omit<RunState, 'phase'>>;
   }) {
     const id = runId();
     const created = await createRunWorktree(id);
@@ -123,13 +122,8 @@ describe('finishing steps', () => {
       runId: id,
       baseBranch: 'main',
     });
-    const state = aRunState({
-      runId: id,
-      plan: aFeaturePlan(),
-      docs: designDocs(),
-      ...input.state,
-    });
-    const run = (step: RunStep) =>
+    const state = aRunStateIn('describing', { runId: id, ...input.state });
+    const run = (step: RunStep<'describing'>) =>
       step({ state, ports: { agent, workspace }, settings: input.settings ?? runSettings() });
 
     const commitOnRunBranch = async () => {

@@ -10,6 +10,23 @@ describe('runStateSchema', () => {
     expect(runStateSchema.parse(state)).toEqual(state);
   });
 
+  it.each([
+    ['planning', 'context'],
+    ['designing', 'plan'],
+    ['describing', 'docs'],
+    ['done', 'prDescription'],
+  ] as const)('refuses a run saved in %s without its %s', (phase, missing) => {
+    const { [missing]: _dropped, ...saved } = aRunState({ phase });
+
+    expect(runStateSchema.safeParse(saved).success).toBe(false);
+  });
+
+  it('loads a run saved in describing with what the earlier phases produced', () => {
+    const state = aRunState({ phase: 'describing' });
+
+    expect(runStateSchema.parse(JSON.parse(JSON.stringify(state)))).toEqual(state);
+  });
+
   it.each(sliceStatusSchema.options)('loads a slice saved as %s', (status) => {
     const state = aRunState({ phase: 'slices', slices: [aSlice({ status })] });
 

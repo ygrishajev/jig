@@ -1,7 +1,16 @@
 import { faker } from '@faker-js/faker';
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
-import type { DesignDocs, FeaturePlan, RunContext, RunState } from '../../src/domain/run-state.js';
+import {
+  runPhaseSchema,
+  runStateSchema,
+  type DesignDocs,
+  type FeaturePlan,
+  type RunContext,
+  type RunPhase,
+  type RunState,
+  type RunStateIn,
+} from '../../src/domain/run-state.js';
 import type { RunSettings } from '../../src/domain/settings.js';
 import type { PlannedSlice, Slice } from '../../src/domain/slice.js';
 import type { CommitSummary, TokenUsage } from '../../src/domain/usage.js';
@@ -60,6 +69,10 @@ export function designDocs({
   return { design, plan };
 }
 
+/**
+ * A run in `phase` with everything that phase guarantees generated, unless given; parsed, so a
+ * spec can only build a run the store would load.
+ */
 export function aRunState({
   runId: id = runId(),
   revision = faker.number.int({ min: 0, max: 100 }),
@@ -68,8 +81,42 @@ export function aRunState({
   phase = 'context',
   slices = [],
   ...rest
-}: Partial<RunState> = {}): RunState {
-  return { runId: id, revision, baseBranch, request, phase, slices, ...rest };
+}: Partial<Omit<RunState, 'phase'>> & { phase?: RunPhase } = {}): RunState {
+  return runStateSchema.parse({
+    runId: id,
+    revision,
+    baseBranch,
+    request,
+    phase,
+    slices,
+    ...producedBefore(phase),
+    ...rest,
+  });
+}
+
+/** `aRunState`, typed as a run in `phase`, for a step that needs what `phase` guarantees. */
+export function aRunStateIn<P extends RunPhase>(
+  phase: P,
+  overrides: Partial<Omit<RunState, 'phase'>> = {},
+): RunStateIn<P> {
+  const state = aRunState({ ...overrides, phase });
+  if (!isIn(state, phase)) throw new Error(`Built a run in ${state.phase}, not ${phase}`);
+  return state;
+}
+
+function isIn<P extends RunPhase>(state: RunState, phase: P): state is RunStateIn<P> {
+  return state.phase === phase;
+}
+
+function producedBefore(phase: RunPhase) {
+  const reached = (since: RunPhase) =>
+    runPhaseSchema.options.indexOf(phase) >= runPhaseSchema.options.indexOf(since);
+  return {
+    ...(reached('planning') ? { context: aContext() } : {}),
+    ...(reached('designing') ? { plan: aFeaturePlan() } : {}),
+    ...(reached('slicing') ? { docs: designDocs() } : {}),
+    ...(reached('merging') ? { prDescription: faker.lorem.paragraphs() } : {}),
+  };
 }
 
 export function runSettings({

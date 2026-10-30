@@ -32,8 +32,8 @@ describe('CompositeRunStore', () => {
     const { store, stores } = await setup({ copies: [stale, fresher] });
     await store.load(stale.runId);
 
-    await store.save({ ...stale, phase: 'done' });
-    await store.save({ ...stale, phase: 'stuck' });
+    await store.save(aRunState({ ...stale, phase: 'done' }));
+    await store.save(aRunState({ ...stale, phase: 'stuck' }));
 
     for (const each of stores) {
       expect(await each.load(stale.runId)).toMatchObject({

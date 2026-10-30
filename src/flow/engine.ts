@@ -4,7 +4,13 @@ import { SdlcError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
-import { currentSlice, type RunPhase, type RunState } from '../domain/run-state.js';
+import {
+  currentSlice,
+  enterPhase,
+  type RunPhase,
+  type RunState,
+  type RunStateIn,
+} from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
@@ -12,7 +18,8 @@ import type {
   ForEachSliceNode,
   GuardContext,
   RunFlow,
-  RunStepContext,
+  RunFlowNode,
+  RunStep,
   StepNode,
   StepPorts,
   Target,
@@ -29,10 +36,10 @@ export interface EngineDependencies {
 
 export type EngineStatus = 'done' | 'stuck' | 'halted' | 'blocked';
 
-export interface EngineResult {
-  state: RunState;
-  status: EngineStatus;
-}
+/** Where an invocation stopped; a blocked run says why. */
+export type EngineResult =
+  | { state: RunState; status: Exclude<EngineStatus, 'blocked'> }
+  | { state: RunState; status: 'blocked'; reason: string };
 
 /** A guard against a flow that never settles; every healthy pass moves a phase or a slice forward. */
 const MAX_PASSES = 1000;
@@ -60,22 +67,33 @@ class Engine {
     let state = await this.leaveHaltOrBlock(initial);
 
     for (let pass = 0; pass < MAX_PASSES; pass++) {
-      const node = this.flow[state.phase];
-      if ('final' in node) return this.finish(state, node.final);
-      if ('halt' in node) return this.halt(state);
-
-      const attempt =
-        'forEachSlice' in node
-          ? await this.advanceSlices(node, state)
-          : await this.advancePhase(node, state);
-      if ('blockedReason' in attempt) return this.block(state, attempt.blockedReason);
-
-      state = attempt.state;
+      const passed = await this.pass(state.phase, state);
+      if ('result' in passed) return passed.result;
+      state = passed.state;
       await this.d.store.save(state);
     }
     throw new Error(
       `Run ${state.runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`,
     );
+  }
+
+  /** One step of the run from `phase`; generic so the phase's step sees what `phase` guarantees. */
+  private async pass<P extends RunPhase>(
+    phase: P,
+    state: RunStateIn<P>,
+  ): Promise<{ result: EngineResult } | { state: RunState }> {
+    const node: RunFlowNode<P> = this.flow[phase];
+    if ('final' in node) return { result: this.finish(state, node.final) };
+    if ('halt' in node) return { result: this.halt(state) };
+
+    const attempt =
+      'forEachSlice' in node
+        ? await this.advanceSlices(node, state)
+        : await this.advancePhase(node, state);
+    if ('blockedReason' in attempt) {
+      return { result: await this.block(state, attempt.blockedReason) };
+    }
+    return attempt;
   }
 
   private async leaveHaltOrBlock(state: RunState) {
@@ -87,12 +105,14 @@ class Engine {
     return next;
   }
 
-  private async advancePhase(
-    node: StepNode<RunPhase, (context: RunStepContext) => Promise<Outcome>>,
-    state: RunState,
+  private async advancePhase<P extends RunPhase>(
+    node: StepNode<RunPhase, RunStep<P>>,
+    state: RunStateIn<P>,
   ): Promise<{ state: RunState } | { blockedReason: string }> {
     const at: StepLocation = { phase: state.phase };
-    const attempt = await this.attempt(at, state.runId, () => node.step(this.stepContext(state)));
+    const attempt = await this.attempt(at, state.runId, () =>
+      node.step({ state, ports: this.d.ports, settings: this.d.settings }),
+    );
     if ('blockedReason' in attempt) return attempt;
 
     const applied = applyOutcome(state, attempt.outcome);
@@ -115,7 +135,7 @@ class Engine {
 
     const at: StepLocation = { phase: state.phase, sliceId: slice.id, sliceStatus: slice.status };
     const attempt = await this.attempt(at, state.runId, () =>
-      sliceNode.step({ ...this.stepContext(state), slice }),
+      sliceNode.step({ state, ports: this.d.ports, settings: this.d.settings, slice }),
     );
     if ('blockedReason' in attempt) return attempt;
 
@@ -193,15 +213,11 @@ class Engine {
     return match.to;
   }
 
-  private stepContext(state: RunState): RunStepContext {
-    return { state, ports: this.d.ports, settings: this.d.settings };
-  }
-
   private changePhase(state: RunState, to: RunPhase): RunState {
     if (to !== state.phase) {
       this.d.events.publish({ type: 'phaseChanged', runId: state.runId, from: state.phase, to });
     }
-    return { ...state, phase: to };
+    return enterPhase(state, to);
   }
 
   private finish(state: RunState, final: 'done' | 'stuck'): EngineResult {
@@ -218,7 +234,7 @@ class Engine {
     const blocked = { ...state, blockedReason: reason };
     await this.d.store.save(blocked);
     this.d.events.publish({ type: 'runBlocked', runId: state.runId, phase: state.phase, reason });
-    return { state: blocked, status: 'blocked' };
+    return { state: blocked, status: 'blocked', reason };
   }
 }
 
