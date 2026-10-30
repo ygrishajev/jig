@@ -1,71 +1,72 @@
-import { afterEach, describe, expect, it } from 'vitest';
 import { faker } from '@faker-js/faker';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { simpleGit, type SimpleGit } from 'simple-git';
-import { isBranchMergedInto, mergeBranchInto } from '../../src/git/merge.js';
-import { commitAll } from '../../src/git/repository.js';
-import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
+import { GitResponseError, simpleGit, type SimpleGit } from 'simple-git';
+import { describe, expect, it } from 'vitest';
+import { createRemote, createTempRepo } from '../../tests/support/temp-repo.js';
+import { GitCommandFailed, isBranchMergedInto, mergeBranchInto, MergeRefused } from './merge.js';
+import { commitAll } from './repository.js';
 
-let repo: TempRepo;
+describe('mergeBranchInto', () => {
+  it('merges a branch into the checked-out base and returns the merge commit', async () => {
+    const { repo, branch, git } = await setup();
 
-afterEach(async () => {
-  await repo?.cleanup();
-});
+    const sha = await mergeBranchInto(repo, branch, 'main');
 
-describe('mergeBranchInto and isBranchMergedInto', () => {
-  it('merges a clean branch and reports it as merged', async () => {
-    repo = await createTempRepo();
-    await simpleGit({ baseDir: repo.dir }).checkoutBranch('feature/m', 'main');
-    await writeFile(path.join(repo.dir, 'm.txt'), 'hi');
-    await commitAll(repo.dir, 'add m.txt');
-    await simpleGit({ baseDir: repo.dir }).checkout('main');
-    expect(await isBranchMergedInto(repo.dir, 'feature/m', 'main')).toBe(false);
-    const sha = await mergeBranchInto(repo.dir, 'feature/m', 'main');
-    expect(sha).toMatch(/^[0-9a-f]{7,40}$/);
-    expect(await isBranchMergedInto(repo.dir, 'feature/m', 'main')).toBe(true);
+    expect(sha).toBe(await git.revparse(['main']));
+    expect(await isBranchMergedInto(repo, branch, 'main')).toBe(true);
   });
 
-  it('refuses to merge when the target branch is not checked out', async () => {
-    repo = await createTempRepo();
-    await simpleGit({ baseDir: repo.dir }).checkoutBranch('feature/n', 'main');
-    await writeFile(path.join(repo.dir, 'n.txt'), 'hi');
-    await commitAll(repo.dir, 'add n.txt');
-    await expect(mergeBranchInto(repo.dir, 'feature/n', 'main')).rejects.toThrow(/not checked out/);
+  it('refuses to merge while the base is not checked out, leaving the branches as they were', async () => {
+    const { repo, branch, git } = await setup();
+    await git.checkout(branch);
+    const base = await git.revparse(['main']);
+
+    const refusal = mergeBranchInto(repo, branch, 'main');
+
+    await expect(refusal).rejects.toBeInstanceOf(MergeRefused);
+    await expect(refusal).rejects.toMatchObject({ reason: 'baseNotCheckedOut' });
+    expect(await git.revparse(['main'])).toBe(base);
   });
 
-  it('refuses to merge with a dirty working tree', async () => {
-    repo = await createTempRepo();
-    await simpleGit({ baseDir: repo.dir }).checkoutBranch('feature/o', 'main');
-    await writeFile(path.join(repo.dir, 'o.txt'), 'hi');
-    await commitAll(repo.dir, 'add o.txt');
-    await simpleGit({ baseDir: repo.dir }).checkout('main');
-    await writeFile(path.join(repo.dir, 'dirty.txt'), 'uncommitted');
-    await expect(mergeBranchInto(repo.dir, 'feature/o', 'main')).rejects.toThrow(
-      /uncommitted changes/,
+  it('refuses to merge into a tree with uncommitted changes', async () => {
+    const { repo, branch, git } = await setup();
+    await writeFile(path.join(repo, `${faker.string.uuid()}.txt`), faker.lorem.paragraph());
+    const base = await git.revparse(['main']);
+
+    const refusal = mergeBranchInto(repo, branch, 'main');
+
+    await expect(refusal).rejects.toBeInstanceOf(MergeRefused);
+    await expect(refusal).rejects.toMatchObject({ reason: 'uncommittedChanges' });
+    expect(await git.revparse(['main'])).toBe(base);
+  });
+
+  it("fails with git's own error when the branches conflict", async () => {
+    const { repo, branch, git } = await setup({ touching: 'README.md' });
+    await writeFile(path.join(repo, 'README.md'), faker.lorem.paragraph());
+    await commitAll(repo, faker.git.commitMessage());
+
+    await expect(mergeBranchInto(repo, branch, 'main')).rejects.toBeInstanceOf(GitResponseError);
+    expect(await isBranchMergedInto(repo, branch, 'main')).toBe(false);
+    await git.merge(['--abort']);
+  });
+
+  async function setup(input: { touching?: string } = {}) {
+    const { dir } = await createTempRepo();
+    const git = simpleGit({ baseDir: dir });
+    const branch = `feature/${faker.string.alphanumeric({ length: 8, casing: 'lower' })}`;
+    await git.checkoutLocalBranch(branch);
+    await writeFile(
+      path.join(dir, input.touching ?? `${faker.string.uuid()}.txt`),
+      faker.lorem.paragraph(),
     );
-  });
-
-  it('throws a plain git error when the branches actually conflict', async () => {
-    repo = await createTempRepo();
-    await simpleGit({ baseDir: repo.dir }).checkoutBranch('feature/p', 'main');
-    await writeFile(path.join(repo.dir, 'README.md'), 'from branch\n');
-    await commitAll(repo.dir, 'change readme on branch');
-    await simpleGit({ baseDir: repo.dir }).checkout('main');
-    await writeFile(path.join(repo.dir, 'README.md'), 'from main\n');
-    await commitAll(repo.dir, 'change readme on main');
-    await expect(mergeBranchInto(repo.dir, 'feature/p', 'main')).rejects.toThrow();
-  });
+    await commitAll(dir, faker.git.commitMessage());
+    await git.checkout('main');
+    return { repo: dir, branch, git };
+  }
 });
 
 describe('isBranchMergedInto', () => {
-  const cleanups: (() => Promise<void>)[] = [];
-
-  afterEach(async () => {
-    await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
-  });
-
   it.each(['plain', 'squash', 'rebase'] as const)(
     'sees the branch once the base took it in a %s merge',
     async (strategy) => {
@@ -111,16 +112,15 @@ describe('isBranchMergedInto', () => {
   it('fails rather than answering for a branch that does not exist', async () => {
     const { here } = await setup();
 
-    await expect(isBranchMergedInto(here, faker.string.uuid(), 'main')).rejects.toThrow();
+    await expect(isBranchMergedInto(here, faker.string.uuid(), 'main')).rejects.toBeInstanceOf(
+      GitCommandFailed,
+    );
   });
 
   async function setup() {
-    const seed = await createTempRepo();
-    const origin = await mkdtemp(path.join(tmpdir(), 'sdlc-origin-'));
-    cleanups.push(seed.cleanup, () => rm(origin, { recursive: true, force: true }));
-    await simpleGit().clone(seed.dir, origin, ['--bare']);
-    const here = await cloneOf(origin);
-    const elsewhere = await cloneOf(origin);
+    const { cloneOf } = await createRemote();
+    const here = await cloneOf();
+    const elsewhere = await cloneOf();
     const branch = `run/${faker.string.alphanumeric(8).toLowerCase()}`;
     await commitTwiceOnNewBranch(here, branch);
     await simpleGit({ baseDir: here }).push('origin', branch);
@@ -146,18 +146,6 @@ describe('isBranchMergedInto', () => {
     };
     const pullBase = () => simpleGit({ baseDir: here }).pull('origin', 'main');
     return { here, branch, mergeOnRemote, advanceRemoteBase, rewriteBranchFilesOnRemote, pullBase };
-  }
-
-  async function cloneOf(origin: string) {
-    const directory = await mkdtemp(path.join(tmpdir(), 'sdlc-clone-'));
-    cleanups.push(() => rm(directory, { recursive: true, force: true }));
-    await simpleGit().clone(origin, directory);
-    const git = simpleGit({ baseDir: directory });
-    await git.addConfig('user.email', faker.internet.email());
-    await git.addConfig('user.name', faker.person.fullName());
-    await git.addConfig('commit.gpgsign', 'false');
-    await git.addConfig('pull.rebase', 'false');
-    return directory;
   }
 });
 

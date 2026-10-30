@@ -53,11 +53,31 @@ function git(cwd: string, args: string[]) {
   return execa('git', args, { cwd, reject: false });
 }
 
-function succeeded(result: GitResult) {
-  if (result.exitCode !== 0) {
-    throw new Error(`git ${result.command} failed: ${result.stderr}`);
+/** A git command exited non-zero for a reason other than the one its caller expects. */
+export class GitCommandFailed extends Error {
+  constructor(
+    readonly command: string,
+    readonly stderr: string,
+  ) {
+    super(`git ${command} failed: ${stderr}`);
   }
+}
+
+function succeeded(result: GitResult) {
+  if (result.exitCode !== 0) throw new GitCommandFailed(result.command, result.stderr);
   return result.stdout.trim();
+}
+
+/** Why a merge was refused before git was asked to do it, leaving the operator's tree untouched. */
+export type MergeRefusal = 'baseNotCheckedOut' | 'uncommittedChanges';
+
+export class MergeRefused extends Error {
+  constructor(
+    readonly reason: MergeRefusal,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 export async function mergeBranchInto(
@@ -67,16 +87,18 @@ export async function mergeBranchInto(
 ): Promise<string> {
   const currentBranch = await getCurrentBranch(repoRoot);
   if (currentBranch !== intoBranch) {
-    throw new Error(
+    throw new MergeRefused(
+      'baseNotCheckedOut',
       `Refusing to merge: "${intoBranch}" is not checked out in ${repoRoot} (found "${currentBranch}")`,
     );
   }
   if (!(await isWorkingTreeClean(repoRoot))) {
-    throw new Error(`Refusing to merge: ${repoRoot} has uncommitted changes`);
+    throw new MergeRefused(
+      'uncommittedChanges',
+      `Refusing to merge: ${repoRoot} has uncommitted changes`,
+    );
   }
   const git = openRepo(repoRoot);
   await git.merge([branchName, '--no-edit']);
-  const log = await git.log(['-1']);
-  if (!log.latest) throw new Error('Merge succeeded but produced no commit');
-  return log.latest.hash;
+  return (await git.revparse(['HEAD'])).trim();
 }
