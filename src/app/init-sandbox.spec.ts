@@ -4,9 +4,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
-import type { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
 import type { ExecResult } from '../ports/agent-session.js';
+import type { SandboxImages } from '../ports/sandbox-images.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
@@ -137,7 +137,7 @@ describe('initSandbox', () => {
     const checkSandboxFailures = [...(input.checkSandboxFailures ?? [])];
     const app = createAppContainer({ repoRoot: repo.dir, logFormat: 'json', logLevel: 'silent' });
     app.register({
-      images: asValue(mock<DockerImages>({ labels: vi.fn().mockResolvedValue(undefined) })),
+      images: asValue(mock<SandboxImages>({ labels: vi.fn().mockResolvedValue(undefined) })),
       latestVersions: asValue(async () => ({})),
       openSession: asValue(async ({ setupCommand }: OpenSessionInput) => {
         const failure = setupCommand === null ? undefined : checkSandboxFailures.shift();

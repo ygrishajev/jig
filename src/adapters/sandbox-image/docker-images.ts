@@ -1,17 +1,9 @@
 import { execa } from 'execa';
 import { z } from 'zod';
+import type { ImageBuildSpec, SandboxImages } from '../../ports/sandbox-images.js';
 
 /** `docker image inspect` prints `null` for an image built without labels. */
 const imageLabelsSchema = z.record(z.string()).nullable();
-
-export interface BuildInput {
-  tag: string;
-  /** Build from this directory's Dockerfile, or from `dockerfile` text with no context. */
-  contextDirectory?: string;
-  dockerfile?: string;
-  buildArgs: Record<string, string | number>;
-  labels?: Record<string, string>;
-}
 
 export interface DockerImagesOptions {
   /** `gha` shares layers between CI jobs through GitHub Actions' cache, via buildx. */
@@ -20,10 +12,9 @@ export interface DockerImagesOptions {
 }
 
 /** The few docker CLI calls image management needs. */
-export class DockerImages {
+export class DockerImages implements SandboxImages {
   constructor(private readonly options: DockerImagesOptions = {}) {}
 
-  /** The image's labels, or undefined when the image is not on this machine. */
   async labels(image: string): Promise<Record<string, string> | undefined> {
     const result = await execa(
       'docker',
@@ -36,7 +27,7 @@ export class DockerImages {
     return imageLabelsSchema.parse(JSON.parse(result.stdout)) ?? {};
   }
 
-  async build(input: BuildInput) {
+  async build(input: ImageBuildSpec) {
     const args = [...this.builder(input.tag), '-t', input.tag];
     for (const [name, value] of Object.entries(input.buildArgs))
       args.push('--build-arg', `${name}=${value}`);

@@ -3,7 +3,6 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defaultImageName } from '@ai-hero/sandcastle/sandboxes/docker';
 import type { Logger } from 'pino';
-import type { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import {
   agentLayerDockerfile,
   DOCKERFILE,
@@ -17,6 +16,7 @@ import {
 import { AGENTS } from '../adapters/sandcastle/agents.js';
 import { configuredSteps, type SdlcConfig } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
+import type { SandboxImages } from '../ports/sandbox-images.js';
 
 export type AgentUpdatePolicy = 'auto' | 'warn' | 'off';
 
@@ -99,7 +99,7 @@ export function baseImageName(image: string) {
 export interface EnsureImageDependencies {
   repoRoot: string;
   config: SdlcConfig;
-  images: DockerImages;
+  images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   logger: Logger;
 }

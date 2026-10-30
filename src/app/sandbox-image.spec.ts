@@ -1,12 +1,121 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { faker } from '@faker-js/faker';
-import { describe, expect, it } from 'vitest';
-import { LABELS } from '../adapters/sandbox-image/image-recipe.js';
+import { pino } from 'pino';
+import { afterEach, describe, expect, it } from 'vitest';
+import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
+import { loadConfig } from '../config/load-config.js';
+import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
 import {
   baseImageName,
+  ensureSandboxImage,
   planImageBuild,
+  sandboxImageName,
   type AgentNeeded,
   type AgentUpdatePolicy,
 } from './sandbox-image.js';
+
+class FakeSandboxImages implements SandboxImages {
+  readonly built: ImageBuildSpec[] = [];
+  private readonly images = new Map<string, Record<string, string>>();
+
+  async labels(tag: string) {
+    return this.images.get(tag);
+  }
+
+  async build(spec: ImageBuildSpec) {
+    this.built.push(spec);
+    this.images.set(spec.tag, spec.labels ?? {});
+  }
+
+  forget() {
+    this.built.length = 0;
+  }
+}
+
+describe('ensureSandboxImage', () => {
+  const directories: string[] = [];
+  afterEach(async () => {
+    await Promise.all(
+      directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+    );
+  });
+
+  it('builds the base image and the agent layer when there is no image yet', async () => {
+    const { ensure, images, image } = await setup({});
+
+    await ensure();
+
+    expect(images.built.map((spec) => spec.tag)).toEqual([baseImageName(image), image]);
+  });
+
+  it('rebuilds the base image and the agent layer when the Dockerfile changed', async () => {
+    const { ensure, images, image, writeDockerfile } = await setup({});
+    await ensure();
+    images.forget();
+
+    await writeDockerfile(faker.lorem.lines(3));
+    await ensure();
+
+    expect(images.built.map((spec) => spec.tag)).toEqual([baseImageName(image), image]);
+  });
+
+  it('rebuilds only the agent layer when a newer agent release is out', async () => {
+    const latest = { value: faker.system.semver() };
+    const { ensure, images, image } = await setup({ latest: () => latest.value });
+    await ensure();
+    images.forget();
+
+    latest.value = faker.system.semver();
+    await ensure();
+
+    expect(images.built.map((spec) => spec.tag)).toEqual([image]);
+    expect(images.built[0]?.dockerfile).toContain(latest.value);
+  });
+
+  it('builds nothing when the image is up to date', async () => {
+    const { ensure, images } = await setup({});
+    await ensure();
+    images.forget();
+
+    await ensure();
+
+    expect(images.built).toEqual([]);
+  });
+
+  it('uses an image named in the config as it is', async () => {
+    const sandboxImage = faker.word.noun();
+    const { ensure, images } = await setup({ sandboxImage });
+
+    expect(await ensure()).toBe(sandboxImage);
+    expect(images.built).toEqual([]);
+  });
+
+  async function setup(input: { sandboxImage?: string; latest?: () => string }) {
+    const repoRoot = await mkdtemp(path.join(tmpdir(), 'sdlc-image-'));
+    directories.push(repoRoot);
+    const writeDockerfile = async (contents: string) => {
+      await mkdir(path.join(repoRoot, SANDBOX_DIRECTORY), { recursive: true });
+      await writeFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), contents);
+    };
+    await writeDockerfile(faker.lorem.lines(3));
+    const config = { ...loadConfig(repoRoot), sandboxImage: input.sandboxImage };
+    const fixedLatest = faker.system.semver();
+    const latestVersion = input.latest ?? (() => fixedLatest);
+    const images = new FakeSandboxImages();
+    const ensure = () =>
+      ensureSandboxImage({
+        repoRoot,
+        config,
+        images,
+        latestVersions: async (packages) =>
+          Object.fromEntries(packages.map((npmPackage) => [npmPackage, latestVersion()])),
+        logger: pino({ level: 'silent' }),
+      });
+    return { ensure, images, image: sandboxImageName(repoRoot, config), writeDockerfile };
+  }
+});
 
 describe('planImageBuild', () => {
   it('builds everything when there is no image yet', () => {

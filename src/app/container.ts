@@ -31,6 +31,7 @@ import { observe, RunEvents } from '../observers/run-events.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
+import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { sandboxImageName } from './sandbox-image.js';
 
@@ -68,7 +69,7 @@ export interface AppCradle {
   logger: Logger;
   clock: Clock;
   artefacts: RunArtefacts;
-  images: DockerImages;
+  images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   openSession: (input: OpenSessionInput) => Promise<RunSession>;
 }
