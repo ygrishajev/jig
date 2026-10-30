@@ -40,9 +40,16 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
   }
 }
 
+/** A slice outcome arrived for a run with every slice already settled: a bug in the flow. */
+export class NoCurrentSlice extends Error {
+  constructor() {
+    super('No current slice to update');
+  }
+}
+
 export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Slice): RunState {
   const target = currentSlice(state);
-  if (!target) throw new Error('No current slice to update');
+  if (!target) throw new NoCurrentSlice();
   return {
     ...state,
     slices: state.slices.map((slice) => (slice.id === target.id ? update(slice) : slice)),

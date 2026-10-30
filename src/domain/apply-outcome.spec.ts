@@ -10,7 +10,7 @@ import {
   aSlice,
   designDocs,
 } from '../../tests/support/builders.js';
-import { applyOutcome } from './apply-outcome.js';
+import { applyOutcome, NoCurrentSlice } from './apply-outcome.js';
 
 describe('applyOutcome', () => {
   it('records what the planning steps produced', () => {
@@ -91,7 +91,7 @@ describe('applyOutcome', () => {
 
   it('refuses a slice outcome when no slice is left', () => {
     expect(() => applyOutcome(aRunState({ slices: [] }), { type: 'verified' })).toThrow(
-      'No current slice',
+      NoCurrentSlice,
     );
   });
 });
