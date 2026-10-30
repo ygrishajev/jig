@@ -1,8 +1,9 @@
 import { execa } from 'execa';
 import pRetry from 'p-retry';
+
 import { RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
-import { runBranchFor, runStateSchema, type RunState } from '../../domain/run-state.js';
+import { runBranchFor, type RunState, runStateSchema } from '../../domain/run-state.js';
 import type { RunStore } from '../../ports/run-store.js';
 
 const STATE_FILE = 'run.json';

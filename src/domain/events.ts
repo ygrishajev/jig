@@ -1,9 +1,10 @@
 import { z } from 'zod';
+
 import type { AgentRole } from './agent-role.js';
 import type { Outcome } from './outcome.js';
 import type { RunId } from './run-id.js';
-import { runPhaseSchema, type RunPhase } from './run-state.js';
-import { sliceStatusSchema, type SliceStatus } from './slice.js';
+import { type RunPhase, runPhaseSchema } from './run-state.js';
+import { type SliceStatus, sliceStatusSchema } from './slice.js';
 import type { TokenUsage } from './usage.js';
 
 /** Where a step ran: a run phase, or one slice's step inside it. The slice form comes first so it is not read as the bare phase. */

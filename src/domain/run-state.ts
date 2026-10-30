@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { runIdSchema, type RunId } from './run-id.js';
-import { sliceSchema, slicesInOrder, type Slice } from './slice.js';
+
+import { type RunId, runIdSchema } from './run-id.js';
+import { type Slice, sliceSchema, slicesInOrder } from './slice.js';
 
 export const runPhaseSchema = z.enum([
   'context',

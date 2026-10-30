@@ -1,5 +1,5 @@
 import type { FeaturePlan } from '../domain/run-state.js';
-import { slicesInOrder, type Slice } from '../domain/slice.js';
+import { type Slice, slicesInOrder } from '../domain/slice.js';
 
 export interface PullRequestPromptInput {
   template: string;

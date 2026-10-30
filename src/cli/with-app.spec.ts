@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asFunction } from 'awilix';
 import { describe, expect, it, vi } from 'vitest';
+
 import { withApp } from './with-app.js';
 
 describe('withApp', () => {

@@ -2,10 +2,11 @@ import { faker } from '@faker-js/faker';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { CONFIG_FILE } from './load-config.js';
 import { updateConfigFile } from './write-config.js';
-import { tempDirectory } from '../../tests/support/temp-directory.js';
 
 describe('updateConfigFile', () => {
   it('sets the given keys and keeps every other key as it was', async () => {

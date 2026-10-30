@@ -1,10 +1,12 @@
+import type { AgentProvider } from '@ai-hero/sandcastle';
+import type { Tracer } from '@opentelemetry/api';
+import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMode } from 'awilix';
 import path from 'node:path';
 import pRetry from 'p-retry';
-import type { AgentProvider } from '@ai-hero/sandcastle';
-import { asFunction, asValue, createContainer, InjectionMode, type AwilixContainer } from 'awilix';
-import type { Tracer } from '@opentelemetry/api';
 import type { Logger } from 'pino';
+
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
+import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import {
@@ -21,16 +23,15 @@ import {
 } from '../adapters/sandcastle/sandcastle-session.js';
 import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
 import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
-import { byRole, type AgentRole } from '../domain/agent-role.js';
-import type { RunId } from '../domain/run-id.js';
+import { type AgentRole, byRole } from '../domain/agent-role.js';
 import { SdlcError } from '../domain/errors.js';
+import type { RunId } from '../domain/run-id.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
-import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { MetricsObserver } from '../observers/metrics.js';
-import { TracingObserver } from '../observers/tracing-observer.js';
 import { observe, RunEvents } from '../observers/run-events.js';
+import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';

@@ -1,4 +1,5 @@
 import type { Logger } from 'pino';
+
 import type { RunEvent, StepLocation } from '../domain/events.js';
 
 /** Turns run events into log lines: a readable message, with the event's data as fields. */

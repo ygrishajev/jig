@@ -1,10 +1,11 @@
 import type { AwilixContainer } from 'awilix';
+
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import type { RunDocument } from '../adapters/local-store/run-artefacts.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import type { RunState } from '../domain/run-state.js';
-import { summarizeMetrics, type MetricsSummary } from '../observers/metrics.js';
+import { type MetricsSummary, summarizeMetrics } from '../observers/metrics.js';
 import type { AppCradle } from './container.js';
 import { openRunStore } from './run-stores.js';
 

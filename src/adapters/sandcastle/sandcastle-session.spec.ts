@@ -1,14 +1,15 @@
-import { faker } from '@faker-js/faker';
 import type {
   AgentProvider,
   AgentStreamEvent,
   Sandbox,
   SandboxRunOptions,
 } from '@ai-hero/sandcastle';
+import { faker } from '@faker-js/faker';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 import { z } from 'zod';
+
 import { runId } from '../../../tests/support/builders.js';
 import { RecordingEventSink } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
@@ -20,7 +21,7 @@ import {
   SetupCommandFailed,
 } from '../../domain/errors.js';
 import type { AgentRole } from '../../ports/agent-session.js';
-import { SandcastleSession, type SandboxFactory } from './sandcastle-session.js';
+import { type SandboxFactory, SandcastleSession } from './sandcastle-session.js';
 import { OUTPUT_TAG } from './structured-output.js';
 
 describe('SandcastleSession', () => {

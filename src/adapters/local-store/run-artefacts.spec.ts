@@ -3,13 +3,14 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import { aMetricsSummary, aRunState, aSlice, designDocs } from '../../../tests/support/builders.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import type { RunId } from '../../domain/run-id.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { LocalRunStore } from './local-run-store.js';
 import { RunArtefacts } from './run-artefacts.js';
 import { stateDirectory } from './run-paths.js';
-import { tempDirectory } from '../../../tests/support/temp-directory.js';
 
 describe('RunArtefacts', () => {
   it('writes the design and plan for a person to read, and says where they are', async () => {

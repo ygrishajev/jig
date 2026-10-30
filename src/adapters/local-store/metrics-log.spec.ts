@@ -2,13 +2,14 @@ import { faker } from '@faker-js/faker';
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import { aCommit, runId, sliceId, tokenUsage } from '../../../tests/support/builders.js';
-import type { RunId } from '../../domain/run-id.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { MetricsLogCorrupt } from '../../domain/errors.js';
+import type { RunId } from '../../domain/run-id.js';
 import type { MetricRecord } from '../../observers/metrics.js';
 import { MetricsLog } from './metrics-log.js';
 import { stateDirectory } from './run-paths.js';
-import { tempDirectory } from '../../../tests/support/temp-directory.js';
 
 describe('MetricsLog', () => {
   it('reads back every record it appended, in order', async () => {

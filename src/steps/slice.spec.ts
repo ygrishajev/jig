@@ -2,14 +2,15 @@ import { faker } from '@faker-js/faker';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+import { approval } from '../../tests/support/agent-scripts.js';
+import { aRunState, aSlice, runId, runSettings } from '../../tests/support/builders.js';
+import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
+import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
-import type { ExecResult } from '../ports/agent-session.js';
-import { aRunState, aSlice, runId, runSettings } from '../../tests/support/builders.js';
-import { FakeAgentSession, type AgentScript } from '../../tests/support/fakes.js';
-import { createRunWorktree } from '../../tests/support/run-worktree.js';
-import { approval } from '../../tests/support/agent-scripts.js';
 import type { SliceStep } from '../flow/define-flow.js';
+import type { ExecResult } from '../ports/agent-session.js';
 import { implementSlice, reviewSlice, verifySlice } from './slice.js';
 
 describe('slice steps', () => {

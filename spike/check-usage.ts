@@ -1,12 +1,12 @@
 // Follow-up spike checks:
 //   #5 `--continue` resumes the session — with a random number, so a fresh session can't guess it
 //   #7 cost/usage from raw stream lines, captured by wrapping parseStreamLine
+import { type AgentProvider, claudeCode, createSandbox, opencode } from '@ai-hero/sandcastle';
+import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { claudeCode, createSandbox, opencode, type AgentProvider } from '@ai-hero/sandcastle';
-import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 
 const IMAGE = 'sdlc-spike';
 const TAG = 'sdlc-output';

@@ -1,4 +1,5 @@
-import { context, SpanStatusCode, trace, type Span, type Tracer } from '@opentelemetry/api';
+import { context, type Span, SpanStatusCode, trace, type Tracer } from '@opentelemetry/api';
+
 import type { RunEvent, StepLocation } from '../domain/events.js';
 
 /**

@@ -1,9 +1,10 @@
+import type { AwilixContainer } from 'awilix';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { AwilixContainer } from 'awilix';
 import { z } from 'zod';
+
 import {
   BASE_DOCKERFILE,
   DOCKERFILE,
@@ -13,11 +14,11 @@ import {
 import { ignoreSandcastleDirectory } from '../adapters/sandcastle/sandcastle-session.js';
 import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
-import { getCurrentBranch } from '../git/branch.js';
-import { openRepo } from '../git/repository.js';
 import { SetupCommandFailed } from '../domain/errors.js';
 import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
+import { getCurrentBranch } from '../git/branch.js';
+import { openRepo } from '../git/repository.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { observe, RunEvents } from '../observers/run-events.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';

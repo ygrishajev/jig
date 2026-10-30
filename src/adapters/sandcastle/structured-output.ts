@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod';
+
 import { AgentOutputInvalid, messageOf } from '../../domain/errors.js';
 
 /** The agent ends its reply with this tag around a JSON object; the last one wins. */

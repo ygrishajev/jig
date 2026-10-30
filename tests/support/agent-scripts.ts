@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+
 import type { PlannedSlice } from '../../src/domain/slice.js';
 import { aContext, aFeaturePlan, aPlannedSlice, designDocs } from './builders.js';
 import type { FakeAgentSession } from './fakes.js';

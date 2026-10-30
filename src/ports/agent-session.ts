@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod';
+
 import type { AgentRole } from '../domain/agent-role.js';
 
 export type { AgentRole };

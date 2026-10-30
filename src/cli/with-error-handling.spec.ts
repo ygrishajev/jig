@@ -1,7 +1,8 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+
 import { ConfigInvalid } from '../domain/errors.js';
-import { withErrorHandling, type FailureOutput } from './with-error-handling.js';
+import { type FailureOutput, withErrorHandling } from './with-error-handling.js';
 
 describe('withErrorHandling', () => {
   it('prints the error and sets a failing exit code instead of rejecting', async () => {

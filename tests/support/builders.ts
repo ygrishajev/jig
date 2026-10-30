@@ -1,15 +1,16 @@
 import { faker } from '@faker-js/faker';
+
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import {
-  runPhaseSchema,
-  runStateSchema,
   type DesignDocs,
   type FeaturePlan,
   type RunContext,
   type RunPhase,
+  runPhaseSchema,
   type RunState,
   type RunStateIn,
+  runStateSchema,
 } from '../../src/domain/run-state.js';
 import type { RunSettings } from '../../src/domain/settings.js';
 import type { PlannedSlice, Slice } from '../../src/domain/slice.js';

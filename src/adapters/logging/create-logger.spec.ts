@@ -2,6 +2,7 @@ import { faker } from '@faker-js/faker';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createConsoleLogger, createRunLogger, defaultLogFormat } from './create-logger.js';
 

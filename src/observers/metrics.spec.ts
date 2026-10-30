@@ -1,10 +1,11 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
-import type { RunEvent, StepLocation } from '../domain/events.js';
-import type { TokenUsage } from '../domain/usage.js';
+
 import { aCommit, anImplementation, runId, sliceId } from '../../tests/support/builders.js';
 import { SteppingClock } from '../../tests/support/fakes.js';
-import { formatSummary, MetricsObserver, summarizeMetrics, type MetricRecord } from './metrics.js';
+import type { RunEvent, StepLocation } from '../domain/events.js';
+import type { TokenUsage } from '../domain/usage.js';
+import { formatSummary, type MetricRecord, MetricsObserver, summarizeMetrics } from './metrics.js';
 
 describe('MetricsObserver', () => {
   it('attributes an agent call to the step it ran in', () => {

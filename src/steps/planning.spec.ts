@@ -1,10 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
-import { AgentOutputInvalid } from '../domain/errors.js';
-import type { RunPhase, RunStateIn } from '../domain/run-state.js';
-import type { RunSettings } from '../domain/settings.js';
-import type { Workspace } from '../ports/workspace.js';
+
 import {
   aContext,
   aFeaturePlan,
@@ -14,8 +11,12 @@ import {
   designDocs,
   runSettings,
 } from '../../tests/support/builders.js';
-import { FakeAgentSession, type AgentScript } from '../../tests/support/fakes.js';
+import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
+import { AgentOutputInvalid } from '../domain/errors.js';
+import type { RunPhase, RunStateIn } from '../domain/run-state.js';
+import type { RunSettings } from '../domain/settings.js';
 import type { RunStep } from '../flow/define-flow.js';
+import type { Workspace } from '../ports/workspace.js';
 import {
   applyDesignGate,
   buildContext,

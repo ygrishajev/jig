@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import { runId } from '../../../tests/support/builders.js';
 import { createRunWorktree } from '../../../tests/support/run-worktree.js';
 import { MergeFailed } from '../../domain/errors.js';

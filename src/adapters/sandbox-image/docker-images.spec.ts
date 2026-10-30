@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+
 import type { ImageBuildSpec } from '../../ports/sandbox-images.js';
 import { dockerBuildArguments } from './docker-images.js';
 

@@ -2,9 +2,7 @@ import { faker } from '@faker-js/faker';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { AgentRunFailed, MergeFailed } from '../domain/errors.js';
-import type { RunState } from '../domain/run-state.js';
-import type { RunSettings } from '../domain/settings.js';
+
 import {
   aFeaturePlan,
   aRunStateIn,
@@ -12,8 +10,11 @@ import {
   runId,
   runSettings,
 } from '../../tests/support/builders.js';
-import { FakeAgentSession, type AgentScript } from '../../tests/support/fakes.js';
+import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { AgentRunFailed, MergeFailed } from '../domain/errors.js';
+import type { RunState } from '../domain/run-state.js';
+import type { RunSettings } from '../domain/settings.js';
 import type { RunStep } from '../flow/define-flow.js';
 import { describePullRequest, mergeRunBranch } from './finishing.js';
 

@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+
 import { AgentOutputInvalid } from '../../domain/errors.js';
 import { extractOutput, OUTPUT_TAG } from './structured-output.js';
 

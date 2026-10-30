@@ -6,8 +6,9 @@ import {
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 import { describe, expect, it } from 'vitest';
-import type { RunEvent, StepLocation } from '../domain/events.js';
+
 import { aFeaturePlan, anImplementation, runId, sliceId } from '../../tests/support/builders.js';
+import type { RunEvent, StepLocation } from '../domain/events.js';
 import { TracingObserver } from './tracing-observer.js';
 
 describe('TracingObserver', () => {

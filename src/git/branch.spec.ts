@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
+
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { getCurrentBranch } from './branch.js';
 

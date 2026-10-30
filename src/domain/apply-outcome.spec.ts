@@ -1,10 +1,11 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+
 import {
   aCommit,
-  anImplementation,
   aContext,
   aFeaturePlan,
+  anImplementation,
   aPlannedSlice,
   aRunState,
   aSlice,

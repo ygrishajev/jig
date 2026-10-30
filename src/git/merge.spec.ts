@@ -1,12 +1,13 @@
 import { faker } from '@faker-js/faker';
 import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { GitResponseError, simpleGit, type SimpleGit } from 'simple-git';
+import { GitResponseError, type SimpleGit, simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
+
 import { createRemote, createTempRepo } from '../../tests/support/temp-repo.js';
+import { RemoteUnavailable } from '../domain/errors.js';
 import { GitCommandFailed, isBranchMergedInto, mergeBranchInto, MergeRefused } from './merge.js';
 import { commitAll } from './repository.js';
-import { RemoteUnavailable } from '../domain/errors.js';
 
 describe('mergeBranchInto', () => {
   it('merges a branch into the checked-out base and returns the merge commit', async () => {

@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { describe, expect, it } from 'vitest';
+
 import { runId } from '../../tests/support/builders.js';
 import { RecordingEventSink } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
@@ -8,8 +9,8 @@ import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { loadConfig, type SdlcConfig } from '../config/load-config.js';
 import {
   createAppContainer,
-  sandcastleSessionOptions,
   type OpenSessionInput,
+  sandcastleSessionOptions,
 } from './container.js';
 
 describe('sandcastleSessionOptions', () => {

@@ -1,4 +1,5 @@
-import { claudeCode, opencode, type AgentProvider } from '@ai-hero/sandcastle';
+import { type AgentProvider, claudeCode, opencode } from '@ai-hero/sandcastle';
+
 import { ConfigInvalid } from '../../domain/errors.js';
 
 /** Used when a step names claude without a model; the CLI accepts the alias. */

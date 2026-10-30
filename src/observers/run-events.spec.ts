@@ -1,7 +1,8 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
-import type { RunEvent } from '../domain/events.js';
+
 import { runId } from '../../tests/support/builders.js';
+import type { RunEvent } from '../domain/events.js';
 import { observe, RunEvents } from './run-events.js';
 
 describe('RunEvents', () => {

@@ -1,7 +1,8 @@
 import { Command } from 'commander';
-import { initSandbox, type InitResult } from '../../app/init-sandbox.js';
-import { ensureSandboxImage } from '../../app/sandbox-image.js';
+
 import type { LogFormat } from '../../adapters/logging/create-logger.js';
+import { type InitResult, initSandbox } from '../../app/init-sandbox.js';
+import { ensureSandboxImage } from '../../app/sandbox-image.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 import { logFormatOption } from './run.js';

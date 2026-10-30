@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
+
 import {
   aContext,
   aFeaturePlan,
@@ -10,9 +11,9 @@ import {
   aSlice,
   designDocs,
 } from '../../../tests/support/builders.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { LocalRunStore } from './local-run-store.js';
 import { stateDirectory } from './run-paths.js';
-import { tempDirectory } from '../../../tests/support/temp-directory.js';
 
 describe('LocalRunStore', () => {
   it('loads back the run it saved', async () => {

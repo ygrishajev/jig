@@ -3,13 +3,14 @@ import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
-import type { RunId } from '../../domain/run-id.js';
-import { RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
-import { runBranchFor } from '../../domain/run-state.js';
+
 import { aFeaturePlan, aRunState, aSlice } from '../../../tests/support/builders.js';
-import { createRemote } from '../../../tests/support/temp-repo.js';
-import { GitRemoteRunStore } from './git-remote-run-store.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { createRemote } from '../../../tests/support/temp-repo.js';
+import { RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
+import type { RunId } from '../../domain/run-id.js';
+import { runBranchFor } from '../../domain/run-state.js';
+import { GitRemoteRunStore } from './git-remote-run-store.js';
 
 describe('GitRemoteRunStore', () => {
   it('lets another clone pick up a run saved on this one, with its branch', async () => {

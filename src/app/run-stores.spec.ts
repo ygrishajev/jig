@@ -1,12 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import { aRunState } from '../../tests/support/builders.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { loadConfig } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { openRunStore } from './run-stores.js';
-import { tempDirectory } from '../../tests/support/temp-directory.js';
 
 describe('openRunStore', () => {
   it('saves to the local store by default', async () => {

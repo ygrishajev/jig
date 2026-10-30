@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+
 import { ConfigInvalid } from '../../domain/errors.js';
 import { AGENTS, collectCredentials } from './agents.js';
 

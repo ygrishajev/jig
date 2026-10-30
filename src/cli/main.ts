@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { Command } from 'commander';
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Command } from 'commander';
 import { z } from 'zod';
+
 import { registerRunCommand } from './commands/run.js';
 import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';

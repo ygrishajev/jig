@@ -4,6 +4,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
+
+import { scriptWholeRun } from '../../tests/support/agent-scripts.js';
+import { aRunState, runId } from '../../tests/support/builders.js';
+import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { openRunWorktree } from '../../tests/support/open-run-worktree.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
+import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { loadConfig } from '../config/load-config.js';
@@ -16,12 +23,6 @@ import {
 } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
-import { scriptWholeRun } from '../../tests/support/agent-scripts.js';
-import { aRunState, runId } from '../../tests/support/builders.js';
-import { FakeAgentSession } from '../../tests/support/fakes.js';
-import { tempDirectory } from '../../tests/support/temp-directory.js';
-import { createTempRepo } from '../../tests/support/temp-repo.js';
-import { openRunWorktree } from '../../tests/support/open-run-worktree.js';
 import { createAppContainer, type OpenSessionInput } from './container.js';
 import { runInputFrom, runSdlc } from './run-sdlc.js';
 

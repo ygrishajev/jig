@@ -2,8 +2,9 @@ import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
+
 import type { RunId } from '../../domain/run-id.js';
-import { stuckSlice, type RunState } from '../../domain/run-state.js';
+import { type RunState, stuckSlice } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 

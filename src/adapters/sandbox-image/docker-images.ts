@@ -1,5 +1,6 @@
 import { execa } from 'execa';
 import { z } from 'zod';
+
 import type { ImageBuildSpec, SandboxImages } from '../../ports/sandbox-images.js';
 
 /** `docker image inspect` prints `null` for an image built without labels. */

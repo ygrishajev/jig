@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
+
 import { ConfigInvalid } from '../domain/errors.js';
 import { CONFIG_FILE } from './load-config.js';
 

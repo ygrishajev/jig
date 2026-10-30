@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+
 import type { RunEvent } from '../domain/events.js';
 import type { EventSink } from '../ports/observability.js';
 

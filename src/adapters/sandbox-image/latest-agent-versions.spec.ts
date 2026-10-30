@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+
 import { latestAgentVersions, type RegistryLookup } from './latest-agent-versions.js';
 
 describe('latestAgentVersions', () => {

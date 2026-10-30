@@ -6,6 +6,17 @@ import {
 } from '@opentelemetry/sdk-trace-base';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
+
+import {
+  aContext,
+  aFeaturePlan,
+  anImplementation,
+  aRunState,
+  aSlice,
+  designDocs,
+  runSettings,
+} from '../../tests/support/builders.js';
+import { InMemoryRunStore, RecordingEventSink, SteppingClock } from '../../tests/support/fakes.js';
 import {
   AgentOutputInvalid,
   AgentRunFailed,
@@ -20,16 +31,6 @@ import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { EventSink } from '../ports/observability.js';
 import type { Workspace } from '../ports/workspace.js';
-import {
-  anImplementation,
-  aContext,
-  aFeaturePlan,
-  aRunState,
-  aSlice,
-  designDocs,
-  runSettings,
-} from '../../tests/support/builders.js';
-import { InMemoryRunStore, RecordingEventSink, SteppingClock } from '../../tests/support/fakes.js';
 import {
   defineRunFlow,
   defineSliceFlow,

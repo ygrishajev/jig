@@ -1,5 +1,5 @@
 import type { RunStateIn } from '../domain/run-state.js';
-import { slicesInOrder, type Slice } from '../domain/slice.js';
+import { type Slice, slicesInOrder } from '../domain/slice.js';
 
 export const DEFAULT_PR_TEMPLATE = [
   '## What',

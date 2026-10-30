@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
+
 import { runId } from '../../../tests/support/builders.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { isWorkingTreeClean } from '../../git/repository.js';

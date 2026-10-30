@@ -1,4 +1,4 @@
-import { simpleGit, type SimpleGit } from 'simple-git';
+import { type SimpleGit, simpleGit } from 'simple-git';
 
 export function openRepo(cwd: string): SimpleGit {
   return simpleGit({ baseDir: cwd });

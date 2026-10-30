@@ -2,6 +2,7 @@ import { faker } from '@faker-js/faker';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
+
 import { tempDirectory } from './temp-directory.js';
 
 export interface TempRepo {

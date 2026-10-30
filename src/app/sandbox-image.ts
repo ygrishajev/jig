@@ -1,9 +1,11 @@
+import { defaultImageName } from '@ai-hero/sandcastle/sandboxes/docker';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { defaultImageName } from '@ai-hero/sandcastle/sandboxes/docker';
 import type { Logger } from 'pino';
+
 import {
+  type AgentInstall,
   agentLayerDockerfile,
   DOCKERFILE,
   imageLabels,
@@ -11,7 +13,6 @@ import {
   parseAgentVersions,
   recipeHash,
   SANDBOX_DIRECTORY,
-  type AgentInstall,
 } from '../adapters/sandbox-image/image-recipe.js';
 import { AGENTS } from '../adapters/sandcastle/agents.js';
 import { configuredSteps, type SdlcConfig } from '../config/load-config.js';

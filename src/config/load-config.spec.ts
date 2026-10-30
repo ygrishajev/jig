@@ -3,8 +3,9 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
-import { CONFIG_FILE, loadConfig } from './load-config.js';
+
 import { tempDirectory } from '../../tests/support/temp-directory.js';
+import { CONFIG_FILE, loadConfig } from './load-config.js';
 
 describe('loadConfig', () => {
   it('runs every step on claude, merging by hand, when the repository has no config', async () => {

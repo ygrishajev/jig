@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+
 import { aRunState, aSlice } from '../../../tests/support/builders.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { nextStep } from './run.js';

@@ -1,22 +1,23 @@
+import { faker } from '@faker-js/faker';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { faker } from '@faker-js/faker';
 import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
+
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import { loadConfig } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
 import {
+  type AgentNeeded,
+  type AgentUpdatePolicy,
   agentVersion,
   baseImageName,
   ensureSandboxImage,
   planImageBuild,
   sandboxImageName,
-  type AgentNeeded,
-  type AgentUpdatePolicy,
 } from './sandbox-image.js';
-import { tempDirectory } from '../../tests/support/temp-directory.js';
 
 class FakeSandboxImages implements SandboxImages {
   readonly built: ImageBuildSpec[] = [];

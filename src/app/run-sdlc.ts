@@ -1,21 +1,22 @@
+import type { AwilixContainer } from 'awilix';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import type { AwilixContainer } from 'awilix';
-import { getCurrentBranch } from '../git/branch.js';
-import { RunRequestInvalid } from '../domain/errors.js';
-import { parseRunId, runIdSchema, type RunId } from '../domain/run-id.js';
-import { startRun, type RunState } from '../domain/run-state.js';
-import { finalStatus } from '../flow/define-flow.js';
-import { runEngine, type EngineResult } from '../flow/engine.js';
-import { runFlow } from '../flow/run-flow.js';
-import { summarizeMetrics } from '../observers/metrics.js';
-import { closeRunScope, openRunScope, type AppCradle } from './container.js';
-import { startTelemetry, telemetryEnabled } from '../adapters/telemetry/open-telemetry.js';
-import { lockRun } from '../adapters/local-store/run-lock.js';
+
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
+import { lockRun } from '../adapters/local-store/run-lock.js';
+import { startTelemetry, telemetryEnabled } from '../adapters/telemetry/open-telemetry.js';
+import { RunRequestInvalid } from '../domain/errors.js';
+import { parseRunId, type RunId, runIdSchema } from '../domain/run-id.js';
+import { type RunState, startRun } from '../domain/run-state.js';
+import { finalStatus } from '../flow/define-flow.js';
+import { type EngineResult, runEngine } from '../flow/engine.js';
+import { runFlow } from '../flow/run-flow.js';
+import { getCurrentBranch } from '../git/branch.js';
+import { summarizeMetrics } from '../observers/metrics.js';
+import type { RunStore } from '../ports/run-store.js';
+import { type AppCradle, closeRunScope, openRunScope } from './container.js';
 import { openRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
-import type { RunStore } from '../ports/run-store.js';
 
 /**
  * Start a run from a request file — named `runId`, or a fresh id — or resume the run `resume`.

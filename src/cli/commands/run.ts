@@ -1,7 +1,8 @@
 import { Command, Option } from 'commander';
-import { runInputFrom, runSdlc, type RunReport } from '../../app/run-sdlc.js';
+
 import { defaultLogFormat, type LogFormat } from '../../adapters/logging/create-logger.js';
-import { runBranchFor, stuckSlice, type RunState } from '../../domain/run-state.js';
+import { runInputFrom, type RunReport, runSdlc } from '../../app/run-sdlc.js';
+import { runBranchFor, type RunState, stuckSlice } from '../../domain/run-state.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 

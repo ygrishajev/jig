@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+
 import { initSummary } from './sandbox.js';
 
 describe('initSummary', () => {

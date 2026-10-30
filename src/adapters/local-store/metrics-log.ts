@@ -1,13 +1,14 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, truncateSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+
 import { agentRoleSchema } from '../../domain/agent-role.js';
 import { MetricsLogCorrupt } from '../../domain/errors.js';
+import { stepLocationSchema } from '../../domain/events.js';
 import { outcomeTypeSchema } from '../../domain/outcome.js';
-import { runIdSchema, type RunId } from '../../domain/run-id.js';
+import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import type { MetricRecord } from '../../observers/metrics.js';
 import { stateDirectory } from './run-paths.js';
-import { stepLocationSchema } from '../../domain/events.js';
 
 const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.discriminatedUnion(
   'kind',

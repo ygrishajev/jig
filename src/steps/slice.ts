@@ -1,6 +1,7 @@
 import { z } from 'zod';
+
 import type { RunState } from '../domain/run-state.js';
-import { slicesInOrder, type Slice } from '../domain/slice.js';
+import { type Slice, slicesInOrder } from '../domain/slice.js';
 import type { SliceStep, StepPorts } from '../flow/define-flow.js';
 import { implementPrompt, nothingChangedFeedback, reviewPrompt } from '../prompts/slice.js';
 

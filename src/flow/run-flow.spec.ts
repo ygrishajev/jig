@@ -1,7 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
-import { startRun, type RunState } from '../domain/run-state.js';
-import type { RunSettings } from '../domain/settings.js';
+
 import {
   aDescription,
   approval,
@@ -16,6 +15,8 @@ import {
   SteppingClock,
 } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { type RunState, startRun } from '../domain/run-state.js';
+import type { RunSettings } from '../domain/settings.js';
 import { runEngine } from './engine.js';
 import { runFlow } from './run-flow.js';
 

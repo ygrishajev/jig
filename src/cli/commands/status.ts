@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+
 import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
 import { readRunStatus, type RunStatus } from '../../app/run-status.js';
 import { parseRunId } from '../../domain/run-id.js';

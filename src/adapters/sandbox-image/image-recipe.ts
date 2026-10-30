@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+
 import { ConfigInvalid } from '../../domain/errors.js';
 
 export const SANDBOX_DIRECTORY = '.sandcastle';

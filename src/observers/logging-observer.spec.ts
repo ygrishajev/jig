@@ -2,8 +2,9 @@ import { faker } from '@faker-js/faker';
 import { Writable } from 'node:stream';
 import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
-import type { RunEvent, StepLocation } from '../domain/events.js';
+
 import { aFeaturePlan, runId, sliceId } from '../../tests/support/builders.js';
+import type { RunEvent, StepLocation } from '../domain/events.js';
 import { LoggingObserver } from './logging-observer.js';
 
 describe('LoggingObserver', () => {

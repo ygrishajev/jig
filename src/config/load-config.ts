@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+
 import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
-import { byRole, type AgentRole } from '../domain/agent-role.js';
+import { type AgentRole, byRole } from '../domain/agent-role.js';
 
 export const CONFIG_FILE = 'sdlc.config.json';
 

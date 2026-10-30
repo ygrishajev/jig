@@ -8,12 +8,12 @@
 //   direct            repo opened by its real path                  → expect pass
 //   symlink-raw       repo opened through a symlink, path as given  → expect git to fail (the bug)
 //   symlink-resolved  same symlink, realpath() applied first        → expect pass (sdlc's fix)
+import { createSandbox } from '@ai-hero/sandcastle';
+import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createSandbox } from '@ai-hero/sandcastle';
-import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 
 const IMAGE = process.env.SPIKE_IMAGE ?? 'sdlc-spike';
 

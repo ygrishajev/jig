@@ -4,12 +4,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
-import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
-import type { ExecResult } from '../ports/agent-session.js';
-import type { SandboxImages } from '../ports/sandbox-images.js';
+
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
 import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
+import type { ExecResult } from '../ports/agent-session.js';
+import type { SandboxImages } from '../ports/sandbox-images.js';
 import { createAppContainer, type OpenSessionInput } from './container.js';
 import { initSandbox } from './init-sandbox.js';
 

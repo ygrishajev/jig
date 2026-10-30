@@ -1,6 +1,6 @@
 import type { Outcome } from './outcome.js';
 import { currentSlice, type RunState } from './run-state.js';
-import { sliceFromPlan, type Slice } from './slice.js';
+import { type Slice, sliceFromPlan } from './slice.js';
 
 /**
  * Folds a step's outcome into run state. Only data changes here — which phase or slice

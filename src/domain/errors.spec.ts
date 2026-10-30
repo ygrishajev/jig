@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
+
 import {
   AgentOutputInvalid,
   AgentRunFailed,
@@ -12,8 +13,8 @@ import {
   RunRequestInvalid,
   RunStateConflict,
   SandboxUnavailable,
-  SetupCommandFailed,
   type SdlcError,
+  SetupCommandFailed,
 } from './errors.js';
 
 describe('messageOf', () => {

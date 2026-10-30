@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
+
 import { aRunState } from '../../../tests/support/builders.js';
 import { InMemoryRunStore } from '../../../tests/support/fakes.js';
 import type { RunId } from '../../domain/run-id.js';

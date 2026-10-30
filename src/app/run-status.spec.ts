@@ -4,14 +4,15 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
+
+import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
+import { createRemote } from '../../tests/support/temp-repo.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { loadConfig } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import { parseRunId, type RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
-import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
-import { createRemote } from '../../tests/support/temp-repo.js';
 import { createAppContainer } from './container.js';
 import { readRunStatus } from './run-status.js';
 

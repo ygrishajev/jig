@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { pino, type DestinationStream, type Logger } from 'pino';
+import { type DestinationStream, type Logger, pino } from 'pino';
 import pretty from 'pino-pretty';
 
 export type LogFormat = 'pretty' | 'json';
