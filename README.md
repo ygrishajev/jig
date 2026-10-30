@@ -130,6 +130,8 @@ expires after 30 seconds.
 
 ## Development
 
+Development and CI use Node 26.13.0, pinned in `package.json` through Volta.
+
 Run all validations concurrently, with each check's stdout and stderr printed together
 when it finishes. Failed checks do not cancel the others; any failure makes the command fail.
 The default includes coverage (which runs the test suite) and the slow mutation check.
