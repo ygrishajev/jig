@@ -21,10 +21,25 @@ import {
   SetupCommandFailed,
 } from '../../domain/errors.js';
 import type { AgentRole } from '../../ports/agent-session.js';
+import { AGENTS } from './agents.js';
 import { type SandboxFactory, SandcastleSession } from './sandcastle-session.js';
 import { OUTPUT_TAG } from './structured-output.js';
 
 describe('SandcastleSession', () => {
+  it('uses Codex resume syntax when correcting invalid output', async () => {
+    const answer = { summary: faker.lorem.sentence() };
+    const { open, runs, agents } = await setup({
+      replies: [{ stdout: faker.lorem.sentence() }, { stdout: tagged(answer) }],
+    });
+    agents.planner = AGENTS.codex.create(faker.word.noun());
+    expect(await (await open()).runForOutput(outputCall())).toEqual(answer);
+    const prompt = faker.lorem.sentence();
+    const command = runs[1].agent.buildPrintCommand({ ...printOptions(), prompt });
+    expect(command.command).toContain('codex exec resume --last');
+    expect(command.command).not.toContain('--continue');
+    expect(command.stdin).toBe(prompt);
+  });
+
   it('returns the result the agent tagged in its reply', async () => {
     const answer = { summary: faker.lorem.sentence() };
     const { open } = await setup({ replies: [{ stdout: tagged(answer) }] });

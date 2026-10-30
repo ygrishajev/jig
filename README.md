@@ -159,3 +159,57 @@ cognitive complexity above 15 (errors), using ESLint and SonarJS respectively.
 Duplication checks fail when jscpd finds duplicated production code with its default clone
 size settings; specs are excluded. Reports go to `reports/duplication/`, and coverage reports
 go to `coverage/`. Stryker remains the mutation-testing tool.
+
+`vitest.workspace.ts` defines the named `unit` and `e2e` projects. The root config
+loads `vitest.unit.workspace.ts` by default, including for mutation testing.
+`npm test`, coverage, and watch also select `unit` explicitly. The E2E script selects
+the full workspace with `--workspace vitest.workspace.ts --project e2e`.
+
+### Live E2E
+
+`npm run test:e2e` builds the CLI, then runs `tests/e2e/feature.spec.ts` through a
+named `e2e` Vitest project for one real pipeline in a fresh temporary
+repository. It uses credentials from the environment, with optional defaults from
+the ignored `tests/e2e/.env`. It is opt-in and is not part of `npm test` or `validate`.
+Docker must be running; the check builds an image and makes paid/subscription agent calls.
+
+Copy `tests/e2e/.env.example` to `tests/e2e/.env` and fill in the desired credentials
+and models before running the check.
+
+Available agents are assigned in order across planner, implementer, reviewer, and describer:
+Claude, OpenCode via OpenRouter, then Codex. With all three available, Claude plans and
+describes, OpenCode implements, and Codex reviews. With fewer available, roles reuse them.
+
+- Claude: `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`; model defaults to `haiku`,
+  overridable with `SDLC_E2E_CLAUDE_MODEL`.
+- OpenRouter: `OPENROUTER_API_KEY` and `SDLC_E2E_OPENROUTER_MODEL=openrouter/<model>`
+  (falls back to `OPENCODE_MODEL`).
+- Codex: set `SDLC_E2E_CODEX_MODEL` (the sample uses `gpt-6-luna`). Prefer an explicit
+  `SDLC_CODEX_AUTH_DIR` containing a dedicated `auth.json`. Otherwise, the E2E discovers
+  `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json`. This intentionally depends
+  on an existing machine login. A discovered full login enables Codex automatically.
+  The full ChatGPT token bundle is required, including ID, access, refresh, and account
+  fields; extracting `tokens.access_token` into `CODEX_ACCESS_TOKEN` does not work here.
+  A missing file or a non-subscription login leaves Codex unavailable; malformed files
+  fail setup without printing their contents. Keychain-only logins are not supported.
+
+Codex authentication is an explicit exception to the usual env-only credential rule.
+The production CLI accepts the auth directory through `SDLC_CODEX_AUTH_DIR`; it does not
+auto-discover a host login. The adapter locks that login, creates a private temporary
+directory with only `auth.json` (file mode 0600), and mounts the directory writable at
+`/home/agent/.codex`. No other host Codex configuration or sessions are mounted. Codex
+can refresh credentials normally. After the sandbox closes, valid refreshed credentials
+are atomically written back to the selected cache, and the private copy is removed.
+If the source login changed meanwhile, it is preserved and the private cache is retained
+with an error rather than overwriting the newer login. Credentials never enter repository
+artifacts, logs, or Docker image layers. Do not share a login across concurrent jobs or
+machines; sdlc's lock cannot coordinate with independent Codex clients.
+
+The check first proves the supplied six tests fail, then requires a completed run,
+one approved slice, planning/description artifacts, every pipeline outcome, a merged
+branch, and a clean repository. Only `summary.mjs` may change. The original tests must
+remain byte-for-byte identical and pass independently inside a fresh read-only,
+network-disabled container after the merge. Agent wording, timings, and token counts
+are not fixed. Each CLI invocation has a 15-minute timeout; Vitest limits the full test
+to 32 minutes, with no automatic retries. Cleanup cancels pending commands. Failed repositories are
+retained at the printed temporary path; successful ones are removed.

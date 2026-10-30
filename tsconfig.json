@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "tests/support", "scripts"]
+  "include": ["src", "tests/support", "tests/e2e", "scripts", "vitest*.ts"]
 }

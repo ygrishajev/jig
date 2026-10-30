@@ -222,6 +222,9 @@ export function sandcastleSessionOptions(
     repoRoot,
     ...run,
     imageName: sandboxImageName(repoRoot, config),
+    codexAuthDirectory: Object.values(steps).some((step) => step.provider === 'codex')
+      ? environment.SDLC_CODEX_AUTH_DIR
+      : undefined,
     credentials: {
       ...collectCredentials(Object.values(steps), environment),
       ...sandboxTelemetryEnvironment(environment),

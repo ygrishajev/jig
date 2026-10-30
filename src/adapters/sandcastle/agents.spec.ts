@@ -5,6 +5,20 @@ import { ConfigInvalid } from '../../domain/errors.js';
 import { AGENTS, collectCredentials } from './agents.js';
 
 describe('collectCredentials', () => {
+  it('passes the explicit Codex auth directory without forwarding unrelated credentials', () => {
+    const directory = faker.system.directoryPath();
+    expect(
+      collectCredentials([{ provider: 'codex', model: faker.word.noun() }], {
+        SDLC_CODEX_AUTH_DIR: directory,
+        OPENAI_API_KEY: faker.string.alphanumeric(40),
+      }),
+    ).toEqual({ SDLC_CODEX_AUTH_DIR: directory });
+  });
+
+  it('requires an explicit model for Codex', () => {
+    expect(() => AGENTS.codex.create()).toThrow(ConfigInvalid);
+  });
+
   it('passes on whichever claude credential is set', () => {
     const token = faker.string.alphanumeric(40);
 

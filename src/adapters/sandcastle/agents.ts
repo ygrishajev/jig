@@ -1,4 +1,4 @@
-import { type AgentProvider, claudeCode, opencode } from '@ai-hero/sandcastle';
+import { type AgentProvider, claudeCode, codex, opencode } from '@ai-hero/sandcastle';
 
 import { ConfigInvalid } from '../../domain/errors.js';
 
@@ -24,6 +24,15 @@ export const AGENTS = {
     npmPackage: 'opencode-ai',
     credentialKeys: (model) => [`${modelProvider(requireModel(model)).toUpperCase()}_API_KEY`],
     create: (model) => opencode(requireModel(model)),
+  },
+  codex: {
+    npmPackage: '@openai/codex',
+    credentialKeys: () => ['SDLC_CODEX_AUTH_DIR'],
+    create: (model?: string) => {
+      if (!model)
+        throw new ConfigInvalid('codex needs an explicit model — set "model" on the step.');
+      return codex(model, { captureSessions: false });
+    },
   },
 } satisfies Record<string, AgentDefinition>;
 

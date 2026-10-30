@@ -30,6 +30,7 @@ import type {
   ExecResult,
 } from '../../ports/agent-session.js';
 import type { EventSink } from '../../ports/observability.js';
+import { type CodexAuthCache, openCodexAuthCache } from './codex-auth.js';
 import { extractOutput, OUTPUT_TAG, outputInstruction } from './structured-output.js';
 import { usageFromStreamLine } from './usage.js';
 
@@ -65,6 +66,7 @@ export interface SandcastleSessionOptions {
   baseBranch: string;
   imageName: string;
   credentials: Record<string, string>;
+  codexAuthDirectory?: string;
   agents: Record<AgentRole, AgentProvider>;
   skipCommitSigning: boolean;
   /** Runs once inside the sandbox before any agent, e.g. `npm ci`. */
@@ -83,6 +85,7 @@ export class SandcastleSession implements AgentSession {
   private constructor(
     private readonly sandbox: Sandbox,
     private readonly options: SandcastleSessionOptions,
+    private readonly codexAuth?: CodexAuthCache,
   ) {}
 
   /**
@@ -92,17 +95,29 @@ export class SandcastleSession implements AgentSession {
   static async open(options: SandcastleSessionOptions, start: SandboxFactory = createSandbox) {
     const repoRoot = await realpath(options.repoRoot);
     await ignoreSandcastleDirectory(repoRoot);
+    const codexAuth = options.codexAuthDirectory
+      ? await openCodexAuthCache(options.codexAuthDirectory)
+      : undefined;
+    const mounts = codexAuth
+      ? [{ hostPath: codexAuth.directory, sandboxPath: '/home/agent/.codex' }]
+      : [];
     const sandbox = await start({
       branch: runBranchFor(options.runId),
       baseBranch: options.baseBranch,
       cwd: repoRoot,
-      sandbox: docker({ imageName: options.imageName, env: options.credentials }),
+      sandbox: docker({ imageName: options.imageName, env: options.credentials, mounts }),
       hooks: sandboxHooks(options),
-    }).catch((error: unknown) => {
+    }).catch(async (error: unknown) => {
+      await codexAuth?.close();
       throw sandboxStartFailure(error);
     });
-    if (options.setupCommand) await runSetupCommand(sandbox, options.setupCommand, options);
-    return new SandcastleSession(sandbox, options);
+    try {
+      if (options.setupCommand) await runSetupCommand(sandbox, options.setupCommand, options);
+      return new SandcastleSession(sandbox, options, codexAuth);
+    } catch (error) {
+      await codexAuth?.close();
+      throw error;
+    }
   }
 
   get worktreePath() {
@@ -128,7 +143,11 @@ export class SandcastleSession implements AgentSession {
   }
 
   async close() {
-    await this.sandbox.close();
+    try {
+      await this.sandbox.close();
+    } finally {
+      await this.codexAuth?.close();
+    }
   }
 
   private async parseWithCorrections<T>(role: AgentRole, firstReply: string, schema: ZodType<T>) {
@@ -191,6 +210,12 @@ function continuing(agent: AgentProvider): AgentProvider {
     ...agent,
     buildPrintCommand: (options) => {
       const built = agent.buildPrintCommand(options);
+      if (agent.name === 'codex') {
+        return {
+          ...built,
+          command: `${built.command.replace(/^codex exec\b/, 'codex exec resume --last')} -`,
+        };
+      }
       return { ...built, command: `${built.command} --continue` };
     },
   };
