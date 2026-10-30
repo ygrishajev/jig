@@ -19,7 +19,10 @@ npm run build
 npm link   # or: node dist/cli/main.js <command>
 ```
 
-Requires Node >=20 and Docker running locally.
+Requires Node >=20, Docker running locally, and git 2.38 or newer (sdlc checks merges with
+`git merge-tree --write-tree`). Run sdlc from the repository's root. Its commits and the final
+merge are made on the host with your git identity, so `user.name` and `user.email` must be set;
+with the default `commitSigning: "repo"`, your signing setup must work without a prompt.
 
 ### Installing from another repo
 
@@ -90,7 +93,11 @@ expires after 30 seconds.
   anything else.
 - **Credentials** come from the environment and go into the container as env vars:
   claude needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`; opencode needs its provider's
-  key, e.g. `OPENROUTER_API_KEY` for an `openrouter/...` model.
+  key, e.g. `OPENROUTER_API_KEY` for an `openrouter/...` model. Sandcastle also injects every
+  key listed in `.sandcastle/.env`, if the repository has one; sdlc warns with their names.
+- **What the sandbox sees.** Besides the run's worktree, the repository's `.git` directory is
+  mounted writable, because the agents use git. Anything in `.git/config` is visible to them —
+  in GitHub Actions, check out with `persist-credentials: false` so the job token is not there.
 
 ## Configuration
 
@@ -126,7 +133,9 @@ expires after 30 seconds.
   `metrics.jsonl` has one line per step and agent call.
 - `SDLC_IMAGE_CACHE=gha` builds through buildx with the GitHub Actions cache.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` exports the run as an OpenTelemetry trace and turns on
-  Claude Code's own telemetry in the sandbox.
+  Claude Code's own telemetry in the sandbox. Every `OTEL_*` variable goes into the sandbox
+  with it, `OTEL_EXPORTER_OTLP_HEADERS` included, and the endpoint must be reachable from
+  inside the container (`localhost` there is the container).
 
 ## Development
 
@@ -172,6 +181,7 @@ named `e2e` Vitest project for one real pipeline in a fresh temporary
 repository. It uses credentials from the environment, with optional defaults from
 the ignored `tests/e2e/.env`. It is opt-in and is not part of `npm test` or `validate`.
 Docker must be running; the check builds an image and makes paid/subscription agent calls.
+The script loads that file with `--env-file-if-exists`, which needs Node 22.9 or newer.
 
 Copy `tests/e2e/.env.example` to `tests/e2e/.env` and fill in the desired credentials
 and models before running the check.
