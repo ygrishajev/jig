@@ -20,6 +20,12 @@ describe('MetricsLog', () => {
     expect(log.readAll()).toEqual(records);
   });
 
+  it('reads no records for a run that has none yet', async () => {
+    const { log } = await setup();
+
+    expect(log.readAll()).toEqual([]);
+  });
+
   it('leaves out a last line cut short by a process killed mid-append', async () => {
     const { log, id, appendRaw } = await setup();
     const complete = [stepRecord(id), agentCallRecord(id)];
