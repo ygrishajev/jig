@@ -17,6 +17,7 @@ import {
 import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
 import { AGENTS, collectCredentials } from '../adapters/sandcastle/agents.js';
+import { sandcastleEnvKeys } from '../adapters/sandcastle/sandcastle-env.js';
 import {
   SandcastleSession,
   type SandcastleSessionOptions,
@@ -122,9 +123,7 @@ export function createAppContainer(input: {
         }),
     ).singleton(),
     latestVersions: asValue(latestAgentVersions),
-    openSession: asFunction(({ repoRoot, config, environment }: AppCradle) =>
-      sandcastleOpener(repoRoot, config, environment),
-    ).singleton(),
+    openSession: asFunction((cradle: AppCradle) => sandcastleOpener(cradle)).singleton(),
   });
   return container;
 }
@@ -209,9 +208,21 @@ export async function closeRunScope(scope: AwilixContainer<RunCradle>) {
   }
 }
 
-function sandcastleOpener(repoRoot: string, config: SdlcConfig, environment: NodeJS.ProcessEnv) {
-  return (input: OpenSessionInput): Promise<RunSession> =>
-    SandcastleSession.open(sandcastleSessionOptions(repoRoot, config, input, environment));
+function sandcastleOpener({
+  repoRoot,
+  config,
+  environment,
+  logger,
+}: Pick<AppCradle, 'repoRoot' | 'config' | 'environment' | 'logger'>) {
+  return async (input: OpenSessionInput): Promise<RunSession> => {
+    const injected = await sandcastleEnvKeys(repoRoot);
+    if (injected.length > 0) {
+      logger.warn(
+        `.sandcastle/.env also puts ${injected.join(', ')} into the sandbox — sdlc passes credentials from the environment; remove the file unless the agents need these`,
+      );
+    }
+    return SandcastleSession.open(sandcastleSessionOptions(repoRoot, config, input, environment));
+  };
 }
 
 /** What the run's sandbox is started with: the configured agents, their credentials and limits. */
