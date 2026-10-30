@@ -11,7 +11,13 @@ describe('sandcastleEnvKeys', () => {
     const secret = faker.string.alphanumeric(40);
     const { repoRoot, writeEnvFile } = await setup();
     await writeEnvFile(
-      ['# a comment', '', `GITHUB_TOKEN=${secret}`, ' EMPTY_HERE = ', 'not a variable'].join('\n'),
+      [
+        '  # OLD_TOKEN=revoked',
+        '',
+        `GITHUB_TOKEN=${secret}`,
+        ' EMPTY_HERE = ',
+        'not a variable',
+      ].join('\n'),
     );
 
     const keys = await sandcastleEnvKeys(repoRoot);

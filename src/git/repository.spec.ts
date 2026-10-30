@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
@@ -57,10 +57,10 @@ describe('git repository helpers', () => {
     const subdirectory = path.join(repo, faker.word.noun());
     await mkdir(subdirectory);
 
-    const checking = ensureRepositoryRoot(subdirectory);
+    const refusal = await ensureRepositoryRoot(subdirectory).catch((error: unknown) => error);
 
-    await expect(checking).rejects.toBeInstanceOf(ConfigInvalid);
-    await expect(checking).rejects.toThrow(path.basename(repo));
+    expect(refusal).toBeInstanceOf(ConfigInvalid);
+    expect((refusal as ConfigInvalid).message).toMatch(wholePath(await realpath(repo)));
   });
 
   it('accepts a directory that is not a repository yet', async () => {
@@ -79,3 +79,8 @@ describe('git repository helpers', () => {
     return { repo: dir, writeUntrackedFile };
   }
 });
+
+/** Matches the path itself, not merely as the start of a longer path below it. */
+function wholePath(directory: string) {
+  return new RegExp(`${directory.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!/)`);
+}

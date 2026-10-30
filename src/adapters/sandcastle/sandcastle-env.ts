@@ -13,7 +13,7 @@ export async function sandcastleEnvKeys(repoRoot: string) {
   return content.split('\n').flatMap((line) => {
     const trimmed = line.trim();
     const separator = trimmed.indexOf('=');
-    if (!trimmed || trimmed.startsWith('#') || separator === -1) return [];
+    if (trimmed.startsWith('#') || separator === -1) return [];
     return [trimmed.slice(0, separator).trim()];
   });
 }
