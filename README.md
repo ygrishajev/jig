@@ -130,10 +130,30 @@ expires after 30 seconds.
 
 ## Development
 
+Run all validations concurrently, with each check's stdout and stderr printed together
+when it finishes. Failed checks do not cancel the others; any failure makes the command fail.
+The default includes coverage (which runs the test suite) and the slow mutation check.
+
+```bash
+npm run validate
+npm run validate -- --skip test:mutation
+npm run validate -- lint typecheck
+npm run validate -- --skip test:mutation test:coverage
+npm run validate -- --help
+```
+
 ```bash
 npm test              # fast suite
 npm run lint
+npm run lint:duplication # jscpd, production source only
+npm run test:coverage    # Vitest V8, text + HTML + LCOV
 npm run format:check
 npm run test:mutation # StrykerJS, slow (~30 min)
 npm run secretlint
 ```
+
+Lint checks production functions for cyclomatic complexity above 10 (errors) and
+cognitive complexity above 15 (errors), using ESLint and SonarJS respectively.
+Duplication checks fail when jscpd finds duplicated production code with its default clone
+size settings; specs are excluded. Reports go to `reports/duplication/`, and coverage reports
+go to `coverage/`. Stryker remains the mutation-testing tool.

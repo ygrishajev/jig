@@ -1,0 +1,7 @@
+{
+  "path": ["src"],
+  "ignore": ["**/*.spec.ts"],
+  "threshold": 0,
+  "reporters": ["console", "html", "json"],
+  "output": "reports/duplication"
+}

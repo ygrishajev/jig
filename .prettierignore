@@ -1,4 +1,7 @@
 dist/
+coverage/
+reports/
+.stryker-tmp/
 node_modules/
 .sdlc/
 docs/*.html

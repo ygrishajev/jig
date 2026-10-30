@@ -4,6 +4,8 @@ node_modules/
 .sdlc/
 dist/
 reports/
+coverage/
+.stryker-tmp/
 tmp/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
