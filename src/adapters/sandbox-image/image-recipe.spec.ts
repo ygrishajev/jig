@@ -59,6 +59,14 @@ describe('image recipe', () => {
     });
   });
 
+  it('ignores an agent-versions entry that has no version', () => {
+    const version = faker.system.semver();
+
+    expect(parseAgentVersions(`claude=${version},${faker.word.noun()}`)).toStrictEqual({
+      claude: version,
+    });
+  });
+
   it('gives a different hash when the Dockerfile or the user it is built for changes', () => {
     const hash = recipeHash(BASE_DOCKERFILE, 501, 20);
 

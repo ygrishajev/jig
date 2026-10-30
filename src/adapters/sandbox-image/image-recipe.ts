@@ -83,12 +83,14 @@ export function formatAgentVersions(agents: AgentInstall[]) {
     .join(',');
 }
 
+/** Reads the label `formatAgentVersions` wrote; an entry without a version counts as not installed. */
 export function parseAgentVersions(label: string | undefined): Record<string, string> {
   if (!label) return {};
-  return Object.fromEntries(
-    label
-      .split(',')
-      .filter(Boolean)
-      .map((entry) => entry.split('=') as [string, string]),
-  );
+  return Object.fromEntries(label.split(',').flatMap(agentVersionEntry));
+}
+
+function agentVersionEntry(entry: string): [string, string][] {
+  const separator = entry.indexOf('=');
+  if (separator <= 0 || separator === entry.length - 1) return [];
+  return [[entry.slice(0, separator), entry.slice(separator + 1)]];
 }

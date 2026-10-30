@@ -2,9 +2,12 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
+import { z } from 'zod';
 import { registerRunCommand } from './commands/run.js';
 import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';
+
+const packageManifestSchema = z.object({ version: z.string() });
 
 export function buildCli() {
   const program = new Command();
@@ -17,7 +20,7 @@ export function buildCli() {
 
 function packageVersion() {
   const manifest = new URL('../../package.json', import.meta.url);
-  return (JSON.parse(readFileSync(manifest, 'utf-8')) as { version: string }).version;
+  return packageManifestSchema.parse(JSON.parse(readFileSync(manifest, 'utf-8'))).version;
 }
 
 /**

@@ -1,4 +1,8 @@
 import { execa } from 'execa';
+import { z } from 'zod';
+
+/** `docker image inspect` prints `null` for an image built without labels. */
+const imageLabelsSchema = z.record(z.string()).nullable();
 
 export interface BuildInput {
   tag: string;
@@ -29,7 +33,7 @@ export class DockerImages {
       },
     );
     if (result.exitCode !== 0) return undefined;
-    return (JSON.parse(result.stdout) as Record<string, string> | null) ?? {};
+    return imageLabelsSchema.parse(JSON.parse(result.stdout)) ?? {};
   }
 
   async build(input: BuildInput) {

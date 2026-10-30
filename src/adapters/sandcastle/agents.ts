@@ -46,13 +46,16 @@ export function collectCredentials(steps: AgentChoice[], environment: NodeJS.Pro
   const credentials: Record<string, string> = {};
   for (const step of steps) {
     const keys = AGENTS[step.provider].credentialKeys(step.model);
-    const present = keys.filter((key) => environment[key]);
+    const present = keys.flatMap((key) => {
+      const value = environment[key];
+      return value ? [[key, value] as const] : [];
+    });
     if (present.length === 0) {
       throw new ConfigInvalid(
         `No ${step.provider} credentials found — set ${keys.join(' or ')} in the environment.`,
       );
     }
-    for (const key of present) credentials[key] = environment[key] as string;
+    for (const [key, value] of present) credentials[key] = value;
   }
   return credentials;
 }
