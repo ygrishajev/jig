@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { aRunState } from '../../tests/support/builders.js';
@@ -10,7 +10,7 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 
 describe('openRunStore', () => {
   it('saves to the local store by default', async () => {
-    const repoRoot = await directory();
+    const repoRoot = await tempDirectory('sdlc-stores-');
     const store = await openRunStore({ repoRoot, config: loadConfig(repoRoot) });
     const state = aRunState();
 
@@ -23,7 +23,7 @@ describe('openRunStore', () => {
   });
 
   it('saves to every configured store, including one loaded from a module', async () => {
-    const repoRoot = await directory();
+    const repoRoot = await tempDirectory('sdlc-stores-');
     await writeFile(
       path.join(repoRoot, 'memory-store.mjs'),
       `const saved = new Map();
@@ -48,7 +48,7 @@ describe('openRunStore', () => {
   });
 
   it('peeks through a module store that has no peek of its own by loading from it', async () => {
-    const repoRoot = await directory();
+    const repoRoot = await tempDirectory('sdlc-stores-');
     const state = aRunState();
     await writeFile(
       path.join(repoRoot, 'load-only-store.mjs'),
@@ -64,8 +64,45 @@ describe('openRunStore', () => {
     expect(await store.peek(state.runId)).toEqual(state);
   });
 
+  it("gives a module store the repository's root and saves through it", async () => {
+    const repoRoot = await tempDirectory('sdlc-stores-');
+    await writeFile(
+      path.join(repoRoot, 'file-store.mjs'),
+      `import { writeFileSync } from 'node:fs';
+       import path from 'node:path';
+       export default ({ repoRoot }) => ({
+         load: async () => undefined,
+         save: async (state) => writeFileSync(path.join(repoRoot, 'saved.json'), JSON.stringify(state)),
+       });`,
+    );
+    const config = { ...loadConfig(repoRoot), runStores: ['file-store.mjs'] };
+    const state = aRunState();
+
+    await (await openRunStore({ repoRoot, config })).save(state);
+
+    expect(JSON.parse(await readFile(path.join(repoRoot, 'saved.json'), 'utf-8'))).toMatchObject({
+      runId: state.runId,
+    });
+  });
+
+  it.each(['undefined', 'null'])(
+    'reads a run a module store answers %s for as not there',
+    async (answer) => {
+      const repoRoot = await tempDirectory('sdlc-stores-');
+      await writeFile(
+        path.join(repoRoot, 'empty-store.mjs'),
+        `export default () => ({ load: async () => ${answer}, save: async () => {} });`,
+      );
+      const config = { ...loadConfig(repoRoot), runStores: ['empty-store.mjs'] };
+
+      const store = await openRunStore({ repoRoot, config });
+
+      expect(await store.load(aRunState().runId)).toBeUndefined();
+    },
+  );
+
   it('refuses a run a module store hands back that is not a run', async () => {
-    const repoRoot = await directory();
+    const repoRoot = await tempDirectory('sdlc-stores-');
     await writeFile(
       path.join(repoRoot, 'broken-store.mjs'),
       `export default () => ({ load: async () => ({ phase: 'nowhere' }), save: async () => {} });`,
@@ -77,7 +114,7 @@ describe('openRunStore', () => {
   });
 
   it('refuses a module whose factory does not return a store with load and save', async () => {
-    const repoRoot = await directory();
+    const repoRoot = await tempDirectory('sdlc-stores-');
     await writeFile(
       path.join(repoRoot, 'half-a-store.mjs'),
       'export default () => ({ load: async () => undefined });',
@@ -88,15 +125,10 @@ describe('openRunStore', () => {
   });
 
   it('refuses a module that does not export a store factory', async () => {
-    const repoRoot = await directory();
+    const repoRoot = await tempDirectory('sdlc-stores-');
     await writeFile(path.join(repoRoot, 'not-a-store.mjs'), 'export const store = {};');
     const config = { ...loadConfig(repoRoot), runStores: ['not-a-store.mjs'] };
 
     await expect(openRunStore({ repoRoot, config })).rejects.toBeInstanceOf(ConfigInvalid);
   });
-
-  async function directory() {
-    const created = await tempDirectory('sdlc-stores-');
-    return created;
-  }
 });

@@ -17,6 +17,22 @@ describe('CompositeRunStore', () => {
     expect(await store.load(stale.runId)).toEqual(fresher);
   });
 
+  it('keeps the freshest copy when a staler one comes after it', async () => {
+    const fresher = aRunState({ phase: 'slices', revision: 7 });
+    const stale = aRunState({ runId: fresher.runId, phase: 'planning', revision: 3 });
+    const { store } = await setup({ copies: [fresher, stale] });
+
+    expect(await store.load(fresher.runId)).toEqual(fresher);
+  });
+
+  it('takes the copy listed first when two stores hold the same revision', async () => {
+    const first = aRunState({ phase: 'slices', revision: 5 });
+    const second = aRunState({ runId: first.runId, phase: 'planning', revision: 5 });
+    const { store } = await setup({ copies: [first, second] });
+
+    expect(await store.load(first.runId)).toEqual(first);
+  });
+
   it('lets every store see the run before anything is saved', async () => {
     const state = aRunState();
     const { store, stores } = await setup({ copies: [state, undefined] });

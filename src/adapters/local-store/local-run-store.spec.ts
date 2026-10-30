@@ -36,6 +36,14 @@ describe('LocalRunStore', () => {
     expect(await store.load(state.runId)).toEqual(state);
   });
 
+  it('peeks at the run it saved', async () => {
+    const { store } = await setup();
+    const state = aRunState();
+    await store.save(state);
+
+    expect(await store.peek(state.runId)).toEqual(state);
+  });
+
   it('knows nothing about a run it never saved', async () => {
     const { store } = await setup();
 
