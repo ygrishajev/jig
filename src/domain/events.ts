@@ -37,6 +37,7 @@ export type RunEvent =
   | { type: 'runHalted'; runId: RunId; phase: RunPhase }
   | { type: 'runBlocked'; runId: RunId; phase: RunPhase; reason: string }
   | { type: 'runFinished'; runId: RunId; phase: RunPhase }
+  | { type: 'runFailed'; runId: RunId; phase: RunPhase; reason: string }
   | { type: 'agentMessage'; runId: RunId; role: AgentRole; text: string }
   | { type: 'agentToolCall'; runId: RunId; role: AgentRole; tool: string; args: string }
   | { type: 'agentUsage'; runId: RunId; role: AgentRole; costUsd?: number; tokens: TokenUsage };

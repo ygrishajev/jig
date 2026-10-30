@@ -120,6 +120,21 @@ describe('TracingObserver', () => {
     expect(spans()[0].status).toEqual({ code: SpanStatusCode.ERROR, message: reason });
   });
 
+  it('ends a run that failed fatally as an error with the reason', () => {
+    const { observe, spans } = setup();
+    const reason = faker.lorem.sentence();
+    const id = runId();
+
+    observe({ type: 'runResumed', runId: id, phase: 'slices' });
+    observe({ type: 'runFailed', runId: id, phase: 'slices', reason });
+
+    expect(spans()[0]).toMatchObject({
+      name: 'sdlc.run',
+      status: { code: SpanStatusCode.ERROR, message: reason },
+      attributes: { 'sdlc.phase.end': 'slices' },
+    });
+  });
+
   function setup() {
     const exporter = new InMemorySpanExporter();
     const provider = new BasicTracerProvider({

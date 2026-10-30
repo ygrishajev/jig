@@ -38,6 +38,8 @@ export class LoggingObserver {
         return log.error(fields, `run ${event.runId} blocked at ${event.phase}: ${event.reason}`);
       case 'runFinished':
         return log.info(fields, `run ${event.runId} finished: ${event.phase}`);
+      case 'runFailed':
+        return log.error(fields, `run ${event.runId} failed at ${event.phase}: ${event.reason}`);
       case 'agentMessage':
         return log.debug(fields, `${event.role}: ${event.text}`);
       case 'agentToolCall':

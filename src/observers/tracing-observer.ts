@@ -54,6 +54,7 @@ export class TracingObserver {
         this.stepSpan = undefined;
         return;
       case 'runBlocked':
+      case 'runFailed':
         this.runSpan?.setStatus({ code: SpanStatusCode.ERROR, message: event.reason });
         return this.endRun(event.phase);
       case 'runHalted':

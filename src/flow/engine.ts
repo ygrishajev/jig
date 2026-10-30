@@ -62,15 +62,33 @@ class Engine {
     private readonly d: EngineDependencies,
   ) {}
 
+  /** Every invocation that resumes a run ends it with one run-level event, a fatal error included. */
   async run(initial: RunState): Promise<EngineResult> {
     this.d.events.publish({ type: 'runResumed', runId: initial.runId, phase: initial.phase });
+    let saved = initial;
+    try {
+      return await this.settle(initial, (state) => (saved = state));
+    } catch (error) {
+      this.d.events.publish({
+        type: 'runFailed',
+        runId: saved.runId,
+        phase: saved.phase,
+        reason: messageOf(error),
+      });
+      throw error;
+    }
+  }
+
+  private async settle(initial: RunState, onSaved: (state: RunState) => void) {
     let state = await this.leaveHaltOrBlock(initial);
+    onSaved(state);
 
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       const passed = await this.pass(state.phase, state);
       if ('result' in passed) return passed.result;
       state = passed.state;
       await this.d.store.save(state);
+      onSaved(state);
     }
     throw new Error(
       `Run ${state.runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`,

@@ -1,4 +1,9 @@
 import { faker } from '@faker-js/faker';
+import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from '@opentelemetry/sdk-trace-base';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 import {
@@ -10,7 +15,10 @@ import {
 import type { Outcome } from '../domain/outcome.js';
 import { PhaseOutOfOrder, runPhaseSchema, type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
+import { RunEvents } from '../observers/run-events.js';
+import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
+import type { EventSink } from '../ports/observability.js';
 import type { Workspace } from '../ports/workspace.js';
 import {
   anImplementation,
@@ -151,6 +159,49 @@ describe('runEngine', () => {
 
     await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toThrow();
     expect(events.ofType('stepFailed')).toHaveLength(1);
+  });
+
+  it('reports a fatal failure as the run failing at the phase it was in', async () => {
+    const reason = faker.lorem.sentence();
+    const { run, events } = setup({
+      flow: linearFlow({
+        context: async () => ({ type: 'contextBuilt', context: aContext() }),
+        planning: async () => {
+          throw new ConfigInvalid(reason);
+        },
+      }),
+    });
+    const initial = aDescribedRun({ phase: 'context' });
+
+    await expect(run(initial)).rejects.toBeInstanceOf(ConfigInvalid);
+    expect(events.ofType('runFailed')).toEqual([
+      { type: 'runFailed', runId: initial.runId, phase: 'planning', reason },
+    ]);
+  });
+
+  it('ends the trace of a run that failed fatally', async () => {
+    const exporter = new InMemorySpanExporter();
+    const tracer = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    }).getTracer('test');
+    const events = new RunEvents();
+    const tracing = new TracingObserver(tracer);
+    events.on('event', (event) => tracing.handle(event));
+    const { run } = setup({
+      events,
+      flow: linearFlow({
+        context: async () => {
+          throw new ConfigInvalid(faker.lorem.sentence());
+        },
+      }),
+    });
+
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toBeInstanceOf(ConfigInvalid);
+
+    expect(exporter.getFinishedSpans().map((span) => span.name)).toEqual([
+      'sdlc.step context',
+      'sdlc.run',
+    ]);
   });
 
   it('blocks once retries run out, keeping the phase so the step runs again on resume', async () => {
@@ -329,13 +380,13 @@ describe('runEngine', () => {
     );
   });
 
-  function setup(input: { flow: RunFlow; settings?: RunSettings }) {
+  function setup(input: { flow: RunFlow; settings?: RunSettings; events?: EventSink }) {
     const store = new InMemoryRunStore();
     const events = new RecordingEventSink();
     const dependencies = {
       ports: { agent: mock<AgentSession>(), workspace: mock<Workspace>() },
       store,
-      events,
+      events: input.events ?? events,
       clock: new SteppingClock(),
       settings: input.settings ?? runSettings(),
     };

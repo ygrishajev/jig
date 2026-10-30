@@ -50,6 +50,16 @@ describe('LoggingObserver', () => {
     expect(lines()[0].msg).toContain(reason);
   });
 
+  it('logs a fatally failed run as an error with the reason', () => {
+    const reason = faker.lorem.sentence();
+    const id = runId();
+    const { observe, lines } = setup();
+
+    observe({ type: 'runFailed', runId: id, phase: 'slices', reason });
+
+    expect(lines()[0]).toMatchObject({ level: 50, event: 'runFailed', runId: id, reason });
+  });
+
   it('logs a retry as a warning', () => {
     const { observe, lines } = setup();
 
