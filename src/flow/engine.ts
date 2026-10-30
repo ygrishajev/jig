@@ -1,6 +1,6 @@
 import pRetry from 'p-retry';
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { SdlcError } from '../domain/errors.js';
+import { messageOf, SdlcError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
@@ -191,10 +191,17 @@ class Engine {
 
   private async timed(at: StepLocation, runId: RunId, step: () => Promise<Outcome>) {
     const startedAt = this.d.clock.now();
+    const elapsed = () => this.d.clock.now() - startedAt;
     this.d.events.publish({ type: 'stepStarted', runId, at });
-    const outcome = await step();
-    const durationMs = this.d.clock.now() - startedAt;
-    this.d.events.publish({ type: 'stepFinished', runId, at, outcome, durationMs });
+    let outcome: Outcome;
+    try {
+      outcome = await step();
+    } catch (error) {
+      const reason = messageOf(error);
+      this.d.events.publish({ type: 'stepFailed', runId, at, reason, durationMs: elapsed() });
+      throw error;
+    }
+    this.d.events.publish({ type: 'stepFinished', runId, at, outcome, durationMs: elapsed() });
     return outcome;
   }
 

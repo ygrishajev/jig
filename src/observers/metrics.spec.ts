@@ -24,6 +24,25 @@ describe('MetricsObserver', () => {
     });
   });
 
+  it.each(['stepFinished', 'stepFailed'] as const)(
+    'attributes an agent call after a step ended by %s to no step',
+    (ended) => {
+      const { observe, records } = setup();
+      const id = runId();
+      const at: StepLocation = { phase: 'slices', sliceId: sliceId(), sliceStatus: 'pending' };
+
+      observe({ type: 'stepStarted', runId: id, at });
+      observe(
+        ended === 'stepFinished'
+          ? { type: ended, runId: id, at, outcome: anImplementation(), durationMs: 1 }
+          : { type: ended, runId: id, at, reason: faker.lorem.sentence(), durationMs: 1 },
+      );
+      observe({ type: 'agentUsage', runId: id, role: 'planner', tokens: someTokens() });
+
+      expect(records.find((record) => record.kind === 'agentCall')?.location).toBeUndefined();
+    },
+  );
+
   it('records a step with its outcome, duration and the size of its commit', () => {
     const { observe, records } = setup();
     const commit = aCommit();

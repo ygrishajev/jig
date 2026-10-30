@@ -72,6 +72,43 @@ describe('TracingObserver', () => {
     });
   });
 
+  it('ends every attempt of a retried step, marking the failed ones as errors', () => {
+    const { observe, spans } = setup();
+    const id = runId();
+    const at: StepLocation = { phase: 'planning' };
+    const reason = faker.lorem.sentence();
+
+    observe({ type: 'runResumed', runId: id, phase: 'planning' });
+    observe({ type: 'stepStarted', runId: id, at });
+    observe({ type: 'stepFailed', runId: id, at, reason, durationMs: 1 });
+    observe({ type: 'stepRetried', runId: id, at, attempt: 1, reason });
+    observe({ type: 'stepStarted', runId: id, at });
+    observe({
+      type: 'stepFinished',
+      runId: id,
+      at,
+      outcome: { type: 'featurePlanned', plan: aFeaturePlan() },
+      durationMs: 1,
+    });
+
+    const [failed, succeeded] = spans();
+    expect(failed.status).toEqual({ code: SpanStatusCode.ERROR, message: reason });
+    expect(succeeded.attributes).toMatchObject({ 'sdlc.outcome': 'featurePlanned' });
+  });
+
+  it('ends the failed step of a blocked run before the run itself', () => {
+    const { observe, spans } = setup();
+    const id = runId();
+    const reason = faker.lorem.sentence();
+
+    observe({ type: 'runResumed', runId: id, phase: 'merging' });
+    observe({ type: 'stepStarted', runId: id, at: { phase: 'merging' } });
+    observe({ type: 'stepFailed', runId: id, at: { phase: 'merging' }, reason, durationMs: 1 });
+    observe({ type: 'runBlocked', runId: id, phase: 'merging', reason });
+
+    expect(spans().map((span) => span.name)).toEqual(['sdlc.step merging', 'sdlc.run']);
+  });
+
   it('marks a blocked run as an error with the reason', () => {
     const { observe, spans } = setup();
     const reason = faker.lorem.sentence();

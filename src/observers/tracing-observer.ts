@@ -37,8 +37,13 @@ export class TracingObserver {
           ...(event.costUsd !== undefined ? { 'sdlc.usage.cost_usd': event.costUsd } : {}),
         });
         return;
+      case 'stepFailed':
+        this.stepSpan?.setStatus({ code: SpanStatusCode.ERROR, message: event.reason });
+        this.stepSpan?.end();
+        this.stepSpan = undefined;
+        return;
       case 'stepRetried':
-        this.stepSpan?.addEvent('retry', {
+        this.runSpan?.addEvent('retry', {
           'sdlc.retry.attempt': event.attempt,
           'sdlc.retry.reason': event.reason,
         });
@@ -49,8 +54,6 @@ export class TracingObserver {
         this.stepSpan = undefined;
         return;
       case 'runBlocked':
-        this.stepSpan?.end();
-        this.stepSpan = undefined;
         this.runSpan?.setStatus({ code: SpanStatusCode.ERROR, message: event.reason });
         return this.endRun(event.phase);
       case 'runHalted':

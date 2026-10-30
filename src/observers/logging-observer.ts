@@ -18,6 +18,11 @@ export class LoggingObserver {
           fields,
           `${describe(event.at)} → ${event.outcome.type} (${seconds(event.durationMs)})`,
         );
+      case 'stepFailed':
+        return log.debug(
+          fields,
+          `${describe(event.at)} failed (${seconds(event.durationMs)}): ${event.reason}`,
+        );
       case 'stepRetried':
         return log.warn(
           fields,

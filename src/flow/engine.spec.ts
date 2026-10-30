@@ -118,6 +118,41 @@ describe('runEngine', () => {
     expect(events.ofType('stepRetried')).toHaveLength(failures);
   });
 
+  it('reports every failed attempt, so each started step is seen to end', async () => {
+    const reason = faker.lorem.sentence();
+    const retries = faker.number.int({ min: 0, max: 3 });
+    const { run, events } = setup({
+      settings: runSettings({ maxStepRetries: retries }),
+      flow: linearFlow({
+        context: async () => {
+          throw new AgentRunFailed(reason);
+        },
+      }),
+    });
+
+    await run(aDescribedRun({ phase: 'context' }));
+
+    expect(events.ofType('stepStarted')).toHaveLength(retries + 1);
+    expect(events.ofType('stepFailed')).toHaveLength(retries + 1);
+    expect(events.ofType('stepFailed')[retries]).toMatchObject({
+      at: { phase: 'context' },
+      reason,
+    });
+  });
+
+  it('reports a failed attempt before a fatal error propagates', async () => {
+    const { run, events } = setup({
+      flow: linearFlow({
+        context: async () => {
+          throw new Error(faker.lorem.sentence());
+        },
+      }),
+    });
+
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toThrow();
+    expect(events.ofType('stepFailed')).toHaveLength(1);
+  });
+
   it('blocks once retries run out, keeping the phase so the step runs again on resume', async () => {
     const reason = faker.lorem.sentence();
     const { run, store } = setup({

@@ -24,6 +24,7 @@ export type RunEvent =
       outcome: Outcome;
       durationMs: number;
     }
+  | { type: 'stepFailed'; runId: RunId; at: StepLocation; reason: string; durationMs: number }
   | { type: 'stepRetried'; runId: RunId; at: StepLocation; attempt: number; reason: string }
   | { type: 'phaseChanged'; runId: RunId; from: RunPhase; to: RunPhase }
   | {

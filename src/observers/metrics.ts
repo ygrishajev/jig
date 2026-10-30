@@ -41,7 +41,11 @@ export class MetricsObserver {
       case 'stepStarted':
         this.location = event.at;
         return;
+      case 'stepFailed':
+        this.location = undefined;
+        return;
       case 'stepFinished':
+        this.location = undefined;
         return this.append({
           kind: 'step',
           at,
