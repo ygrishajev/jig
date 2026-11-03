@@ -5,6 +5,7 @@
 **Goal:** jig's own code stops throwing. Expected failures come back as typed better-result `Err`s, a throw means a bug, and every non-spec function declares its return type, all enforced by lint.
 
 **Architecture:**
+
 - **Bottom up.** Types and lint first. Then the error classes and a typed retry. Then each port with its adapters and fakes. Then steps and the engine, then app and CLI. Enforcement and house rules come last.
 - **Transitional bridge.** Until the steps and engine are converted, unconverted callers bridge a returned `Err` with a transitional `orThrow`. It is deleted in Task 11, and the `throw` ban then proves nothing is left.
 
@@ -78,10 +79,12 @@
 Stage 1 of the rollout. It is mechanical and changes no behaviour.
 
 **Files:**
+
 - Modify: `eslint.config.js`
 - Modify: every non-spec `.ts` under `src/` and `scripts/` that the rule flags (195 sites in 52 files when the spike ran)
 
 **Interfaces:**
+
 - Produces: the lint block that later tasks extend. Non-spec `src/**/*.ts` and `scripts/**/*.ts` get `@typescript-eslint/explicit-function-return-type: ['error', { allowExpressions: true, allowTypedFunctionExpressions: true }]`.
 
 - [ ] **Step 1: Add the rule** to the existing non-spec `src/**/*.ts` block in `eslint.config.js`, and to a matching non-spec `scripts/**/*.ts` block.
@@ -98,6 +101,7 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 2: Error classes become tagged errors; invariants become panics
 
 **Files:**
+
 - Modify: `package.json` (add `better-result` ^3)
 - Modify: `src/domain/errors.ts`, `src/domain/errors.spec.ts`
 - Modify: `src/flow/engine.ts` (`FlowDoesNotSettle`, `FlowHasNoTransition`)
@@ -106,6 +110,7 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 - Modify: every `new <ErrorClass>('…')` call site, and the specs asserting on those four bug classes
 
 **Interfaces:**
+
 - Produces, in `src/domain/errors.ts`:
   - **Error classes.** One `TaggedError` class per existing class: `AgentRunFailed`, `AgentOutputInvalid`, `RemoteUnavailable`, `SandboxUnavailable`, `SetupCommandFailed`, `RunStateConflict`, `MergeFailed`, `ConfigInvalid`, `RunRequestInvalid`, `RunInProgress`, `MetricsLogCorrupt`.
     - Shape: `class X extends TaggedError('X')<{ message: string }> { readonly kind = '<as today>' as const }`.
@@ -133,14 +138,16 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 3: A typed retry over Results
 
 **Files:**
+
 - Create: `src/domain/retry.ts`, `src/domain/retry.spec.ts`
 
 **Interfaces:**
+
 - Produces:
   ```ts
   export interface RetryPolicy<E> {
-    retries: number;            // attempts after the first
-    delayMs: number;            // before the first retry; doubles before each later one (p-retry's default factor)
+    retries: number; // attempts after the first
+    delayMs: number; // before the first retry; doubles before each later one (p-retry's default factor)
     shouldRetry(error: E): boolean;
     onFailedAttempt?(failure: { error: E; attempt: number; retriesLeft: number }): void;
   }
@@ -172,9 +179,11 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 4: Environment, config and repository root at the edge
 
 **Files:**
+
 - Modify: `src/config/environment.ts`, `src/config/load-config.ts`, `src/config/write-config.ts`, `src/git/repository.ts`, `src/cli/with-app.ts`, `src/app/container.ts`, and their specs
 
 **Interfaces:**
+
 - Consumes: `ConfigInvalid` and `orThrow` (Task 2).
 - Produces:
   - `parseEnvironment(raw: NodeJS.ProcessEnv): Result<JigEnvironment, ConfigInvalid>`
@@ -211,11 +220,13 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 5: Git helpers and the Workspace port
 
 **Files:**
+
 - Modify: `src/git/branch.ts`, `src/git/merge.ts`, `src/git/repository.ts`, `src/ports/workspace.ts`, `src/adapters/git/git-workspace.ts`
 - Modify: `src/steps/slice.ts`, `src/steps/finishing.ts`, `src/app/run-jig.ts`, `src/app/container.ts` (callers)
 - Modify: the specs and fakes of the files above
 
 **Interfaces:**
+
 - Consumes: Task 2's error classes and `orThrow`.
 - Produces:
   - **New errors in `errors.ts`:**
@@ -250,12 +261,14 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 6: The AgentSession port and opening a sandbox
 
 **Files:**
+
 - Modify: `src/ports/agent-session.ts`
 - Modify: `src/adapters/sandcastle/sandcastle-session.ts`, `structured-output.ts`, `codex-auth.ts`, `agents.ts`, `open-session.ts`, `sandcastle-env.ts`
 - Modify: `src/app/container.ts`, `src/app/init-sandbox.ts`
 - Modify: the specs and the fake agent session
 
 **Interfaces:**
+
 - Consumes: `retryResult` (Task 3); Task 2's errors; `orThrow`.
 - Produces:
   - **`AgentSession`:**
@@ -296,6 +309,7 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 7: The RunStore port, the run lock and the metrics log
 
 **Files:**
+
 - Modify: `src/ports/run-store.ts`
 - Modify: `src/adapters/local-store/local-run-store.ts`, `run-lock.ts`, `metrics-log.ts`, `run-artefacts.ts`
 - Modify: `src/adapters/run-store/git-remote-run-store.ts`, `composite-run-store.ts`
@@ -303,6 +317,7 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 - Modify: the specs and the fake store
 
 **Interfaces:**
+
 - Consumes: `retryResult`; Task 2's errors; `orThrow`.
 - Produces:
   - **`RunStore`:**
@@ -343,12 +358,14 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 8: The SandboxImages port and image building
 
 **Files:**
+
 - Modify: `src/ports/sandbox-images.ts`
 - Modify: `src/adapters/sandbox-image/docker-images.ts`, `image-recipe.ts`, `latest-agent-versions.ts`
 - Modify: `src/app/sandbox-image.ts`, `src/app/init-sandbox.ts`
 - Modify: the specs and the fake images
 
 **Interfaces:**
+
 - Consumes: Task 2's errors; `orThrow`.
 - Produces:
   - **New error in `errors.ts`:** `ImageBuildFailed`, `kind: 'fatal'`, fields `{ message; output: string }`. It replaces `throw new Error('Building … failed')`.
@@ -377,12 +394,14 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 9: Steps and the engine
 
 **Files:**
+
 - Modify: `src/flow/define-flow.ts`, `src/flow/engine.ts`
 - Modify: `src/steps/planning.ts`, `slice.ts`, `finishing.ts`, `pull-request-description.ts`
 - Modify: their specs
 - Modify: `package.json` (remove `p-retry`)
 
 **Interfaces:**
+
 - Consumes: every port's `Result` signature (Tasks 5–8); `retryResult`.
 - Produces:
   - **Step contract:** `RunStep<P>` and `SliceStep` return `Promise<Result<Outcome, JigError>>`.
@@ -418,12 +437,14 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 10: App, CLI and the top-level handler
 
 **Files:**
+
 - Modify: `src/app/run-jig.ts`, `src/app/run-status.ts`
 - Modify: `src/cli/with-error-handling.ts`, `src/cli/with-input.ts`, `src/cli/with-app.ts`, `src/cli/commands/*.ts`
 - Modify: `src/observers/run-events.ts`, `src/app/container.ts` (`observedEvents`)
 - Modify: their specs
 
 **Interfaces:**
+
 - Consumes: everything above.
 - Produces:
   - **App:**
@@ -457,11 +478,13 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
 ### Task 11: Enforcement and the house rule
 
 **Files:**
+
 - Create: `scripts/eslint-rules/no-ignored-result.ts`, `scripts/eslint-rules/no-ignored-result.spec.ts`
 - Create: `.claude/instructions/errors-as-values.md`
 - Modify: `eslint.config.js`, `src/domain/errors.ts` (delete `orThrow`), `.claude/instructions/testing-conventions.md`, `CLAUDE.md`, `package.json` (add `@typescript-eslint/rule-tester` dev dependency if the spec needs it)
 
 **Interfaces:**
+
 - Produces:
   - **The rule.** `noIgnoredResult` is a type-aware rule with message id `ignored` and the text `A Result is dropped: handle its failure or return it.`
     - It reports an `ExpressionStatement` whose expression's type, or awaited type, includes better-result's `Ok` or `Err`, matched by symbol name. The spike's logic is in the spec, under Enforcement.
@@ -494,5 +517,6 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
   Then:
   - Link it from `CLAUDE.md`'s list, with the trigger "writing or changing any code that can fail".
   - In `testing-conventions.md`, add: assert an expected failure on the returned `Err` (its class or `_tag` and the fields the code decided), never with `toThrow`, and keep `toThrow(Panic)` for bugs.
+
 - [ ] **Step 6: Verify.** Run `npm run validate && npm run test:mutation`. Expected: both pass, and the mutation score is not below the score on `main`.
 - [ ] **Step 7: Commit.** `refactor(dx): lint that jig never throws or drops a Result`. It is `refactor`, not `chore`, because deleting `orThrow` touches `src/`.

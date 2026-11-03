@@ -116,6 +116,7 @@ and `Engine.timed` publishes `stepFailed`.
 ### Retry
 
 Today p-retry drives three retries, and all of them depend on a throw:
+
 - steps in `Engine.attempt`
 - `openSessionRetrying` in `src/app/container.ts`
 - `remoteCall` in `git-remote-run-store.ts`
@@ -124,6 +125,7 @@ better-result's retry only works on `Result.tryPromise`, which retries a rejecti
 here would mean turning an `Err` back into a rejection, which is a throw used as control flow.
 
 So jig gets one small typed retry over `Promise<Result<T, E>>`:
+
 - it takes the number of retries, a delay, a `shouldRetry(error)` predicate and an
   `onFailedAttempt` hook
 - it returns the last `Err` when it gives up
