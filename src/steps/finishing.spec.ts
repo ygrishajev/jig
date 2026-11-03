@@ -26,7 +26,7 @@ describe('finishing steps', () => {
       });
       await commitOnRunBranch();
 
-      expect(await run(mergeRunBranch)).toEqual({ type: 'merged' });
+      expect((await run(mergeRunBranch)).unwrap()).toEqual({ type: 'merged' });
       expect(await isMerged()).toBe(true);
     });
 
@@ -36,7 +36,7 @@ describe('finishing steps', () => {
       });
       await commitOnRunBranch();
 
-      expect(await run(mergeRunBranch)).toEqual({ type: 'awaitingManualMerge' });
+      expect((await run(mergeRunBranch)).unwrap()).toEqual({ type: 'awaitingManualMerge' });
       expect(await isMerged()).toBe(false);
     });
 
@@ -47,7 +47,7 @@ describe('finishing steps', () => {
       await commitOnRunBranch();
       await mergeByHand();
 
-      expect(await run(mergeRunBranch)).toEqual({ type: 'merged' });
+      expect((await run(mergeRunBranch)).unwrap()).toEqual({ type: 'merged' });
     });
 
     it('fails in a way that needs a person when the operator has uncommitted changes', async () => {
@@ -57,7 +57,9 @@ describe('finishing steps', () => {
       await commitOnRunBranch();
       await dirtyOperatorTree();
 
-      await expect(run(mergeRunBranch)).rejects.toBeInstanceOf(MergeFailed);
+      const result = await run(mergeRunBranch);
+
+      expect(result.isErr() && result.error).toBeInstanceOf(MergeFailed);
     });
   });
 
@@ -68,20 +70,20 @@ describe('finishing steps', () => {
       const { run, agent, writeRepoFile } = await setup({ describer: { output: { body } } });
       await writeRepoFile('.github/pull_request_template.md', template);
 
-      const outcome = await run(describePullRequest);
+      const outcome = (await run(describePullRequest)).unwrap();
 
       expect(agent.calls[0].prompt).toContain(template);
       expect(outcome.type === 'described' && outcome.body.startsWith(body)).toBe(true);
     });
 
-    it('falls back to a summary from the run itself when the describer fails', async () => {
+    it('falls back to its own description when the describer fails', async () => {
       const plan = aFeaturePlan();
       const { run } = await setup({
         describer: { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) },
         state: { plan },
       });
 
-      const outcome = await run(describePullRequest);
+      const outcome = (await run(describePullRequest)).unwrap();
 
       expect(outcome.type === 'described' && outcome.body).toContain(plan.summary);
     });
@@ -93,7 +95,7 @@ describe('finishing steps', () => {
         state: { slices: [aSlice({ status: 'stuck', lastFeedback })] },
       });
 
-      const outcome = await run(describePullRequest);
+      const outcome = (await run(describePullRequest)).unwrap();
 
       expect(outcome.type === 'described' && outcome.body).toContain(`> ${lastFeedback}`);
     });

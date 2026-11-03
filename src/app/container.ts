@@ -128,17 +128,17 @@ export function createAppContainer(input: {
  * Starts the run's sandbox, builds everything scoped to the run and hands `use` what the engine
  * needs. The sandbox is closed and the scope disposed afterwards, however `use` ends.
  */
-export async function withRunScope<T>(
+export async function withRunScope<T, E>(
   app: AwilixContainer<AppCradle>,
   { runId, baseBranch }: RunIdentity,
   runStore: RunStore,
   options: { tracer?: Tracer },
-  use: (dependencies: EngineDependencies) => Promise<T>,
-): Promise<Result<T, SessionOpenFailure>> {
+  use: (dependencies: EngineDependencies) => Promise<Result<T, E>>,
+): Promise<Result<T, SessionOpenFailure | E>> {
   const scope = await openRunScope(app, { runId, baseBranch }, runStore, options);
   if (scope.isErr()) return Result.err(scope.error);
   try {
-    return Result.ok(await use(scope.value.cradle.engineDependencies));
+    return await use(scope.value.cradle.engineDependencies);
   } finally {
     await closeRunScope(scope.value);
   }

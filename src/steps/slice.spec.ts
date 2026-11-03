@@ -170,13 +170,15 @@ describe('slice steps', () => {
     agent.script('implementer', ...(input.implementer ?? []));
     agent.script('reviewer', ...(input.reviewer ?? []));
     const state = aRunState({ runId: id });
-    const run = (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>
-      step({
-        state: { ...state, slices: [...earlierSlices, slice] },
-        slice,
-        ports: { agent, workspace },
-        settings: input.settings ?? runSettings(),
-      });
+    const run = async (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>
+      (
+        await step({
+          state: { ...state, slices: [...earlierSlices, slice] },
+          slice,
+          ports: { agent, workspace },
+          settings: input.settings ?? runSettings(),
+        })
+      ).unwrap();
     return {
       run,
       agent,

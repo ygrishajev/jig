@@ -1,10 +1,10 @@
-import { panic } from 'better-result';
-import pRetry from 'p-retry';
+import { panic, Result } from 'better-result';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { isJigError, isTransient, messageOf, orThrow } from '../domain/errors.js';
+import { isTransient, type JigError, messageOf } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome } from '../domain/outcome.js';
+import { retryResult } from '../domain/retry.js';
 import type { RunId } from '../domain/run-id.js';
 import {
   currentSlice,
@@ -36,6 +36,10 @@ export interface EngineDependencies {
   settings: RunSettings;
 }
 
+type Attempt = { outcome: Outcome } | { blockedReason: string };
+
+type Pass = { result: EngineResult } | { state: RunState };
+
 /** Where an invocation stopped; a blocked run says why. */
 export type EngineResult =
   | { state: RunState; status: Exclude<EngineStatus, 'blocked'> }
@@ -43,14 +47,17 @@ export type EngineResult =
 
 export type EngineStatus = 'done' | 'stuck' | 'halted' | 'blocked';
 
-type Attempt = { outcome: Outcome } | { blockedReason: string };
+type Advance = { state: RunState } | { blockedReason: string };
 
-/** Drives a run through `flow` from its saved phase until it finishes, halts, or blocks. */
+/**
+ * Drives a run through `flow` from its saved phase until it finishes, halts, or blocks. A `fatal`
+ * failure, or one saving the run, ends the invocation as an `Err`.
+ */
 export async function runEngine(
   flow: RunFlow,
   initial: RunState,
   dependencies: EngineDependencies,
-): Promise<EngineResult> {
+): Promise<Result<EngineResult, JigError>> {
   const engine = new Engine(flow, dependencies);
   return engine.run(initial);
 }
@@ -61,47 +68,48 @@ class Engine {
     private readonly d: EngineDependencies,
   ) {}
 
-  /** Every invocation that resumes a run ends it with one run-level event, a fatal error included. */
-  async run(initial: RunState): Promise<EngineResult> {
+  /** Every invocation that resumes a run ends it with one run-level event, a failure or a bug included. */
+  async run(initial: RunState): Promise<Result<EngineResult, JigError>> {
     this.d.events.publish({ type: 'runResumed', runId: initial.runId, phase: initial.phase });
     let saved = initial;
+    let settled: Result<EngineResult, JigError>;
     try {
-      return await this.settle(initial, (state) => (saved = state));
+      settled = await this.settle(initial, (state) => (saved = state));
     } catch (error) {
-      this.d.events.publish({
-        type: 'runFailed',
-        runId: saved.runId,
-        phase: saved.phase,
-        reason: messageOf(error),
-      });
-      throw error;
+      this.publishRunFailed(saved, messageOf(error));
+      panic(messageOf(error), error);
     }
+    if (settled.isErr()) this.publishRunFailed(saved, settled.error.message);
+    return settled;
   }
 
   private async settle(
     initial: RunState,
     onSaved: (state: RunState) => void,
-  ): Promise<EngineResult> {
-    let state = await this.leaveHaltOrBlock(initial);
+  ): Promise<Result<EngineResult, JigError>> {
+    const resumed = await this.leaveHaltOrBlock(initial);
+    if (resumed.isErr()) return resumed;
+    let state = resumed.value;
     onSaved(state);
 
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       const passed = await this.pass(state.phase, state);
-      if ('result' in passed) return passed.result;
-      state = passed.state;
-      orThrow(await this.d.store.save(state));
+      if (passed.isErr()) return passed;
+      if ('result' in passed.value) return Result.ok(passed.value.result);
+      state = passed.value.state;
+      const saved = await this.d.store.save(state);
+      if (saved.isErr()) return saved;
       onSaved(state);
     }
     panic(`Run ${state.runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`);
   }
 
-  private async leaveHaltOrBlock(state: RunState): Promise<RunState> {
+  private async leaveHaltOrBlock(state: RunState): Promise<Result<RunState, JigError>> {
     const node = this.flow[state.phase];
     const resumed: RunState = { ...state, blockedReason: undefined };
-    if (!('halt' in node)) return resumed;
+    if (!('halt' in node)) return Result.ok(resumed);
     const next = this.changePhase(resumed, node.resumeAt);
-    orThrow(await this.d.store.save(next));
-    return next;
+    return (await this.d.store.save(next)).map(() => next);
   }
 
   private changePhase(state: RunState, to: RunPhase): RunState {
@@ -115,19 +123,18 @@ class Engine {
   private async pass<P extends RunPhase>(
     phase: P,
     state: RunStateIn<P>,
-  ): Promise<{ result: EngineResult } | { state: RunState }> {
+  ): Promise<Result<Pass, JigError>> {
     const node: RunFlowNode<P> = this.flow[phase];
-    if ('final' in node) return { result: this.finish(state, node.final) };
-    if ('halt' in node) return { result: this.halt(state) };
+    if ('final' in node) return Result.ok({ result: this.finish(state, node.final) });
+    if ('halt' in node) return Result.ok({ result: this.halt(state) });
 
-    const attempt =
+    const advanced =
       'forEachSlice' in node
         ? await this.advanceSlices(node, state)
         : await this.advancePhase(node, state);
-    if ('blockedReason' in attempt) {
-      return { result: await this.block(state, attempt.blockedReason) };
-    }
-    return attempt;
+    if (advanced.isErr()) return advanced;
+    if (!('blockedReason' in advanced.value)) return Result.ok(advanced.value);
+    return (await this.block(state, advanced.value.blockedReason)).map((result) => ({ result }));
   }
 
   private finish(state: RunState, final: 'done' | 'stuck'): EngineResult {
@@ -143,21 +150,25 @@ class Engine {
   private async advanceSlices(
     node: ForEachSliceNode<RunPhase>,
     state: RunState,
-  ): Promise<{ state: RunState } | { blockedReason: string }> {
+  ): Promise<Result<Advance, JigError>> {
     const slice = currentSlice(state);
-    if (!slice) return { state: this.changePhase(state, node.on.allApproved) };
+    if (!slice) return Result.ok({ state: this.changePhase(state, node.on.allApproved) });
 
     const sliceNode = node.forEachSlice[slice.status];
-    if ('final' in sliceNode) return { state: this.changePhase(state, node.on.sliceStuck) };
+    if ('final' in sliceNode) {
+      return Result.ok({ state: this.changePhase(state, node.on.sliceStuck) });
+    }
 
     const at: StepLocation = { phase: state.phase, sliceId: slice.id, sliceStatus: slice.status };
-    const attempt = await this.attempt(at, state.runId, () =>
+    const attempted = await this.attempt(at, state.runId, () =>
       sliceNode.step({ state, ports: this.d.ports, settings: this.d.settings, slice }),
     );
-    if ('blockedReason' in attempt) return attempt;
+    if (attempted.isErr()) return attempted;
+    if ('blockedReason' in attempted.value) return Result.ok(attempted.value);
 
-    const applied = applyOutcome(state, attempt.outcome);
-    const nextStatus = this.resolve(sliceNode.on, attempt.outcome, {
+    const { outcome } = attempted.value;
+    const applied = applyOutcome(state, outcome);
+    const nextStatus = this.resolve(sliceNode.on, outcome, {
       state: applied,
       slice: currentSlice(applied),
       settings: this.d.settings,
@@ -169,61 +180,59 @@ class Engine {
       from: slice.status,
       to: nextStatus,
     });
-    return {
+    return Result.ok({
       state: updateCurrentSlice(applied, (current) => ({ ...current, status: nextStatus })),
-    };
+    });
   }
 
   /**
    * Runs a step under the failure policy: `retry` failures are retried up to `maxStepRetries`
-   * and then block the run, `block` failures block it straight away, and anything else propagates.
+   * and then block the run, `block` failures block it straight away, and `fatal` ones are returned.
    */
   private async attempt(
     at: StepLocation,
     runId: RunId,
-    step: () => Promise<Outcome>,
-  ): Promise<Attempt> {
-    try {
-      const outcome = await pRetry(() => this.timed(at, runId, step), {
-        retries: this.d.settings.maxStepRetries,
-        minTimeout: this.d.settings.retryDelayMs,
-        shouldRetry: ({ error }) => isTransient(error),
-        onFailedAttempt: ({ error, attemptNumber, retriesLeft }) => {
-          if (!isTransient(error) || retriesLeft === 0) return;
-          this.d.events.publish({
-            type: 'stepRetried',
-            runId,
-            at,
-            attempt: attemptNumber,
-            reason: error.message,
-          });
-        },
-      });
-      return { outcome };
-    } catch (error) {
-      if (!isJigError(error) || error.kind === 'fatal') throw error;
-      return { blockedReason: error.message };
-    }
+    step: () => Promise<Result<Outcome, JigError>>,
+  ): Promise<Result<Attempt, JigError>> {
+    const attempted = await retryResult(() => this.timed(at, runId, step), {
+      retries: this.d.settings.maxStepRetries,
+      delayMs: this.d.settings.retryDelayMs,
+      shouldRetry: isTransient,
+      onFailedAttempt: ({ error, attempt, retriesLeft }) => {
+        if (!isTransient(error) || retriesLeft === 0) return;
+        this.d.events.publish({ type: 'stepRetried', runId, at, attempt, reason: error.message });
+      },
+    });
+    if (attempted.isOk()) return Result.ok({ outcome: attempted.value });
+    if (attempted.error.kind === 'fatal') return Result.err(attempted.error);
+    return Result.ok({ blockedReason: attempted.error.message });
   }
 
+  /** A step that throws is a bug; its attempt is still reported as failed before it goes on up. */
   private async timed(
     at: StepLocation,
     runId: RunId,
-    step: () => Promise<Outcome>,
-  ): Promise<Outcome> {
+    step: () => Promise<Result<Outcome, JigError>>,
+  ): Promise<Result<Outcome, JigError>> {
     const startedAt = this.d.clock.now();
     const elapsed = (): number => this.d.clock.now() - startedAt;
-    this.d.events.publish({ type: 'stepStarted', runId, at });
-    let outcome: Outcome;
-    try {
-      outcome = await step();
-    } catch (error) {
-      const reason = messageOf(error);
+    const publishFailed = (reason: string): void =>
       this.d.events.publish({ type: 'stepFailed', runId, at, reason, durationMs: elapsed() });
-      throw error;
+    this.d.events.publish({ type: 'stepStarted', runId, at });
+    let stepped: Result<Outcome, JigError>;
+    try {
+      stepped = await step();
+    } catch (error) {
+      publishFailed(messageOf(error));
+      panic(messageOf(error), error);
     }
+    if (stepped.isErr()) {
+      publishFailed(stepped.error.message);
+      return stepped;
+    }
+    const outcome = stepped.value;
     this.d.events.publish({ type: 'stepFinished', runId, at, outcome, durationMs: elapsed() });
-    return outcome;
+    return stepped;
   }
 
   private resolve<S extends string>(
@@ -242,26 +251,30 @@ class Engine {
   private async advancePhase<P extends RunPhase>(
     node: StepNode<RunPhase, RunStep<P>>,
     state: RunStateIn<P>,
-  ): Promise<{ state: RunState } | { blockedReason: string }> {
+  ): Promise<Result<Advance, JigError>> {
     const at: StepLocation = { phase: state.phase };
-    const attempt = await this.attempt(at, state.runId, () =>
+    const attempted = await this.attempt(at, state.runId, () =>
       node.step({ state, ports: this.d.ports, settings: this.d.settings }),
     );
-    if ('blockedReason' in attempt) return attempt;
+    if (attempted.isErr()) return attempted;
+    if ('blockedReason' in attempted.value) return Result.ok(attempted.value);
 
-    const applied = applyOutcome(state, attempt.outcome);
-    const next = this.resolve(node.on, attempt.outcome, {
-      state: applied,
-      settings: this.d.settings,
-    });
-    return { state: this.changePhase(applied, next) };
+    const { outcome } = attempted.value;
+    const applied = applyOutcome(state, outcome);
+    const next = this.resolve(node.on, outcome, { state: applied, settings: this.d.settings });
+    return Result.ok({ state: this.changePhase(applied, next) });
   }
 
-  private async block(state: RunState, reason: string): Promise<EngineResult> {
+  private async block(state: RunState, reason: string): Promise<Result<EngineResult, JigError>> {
     const blocked = { ...state, blockedReason: reason };
-    orThrow(await this.d.store.save(blocked));
+    const saved = await this.d.store.save(blocked);
+    if (saved.isErr()) return saved;
     this.d.events.publish({ type: 'runBlocked', runId: state.runId, phase: state.phase, reason });
-    return { state: blocked, status: 'blocked', reason };
+    return Result.ok({ state: blocked, status: 'blocked', reason });
+  }
+
+  private publishRunFailed(state: RunState, reason: string): void {
+    this.d.events.publish({ type: 'runFailed', runId: state.runId, phase: state.phase, reason });
   }
 }
 

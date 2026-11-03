@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { Panic } from 'better-result';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -152,7 +153,7 @@ describe('runFlow', () => {
     interrupted.agent.script('implementer', ...files.map((written) => ({ files: written })));
     interrupted.agent.script('reviewer', approval(), { crash });
 
-    await expect(interrupted.run(interrupted.start)).rejects.toBe(crash);
+    await expect(interrupted.run(interrupted.start)).rejects.toThrow(Panic);
     const saved = (await interrupted.store.load(interrupted.start.runId)).unwrap();
     expect(saved?.slices.map((slice) => slice.status)).toEqual(['approved', 'in_review']);
     interrupted.agent.script('reviewer', approval());
@@ -196,7 +197,7 @@ describe('runFlow', () => {
       settings: input.settings,
     };
     const start = startRun({ runId: id, baseBranch: 'main', request: faker.lorem.paragraph() });
-    const run = (state: RunState) => runEngine(runFlow, state, dependencies);
+    const run = async (state: RunState) => (await runEngine(runFlow, state, dependencies)).unwrap();
     const runBranchHistory = () =>
       git.raw(['log', '--reverse', '--format=%s', '--patch', `main..${runBranch}`]);
     return { agent, run, start, store, git, runBranchHistory };

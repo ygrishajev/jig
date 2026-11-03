@@ -28,8 +28,8 @@ export function messageOf(error: unknown): string {
 }
 
 /** A failure worth another attempt: a step, or a sandbox that did not start, gets bounded retries. */
-export function isTransient(error: unknown): boolean {
-  return isJigError(error) && error.kind === 'retry';
+export function isTransient(error: JigError): boolean {
+  return error.kind === 'retry';
 }
 
 export function isJigError(value: unknown): value is JigError {

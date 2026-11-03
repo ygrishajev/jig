@@ -13,7 +13,7 @@ import { runLogFile } from '../adapters/local-store/run-paths.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
-import { orThrow, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
+import { MergeFailed, orThrow, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, withRunScope, withThrowawaySandbox } from './container.js';
@@ -22,12 +22,8 @@ describe('withRunScope', () => {
   it("hands the work the run's sandbox and closes it once the work is done", async () => {
     const { app, session, run } = await setup();
 
-    const used = await withRunScope(
-      app,
-      run,
-      new InMemoryRunStore(),
-      {},
-      async (dependencies) => dependencies.ports.agent,
+    const used = await withRunScope(app, run, new InMemoryRunStore(), {}, async (dependencies) =>
+      Result.ok(dependencies.ports.agent),
     );
 
     expect(orThrow(used)).toBe(session);
@@ -38,14 +34,28 @@ describe('withRunScope', () => {
     const { app, run, openAttempts } = await setup({ failWith: sandboxUnavailable() });
     const store = new InMemoryRunStore();
 
-    const result = await withRunScope(app, run, store, {}, async () => faker.lorem.word());
+    const result = await withRunScope(app, run, store, {}, async () =>
+      Result.ok(faker.lorem.word()),
+    );
 
     expect(result.isErr() && result.error).toBeInstanceOf(SandboxUnavailable);
     expect(openAttempts()).toBe(3);
     expect(await warnings(app.cradle.repoRoot, run.runId)).toHaveLength(3);
   });
 
-  it('closes the sandbox when the work inside it fails', async () => {
+  it("passes on the work's own failure and closes the sandbox", async () => {
+    const { app, session, run } = await setup();
+    const failure = new MergeFailed({ message: faker.lorem.sentence() });
+
+    const result = await withRunScope(app, run, new InMemoryRunStore(), {}, async () =>
+      Result.err(failure),
+    );
+
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(session.closed).toBe(true);
+  });
+
+  it('closes the sandbox when the work inside it throws', async () => {
     const { app, session, run } = await setup();
     const failure = new Error(faker.lorem.sentence());
 

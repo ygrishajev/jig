@@ -44,10 +44,6 @@ describe('isTransient', () => {
     expect(isTransient(new MergeFailed({ message }))).toBe(false);
     expect(isTransient(new ConfigInvalid({ message }))).toBe(false);
   });
-
-  it('does not retry an error that is not jig’s own', () => {
-    expect(isTransient(new Error(message))).toBe(false);
-  });
 });
 
 describe('isJigError', () => {

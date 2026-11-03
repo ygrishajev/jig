@@ -1,3 +1,6 @@
+import type { Result } from 'better-result';
+
+import type { JigError } from '../domain/errors.js';
 import type { Outcome, OutcomeType } from '../domain/outcome.js';
 import type { RunPhase, RunState, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -31,7 +34,7 @@ export interface GuardContext {
 
 export type RunStep<P extends RunPhase = RunPhase> = (
   context: RunStepContext<P>,
-) => Promise<Outcome>;
+) => Promise<Result<Outcome, JigError>>;
 
 /** What a step in phase `P` sees: the run with everything `P` guarantees. */
 export interface RunStepContext<P extends RunPhase = RunPhase> {
@@ -65,7 +68,7 @@ export type SliceFlow = Record<SliceStatus, SliceFlowNode>;
 
 export type SliceFlowNode = StepNode<SliceStatus, SliceStep> | FinalNode;
 
-export type SliceStep = (context: SliceStepContext) => Promise<Outcome>;
+export type SliceStep = (context: SliceStepContext) => Promise<Result<Outcome, JigError>>;
 
 export interface SliceStepContext extends RunStepContext {
   slice: Slice;

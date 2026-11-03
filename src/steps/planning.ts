@@ -1,8 +1,10 @@
+import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { AgentOutputInvalid, orThrow } from '../domain/errors.js';
+import { AgentOutputInvalid } from '../domain/errors.js';
+import type { Outcome } from '../domain/outcome.js';
 import { designDocsSchema, featurePlanSchema, runContextSchema } from '../domain/run-state.js';
-import { plannedSliceSchema } from '../domain/slice.js';
+import { type PlannedSlice, plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
 import {
   contextPrompt,
@@ -12,63 +14,60 @@ import {
 } from '../prompts/planning.js';
 
 export const buildContext: RunStep = async ({ state, ports }) => {
-  const context = orThrow(
-    await ports.agent.runForOutput({
-      role: 'planner',
-      prompt: contextPrompt(state.request),
-      schema: runContextSchema,
-    }),
-  );
-  return { type: 'contextBuilt', context };
+  const context = await ports.agent.runForOutput({
+    role: 'planner',
+    prompt: contextPrompt(state.request),
+    schema: runContextSchema,
+  });
+  return context.map((built) => ({ type: 'contextBuilt', context: built }));
 };
 
 export const planFeature: RunStep<'planning'> = async ({ state, ports }) => {
-  const plan = orThrow(
-    await ports.agent.runForOutput({
-      role: 'planner',
-      prompt: featurePlanPrompt(state.request, state.context.repoSummary),
-      schema: featurePlanSchema,
-    }),
-  );
-  return { type: 'featurePlanned', plan };
+  const plan = await ports.agent.runForOutput({
+    role: 'planner',
+    prompt: featurePlanPrompt(state.request, state.context.repoSummary),
+    schema: featurePlanSchema,
+  });
+  return plan.map((planned) => ({ type: 'featurePlanned', plan: planned }));
 };
 
 export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
-  const docs = orThrow(
-    await ports.agent.runForOutput({
-      role: 'planner',
-      prompt: designPrompt(state.request, state.context.repoSummary, state.plan),
-      schema: designDocsSchema,
-    }),
-  );
-  return { type: 'designWritten', docs };
+  const docs = await ports.agent.runForOutput({
+    role: 'planner',
+    prompt: designPrompt(state.request, state.context.repoSummary, state.plan),
+    schema: designDocsSchema,
+  });
+  return docs.map((written) => ({ type: 'designWritten', docs: written }));
 };
 
-export const sliceThePlan: RunStep<'slicing'> = async ({ state, ports }) => {
-  const slices = orThrow(
-    await ports.agent.runForOutput({
-      role: 'planner',
-      prompt: slicePlanPrompt(state.docs.plan),
-      schema: plannedSlicesSchema,
-    }),
-  );
-  assertUniqueIds(slices.map((slice) => slice.id));
-  return { type: 'sliced', slices };
-};
+export const sliceThePlan: RunStep<'slicing'> = ({ state, ports }) =>
+  Result.gen(async function* () {
+    const slices = yield* Result.await(
+      ports.agent.runForOutput({
+        role: 'planner',
+        prompt: slicePlanPrompt(state.docs.plan),
+        schema: plannedSlicesSchema,
+      }),
+    );
+    yield* requireUniqueIds(slices);
+    return Result.ok<Outcome>({ type: 'sliced', slices });
+  });
 
 const plannedSlicesSchema = z
   .array(plannedSliceSchema)
   .min(1, 'the plan must produce at least one slice');
 
 /** Duplicate ids would make two slices share one status, so the run could never finish them both. */
-function assertUniqueIds(ids: string[]): void {
+function requireUniqueIds(slices: PlannedSlice[]): Result<void, AgentOutputInvalid> {
+  const ids = slices.map((slice) => slice.id);
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
-  if (duplicates.length > 0) {
-    throw new AgentOutputInvalid({
+  if (duplicates.length === 0) return Result.ok();
+  return Result.err(
+    new AgentOutputInvalid({
       message: `The slice plan repeats slice ids: ${[...new Set(duplicates)].join(', ')}`,
-    });
-  }
+    }),
+  );
 }
 
 export const applyDesignGate: RunStep = async ({ settings }) =>
-  settings.designGate === 'checkpoint' ? { type: 'pause' } : { type: 'continue' };
+  Result.ok(settings.designGate === 'checkpoint' ? { type: 'pause' } : { type: 'continue' });

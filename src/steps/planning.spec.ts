@@ -31,7 +31,7 @@ describe('planning steps', () => {
     const { run, agent } = setup({ turn: { output: context } });
     const state = aRunState();
 
-    expect(await run(buildContext, state)).toEqual({ type: 'contextBuilt', context });
+    expect((await run(buildContext, state)).unwrap()).toEqual({ type: 'contextBuilt', context });
     expect(agent.calls[0]).toMatchObject({ role: 'planner' });
     expect(agent.calls[0].prompt).toContain(state.request);
   });
@@ -41,7 +41,7 @@ describe('planning steps', () => {
     const context = aContext();
     const { run, agent } = setup({ turn: { output: plan } });
 
-    expect(await run(planFeature, aRunStateIn('planning', { context }))).toEqual({
+    expect((await run(planFeature, aRunStateIn('planning', { context }))).unwrap()).toEqual({
       type: 'featurePlanned',
       plan,
     });
@@ -57,7 +57,7 @@ describe('planning steps', () => {
       aRunStateIn('designing', { context: aContext(), plan: aFeaturePlan() }),
     );
 
-    expect(outcome).toEqual({ type: 'designWritten', docs });
+    expect(outcome.unwrap()).toEqual({ type: 'designWritten', docs });
   });
 
   it('slices the plan document', async () => {
@@ -65,7 +65,7 @@ describe('planning steps', () => {
     const docs = designDocs();
     const { run, agent } = setup({ turn: { output: slices } });
 
-    expect(await run(sliceThePlan, aRunStateIn('slicing', { docs }))).toEqual({
+    expect((await run(sliceThePlan, aRunStateIn('slicing', { docs }))).unwrap()).toEqual({
       type: 'sliced',
       slices,
     });
@@ -76,10 +76,10 @@ describe('planning steps', () => {
     const repeated = aPlannedSlice();
     const { run } = setup({ turn: { output: [repeated, aPlannedSlice({ id: repeated.id })] } });
 
-    const slicing = run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }));
+    const result = await run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }));
 
-    await expect(slicing).rejects.toBeInstanceOf(AgentOutputInvalid);
-    await expect(slicing).rejects.toThrow(repeated.id);
+    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error.message).toContain(repeated.id);
   });
 
   it('rejects a slice plan with no slices or with an unsafe id', async () => {
@@ -88,20 +88,23 @@ describe('planning steps', () => {
       turn: { output: [aPlannedSlice({ id: `${faker.word.noun()} ${faker.word.noun()}` })] },
     });
 
-    await expect(
-      empty.run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() })),
-    ).rejects.toBeInstanceOf(AgentOutputInvalid);
-    await expect(
-      unsafe.run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() })),
-    ).rejects.toBeInstanceOf(AgentOutputInvalid);
+    const emptied = await empty.run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }));
+    const unsafed = await unsafe.run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }));
+
+    expect(emptied.isErr() && emptied.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(unsafed.isErr() && unsafed.error).toBeInstanceOf(AgentOutputInvalid);
   });
 
   it('pauses for a person after planning only when the design gate is a checkpoint', async () => {
     const checkpoint = setup({ settings: runSettings({ designGate: 'checkpoint' }) });
     const automatic = setup({ settings: runSettings({ designGate: 'auto' }) });
 
-    expect(await checkpoint.run(applyDesignGate, aRunState())).toEqual({ type: 'pause' });
-    expect(await automatic.run(applyDesignGate, aRunState())).toEqual({ type: 'continue' });
+    expect((await checkpoint.run(applyDesignGate, aRunState())).unwrap()).toEqual({
+      type: 'pause',
+    });
+    expect((await automatic.run(applyDesignGate, aRunState())).unwrap()).toEqual({
+      type: 'continue',
+    });
   });
 
   function setup(input: { turn?: AgentScript; settings?: RunSettings }) {
