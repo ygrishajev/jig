@@ -20,7 +20,8 @@ export type JigError =
   | RunInProgress
   | MetricsLogCorrupt
   | LocalStateUnwritable
-  | ImageBuildFailed;
+  | ImageBuildFailed
+  | CommandInputInvalid;
 
 /** JavaScript can throw anything, not only an `Error`. */
 export function messageOf(error: unknown): string {
@@ -129,6 +130,11 @@ export class ImageBuildFailed extends TaggedError('ImageBuildFailed')<{
   readonly kind = 'fatal' as const;
 }
 
+/** What the operator typed does not fit the command. */
+export class CommandInputInvalid extends TaggedError('CommandInputInvalid')<{ message: string }> {
+  readonly kind = 'fatal' as const;
+}
+
 const jigErrorClasses = [
   AgentRunFailed,
   AgentOutputInvalid,
@@ -144,6 +150,7 @@ const jigErrorClasses = [
   MetricsLogCorrupt,
   LocalStateUnwritable,
   ImageBuildFailed,
+  CommandInputInvalid,
 ];
 
 /** Transitional: returns the value or throws the error; Task 11 deletes it. */

@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { isPanic, panic } from 'better-result';
 import { describe, expect, it } from 'vitest';
 
 import { runId } from '../../tests/support/builders.js';
@@ -24,7 +25,7 @@ describe('RunEvents', () => {
     expect(received).toEqual([finished, blocked]);
   });
 
-  it('keeps notifying the other observers when one of them throws', () => {
+  it('keeps the run going when an observer fails', () => {
     const events = new RunEvents();
     const received: RunEvent[] = [];
     const failures: unknown[] = [];
@@ -46,4 +47,25 @@ describe('RunEvents', () => {
     expect(received).toEqual([event]);
     expect(failures).toHaveLength(1);
   });
+
+  it('lets a bug in an observer through', () => {
+    const events = new RunEvents();
+    observe(
+      events,
+      () => panic(faker.lorem.sentence()),
+      () => {},
+    );
+    const event: RunEvent = { type: 'runFinished', runId: runId(), phase: 'done' };
+
+    expect(isPanic(captured(() => events.publish(event)))).toBe(true);
+  });
 });
+
+function captured(act: () => void): unknown {
+  try {
+    act();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}

@@ -23,7 +23,7 @@ describe('readRunStatus', () => {
     const state = aRunState({ phase: 'slices', slices: [aSlice()] });
     await new GitRemoteRunStore(await cloneOf()).save(state);
 
-    const status = await statusIn(await cloneOf(), ['git-remote'], state.runId);
+    const status = (await statusIn(await cloneOf(), ['git-remote'], state.runId)).unwrap();
 
     expect(status.state).toEqual(state);
   });
@@ -37,7 +37,7 @@ describe('readRunStatus', () => {
     const here = await cloneOf();
     const refsBefore = await allRefs(here);
 
-    const status = await statusIn(here, ['git-remote'], state.runId);
+    const status = (await statusIn(here, ['git-remote'], state.runId)).unwrap();
 
     expect(status.state).toEqual(state);
     expect(await allRefs(here)).toEqual(refsBefore);
@@ -51,7 +51,7 @@ describe('readRunStatus', () => {
     const fresher = aRunState({ ...stale, phase: 'slices', revision: 5, slices: [aSlice()] });
     await new GitRemoteRunStore(await cloneOf()).save(fresher);
 
-    const status = await statusIn(here, ['local', 'git-remote'], stale.runId);
+    const status = (await statusIn(here, ['local', 'git-remote'], stale.runId)).unwrap();
 
     expect(status.state).toEqual(fresher);
   });
@@ -59,9 +59,9 @@ describe('readRunStatus', () => {
   it('refuses a run that no configured store holds', async () => {
     const { cloneOf, statusIn } = await setup();
 
-    await expect(
-      statusIn(await cloneOf(), ['local', 'git-remote'], runId()),
-    ).rejects.toBeInstanceOf(RunRequestInvalid);
+    const result = await statusIn(await cloneOf(), ['local', 'git-remote'], runId());
+
+    expect(result.isErr() && result.error).toBeInstanceOf(RunRequestInvalid);
   });
 
   async function setup() {

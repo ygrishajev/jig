@@ -1,5 +1,7 @@
+import { isPanic, panic } from 'better-result';
 import { EventEmitter } from 'node:events';
 
+import { messageOf } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
 import type { EventSink } from '../ports/observability.js';
 
@@ -13,7 +15,8 @@ export class RunEvents extends EventEmitter<RunEventMap> implements EventSink {
 
 /**
  * Subscribes an observer to every event. EventEmitter calls listeners synchronously, so a
- * throwing observer would otherwise abort the run that published the event.
+ * throwing observer would otherwise abort the run that published the event. A `Panic` is a bug,
+ * and still does.
  */
 export function observe(
   events: RunEvents,
@@ -24,6 +27,7 @@ export function observe(
     try {
       handle(event);
     } catch (error) {
+      if (isPanic(error)) panic(messageOf(error), error);
       onObserverError(error);
     }
   });

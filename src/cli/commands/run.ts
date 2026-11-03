@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import { Command } from 'commander';
 import { z } from 'zod';
 
@@ -19,12 +20,17 @@ export function registerRunCommand(program: Command): void {
     .action(
       withErrorHandling(
         withInput(runInputSchema, async ({ run, logFormat }) => {
-          await withApp(logFormat, async (app) => {
+          return withApp(logFormat, async (app) => {
             const report = await runJig(app, run);
+            if (report.isErr()) return Result.err(report.error);
             app.cradle.logger.info(
-              { runId: report.state.runId, branch: runBranchFor(report.state.runId) },
-              nextStep(report),
+              {
+                runId: report.value.state.runId,
+                branch: runBranchFor(report.value.state.runId),
+              },
+              nextStep(report.value),
             );
+            return Result.ok();
           });
         }),
       ),

@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import { Command } from 'commander';
 import { z } from 'zod';
 
@@ -19,8 +20,11 @@ export function registerStatusCommand(program: Command): void {
     .action(
       withErrorHandling(
         withInput(z.object({ id: runIdSchema }), async ({ id }) => {
-          await withApp(defaultLogFormat(), async (app) => {
-            console.log(describeRun(await readRunStatus(app, id)));
+          return withApp(defaultLogFormat(), async (app) => {
+            const status = await readRunStatus(app, id);
+            if (status.isErr()) return Result.err(status.error);
+            console.log(describeRun(status.value));
+            return Result.ok();
           });
         }),
       ),

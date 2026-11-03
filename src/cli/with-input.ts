@@ -1,6 +1,8 @@
-import { panic } from 'better-result';
+import { panic, Result } from 'better-result';
 import { Command } from 'commander';
 import type { z } from 'zod';
+
+import { CommandInputInvalid, type JigError } from '../domain/errors.js';
 
 /**
  * A commander action that receives the command's arguments and options as one object, parsed
@@ -8,14 +10,16 @@ import type { z } from 'zod';
  */
 export function withInput<Schema extends z.ZodTypeAny>(
   schema: Schema,
-  run: (input: z.output<Schema>) => Promise<void>,
+  run: (input: z.output<Schema>) => Promise<Result<void, JigError>>,
 ) {
-  return async (...actionArguments: unknown[]) => {
+  return async (...actionArguments: unknown[]): Promise<Result<void, JigError>> => {
     const command = actionArguments.at(-1);
     if (!(command instanceof Command)) panic('withInput must wrap a commander action');
     const parsed = schema.safeParse(inputOf(command));
-    if (!parsed.success) throw new CommandInputInvalid(describeIssues(parsed.error));
-    await run(parsed.data);
+    if (!parsed.success) {
+      return Result.err(new CommandInputInvalid({ message: describeIssues(parsed.error) }));
+    }
+    return run(parsed.data);
   };
 }
 
@@ -25,14 +29,6 @@ function inputOf(command: Command): Record<string, unknown> {
     command.processedArgs[index],
   ]);
   return { ...Object.fromEntries(named), ...command.opts() };
-}
-
-/** What the operator typed does not fit the command; reported like any other failed command. */
-export class CommandInputInvalid extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CommandInputInvalid';
-  }
 }
 
 function describeIssues(error: z.ZodError): string {

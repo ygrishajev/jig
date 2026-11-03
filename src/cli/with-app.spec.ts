@@ -1,12 +1,13 @@
 import { faker } from '@faker-js/faker';
 import { asFunction, type AwilixContainer } from 'awilix';
+import { Result } from 'better-result';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import type { AppCradle } from '../app/container.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid, type JigError } from '../domain/errors.js';
 import { withApp } from './with-app.js';
 
 describe('withApp', () => {
@@ -14,11 +15,23 @@ describe('withApp', () => {
     const { run, disposed } = await setup();
     const produced = faker.lorem.word();
 
-    await expect(run(async () => produced)).resolves.toBe(produced);
+    const result = await run(async () => Result.ok(produced));
+
+    expect(result.unwrap()).toBe(produced);
     expect(disposed).toHaveBeenCalledOnce();
   });
 
   it("disposes the app's resources when the command fails", async () => {
+    const { run, disposed } = await setup();
+    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
+
+    const result = await run(async () => Result.err(failure));
+
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(disposed).toHaveBeenCalledOnce();
+  });
+
+  it("disposes the app's resources when the command throws", async () => {
     const { run, disposed } = await setup();
     const failure = new Error(faker.lorem.sentence());
 
@@ -34,10 +47,14 @@ describe('withApp', () => {
     const directory = faker.system.directoryPath();
     const { run, cwd } = await setup({ environment: { JIG_CODEX_AUTH_DIR: directory } });
 
-    const opened = await run(async (app) => ({
-      repoRoot: app.cradle.repoRoot,
-      codexAuthDirectory: app.cradle.environment.codexAuthDirectory,
-    }));
+    const opened = (
+      await run(async (app) =>
+        Result.ok({
+          repoRoot: app.cradle.repoRoot,
+          codexAuthDirectory: app.cradle.environment.codexAuthDirectory,
+        }),
+      )
+    ).unwrap();
 
     expect(opened).toEqual({ repoRoot: cwd, codexAuthDirectory: directory });
   });
@@ -46,7 +63,9 @@ describe('withApp', () => {
     const { run } = await setup({ environment: { JIG_IMAGE_CACHE: faker.word.noun() } });
     const command = vi.fn();
 
-    await expect(run(command)).rejects.toBeInstanceOf(ConfigInvalid);
+    const result = await run(command);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
     expect(command).not.toHaveBeenCalled();
   });
 
@@ -55,7 +74,9 @@ describe('withApp', () => {
     await writeFile(path.join(cwd, 'jig.config.json'), '{"mergeMode":');
     const command = vi.fn();
 
-    await expect(run(command)).rejects.toBeInstanceOf(ConfigInvalid);
+    const result = await run(command);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
     expect(command).not.toHaveBeenCalled();
   });
 
@@ -63,7 +84,9 @@ describe('withApp', () => {
     const { run } = await setup({ belowRoot: true });
     const command = vi.fn();
 
-    await expect(run(command)).rejects.toBeInstanceOf(ConfigInvalid);
+    const result = await run(command);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
     expect(command).not.toHaveBeenCalled();
   });
 
@@ -72,7 +95,7 @@ describe('withApp', () => {
     const cwd = input.belowRoot ? path.join(repo.dir, faker.word.noun()) : repo.dir;
     await mkdir(cwd, { recursive: true });
     const disposed = vi.fn();
-    const run = <T>(command: (app: AwilixContainer<AppCradle>) => Promise<T>) =>
+    const run = <T>(command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, JigError>>) =>
       withApp(
         'json',
         async (app) => {

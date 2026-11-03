@@ -1,9 +1,11 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
 import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { CommandInputInvalid, withInput } from './with-input.js';
+import { CommandInputInvalid, type JigError } from '../domain/errors.js';
+import { withInput } from './with-input.js';
 
 describe('withInput', () => {
   it('hands the action its named arguments and options as one parsed object', async () => {
@@ -30,26 +32,33 @@ describe('withInput', () => {
     const message = faker.lorem.sentence();
     const { run, received } = setup(z.object({ name: z.string().regex(/^\d+$/, message) }));
 
-    const failure = run([faker.lorem.word()]);
+    const result = await run([faker.lorem.word()]);
 
-    await expect(failure).rejects.toThrow(new CommandInputInvalid(`name: ${message}`));
+    expect(result.isErr() && result.error).toBeInstanceOf(CommandInputInvalid);
+    expect(result.isErr() && result.error.message).toBe(`name: ${message}`);
     expect(received()).toBeUndefined();
   });
 
   function setup<Schema extends z.ZodTypeAny>(schema: Schema) {
     let received: z.output<Schema> | undefined;
+    let outcome: Result<void, JigError> = Result.ok();
+    const action = withInput(schema, async (input) => {
+      received = input;
+      return Result.ok();
+    });
     const command = new Command()
       .exitOverride()
       .argument('[name]')
       .option('--count <count>')
       .option('--dry-run')
-      .action(
-        withInput(schema, async (input) => {
-          received = input;
-        }),
-      );
+      .action(async (...actionArguments: unknown[]) => {
+        outcome = await action(...actionArguments);
+      });
     return {
-      run: (args: string[]) => command.parseAsync(args, { from: 'user' }),
+      run: async (args: string[]) => {
+        await command.parseAsync(args, { from: 'user' });
+        return outcome;
+      },
       received: () => received,
     };
   }

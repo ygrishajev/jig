@@ -1,9 +1,9 @@
+import { Result } from 'better-result';
 import { Command } from 'commander';
 import { z } from 'zod';
 
 import { type InitResult, initSandbox } from '../../app/init-sandbox.js';
 import { ensureSandboxImage } from '../../app/sandbox-image.js';
-import { orThrow } from '../../domain/errors.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
@@ -18,10 +18,12 @@ export function registerSandboxCommands(program: Command): void {
     .action(
       withErrorHandling(
         withInput(initInputSchema, async ({ agent, logFormat }) => {
-          await withApp(logFormat, async (app) => {
-            const result = orThrow(await initSandbox(app, { useAgent: agent }));
-            app.cradle.logger.info(initSummary(result));
-            if (result.status === 'failed') process.exitCode = 1;
+          return withApp(logFormat, async (app) => {
+            const result = await initSandbox(app, { useAgent: agent });
+            if (result.isErr()) return Result.err(result.error);
+            app.cradle.logger.info(initSummary(result.value));
+            if (result.value.status === 'failed') process.exitCode = 1;
+            return Result.ok();
           });
         }),
       ),
@@ -35,9 +37,11 @@ export function registerSandboxCommands(program: Command): void {
     .action(
       withErrorHandling(
         withInput(buildInputSchema, async ({ pullAgents, logFormat }) => {
-          await withApp(logFormat, async (app) => {
-            const image = orThrow(await ensureSandboxImage(app.cradle, { pullAgents }));
-            app.cradle.logger.info(`Sandbox image ready: ${image}`);
+          return withApp(logFormat, async (app) => {
+            const image = await ensureSandboxImage(app.cradle, { pullAgents });
+            if (image.isErr()) return Result.err(image.error);
+            app.cradle.logger.info(`Sandbox image ready: ${image.value}`);
+            return Result.ok();
           });
         }),
       ),

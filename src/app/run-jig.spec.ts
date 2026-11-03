@@ -13,6 +13,7 @@ import { openRunWorktree } from '../../tests/support/open-run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
@@ -41,7 +42,7 @@ describe('runJig', () => {
     const agent = agentFor(id);
     scriptWholeRun(agent);
 
-    const report = await runJig(app, { start: await writeRequest(), runId: id });
+    const report = (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(agent.closed).toBe(true);
@@ -54,7 +55,7 @@ describe('runJig', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
 
-    const report = await runJig(app, { start: await writeRequest(), runId: id });
+    const report = (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
   });
@@ -63,10 +64,10 @@ describe('runJig', () => {
     const { app, writeRequest, agentFor, repo } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    await runJig(app, { start: await writeRequest(), runId: id });
+    (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
     await simpleGit({ baseDir: repo.dir }).merge([runBranchFor(id), '--no-edit']);
 
-    const report = await runJig(app, { resume: id });
+    const report = (await runJig(app, { resume: id })).unwrap();
 
     expect(report.status).toBe('done');
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'done', complete: true });
@@ -77,10 +78,10 @@ describe('runJig', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
     const requestPath = await writeRequest();
-    const first = await runJig(app, { start: requestPath, runId: id });
+    const first = (await runJig(app, { start: requestPath, runId: id })).unwrap();
     const commitsAfterFirst = await runBranchCommits(repo.dir, id);
 
-    const second = await runJig(app, { start: requestPath, runId: id });
+    const second = (await runJig(app, { start: requestPath, runId: id })).unwrap();
 
     expect(second).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(second.state.runId).toBe(id);
@@ -101,13 +102,15 @@ describe('runJig', () => {
     const first = runJig(app, { start: requestPath, runId: id });
     await held.opened;
 
-    await expect(runJig(app, { start: requestPath, runId: id })).rejects.toBeInstanceOf(
-      RunInProgress,
-    );
+    const refused = await runJig(app, { start: requestPath, runId: id });
+
+    expect(refused.isErr() && refused.error).toBeInstanceOf(RunInProgress);
 
     held.release();
     await first;
-    expect(await runJig(app, { resume: id })).toMatchObject({ state: { phase: 'awaitingMerge' } });
+    expect((await runJig(app, { resume: id })).unwrap()).toMatchObject({
+      state: { phase: 'awaitingMerge' },
+    });
   });
 
   it('starts the sandbox again when it failed for a reason that may pass', async () => {
@@ -122,7 +125,7 @@ describe('runJig', () => {
       }),
     );
 
-    const report = await runJig(app, { start: await writeRequest(), runId: id });
+    const report = (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
 
     expect(report.state.phase).toBe('awaitingMerge');
     expect(opened()).toBe(3);
@@ -134,9 +137,9 @@ describe('runJig', () => {
     scriptWholeRun(agentFor(id));
     const opened = failNextSessions(new ConfigInvalid({ message: faker.lorem.sentence() }));
 
-    await expect(runJig(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
-      ConfigInvalid,
-    );
+    const result = await runJig(app, { start: await writeRequest(), runId: id });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
     expect(opened()).toBe(1);
   });
 
@@ -144,17 +147,38 @@ describe('runJig', () => {
     const { app, writeRequest, agentFor } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    await runJig(app, { start: await writeRequest(), runId: id });
+    (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
 
-    await expect(runJig(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
-      RunRequestInvalid,
-    );
+    const result = await runJig(app, { start: await writeRequest(), runId: id });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(RunRequestInvalid);
   });
 
   it('refuses to resume a run that does not exist', async () => {
     const { app } = await setup();
 
-    await expect(runJig(app, { resume: runId() })).rejects.toBeInstanceOf(RunRequestInvalid);
+    const result = await runJig(app, { resume: runId() });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(RunRequestInvalid);
+  });
+
+  it('releases the run lock when the run fails', async () => {
+    const { app, repo } = await setup();
+    const id = runId();
+
+    const failed = await runJig(app, { resume: id });
+
+    expect(failed.isErr() && failed.error).toBeInstanceOf(RunRequestInvalid);
+    const lock = await lockRun(repo.dir, id);
+    expect(lock.isOk()).toBe(true);
+  });
+
+  it('refuses a request file that cannot be read', async () => {
+    const { app, requests } = await setup();
+
+    const result = await runJig(app, { start: path.join(requests, faker.word.noun()) });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(RunRequestInvalid);
   });
 
   it.each(['done', 'stuck'] as const)(
@@ -164,7 +188,7 @@ describe('runJig', () => {
       const state = aRunState({ phase });
       await new LocalRunStore(repo.dir).save(state);
 
-      const report = await runJig(app, { resume: state.runId });
+      const report = (await runJig(app, { resume: state.runId })).unwrap();
 
       expect(report).toMatchObject({ status: phase, state: { phase } });
       expect(sessionsOpened()).toBe(0);
@@ -229,6 +253,7 @@ describe('runJig', () => {
     return {
       app,
       repo,
+      requests,
       writeRequest,
       agentFor,
       holdNextSession,

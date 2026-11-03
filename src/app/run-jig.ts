@@ -1,11 +1,12 @@
 import type { AwilixContainer } from 'awilix';
+import { Result } from 'better-result';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { startTelemetry } from '../adapters/telemetry/open-telemetry.js';
-import { orThrow, RunRequestInvalid } from '../domain/errors.js';
+import { type JigError, messageOf, RunRequestInvalid } from '../domain/errors.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
@@ -34,18 +35,14 @@ export type RunReport = EngineResult;
 export async function runJig(
   app: AwilixContainer<AppCradle>,
   input: RunJigInput,
-): Promise<RunReport> {
+): Promise<Result<RunReport, JigError>> {
   const runId = 'resume' in input ? input.resume : (input.runId ?? newRunId());
-  const releaseLock = orThrow(await lockRun(app.cradle.repoRoot, runId));
+  const releaseLock = await lockRun(app.cradle.repoRoot, runId);
+  if (releaseLock.isErr()) return Result.err(releaseLock.error);
   try {
-    const store = orThrow(await openRunStore(app.cradle));
-    const state = await startOrResume(app.cradle, store, input, runId);
-    const finished = finalStatus(runFlow, state);
-    const report = finished ? { state, status: finished } : await advance(app, store, state);
-    await recordInvocation(app.cradle, report);
-    return report;
+    return await runLocked(app, input, runId);
   } finally {
-    await releaseLock();
+    await releaseLock.value();
   }
 }
 
@@ -53,25 +50,57 @@ function newRunId(): RunId {
   return runIdSchema.parse(randomBytes(4).toString('hex'));
 }
 
+function runLocked(
+  app: AwilixContainer<AppCradle>,
+  input: RunJigInput,
+  runId: RunId,
+): Promise<Result<RunReport, JigError>> {
+  return Result.gen(async function* () {
+    const store = yield* Result.await(openRunStore(app.cradle));
+    const state = yield* Result.await(startOrResume(app.cradle, store, input, runId));
+    const finished = finalStatus(runFlow, state);
+    const report = finished
+      ? { state, status: finished }
+      : yield* Result.await(advance(app, store, state));
+    yield* Result.await(recordInvocation(app.cradle, report));
+    return Result.ok(report);
+  });
+}
+
 async function startOrResume(
   cradle: AppCradle,
   store: RunStore,
   input: RunJigInput,
   runId: RunId,
-): Promise<RunState> {
-  const existing = orThrow(await store.load(runId));
+): Promise<Result<RunState, JigError>> {
+  const existing = await store.load(runId);
+  if (existing.isErr()) return Result.err(existing.error);
   if ('resume' in input) {
-    if (!existing) throw new RunRequestInvalid({ message: `No run found with id "${runId}".` });
-    return existing;
+    return existing.value
+      ? Result.ok(existing.value)
+      : Result.err(new RunRequestInvalid({ message: `No run found with id "${runId}".` }));
   }
-  const request = await readFile(input.start, 'utf-8');
-  if (!existing) return startNewRun(cradle, store, runId, request);
-  if (request !== existing.request) {
-    throw new RunRequestInvalid({
-      message: `Run "${runId}" was started from a different request — pass a new --id to start a new run.`,
-    });
+  const request = await readRequest(input.start);
+  if (request.isErr()) return Result.err(request.error);
+  if (!existing.value) return startNewRun(cradle, store, runId, request.value);
+  if (request.value !== existing.value.request) {
+    return Result.err(
+      new RunRequestInvalid({
+        message: `Run "${runId}" was started from a different request — pass a new --id to start a new run.`,
+      }),
+    );
   }
-  return existing;
+  return Result.ok(existing.value);
+}
+
+function readRequest(file: string): Promise<Result<string, RunRequestInvalid>> {
+  return Result.tryPromise({
+    try: () => readFile(file, 'utf-8'),
+    catch: (error) =>
+      new RunRequestInvalid({
+        message: `Cannot read the request file "${file}": ${messageOf(error)}`,
+      }),
+  });
 }
 
 async function startNewRun(
@@ -79,25 +108,25 @@ async function startNewRun(
   store: RunStore,
   runId: RunId,
   request: string,
-): Promise<RunState> {
-  const baseBranch = orThrow(await getCurrentBranch(cradle.repoRoot));
-  const started = startRun({ runId, baseBranch, request });
-  orThrow(await store.save(started));
-  return started;
+): Promise<Result<RunState, JigError>> {
+  const baseBranch = await getCurrentBranch(cradle.repoRoot);
+  if (baseBranch.isErr()) return Result.err(baseBranch.error);
+  const started = startRun({ runId, baseBranch: baseBranch.value, request });
+  const saved = await store.save(started);
+  return saved.isErr() ? Result.err(saved.error) : Result.ok(started);
 }
 
 async function advance(
   app: AwilixContainer<AppCradle>,
   store: RunStore,
   state: RunState,
-): Promise<EngineResult> {
-  orThrow(await ensureSandboxImage(app.cradle));
+): Promise<Result<EngineResult, JigError>> {
+  const image = await ensureSandboxImage(app.cradle);
+  if (image.isErr()) return Result.err(image.error);
   const telemetry = await startTelemetry(app.cradle.environment.telemetry);
   try {
-    return orThrow(
-      await withRunScope(app, state, store, { tracer: telemetry?.tracer }, (dependencies) =>
-        runEngine(runFlow, state, dependencies),
-      ),
+    return await withRunScope(app, state, store, { tracer: telemetry?.tracer }, (dependencies) =>
+      runEngine(runFlow, state, dependencies),
     );
   } finally {
     await telemetry?.shutdown();
@@ -108,7 +137,8 @@ async function advance(
 async function recordInvocation(
   { repoRoot, artefacts }: AppCradle,
   report: RunReport,
-): Promise<void> {
-  const metrics = orThrow(new MetricsLog(repoRoot, report.state.runId).summary());
-  orThrow(await artefacts.write(report.state, report.status, metrics));
+): Promise<Result<void, JigError>> {
+  const metrics = new MetricsLog(repoRoot, report.state.runId).summary();
+  if (metrics.isErr()) return Result.err(metrics.error);
+  return artefacts.write(report.state, report.status, metrics.value);
 }
