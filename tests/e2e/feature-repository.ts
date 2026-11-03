@@ -77,12 +77,19 @@ export function runFeatureTests(repo: string, image: string, cancelSignal: Abort
 }
 
 /** What a run left under `.jig/<runId>/state/`: its result, saved state, documents and the step outcomes it recorded. */
-export async function readRunRecord(repo: string, runId: string) {
+export async function readRunOutcome(repo: string, runId: string) {
   const directory = path.join(repo, '.jig', runId, 'state');
   const read = (name: string) => readFile(path.join(directory, name), 'utf8');
   return {
     result: resultSchema.parse(JSON.parse(await read('result.json'))),
     state: runStateSchema.parse(JSON.parse(await read('run.json'))),
+  };
+}
+
+export async function readRunRecord(repo: string, runId: string) {
+  const directory = path.join(repo, '.jig', runId, 'state');
+  const read = (name: string) => readFile(path.join(directory, name), 'utf8');
+  return {
     documents: {
       design: await read('design.md'),
       plan: await read('plan.md'),

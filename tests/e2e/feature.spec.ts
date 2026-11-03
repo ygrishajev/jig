@@ -13,6 +13,7 @@ import { unwrap } from '../support/unwrap.js';
 import {
   createFeatureRepository,
   FEATURE_FIXTURE,
+  readRunOutcome,
   readRunRecord,
   runFeatureTests,
 } from './feature-repository.js';
@@ -36,6 +37,7 @@ const FEATURE_PIPELINE_STEPS = [
 ];
 
 type RunRecord = Awaited<ReturnType<typeof readRunRecord>>;
+type RunOutcome = Awaited<ReturnType<typeof readRunOutcome>>;
 type FeatureTestRun = Awaited<ReturnType<typeof runFeatureTests>>;
 
 describe('live feature pipeline', () => {
@@ -48,9 +50,10 @@ describe('live feature pipeline', () => {
 
     await jig('run', 'request.md', '--id', RUN_ID, '--log-format', 'json');
 
+    const outcome = await readRunOutcome(repo, RUN_ID);
+    expectRunFinished(outcome);
+    expectOneApprovedSlice(outcome);
     const run = await readRunRecord(repo, RUN_ID);
-    expectRunFinished(run);
-    expectOneApprovedSlice(run);
     expectRunDocumentsWritten(run);
     expectEveryPipelineStepCompleted(run);
     await expectOnlyTheImplementationMergedOntoMain(repo, baseline);
@@ -105,7 +108,7 @@ function expectFeatureTestsToPass(tests: FeatureTestRun) {
   expect(tests.stdout).toMatch(/^# fail 0$/m);
 }
 
-function expectRunFinished({ result, state }: RunRecord) {
+function expectRunFinished({ result, state }: RunOutcome) {
   expect(result, result.blockedReason ?? `Pipeline stopped at ${result.phase}.`).toMatchObject({
     status: 'done',
     phase: 'done',
@@ -114,7 +117,7 @@ function expectRunFinished({ result, state }: RunRecord) {
   expect(state.phase).toBe('done');
 }
 
-function expectOneApprovedSlice({ state }: RunRecord) {
+function expectOneApprovedSlice({ state }: RunOutcome) {
   expect(state.slices, 'The feature must produce exactly one slice.').toHaveLength(1);
   expect(state.slices[0].status).toBe('approved');
   expect(state.slices[0].commit).toBeTruthy();
