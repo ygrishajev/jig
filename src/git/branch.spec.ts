@@ -3,7 +3,7 @@ import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
 import { createTempRepo } from '../../tests/support/temp-repo.js';
-import { getCurrentBranch } from './branch.js';
+import { deleteBranch, getCurrentBranch } from './branch.js';
 
 describe('getCurrentBranch', () => {
   it('reports the branch checked out in the repository', async () => {
@@ -18,4 +18,21 @@ describe('getCurrentBranch', () => {
     await simpleGit({ baseDir: dir }).checkoutLocalBranch(branch);
     return { repo: dir, branch };
   }
+});
+
+describe('deleteBranch', () => {
+  it('removes a branch that was never merged, and leaves a missing one alone', async () => {
+    const { dir } = await createTempRepo();
+    const git = simpleGit({ baseDir: dir });
+    const branch = `${faker.word.noun()}-${faker.string.alphanumeric({ length: 6, casing: 'lower' })}`;
+    const start = await getCurrentBranch(dir);
+    await git.checkoutLocalBranch(branch);
+    await git.commit(faker.git.commitMessage(), { '--allow-empty': null });
+    await git.checkout(start);
+
+    await deleteBranch(dir, branch);
+    await deleteBranch(dir, branch);
+
+    expect((await git.branchLocal()).all).not.toContain(branch);
+  });
 });

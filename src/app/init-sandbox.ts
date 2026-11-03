@@ -1,5 +1,4 @@
 import type { AwilixContainer } from 'awilix';
-import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -15,14 +14,8 @@ import { ignoreSandcastleDirectory } from '../adapters/sandcastle/sandcastle-ses
 import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
 import { SetupCommandFailed } from '../domain/errors.js';
-import { runIdSchema } from '../domain/run-id.js';
-import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
-import { getCurrentBranch } from '../git/branch.js';
-import { openRepo } from '../git/repository.js';
-import { LoggingObserver } from '../observers/logging-observer.js';
-import { observe, RunEvents } from '../observers/run-events.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
-import type { AppCradle } from './container.js';
+import { type AppCradle, type RunSession, withThrowawaySandbox } from './container.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 
 /** How many times the planner gets to fix a toolchain that failed setup or verify. */
@@ -133,33 +126,11 @@ async function checkInSandbox(
   }
 }
 
-// TODO(cohesion-6): assembles its own RunEvents + LoggingObserver (part of what openRunScope does) and deletes the branch with raw git; revisit once withRunScope exists.
-/** A throwaway sandbox on its own branch, removed again afterwards. */
 async function withSandbox<T>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
-  use: (session: Awaited<ReturnType<AppCradle['openSession']>>) => Promise<T>,
+  use: (session: RunSession) => Promise<T>,
 ) {
-  const { repoRoot, logger } = app.cradle;
   await ensureSandboxImage(app.cradle);
-  const run: RunIdentity = {
-    runId: runIdSchema.parse(`init-${randomBytes(3).toString('hex')}`),
-    baseBranch: await getCurrentBranch(repoRoot),
-  };
-  const events = new RunEvents();
-  const logging = new LoggingObserver(logger);
-  observe(
-    events,
-    (event) => logging.handle(event),
-    () => undefined,
-  );
-  const session = await app.cradle.openSession({ run, events, setupCommand });
-  try {
-    return await use(session);
-  } finally {
-    await session.close();
-    await openRepo(repoRoot)
-      .raw(['branch', '-D', runBranchFor(run.runId)])
-      .catch(() => undefined);
-  }
+  return withThrowawaySandbox(app, setupCommand, use);
 }

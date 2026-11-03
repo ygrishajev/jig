@@ -1,5 +1,6 @@
 import type { Tracer } from '@opentelemetry/api';
 import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMode } from 'awilix';
+import { randomBytes } from 'node:crypto';
 import pRetry from 'p-retry';
 import type { Logger } from 'pino';
 
@@ -21,9 +22,12 @@ import {
 import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, loadConfig, runSettingsFrom } from '../config/load-config.js';
 import { isTransient } from '../domain/errors.js';
-import type { RunIdentity } from '../domain/run-state.js';
+import type { RunEvent } from '../domain/events.js';
+import { runIdSchema } from '../domain/run-id.js';
+import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
+import { deleteBranch, getCurrentBranch } from '../git/branch.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { MetricsObserver } from '../observers/metrics.js';
 import { observe, RunEvents } from '../observers/run-events.js';
@@ -153,20 +157,13 @@ async function openRunScope(
       }),
     ).scoped(),
     metricsLog: asFunction(() => new MetricsLog(repoRoot, run.runId)).scoped(),
-    events: asFunction(({ runLogger, metricsLog, clock }: RunCradle) => {
-      const events = new RunEvents();
-      const onObserverError = (error: unknown) =>
-        runLogger.warn({ err: error }, 'an observer failed');
-      const logging = new LoggingObserver(runLogger);
-      const metrics = new MetricsObserver((record) => metricsLog.append(record), clock);
-      observe(events, (event) => logging.handle(event), onObserverError);
-      observe(events, (event) => metrics.handle(event), onObserverError);
-      if (options.tracer) {
-        const tracing = new TracingObserver(options.tracer);
-        observe(events, (event) => tracing.handle(event), onObserverError);
-      }
-      return events;
-    }).scoped(),
+    events: asFunction(({ runLogger, metricsLog, clock }: RunCradle) =>
+      observedEvents(runLogger, [
+        new LoggingObserver(runLogger),
+        new MetricsObserver((record) => metricsLog.append(record), clock),
+        ...(options.tracer ? [new TracingObserver(options.tracer)] : []),
+      ]),
+    ).scoped(),
   });
 
   const session = await openSessionRetrying(scope.cradle);
@@ -200,6 +197,41 @@ function openSessionRetrying({ openSession, run, events, settings, runLogger }: 
     onFailedAttempt: ({ error, attemptNumber }) =>
       runLogger.warn({ err: error, attempt: attemptNumber }, 'the sandbox did not start'),
   });
+}
+
+/** Events the given observers hear; one that fails is logged, and the others still hear the event. */
+function observedEvents(logger: Logger, observers: { handle(event: RunEvent): void }[]) {
+  const events = new RunEvents();
+  const onObserverError = (error: unknown) => logger.warn({ err: error }, 'an observer failed');
+  for (const observer of observers) {
+    observe(events, (event) => observer.handle(event), onObserverError);
+  }
+  return events;
+}
+
+/**
+ * A sandbox for a one-off check, on a branch of its own that is removed afterwards, its events
+ * logged to the console. It is never retried: a setup command that fails is the answer the
+ * caller is waiting for, not a hiccup.
+ */
+export async function withThrowawaySandbox<T>(
+  app: AwilixContainer<AppCradle>,
+  setupCommand: string | null,
+  use: (session: RunSession) => Promise<T>,
+): Promise<T> {
+  const { repoRoot, logger, openSession } = app.cradle;
+  const run: RunIdentity = {
+    runId: runIdSchema.parse(`init-${randomBytes(3).toString('hex')}`),
+    baseBranch: await getCurrentBranch(repoRoot),
+  };
+  const events = observedEvents(logger, [new LoggingObserver(logger)]);
+  const session = await openSession({ run, events, setupCommand });
+  try {
+    return await use(session);
+  } finally {
+    await session.close();
+    await deleteBranch(repoRoot, runBranchFor(run.runId));
+  }
 }
 
 /** Awilix's `dispose` alone would leave the sandbox running, so the session is closed first. */
