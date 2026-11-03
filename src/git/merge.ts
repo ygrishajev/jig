@@ -113,9 +113,7 @@ export async function mergeBranchInto(
       Result.tryPromise({
         try: () => git.merge([branchName, '--no-edit']),
         catch: (error) =>
-          new MergeFailed({
-            message: `Merging "${branchName}" into "${intoBranch}" failed: ${messageOf(error)}`,
-          }),
+          new MergeFailed({ message: messageOf(error) }),
       }),
     );
     return Result.ok(

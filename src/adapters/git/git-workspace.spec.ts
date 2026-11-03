@@ -62,6 +62,19 @@ describe('GitWorkspace', () => {
     expect((await workspace.isRunBranchMerged()).unwrap()).toBe(false);
   });
 
+  it('names the run and base branch when the merge is refused', async () => {
+    const { workspace, repo, writeInWorktree } = await setup();
+    await writeInWorktree('feature.txt', faker.lorem.paragraph());
+    await workspace.commitAll(faker.git.commitMessage());
+    await writeFile(path.join(repo, `${faker.string.uuid()}.txt`), faker.lorem.paragraph());
+
+    const merge = await workspace.mergeRunBranch();
+
+    expect(merge.isErr() && merge.error.message).toMatch(
+      /^Merging "jig\/run\/.+" into "main" failed: Refusing to merge: .* has uncommitted changes$/,
+    );
+  });
+
   async function setup() {
     const created = await createRunWorktree(runId());
     const writeInWorktree = (file: string, contents: string) =>

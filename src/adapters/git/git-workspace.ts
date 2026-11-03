@@ -72,7 +72,6 @@ export class GitWorkspace implements Workspace {
     const merged = await mergeBranchInto(repoRoot, this.runBranch, baseBranch);
     if (merged.isOk()) return Result.ok();
     await abortMergeInProgress(repoRoot);
-    if (merged.error instanceof MergeFailed) return Result.err(merged.error);
     return Result.err(
       new MergeFailed({
         message: `Merging "${this.runBranch}" into "${baseBranch}" failed: ${merged.error.message}`,
