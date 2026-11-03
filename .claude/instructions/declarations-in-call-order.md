@@ -11,6 +11,13 @@
 - **The same rule applies inside a class.** Fields and the constructor come first, then static factories, then the public methods in the order they had. Each private method goes after the first method that calls it.
 - **Constants follow call order too.** A tuning constant such as `OUTPUT_CORRECTIONS` sits after the first function that reads it, unless something reads it at load time.
 
+## Enforcement
+
+`npm run lint` checks every non-spec file in `src/` with `jig/declarations-in-call-order`
+(`scripts/eslint-rules/`). The rule only reports, naming the expected order. It never fixes,
+because a reorder can be valid TypeScript and still throw at import, and only the tests can
+catch that.
+
 ## Signals
 
 - A helper declared above the function that calls it.
@@ -68,9 +75,9 @@ export function registerRunCommand(program: Command) {
 Here the reader meets the details first and the entry point last.
 
 ```typescript
-export const runInputSchema = logFormatInputSchema.extend({ /* ... */ });
+export const runInputSchema = logFormatInputSchema.extend({/* ... */});
 
-const logFormatInputSchema = z.object({ /* ... */ });
+const logFormatInputSchema = z.object({/* ... */});
 ```
 
 This throws at import: `runInputSchema` reads `logFormatInputSchema` while the module loads, so `logFormatInputSchema` has to be declared first.
