@@ -1,7 +1,7 @@
 import { panic, Result } from 'better-result';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { isTransient, type JigError, messageOf } from '../domain/errors.js';
+import { isTransient, type JigError, messageOf, rootCause } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome } from '../domain/outcome.js';
 import { retryResult } from '../domain/retry.js';
@@ -76,8 +76,9 @@ class Engine {
     try {
       settled = await this.settle(initial, (state) => (saved = state));
     } catch (error) {
-      this.publishRunFailed(saved, messageOf(error));
-      panic(messageOf(error), error);
+      const bug = rootCause(error);
+      this.publishRunFailed(saved, messageOf(bug));
+      panic(messageOf(bug), bug);
     }
     if (settled.isErr()) this.publishRunFailed(saved, settled.error.message);
     return settled;
@@ -223,8 +224,9 @@ class Engine {
     try {
       stepped = await step();
     } catch (error) {
-      publishFailed(messageOf(error));
-      panic(messageOf(error), error);
+      const bug = rootCause(error);
+      publishFailed(messageOf(bug));
+      panic(messageOf(bug), bug);
     }
     if (stepped.isErr()) {
       publishFailed(stepped.error.message);

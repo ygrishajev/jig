@@ -1,4 +1,4 @@
-import { type Result, TaggedError } from 'better-result';
+import { Panic, type Result, TaggedError } from 'better-result';
 
 /**
  * How the engine reacts to a failure: try the step again, stop and wait for a person, or abort
@@ -25,6 +25,13 @@ export type JigError =
 /** JavaScript can throw anything, not only an `Error`. */
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** What was first thrown under a chain of panics, such as the one `Result.gen` wraps around a throw. */
+export function rootCause(error: unknown): unknown {
+  let cause = error;
+  while (Panic.is(cause) && cause.cause !== undefined) cause = cause.cause;
+  return cause;
 }
 
 /** A failure worth another attempt: a step, or a sandbox that did not start, gets bounded retries. */

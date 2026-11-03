@@ -296,6 +296,26 @@ describe('runEngine', () => {
     ]);
   });
 
+  it('reports the bug itself when a step composed with Result.gen throws', async () => {
+    const bug = new Error(faker.lorem.sentence());
+    const { run, events } = setup({
+      flow: linearFlow({
+        context: () =>
+          Result.gen(async function* () {
+            yield* Result.await(Promise.resolve(Result.ok()));
+            throw bug;
+          }),
+      }),
+    });
+
+    const running = run(aDescribedRun({ phase: 'context' }));
+
+    await expect(running).rejects.toThrow(Panic);
+    await expect(running).rejects.toMatchObject({ cause: bug });
+    expect(events.ofType('stepFailed')).toMatchObject([{ reason: bug.message }]);
+    expect(events.ofType('runFailed')).toMatchObject([{ reason: bug.message }]);
+  });
+
   it('reports a fatal failure as the run failing at the phase it was in', async () => {
     const reason = faker.lorem.sentence();
     const { run, events } = setup({
