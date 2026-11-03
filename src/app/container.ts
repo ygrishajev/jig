@@ -1,7 +1,7 @@
 import type { Tracer } from '@opentelemetry/api';
 import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMode } from 'awilix';
+import { Result } from 'better-result';
 import { randomBytes } from 'node:crypto';
-import pRetry from 'p-retry';
 import type { Logger } from 'pino';
 
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
@@ -19,10 +19,12 @@ import {
   openSandcastleSession,
   type OpenSessionInput,
 } from '../adapters/sandcastle/open-session.js';
+import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import { isTransient, orThrow } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
+import { retryResult } from '../domain/retry.js';
 import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -64,7 +66,7 @@ export interface AppCradle {
   artefacts: RunArtefacts;
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
-  openSession: (input: OpenSessionInput) => Promise<RunSession>;
+  openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SessionOpenFailure>>;
 }
 
 /** The run's sandbox: where agents and commands run, and the worktree they share with the host. */
@@ -132,12 +134,13 @@ export async function withRunScope<T>(
   runStore: RunStore,
   options: { tracer?: Tracer },
   use: (dependencies: EngineDependencies) => Promise<T>,
-): Promise<T> {
+): Promise<Result<T, SessionOpenFailure>> {
   const scope = await openRunScope(app, { runId, baseBranch }, runStore, options);
+  if (scope.isErr()) return Result.err(scope.error);
   try {
-    return await use(scope.cradle.engineDependencies);
+    return Result.ok(await use(scope.value.cradle.engineDependencies));
   } finally {
-    await closeRunScope(scope);
+    await closeRunScope(scope.value);
   }
 }
 
@@ -146,7 +149,7 @@ async function openRunScope(
   run: RunIdentity,
   runStore: RunStore,
   options: { tracer?: Tracer },
-): Promise<AwilixContainer<RunCradle>> {
+): Promise<Result<AwilixContainer<RunCradle>, SessionOpenFailure>> {
   const { repoRoot } = app.cradle;
   const scope = app.createScope<RunCradle>();
   scope.register({
@@ -167,7 +170,12 @@ async function openRunScope(
     ).scoped(),
   });
 
-  const session = await openSessionRetrying(scope.cradle);
+  const opened = await openSessionRetrying(scope.cradle);
+  if (opened.isErr()) {
+    await scope.dispose();
+    return Result.err(opened.error);
+  }
+  const session = opened.value;
   scope.register({
     session: asValue(session),
     workspace: asFunction(
@@ -183,7 +191,7 @@ async function openRunScope(
       }),
     ).scoped(),
   });
-  return scope;
+  return Result.ok(scope);
 }
 
 /** Events the given observers hear; one that fails is logged, and the others still hear the event. */
@@ -207,13 +215,13 @@ function openSessionRetrying({
   events,
   settings,
   runLogger,
-}: RunCradle): Promise<RunSession> {
-  return pRetry(() => openSession({ run, events }), {
+}: RunCradle): Promise<Result<RunSession, SessionOpenFailure>> {
+  return retryResult<RunSession, SessionOpenFailure>(() => openSession({ run, events }), {
     retries: settings.maxStepRetries,
-    minTimeout: settings.retryDelayMs,
-    shouldRetry: ({ error }) => isTransient(error),
-    onFailedAttempt: ({ error, attemptNumber }) =>
-      runLogger.warn({ err: error, attempt: attemptNumber }, 'the sandbox did not start'),
+    delayMs: settings.retryDelayMs,
+    shouldRetry: isTransient,
+    onFailedAttempt: ({ error, attempt }) =>
+      runLogger.warn({ err: error, attempt }, 'the sandbox did not start'),
   });
 }
 
@@ -235,18 +243,21 @@ export async function withThrowawaySandbox<T>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<T>,
-): Promise<T> {
+): Promise<Result<T, SessionOpenFailure>> {
   const { repoRoot, logger, openSession } = app.cradle;
+  const baseBranch = await getCurrentBranch(repoRoot);
+  if (baseBranch.isErr()) return Result.err(baseBranch.error);
   const run: RunIdentity = {
     runId: runIdSchema.parse(`init-${randomBytes(3).toString('hex')}`),
-    baseBranch: orThrow(await getCurrentBranch(repoRoot)),
+    baseBranch: baseBranch.value,
   };
   const events = observedEvents(logger, [new LoggingObserver(logger)]);
   const session = await openSession({ run, events, setupCommand });
+  if (session.isErr()) return Result.err(session.error);
   try {
-    return await use(session);
+    return Result.ok(await use(session.value));
   } finally {
-    await session.close();
+    await session.value.close();
     orThrow(await deleteBranch(repoRoot, runBranchFor(run.runId)));
   }
 }

@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
+import { Result } from 'better-result';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
@@ -14,6 +15,7 @@ import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
+import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import {
@@ -195,9 +197,9 @@ describe('runJig', () => {
       held = { opened, released };
       return { opened: openedPromise, release };
     };
-    let sessionFailures: Error[] = [];
+    let sessionFailures: SessionOpenFailure[] = [];
     let sessionsOpened = 0;
-    const failNextSessions = (...failures: Error[]) => {
+    const failNextSessions = (...failures: SessionOpenFailure[]) => {
       sessionFailures = failures;
       return () => sessionsOpened;
     };
@@ -208,7 +210,7 @@ describe('runJig', () => {
       openSession: asValue(async ({ run }: OpenSessionInput) => {
         sessionsOpened++;
         const failure = sessionFailures.shift();
-        if (failure) throw failure;
+        if (failure) return Result.err(failure);
         const agent = agents.get(run.runId);
         if (!agent) throw new Error(`No fake agent prepared for run ${run.runId}`);
         const holding = held;
@@ -216,7 +218,7 @@ describe('runJig', () => {
         holding?.opened();
         await holding?.released;
         await openRunWorktree({ repoRoot: repo.dir, ...run });
-        return agent;
+        return Result.ok(agent);
       }),
     });
     const writeRequest = async () => {

@@ -39,17 +39,19 @@ async function fillTemplate(
   verifyCommand?: string,
 ): Promise<string | undefined> {
   try {
-    const { body } = await ports.agent.runForOutput({
-      role: 'describer',
-      prompt: pullRequestPrompt({
-        template,
-        plan: state.plan,
-        slices: state.slices,
-        design: state.docs.design,
-        verifyCommand,
+    const { body } = orThrow(
+      await ports.agent.runForOutput({
+        role: 'describer',
+        prompt: pullRequestPrompt({
+          template,
+          plan: state.plan,
+          slices: state.slices,
+          design: state.docs.design,
+          verifyCommand,
+        }),
+        schema: descriptionSchema,
       }),
-      schema: descriptionSchema,
-    });
+    );
     return body.trim();
   } catch (error) {
     if (isJigError(error) && error.kind !== 'fatal') return undefined;

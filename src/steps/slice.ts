@@ -9,12 +9,15 @@ import { implementPrompt, nothingChangedFeedback, reviewPrompt } from '../prompt
 export const implementSlice: SliceStep = async ({ state, slice, ports }) => {
   const { workspace } = ports;
   const attemptStart = orThrow(await workspace.headCommit());
-  await ports.agent.run({ role: 'implementer', prompt: implementPrompt(slice) });
+  orThrow(await ports.agent.run({ role: 'implementer', prompt: implementPrompt(slice) }));
   orThrow(await workspace.commitAll(`jig: implement ${slice.id} — ${slice.title}`));
   if (orThrow(await workspace.headCommit()) === (await sliceStart(state, slice, ports))) {
     return { type: 'changesRequested', feedback: nothingChangedFeedback(slice) };
   }
-  return { type: 'implemented', commit: orThrow(await workspace.summariseCommitsSince(attemptStart)) };
+  return {
+    type: 'implemented',
+    commit: orThrow(await workspace.summariseCommitsSince(attemptStart)),
+  };
 };
 
 /**
@@ -30,11 +33,13 @@ async function sliceStart(state: RunState, slice: Slice, ports: StepPorts): Prom
 }
 
 export const reviewSlice: SliceStep = async ({ state, slice, ports }) => {
-  const verdict = await ports.agent.runForOutput({
-    role: 'reviewer',
-    prompt: reviewPrompt(slice, `${await sliceStart(state, slice, ports)}..HEAD`),
-    schema: reviewVerdictSchema,
-  });
+  const verdict = orThrow(
+    await ports.agent.runForOutput({
+      role: 'reviewer',
+      prompt: reviewPrompt(slice, `${await sliceStart(state, slice, ports)}..HEAD`),
+      schema: reviewVerdictSchema,
+    }),
+  );
   return verdict.approved
     ? { type: 'approved' }
     : { type: 'changesRequested', feedback: verdict.feedback };

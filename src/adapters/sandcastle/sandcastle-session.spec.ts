@@ -5,6 +5,7 @@ import type {
   SandboxRunOptions,
 } from '@ai-hero/sandcastle';
 import { faker } from '@faker-js/faker';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
@@ -17,11 +18,13 @@ import {
   AgentOutputInvalid,
   AgentRunFailed,
   ConfigInvalid,
+  orThrow,
   SandboxUnavailable,
   SetupCommandFailed,
 } from '../../domain/errors.js';
 import type { AgentRole } from '../../ports/agent-session.js';
 import { AGENTS } from './agents.js';
+import { openCodexAuthCache } from './codex-auth.js';
 import { type SandboxFactory, SandcastleSession } from './sandcastle-session.js';
 import { OUTPUT_TAG } from './structured-output.js';
 
@@ -31,8 +34,8 @@ describe('SandcastleSession', () => {
     const { open, runs, agents } = await setup({
       replies: [{ stdout: faker.lorem.sentence() }, { stdout: tagged(answer) }],
     });
-    agents.planner = AGENTS.codex.create(faker.word.noun());
-    expect(await (await open()).runForOutput(outputCall())).toEqual(answer);
+    agents.planner = orThrow(AGENTS.codex.create(faker.word.noun()));
+    expect(orThrow(await (await open()).runForOutput(outputCall()))).toEqual(answer);
     const prompt = faker.lorem.sentence();
     const command = runs[1].agent.buildPrintCommand({ ...printOptions(), prompt });
     expect(command.command).toContain('codex exec resume --last');
@@ -44,7 +47,7 @@ describe('SandcastleSession', () => {
     const answer = { summary: faker.lorem.sentence() };
     const { open } = await setup({ replies: [{ stdout: tagged(answer) }] });
 
-    expect(await (await open()).runForOutput(outputCall())).toEqual(answer);
+    expect(orThrow(await (await open()).runForOutput(outputCall()))).toEqual(answer);
   });
 
   it('asks the same agent, in its own conversation, to correct a reply that did not parse', async () => {
@@ -55,7 +58,7 @@ describe('SandcastleSession', () => {
 
     const result = await (await open()).runForOutput(outputCall());
 
-    expect(result).toEqual(answer);
+    expect(orThrow(result)).toEqual(answer);
     expect(runs).toHaveLength(2);
     expect(runs[0].agent.buildPrintCommand(printOptions()).command).toBe(printCommand);
     expect(runs[1].agent.buildPrintCommand(printOptions()).command).toBe(
@@ -64,23 +67,28 @@ describe('SandcastleSession', () => {
     expect(runs[1].prompt).toContain(OUTPUT_TAG);
   });
 
-  it('gives up with invalid output once the correction does not parse either', async () => {
+  it('asks once for a correction, then reports output it cannot parse', async () => {
     const { open, runs } = await setup({
       replies: [{ stdout: tagged({ wrong: 1 }) }, { stdout: tagged({ wrong: 2 }) }],
     });
 
-    await expect((await open()).runForOutput(outputCall())).rejects.toBeInstanceOf(
-      AgentOutputInvalid,
-    );
+    const result = await (await open()).runForOutput(outputCall());
+
+    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
     expect(runs).toHaveLength(2);
   });
 
   it('reports an agent the sandbox could not run as a failed agent run', async () => {
     const { open } = await setup({ replies: [{ fail: new Error(faker.lorem.sentence()) }] });
 
-    await expect(
-      (await open()).run({ role: 'implementer', prompt: faker.lorem.paragraph() }),
-    ).rejects.toBeInstanceOf(AgentRunFailed);
+    const result = await (
+      await open()
+    ).run({
+      role: 'implementer',
+      prompt: faker.lorem.paragraph(),
+    });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(AgentRunFailed);
   });
 
   it("runs each role's own agent with the prompt it was given", async () => {
@@ -155,29 +163,39 @@ describe('SandcastleSession', () => {
   });
 
   it('treats a repository path sandcastle cannot use as a configuration problem', async () => {
-    const { open } = await setup({ start: rejectingWith(sandcastleFailure('CwdError')) });
+    const { failure } = await setup({ start: rejectingWith(sandcastleFailure('CwdError')) });
 
-    await expect(open()).rejects.toBeInstanceOf(ConfigInvalid);
+    expect(await failure()).toBeInstanceOf(ConfigInvalid);
   });
 
   it.each(['WorktreeError', 'ContainerStartTimeoutError', 'DockerError', 'ExecError'])(
     'treats %s while starting as a sandbox that may well start on the next try',
     async (tag) => {
-      const { open } = await setup({ start: rejectingWith(sandcastleFailure(tag)) });
+      const { failure } = await setup({ start: rejectingWith(sandcastleFailure(tag)) });
 
-      const failure = open();
+      const error = await failure();
 
-      await expect(failure).rejects.toBeInstanceOf(SandboxUnavailable);
-      await expect(failure).rejects.toMatchObject({ kind: 'retry' });
+      expect(error).toBeInstanceOf(SandboxUnavailable);
+      expect(error).toMatchObject({ kind: 'retry' });
     },
   );
 
   it("treats a failure that is not one of sandcastle's own as one worth retrying", async () => {
-    const { open } = await setup({
+    const { failure } = await setup({
       start: rejectingWith(new Error(faker.lorem.sentence())),
     });
 
-    await expect(open()).rejects.toBeInstanceOf(SandboxUnavailable);
+    expect(await failure()).toBeInstanceOf(SandboxUnavailable);
+  });
+
+  it('reports a sandbox that will not start as unavailable', async () => {
+    const { failure, codexLoginIsFree } = await setup({
+      start: rejectingWith(new Error(faker.lorem.sentence())),
+      withCodexLogin: true,
+    });
+
+    expect(await failure()).toBeInstanceOf(SandboxUnavailable);
+    expect(await codexLoginIsFree()).toBe(true);
   });
 
   it('runs the setup command in the new sandbox before handing it over', async () => {
@@ -190,39 +208,39 @@ describe('SandcastleSession', () => {
     expect(sandbox.close).not.toHaveBeenCalled();
   });
 
-  it('closes the sandbox and reports the setup command when it exits non-zero', async () => {
+  it('reports a setup command that exits non-zero with its output', async () => {
     const output = faker.lorem.sentence();
-    const { open, sandbox } = await setup({
+    const { failure, sandbox } = await setup({
       setupCommand: `npm ${faker.word.verb()}`,
       exitCode: faker.number.int({ min: 1, max: 255 }),
       stderr: output,
     });
 
-    const failure = open();
+    const error = await failure();
 
-    await expect(failure).rejects.toBeInstanceOf(SetupCommandFailed);
-    await expect(failure).rejects.toMatchObject({ output });
+    expect(error).toBeInstanceOf(SetupCommandFailed);
+    expect(error).toMatchObject({ output });
     expect(sandbox.close).toHaveBeenCalled();
   });
 
   it('closes the sandbox and reports the setup command when it outlives its timeout', async () => {
-    const { open, sandbox } = await setup({
+    const { failure, sandbox } = await setup({
       setupCommand: `npm ${faker.word.verb()}`,
       setupTimeoutSeconds: 0.01,
       hangs: true,
     });
 
-    await expect(open()).rejects.toBeInstanceOf(SetupCommandFailed);
+    expect(await failure()).toBeInstanceOf(SetupCommandFailed);
     expect(sandbox.close).toHaveBeenCalled();
   });
 
   it('closes the sandbox and retries when the setup command could not be run at all', async () => {
-    const { open, sandbox } = await setup({
+    const { failure, sandbox } = await setup({
       setupCommand: `npm ${faker.word.verb()}`,
       execFails: new Error(faker.lorem.sentence()),
     });
 
-    await expect(open()).rejects.toBeInstanceOf(SandboxUnavailable);
+    expect(await failure()).toBeInstanceOf(SandboxUnavailable);
     expect(sandbox.close).toHaveBeenCalled();
   });
 
@@ -236,8 +254,10 @@ describe('SandcastleSession', () => {
     hangs?: boolean;
     execFails?: Error;
     replies?: Reply[];
+    withCodexLogin?: boolean;
   }) {
     const repoRoot = await tempDirectory('jig-session-');
+    const codexAuthDirectory = input.withCodexLogin ? await codexLoginDirectory() : undefined;
     const id = runId();
     const events = new RecordingEventSink();
     const replies = [...(input.replies ?? [])];
@@ -275,10 +295,11 @@ describe('SandcastleSession', () => {
       reviewer: anAgent(),
       describer: anAgent(),
     };
-    const open = () =>
+    const tryOpen = () =>
       SandcastleSession.open(
         {
           repoRoot,
+          codexAuthDirectory,
           runId: id,
           baseBranch: 'main',
           imageName: `sandcastle:${faker.word.noun()}`,
@@ -293,9 +314,39 @@ describe('SandcastleSession', () => {
         },
         start,
       );
-    return { open, sandbox, runs, agents, printCommand, events, id };
+    const open = async () => orThrow(await tryOpen());
+    const failure = async () => {
+      const result = await tryOpen();
+      if (result.isOk()) throw new Error('The session opened');
+      return result.error;
+    };
+    const codexLoginIsFree = async () => {
+      if (!codexAuthDirectory) return false;
+      const cache = orThrow(await openCodexAuthCache(codexAuthDirectory));
+      await cache.close();
+      return true;
+    };
+    return { open, failure, codexLoginIsFree, sandbox, runs, agents, printCommand, events, id };
   }
 });
+
+async function codexLoginDirectory() {
+  const directory = await tempDirectory('jig-codex-');
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, 'auth.json'),
+    JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: {
+        access_token: faker.string.alphanumeric(40),
+        id_token: faker.string.alphanumeric(40),
+        refresh_token: faker.string.alphanumeric(40),
+        account_id: faker.string.uuid(),
+      },
+    }),
+  );
+  return directory;
+}
 
 /**
  * Sandcastle runs on Effect, whose `runPromise` rejects with a FiberFailure that carries the

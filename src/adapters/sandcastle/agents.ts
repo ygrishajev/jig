@@ -1,4 +1,5 @@
 import { type AgentProvider, claudeCode, codex, opencode } from '@ai-hero/sandcastle';
+import { Result } from 'better-result';
 
 import { ConfigInvalid } from '../../domain/errors.js';
 
@@ -6,8 +7,8 @@ export interface AgentDefinition {
   /** The npm package that installs the agent's CLI into the sandbox image. */
   npmPackage: string;
   /** Env vars that can authenticate it; any one of them is enough. */
-  credentialKeys(model?: string): string[];
-  create(model?: string): AgentProvider;
+  credentialKeys(model?: string): Result<string[], ConfigInvalid>;
+  create(model?: string): Result<AgentProvider, ConfigInvalid>;
 }
 
 /** Which agent serves a role, and with which model. */
@@ -27,41 +28,45 @@ export const DEFAULT_CLAUDE_MODEL = 'opus';
 export const AGENTS = {
   claude: {
     npmPackage: '@anthropic-ai/claude-code',
-    credentialKeys: () => ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
-    create: (model) => claudeCode(model ?? DEFAULT_CLAUDE_MODEL, { captureSessions: false }),
+    credentialKeys: () => Result.ok(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']),
+    create: (model) =>
+      Result.ok(claudeCode(model ?? DEFAULT_CLAUDE_MODEL, { captureSessions: false })),
   },
   opencode: {
     npmPackage: 'opencode-ai',
-    credentialKeys: (model) => [`${modelProvider(requireModel(model)).toUpperCase()}_API_KEY`],
-    create: (model) => opencode(requireModel(model)),
+    credentialKeys: (model) =>
+      requireModel(model).map((required) => [`${modelProvider(required).toUpperCase()}_API_KEY`]),
+    create: (model) => requireModel(model).map((required) => opencode(required)),
   },
   codex: {
     npmPackage: '@openai/codex',
-    credentialKeys: () => ['JIG_CODEX_AUTH_DIR'],
-    create: (model?: string) => {
-      if (!model)
-        throw new ConfigInvalid({
-          message: 'codex needs an explicit model — set "model" on the step.',
-        });
-      return codex(model, { captureSessions: false });
-    },
+    credentialKeys: () => Result.ok(['JIG_CODEX_AUTH_DIR']),
+    create: (model?: string) =>
+      model
+        ? Result.ok(codex(model, { captureSessions: false }))
+        : Result.err(
+            new ConfigInvalid({
+              message: 'codex needs an explicit model — set "model" on the step.',
+            }),
+          ),
   },
 } satisfies Record<string, AgentDefinition>;
 
 export type AgentName = keyof typeof AGENTS;
 
-function modelProvider(model: string): string {
-  return model.split('/')[0] ?? model;
+function requireModel(model: string | undefined): Result<string, ConfigInvalid> {
+  return model
+    ? Result.ok(model)
+    : Result.err(
+        new ConfigInvalid({
+          message:
+            'opencode needs a model as "provider/model" (e.g. "openrouter/<model>") — set "model" on the step.',
+        }),
+      );
 }
 
-function requireModel(model: string | undefined): string {
-  if (!model) {
-    throw new ConfigInvalid({
-      message:
-        'opencode needs a model as "provider/model" (e.g. "openrouter/<model>") — set "model" on the step.',
-    });
-  }
-  return model;
+function modelProvider(model: string): string {
+  return model.split('/')[0] ?? model;
 }
 
 /**
@@ -71,20 +76,24 @@ function requireModel(model: string | undefined): string {
 export function collectCredentials(
   steps: AgentChoice[],
   credential: (name: string) => string | undefined,
-): Record<string, string> {
-  const credentials: Record<string, string> = {};
-  for (const step of steps) {
-    const keys = AGENTS[step.provider].credentialKeys(step.model);
-    const present = keys.flatMap((key) => {
-      const value = credential(key);
-      return value ? [[key, value] as const] : [];
-    });
-    if (present.length === 0) {
-      throw new ConfigInvalid({
-        message: `No ${step.provider} credentials found — set ${keys.join(' or ')} in the environment.`,
+): Result<Record<string, string>, ConfigInvalid> {
+  return Result.gen(function* () {
+    const credentials: Record<string, string> = {};
+    for (const step of steps) {
+      const keys = yield* AGENTS[step.provider].credentialKeys(step.model);
+      const present = keys.flatMap((key) => {
+        const value = credential(key);
+        return value ? [[key, value] as const] : [];
       });
+      if (present.length === 0) {
+        return Result.err(
+          new ConfigInvalid({
+            message: `No ${step.provider} credentials found — set ${keys.join(' or ')} in the environment.`,
+          }),
+        );
+      }
+      for (const [key, value] of present) credentials[key] = value;
     }
-    for (const [key, value] of present) credentials[key] = value;
-  }
-  return credentials;
+    return Result.ok(credentials);
+  });
 }

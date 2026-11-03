@@ -1,9 +1,10 @@
+import { Result } from 'better-result';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import type { ZodType } from 'zod';
 
-import { AgentOutputInvalid } from '../../src/domain/errors.js';
+import { AgentOutputInvalid, type AgentRunFailed } from '../../src/domain/errors.js';
 import type { RunEvent } from '../../src/domain/events.js';
 import type { RunId } from '../../src/domain/run-id.js';
 import type { RunState } from '../../src/domain/run-state.js';
@@ -18,10 +19,13 @@ import type { RunStore } from '../../src/ports/run-store.js';
 
 /**
  * What the fake agent does for one call: write files into the worktree, return structured output,
- * or fail the way a real agent would.
+ * fail the way a real agent does (a value), or crash the way a bug does (a throw).
  */
 export type AgentScript =
-  { files: Record<string, string>; commitMessage?: string } | { output: unknown } | { fail: Error };
+  | { files: Record<string, string>; commitMessage?: string }
+  | { output: unknown }
+  | { fail: AgentRunFailed }
+  | { crash: Error };
 
 export interface AgentCall extends AgentRunInput {
   kind: 'run' | 'runForOutput';
@@ -46,23 +50,30 @@ export class FakeAgentSession implements AgentSession {
     return this;
   }
 
-  async run(input: AgentRunInput) {
+  async run(input: AgentRunInput): Promise<Result<void, AgentRunFailed>> {
     this.calls.push({ ...input, kind: 'run' });
     const turn = this.nextTurn(input.role);
-    if ('fail' in turn) throw turn.fail;
-    if (!('files' in turn)) return;
-    await this.writeFiles(turn.files);
-    if (turn.commitMessage) await this.commit(turn.commitMessage);
+    if ('crash' in turn) throw turn.crash;
+    if ('fail' in turn) return Result.err(turn.fail);
+    if ('files' in turn) {
+      await this.writeFiles(turn.files);
+      if (turn.commitMessage) await this.commit(turn.commitMessage);
+    }
+    return Result.ok();
   }
 
-  async runForOutput<T>(input: AgentRunInput & { schema: ZodType<T> }) {
+  async runForOutput<T>(
+    input: AgentRunInput & { schema: ZodType<T> },
+  ): Promise<Result<T, AgentRunFailed | AgentOutputInvalid>> {
     this.calls.push({ role: input.role, prompt: input.prompt, kind: 'runForOutput' });
     const turn = this.nextTurn(input.role);
-    if ('fail' in turn) throw turn.fail;
+    if ('crash' in turn) throw turn.crash;
+    if ('fail' in turn) return Result.err(turn.fail);
     if (!('output' in turn)) throw new Error(`The ${input.role} turn has no output scripted`);
     const parsed = input.schema.safeParse(turn.output);
-    if (!parsed.success) throw new AgentOutputInvalid({ message: parsed.error.message });
-    return parsed.data;
+    return parsed.success
+      ? Result.ok(parsed.data)
+      : Result.err(new AgentOutputInvalid({ message: parsed.error.message }));
   }
 
   async exec(command: string) {

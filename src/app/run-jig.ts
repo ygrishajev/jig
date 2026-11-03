@@ -94,8 +94,10 @@ async function advance(
   await ensureSandboxImage(app.cradle);
   const telemetry = await startTelemetry(app.cradle.environment.telemetry);
   try {
-    return await withRunScope(app, state, store, { tracer: telemetry?.tracer }, (dependencies) =>
-      runEngine(runFlow, state, dependencies),
+    return orThrow(
+      await withRunScope(app, state, store, { tracer: telemetry?.tracer }, (dependencies) =>
+        runEngine(runFlow, state, dependencies),
+      ),
     );
   } finally {
     await telemetry?.shutdown();

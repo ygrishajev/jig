@@ -86,13 +86,15 @@ describe('sandcastleSessionOptions', () => {
       parseEnvironment(input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) }),
     );
     const options = (overrides: Partial<OpenSessionInput> = {}) =>
-      sandcastleSessionOptions(
-        { repoRoot, config, environment, imageName: `sandcastle:${faker.word.noun()}` },
-        {
-          run: { runId: runId(), baseBranch: 'main' },
-          events: new RecordingEventSink(),
-          ...overrides,
-        },
+      orThrow(
+        sandcastleSessionOptions(
+          { repoRoot, config, environment, imageName: `sandcastle:${faker.word.noun()}` },
+          {
+            run: { runId: runId(), baseBranch: 'main' },
+            events: new RecordingEventSink(),
+            ...overrides,
+          },
+        ),
       );
     return { options, repoRoot };
   }

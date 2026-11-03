@@ -6,6 +6,7 @@ import {
   type Sandbox,
 } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
+import { Result } from 'better-result';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -16,7 +17,6 @@ import {
   AgentOutputInvalid,
   AgentRunFailed,
   ConfigInvalid,
-  type JigError,
   messageOf,
   SandboxUnavailable,
   SetupCommandFailed,
@@ -33,6 +33,9 @@ import type { EventSink } from '../../ports/observability.js';
 import { type CodexAuthCache, openCodexAuthCache } from './codex-auth.js';
 import { extractOutput, OUTPUT_TAG, outputInstruction } from './structured-output.js';
 import { usageFromStreamLine } from './usage.js';
+
+/** Why a sandbox did not open; `ConfigInvalid` is the operator's to fix, the others may pass. */
+export type SessionOpenFailure = ConfigInvalid | SandboxUnavailable | SetupCommandFailed;
 
 export type SandboxFactory = (options: CreateSandboxOptions) => Promise<Sandbox>;
 
@@ -71,58 +74,76 @@ export class SandcastleSession implements AgentSession {
   static async open(
     options: SandcastleSessionOptions,
     start: SandboxFactory = createSandbox,
-  ): Promise<SandcastleSession> {
-    const repoRoot = await realpath(options.repoRoot);
-    await ignoreSandcastleDirectory(repoRoot);
-    const codexAuth = options.codexAuthDirectory
-      ? await openCodexAuthCache(options.codexAuthDirectory)
-      : undefined;
-    const mounts = codexAuth
-      ? [{ hostPath: codexAuth.directory, sandboxPath: '/home/agent/.codex' }]
-      : [];
-    const sandbox = await start({
-      branch: runBranchFor(options.runId),
-      baseBranch: options.baseBranch,
-      cwd: repoRoot,
-      sandbox: docker({ imageName: options.imageName, env: options.credentials, mounts }),
-      hooks: sandboxHooks(options),
-    }).catch(async (error: unknown) => {
-      await codexAuth?.close();
-      throw sandboxStartFailure(error);
+  ): Promise<Result<SandcastleSession, SessionOpenFailure>> {
+    const repoRoot = await Result.tryPromise({
+      try: () => realpath(options.repoRoot),
+      catch: (cause) =>
+        new ConfigInvalid({
+          message: `Cannot resolve the repository path ${options.repoRoot}: ${messageOf(cause)}`,
+        }),
     });
-    try {
-      if (options.setupCommand) await runSetupCommand(sandbox, options.setupCommand, options);
-      return new SandcastleSession(sandbox, options, codexAuth);
-    } catch (error) {
-      await codexAuth?.close();
-      throw error;
+    if (repoRoot.isErr()) return Result.err(repoRoot.error);
+    await ignoreSandcastleDirectory(repoRoot.value);
+    const codexAuth = await openCodexAuth(options);
+    if (codexAuth.isErr()) return Result.err(codexAuth.error);
+    const cache = codexAuth.value;
+    const mounts = cache ? [{ hostPath: cache.directory, sandboxPath: '/home/agent/.codex' }] : [];
+    const sandbox = await Result.tryPromise({
+      try: () =>
+        start({
+          branch: runBranchFor(options.runId),
+          baseBranch: options.baseBranch,
+          cwd: repoRoot.value,
+          sandbox: docker({ imageName: options.imageName, env: options.credentials, mounts }),
+          hooks: sandboxHooks(options),
+        }),
+      catch: sandboxStartFailure,
+    });
+    if (sandbox.isErr()) {
+      await cache?.close();
+      return Result.err(sandbox.error);
     }
+    const ready = options.setupCommand
+      ? await runSetupCommand(sandbox.value, options.setupCommand, options)
+      : Result.ok();
+    if (ready.isErr()) {
+      await cache?.close();
+      return Result.err(ready.error);
+    }
+    return Result.ok(new SandcastleSession(sandbox.value, options, cache));
   }
 
   get worktreePath(): string {
     return this.sandbox.worktreePath;
   }
 
-  async run({ role, prompt }: AgentRunInput): Promise<void> {
-    await this.reply(role, this.options.agents[role], prompt);
+  async run({ role, prompt }: AgentRunInput): Promise<Result<void, AgentRunFailed>> {
+    const reply = await this.reply(role, this.options.agents[role], prompt);
+    return reply.map(() => undefined);
   }
 
-  private async reply(role: AgentRole, agent: AgentProvider, prompt: string): Promise<string> {
-    try {
-      const result = await this.sandbox.run({
-        agent,
-        prompt,
-        idleTimeoutSeconds: this.options.idleTimeoutSeconds,
-        logging: {
-          type: 'file',
-          path: this.options.agentLogFile,
-          onAgentStreamEvent: (event) => this.publishAgentEvent(role, event),
-        },
-      });
-      return result.stdout;
-    } catch (error) {
-      throw new AgentRunFailed({ message: `The ${role} agent failed: ${messageOf(error)}` });
-    }
+  private reply(
+    role: AgentRole,
+    agent: AgentProvider,
+    prompt: string,
+  ): Promise<Result<string, AgentRunFailed>> {
+    return Result.tryPromise({
+      try: async () => {
+        const result = await this.sandbox.run({
+          agent,
+          prompt,
+          idleTimeoutSeconds: this.options.idleTimeoutSeconds,
+          logging: {
+            type: 'file',
+            path: this.options.agentLogFile,
+            onAgentStreamEvent: (event) => this.publishAgentEvent(role, event),
+          },
+        });
+        return result.stdout;
+      },
+      catch: (error) =>
+        new AgentRunFailed({ message: `The ${role} agent failed: ${messageOf(error)}` }),
+    });
   }
 
   private publishAgentEvent(role: AgentRole, event: AgentStreamEvent): void {
@@ -148,32 +169,34 @@ export class SandcastleSession implements AgentSession {
     role,
     prompt,
     schema,
-  }: AgentRunInput & { schema: ZodType<T> }): Promise<T> {
+  }: AgentRunInput & { schema: ZodType<T> }): Promise<
+    Result<T, AgentRunFailed | AgentOutputInvalid>
+  > {
     const reply = await this.reply(
       role,
       this.options.agents[role],
       `${prompt}\n\n${outputInstruction()}`,
     );
-    return this.parseWithCorrections(role, reply, schema);
+    if (reply.isErr()) return Result.err(reply.error);
+    return this.parseWithCorrections(role, reply.value, schema);
   }
 
   private async parseWithCorrections<T>(
     role: AgentRole,
     firstReply: string,
     schema: ZodType<T>,
-  ): Promise<T> {
+  ): Promise<Result<T, AgentRunFailed | AgentOutputInvalid>> {
     let reply = firstReply;
     for (let correction = 0; ; correction++) {
-      try {
-        return extractOutput(reply, schema);
-      } catch (error) {
-        if (!(error instanceof AgentOutputInvalid) || correction >= OUTPUT_CORRECTIONS) throw error;
-        reply = await this.reply(
-          role,
-          continuing(this.options.agents[role]),
-          correctionPrompt(error.message),
-        );
-      }
+      const parsed = extractOutput(reply, schema);
+      if (parsed.isOk() || correction >= OUTPUT_CORRECTIONS) return parsed;
+      const corrected = await this.reply(
+        role,
+        continuing(this.options.agents[role]),
+        correctionPrompt(parsed.error.message),
+      );
+      if (corrected.isErr()) return Result.err(corrected.error);
+      reply = corrected.value;
     }
   }
 
@@ -210,6 +233,14 @@ function ignoresEverything(gitignore: string): boolean {
  */
 export const SANDCASTLE_GITIGNORE = 'worktrees/\nlogs/\n.env\n';
 
+async function openCodexAuth(
+  options: SandcastleSessionOptions,
+): Promise<Result<CodexAuthCache | undefined, ConfigInvalid>> {
+  return options.codexAuthDirectory
+    ? openCodexAuthCache(options.codexAuthDirectory)
+    : Result.ok(undefined);
+}
+
 /**
  * Sandcastle's own `onSandboxReady` hooks ignore a command's exit code and timeout in
  * `createSandbox`, so the setup command is run here, where both are checked.
@@ -225,7 +256,7 @@ function disableSigning(): { command: string } {
   };
 }
 
-function sandboxStartFailure(error: unknown): JigError {
+function sandboxStartFailure(error: unknown): ConfigInvalid | SandboxUnavailable {
   const message = `Could not start the sandbox: ${messageOf(error)}`;
   const tag = sandcastleFailureTag(error);
   return tag && CONFIGURATION_FAILURES.has(tag)
@@ -261,14 +292,16 @@ async function runSetupCommand(
   sandbox: Sandbox,
   command: string,
   { setupTimeoutSeconds }: SandcastleSessionOptions,
-): Promise<void> {
-  const failure = await setupFailure(sandbox, command, setupTimeoutSeconds).catch(
-    (error: unknown) =>
+): Promise<Result<void, SandboxUnavailable | SetupCommandFailed>> {
+  const attempt = await Result.tryPromise({
+    try: () => setupFailure(sandbox, command, setupTimeoutSeconds),
+    catch: (error) =>
       new SandboxUnavailable({ message: `Could not run the setup command: ${messageOf(error)}` }),
-  );
-  if (!failure) return;
+  });
+  const failure = attempt.isErr() ? attempt.error : attempt.value;
+  if (!failure) return Result.ok();
   await sandbox.close();
-  throw failure;
+  return Result.err(failure);
 }
 
 async function setupFailure(

@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
+import { Result } from 'better-result';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -9,6 +10,7 @@ import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
+import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import {
@@ -133,7 +135,7 @@ describe('initSandbox', () => {
   async function setup(input: {
     proposals?: ReturnType<typeof toolchainProposal>[];
     exec?: (command: string) => ExecResult;
-    checkSandboxFailures?: Error[];
+    checkSandboxFailures?: SessionOpenFailure[];
   }) {
     const repo = await createTempRepo();
     const agent = new FakeAgentSession(repo.dir, input.exec);
@@ -152,8 +154,8 @@ describe('initSandbox', () => {
       latestVersions: asValue(async () => ({})),
       openSession: asValue(async ({ setupCommand }: OpenSessionInput) => {
         const failure = setupCommand === null ? undefined : checkSandboxFailures.shift();
-        if (failure) throw failure;
-        return agent;
+        if (failure) return Result.err(failure);
+        return Result.ok(agent);
       }),
     });
     const init = (options: { useAgent: boolean }) => initSandbox(app, options);

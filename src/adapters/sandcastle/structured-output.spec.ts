@@ -1,8 +1,9 @@
 import { faker } from '@faker-js/faker';
+import type { Result } from 'better-result';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { AgentOutputInvalid } from '../../domain/errors.js';
+import { AgentOutputInvalid, orThrow } from '../../domain/errors.js';
 import { extractOutput, OUTPUT_TAG } from './structured-output.js';
 
 const verdictSchema = z.object({ approved: z.boolean(), feedback: z.string() });
@@ -12,7 +13,7 @@ describe('extractOutput', () => {
     const verdict = { approved: faker.datatype.boolean(), feedback: faker.lorem.sentence() };
     const reply = `${faker.lorem.paragraph()}\n${tagged(JSON.stringify(verdict))}\n${faker.lorem.sentence()}`;
 
-    expect(extractOutput(reply, verdictSchema)).toEqual(verdict);
+    expect(orThrow(extractOutput(reply, verdictSchema))).toEqual(verdict);
   });
 
   it('takes the last result when the agent corrected itself', () => {
@@ -24,14 +25,16 @@ describe('extractOutput', () => {
       tagged(JSON.stringify(final)),
     ].join('\n');
 
-    expect(extractOutput(reply, verdictSchema)).toEqual(final);
+    expect(orThrow(extractOutput(reply, verdictSchema))).toEqual(final);
   });
 
   it('accepts JSON wrapped in a code fence inside the tag', () => {
     const verdict = { approved: true, feedback: faker.lorem.sentence() };
 
     expect(
-      extractOutput(tagged(`\`\`\`json\n${JSON.stringify(verdict)}\n\`\`\``), verdictSchema),
+      orThrow(
+        extractOutput(tagged(`\`\`\`json\n${JSON.stringify(verdict)}\n\`\`\``), verdictSchema),
+      ),
     ).toEqual(verdict);
   });
 
@@ -39,32 +42,34 @@ describe('extractOutput', () => {
     const verdict = { approved: true, feedback: faker.lorem.sentence() };
 
     expect(
-      extractOutput(tagged(`\n  \`\`\`json\n${JSON.stringify(verdict)}\n\`\`\`\n`), verdictSchema),
+      orThrow(
+        extractOutput(
+          tagged(`\n  \`\`\`json\n${JSON.stringify(verdict)}\n\`\`\`\n`),
+          verdictSchema,
+        ),
+      ),
     ).toEqual(verdict);
   });
 
   it('rejects a fenced result with other text beside the fence', () => {
     const fenced = `\`\`\`json\n${JSON.stringify({ approved: true, feedback: '' })}\n\`\`\``;
 
-    expect(() => extractOutput(tagged(`${faker.lorem.word()} ${fenced}`), verdictSchema)).toThrow(
-      AgentOutputInvalid,
-    );
-    expect(() => extractOutput(tagged(`${fenced} ${faker.lorem.word()}`), verdictSchema)).toThrow(
-      AgentOutputInvalid,
-    );
+    expectInvalid(extractOutput(tagged(`${faker.lorem.word()} ${fenced}`), verdictSchema));
+    expectInvalid(extractOutput(tagged(`${fenced} ${faker.lorem.word()}`), verdictSchema));
   });
 
   it('rejects a reply without a result, with a result that is not JSON, or with the wrong shape', () => {
-    const missing = () => extractOutput(faker.lorem.paragraph(), verdictSchema);
-    const notJson = () => extractOutput(tagged(faker.lorem.sentence()), verdictSchema);
-    const wrongShape = () =>
-      extractOutput(tagged(JSON.stringify({ approved: faker.lorem.word() })), verdictSchema);
-
-    expect(missing).toThrow(AgentOutputInvalid);
-    expect(notJson).toThrow(AgentOutputInvalid);
-    expect(wrongShape).toThrow(AgentOutputInvalid);
+    expectInvalid(extractOutput(faker.lorem.paragraph(), verdictSchema));
+    expectInvalid(extractOutput(tagged(faker.lorem.sentence()), verdictSchema));
+    expectInvalid(
+      extractOutput(tagged(JSON.stringify({ approved: faker.lorem.word() })), verdictSchema),
+    );
   });
 });
+
+function expectInvalid(result: Result<unknown, unknown>) {
+  expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+}
 
 function tagged(content: string) {
   return `<${OUTPUT_TAG}>${content}</${OUTPUT_TAG}>`;

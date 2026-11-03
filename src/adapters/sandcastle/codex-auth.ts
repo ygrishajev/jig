@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import lockfile from 'proper-lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
-import { ConfigInvalid } from '../../domain/errors.js';
+import { ConfigInvalid, messageOf, orThrow } from '../../domain/errors.js';
 
 export interface CodexAuthCache {
   directory: string;
@@ -13,40 +14,74 @@ export interface CodexAuthCache {
 }
 
 /** Mounts only a private login copy; Codex can atomically refresh it without exposing host config. */
-export async function openCodexAuthCache(sourceDirectory: string): Promise<CodexAuthCache> {
-  const source = await realpath(path.join(sourceDirectory, 'auth.json'));
-  const release = await lockfile.lock(source, { retries: 0 }).catch(() => {
-    throw new ConfigInvalid({
-      message: 'The Codex login is in use or cannot be locked. Serialize runs using this login.',
-    });
+export async function openCodexAuthCache(
+  sourceDirectory: string,
+): Promise<Result<CodexAuthCache, ConfigInvalid>> {
+  const source = await Result.tryPromise({
+    try: () => realpath(path.join(sourceDirectory, 'auth.json')),
+    catch: (cause) =>
+      new ConfigInvalid({
+        message: `Could not find the Codex login in ${sourceDirectory}: ${messageOf(cause)}`,
+      }),
   });
-  let directory: string | undefined;
-  try {
-    const original = await readFile(source, 'utf8');
-    validateSubscription(original);
-    directory = await mkdtemp(path.join(tmpdir(), 'jig-codex-auth-'));
-    await writeFileAtomic(path.join(directory, 'auth.json'), original, { mode: 0o600 });
-    const cache = directory;
-    return { directory: cache, close: () => persistAndRelease(source, original, cache, release) };
-  } catch (error) {
-    if (directory) await rm(directory, { recursive: true, force: true });
-    await release();
-    throw error;
-  }
+  if (source.isErr()) return source;
+  const release = await Result.tryPromise({
+    try: () => lockfile.lock(source.value, { retries: 0 }),
+    catch: () =>
+      new ConfigInvalid({
+        message: 'The Codex login is in use or cannot be locked. Serialize runs using this login.',
+      }),
+  });
+  if (release.isErr()) return release;
+  const cache = await copyLogin(source.value, release.value);
+  if (cache.isErr()) await release.value();
+  return cache;
 }
 
-function validateSubscription(text: string): void {
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new ConfigInvalid({ message: 'Invalid Codex subscription login JSON.' });
+async function copyLogin(
+  source: string,
+  release: () => Promise<void>,
+): Promise<Result<CodexAuthCache, ConfigInvalid>> {
+  const original = await Result.tryPromise({
+    try: () => readFile(source, 'utf8'),
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Could not read the Codex login: ${messageOf(cause)}` }),
+  });
+  if (original.isErr()) return original;
+  const valid = validateSubscription(original.value);
+  if (valid.isErr()) return valid;
+  const directory = await Result.tryPromise({
+    try: async () => {
+      const created = await mkdtemp(path.join(tmpdir(), 'jig-codex-auth-'));
+      try {
+        await writeFileAtomic(path.join(created, 'auth.json'), original.value, { mode: 0o600 });
+      } catch (error) {
+        await rm(created, { recursive: true, force: true });
+        throw error;
+      }
+      return created;
+    },
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Could not copy the Codex login: ${messageOf(cause)}` }),
+  });
+  return directory.map((copy) => ({
+    directory: copy,
+    close: () => persistAndRelease(source, original.value, copy, release),
+  }));
+}
+
+function validateSubscription(text: string): Result<void, ConfigInvalid> {
+  const value = Result.try(() => JSON.parse(text) as unknown);
+  if (value.isErr()) {
+    return Result.err(new ConfigInvalid({ message: 'Invalid Codex subscription login JSON.' }));
   }
-  if (!subscriptionSchema.safeParse(value).success) {
-    throw new ConfigInvalid({
-      message: 'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
-    });
-  }
+  return subscriptionSchema.safeParse(value.value).success
+    ? Result.ok()
+    : Result.err(
+        new ConfigInvalid({
+          message: 'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
+        }),
+      );
 }
 
 const subscriptionSchema = z.object({
@@ -67,7 +102,7 @@ async function persistAndRelease(
 ): Promise<void> {
   try {
     const refreshed = await readFile(path.join(directory, 'auth.json'), 'utf8');
-    validateSubscription(refreshed);
+    orThrow(validateSubscription(refreshed));
     if (refreshed !== original) await persistRefresh(source, original, refreshed, directory);
     await rm(directory, { recursive: true, force: true });
   } finally {

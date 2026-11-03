@@ -150,7 +150,7 @@ describe('runFlow', () => {
     const crash = new Error(faker.lorem.sentence());
     scriptPlanning(interrupted.agent, slices);
     interrupted.agent.script('implementer', ...files.map((written) => ({ files: written })));
-    interrupted.agent.script('reviewer', approval(), { fail: crash });
+    interrupted.agent.script('reviewer', approval(), { crash });
 
     await expect(interrupted.run(interrupted.start)).rejects.toBe(crash);
     const saved = await interrupted.store.load(interrupted.start.runId);

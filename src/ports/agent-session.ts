@@ -1,16 +1,18 @@
+import type { Result } from 'better-result';
 import type { ZodType } from 'zod';
 
 import type { AgentRole } from '../domain/agent-role.js';
+import type { AgentOutputInvalid, AgentRunFailed } from '../domain/errors.js';
 
 /**
  * One run's sandbox: agents work in the run's worktree and commands execute there.
  * Which agent and model serve a role is the adapter's concern.
  */
 export interface AgentSession {
-  /** Throws `AgentRunFailed` when the agent exits unsuccessfully. */
-  run(input: AgentRunInput): Promise<void>;
-  /** Throws `AgentRunFailed`, or `AgentOutputInvalid` when the result does not match `schema`. */
-  runForOutput<T>(input: AgentRunInput & { schema: ZodType<T> }): Promise<T>;
+  run(input: AgentRunInput): Promise<Result<void, AgentRunFailed>>;
+  runForOutput<T>(
+    input: AgentRunInput & { schema: ZodType<T> },
+  ): Promise<Result<T, AgentRunFailed | AgentOutputInvalid>>;
   exec(command: string): Promise<ExecResult>;
 }
 

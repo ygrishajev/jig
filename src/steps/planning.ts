@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { AgentOutputInvalid } from '../domain/errors.js';
+import { AgentOutputInvalid, orThrow } from '../domain/errors.js';
 import { designDocsSchema, featurePlanSchema, runContextSchema } from '../domain/run-state.js';
 import { plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
@@ -12,38 +12,46 @@ import {
 } from '../prompts/planning.js';
 
 export const buildContext: RunStep = async ({ state, ports }) => {
-  const context = await ports.agent.runForOutput({
-    role: 'planner',
-    prompt: contextPrompt(state.request),
-    schema: runContextSchema,
-  });
+  const context = orThrow(
+    await ports.agent.runForOutput({
+      role: 'planner',
+      prompt: contextPrompt(state.request),
+      schema: runContextSchema,
+    }),
+  );
   return { type: 'contextBuilt', context };
 };
 
 export const planFeature: RunStep<'planning'> = async ({ state, ports }) => {
-  const plan = await ports.agent.runForOutput({
-    role: 'planner',
-    prompt: featurePlanPrompt(state.request, state.context.repoSummary),
-    schema: featurePlanSchema,
-  });
+  const plan = orThrow(
+    await ports.agent.runForOutput({
+      role: 'planner',
+      prompt: featurePlanPrompt(state.request, state.context.repoSummary),
+      schema: featurePlanSchema,
+    }),
+  );
   return { type: 'featurePlanned', plan };
 };
 
 export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
-  const docs = await ports.agent.runForOutput({
-    role: 'planner',
-    prompt: designPrompt(state.request, state.context.repoSummary, state.plan),
-    schema: designDocsSchema,
-  });
+  const docs = orThrow(
+    await ports.agent.runForOutput({
+      role: 'planner',
+      prompt: designPrompt(state.request, state.context.repoSummary, state.plan),
+      schema: designDocsSchema,
+    }),
+  );
   return { type: 'designWritten', docs };
 };
 
 export const sliceThePlan: RunStep<'slicing'> = async ({ state, ports }) => {
-  const slices = await ports.agent.runForOutput({
-    role: 'planner',
-    prompt: slicePlanPrompt(state.docs.plan),
-    schema: plannedSlicesSchema,
-  });
+  const slices = orThrow(
+    await ports.agent.runForOutput({
+      role: 'planner',
+      prompt: slicePlanPrompt(state.docs.plan),
+      schema: plannedSlicesSchema,
+    }),
+  );
   assertUniqueIds(slices.map((slice) => slice.id));
   return { type: 'sliced', slices };
 };

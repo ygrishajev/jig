@@ -1,22 +1,23 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { ConfigInvalid } from '../../domain/errors.js';
+import { ConfigInvalid, orThrow } from '../../domain/errors.js';
 import { AGENTS, collectCredentials } from './agents.js';
 
 describe('collectCredentials', () => {
   it('passes the explicit Codex auth directory without forwarding unrelated credentials', () => {
     const directory = faker.system.directoryPath();
-    expect(
-      collectCredentials(
-        [{ provider: 'codex', model: faker.word.noun() }],
-        lookup({ JIG_CODEX_AUTH_DIR: directory, OPENAI_API_KEY: faker.string.alphanumeric(40) }),
-      ),
-    ).toEqual({ JIG_CODEX_AUTH_DIR: directory });
+    const credentials = collectCredentials(
+      [{ provider: 'codex', model: faker.word.noun() }],
+      lookup({ JIG_CODEX_AUTH_DIR: directory, OPENAI_API_KEY: faker.string.alphanumeric(40) }),
+    );
+    expect(orThrow(credentials)).toEqual({ JIG_CODEX_AUTH_DIR: directory });
   });
 
   it('requires an explicit model for Codex', () => {
-    expect(() => AGENTS.codex.create()).toThrow(ConfigInvalid);
+    const created = AGENTS.codex.create();
+
+    expect(created.isErr() && created.error).toBeInstanceOf(ConfigInvalid);
   });
 
   it('passes on whichever claude credential is set', () => {
@@ -27,7 +28,7 @@ describe('collectCredentials', () => {
       lookup({ CLAUDE_CODE_OAUTH_TOKEN: token }),
     );
 
-    expect(credentials).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: token });
+    expect(orThrow(credentials)).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: token });
   });
 
   it("derives opencode's credential from the provider in its model", () => {
@@ -38,7 +39,7 @@ describe('collectCredentials', () => {
       lookup({ OPENROUTER_API_KEY: key, UNRELATED_SECRET: faker.string.alphanumeric(20) }),
     );
 
-    expect(credentials).toEqual({ OPENROUTER_API_KEY: key });
+    expect(orThrow(credentials)).toEqual({ OPENROUTER_API_KEY: key });
   });
 
   it('gathers what every configured step needs, and nothing else from the environment', () => {
@@ -54,18 +55,25 @@ describe('collectCredentials', () => {
       }),
     );
 
-    expect(credentials).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: token, OPENROUTER_API_KEY: key });
+    expect(orThrow(credentials)).toEqual({
+      CLAUDE_CODE_OAUTH_TOKEN: token,
+      OPENROUTER_API_KEY: key,
+    });
   });
 
   it('names the variables to set when an agent has no credential', () => {
-    const collecting = () => collectCredentials([{ provider: 'claude' }], lookup({}));
+    const collected = collectCredentials([{ provider: 'claude' }], lookup({}));
 
-    expect(collecting).toThrow(ConfigInvalid);
-    for (const key of AGENTS.claude.credentialKeys()) expect(collecting).toThrow(key);
+    expect(collected.isErr() && collected.error).toBeInstanceOf(ConfigInvalid);
+    for (const key of orThrow(AGENTS.claude.credentialKeys())) {
+      expect(collected.isErr() && collected.error.message).toContain(key);
+    }
   });
 
   it('asks for a model before it can tell which credential opencode needs', () => {
-    expect(() => collectCredentials([{ provider: 'opencode' }], lookup({}))).toThrow(ConfigInvalid);
+    const collected = collectCredentials([{ provider: 'opencode' }], lookup({}));
+
+    expect(collected.isErr() && collected.error).toBeInstanceOf(ConfigInvalid);
   });
 });
 
@@ -74,7 +82,7 @@ describe('AGENTS', () => {
     const model = `openrouter/${faker.word.noun()}`;
 
     for (const agent of Object.values(AGENTS)) {
-      expect(agent.create(model).captureSessions).toBe(false);
+      expect(orThrow(agent.create(model)).captureSessions).toBe(false);
     }
   });
 });

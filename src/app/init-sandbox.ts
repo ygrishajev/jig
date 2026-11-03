@@ -1,4 +1,5 @@
 import type { AwilixContainer } from 'awilix';
+import type { Result } from 'better-result';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,7 +11,10 @@ import {
   SANDBOX_DIRECTORY,
   withToolchain,
 } from '../adapters/sandbox-image/image-recipe.js';
-import { ignoreSandcastleDirectory } from '../adapters/sandcastle/sandcastle-session.js';
+import {
+  ignoreSandcastleDirectory,
+  type SessionOpenFailure,
+} from '../adapters/sandcastle/sandcastle-session.js';
 import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
 import { orThrow, SetupCommandFailed } from '../domain/errors.js';
@@ -83,24 +87,21 @@ async function checkInSandbox(
   setupCommand: string | undefined,
   verifyCommand: string,
 ): Promise<string | undefined> {
-  try {
-    return await withSandbox(app, setupCommand ?? null, async (session) => {
-      const verify = await session.exec(verifyCommand);
-      return verify.exitCode === 0
-        ? undefined
-        : `verifyCommand "${verifyCommand}" exited with ${verify.exitCode}:\n${verify.output.slice(-3000)}`;
-    });
-  } catch (error) {
-    if (error instanceof SetupCommandFailed) return error.message;
-    throw error;
-  }
+  const checked = await withSandbox(app, setupCommand ?? null, async (session) => {
+    const verify = await session.exec(verifyCommand);
+    return verify.exitCode === 0
+      ? undefined
+      : `verifyCommand "${verifyCommand}" exited with ${verify.exitCode}:\n${verify.output.slice(-3000)}`;
+  });
+  if (checked.isErr() && checked.error instanceof SetupCommandFailed) return checked.error.message;
+  return orThrow(checked);
 }
 
 async function withSandbox<T>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<T>,
-): Promise<T> {
+): Promise<Result<T, SessionOpenFailure>> {
   await ensureSandboxImage(app.cradle);
   return withThrowawaySandbox(app, setupCommand, use);
 }
@@ -115,7 +116,7 @@ async function proposeToolchain(
   const { repoRoot } = app.cradle;
   const config = orThrow(loadConfig(repoRoot));
   const dockerfile = await readFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), 'utf-8');
-  return withSandbox(app, null, (session) =>
+  const proposed = await withSandbox(app, null, (session) =>
     session.runForOutput({
       role: 'planner',
       prompt: toolchainPrompt({
@@ -127,6 +128,7 @@ async function proposeToolchain(
       schema: toolchainSchema,
     }),
   );
+  return orThrow(orThrow(proposed));
 }
 
 const toolchainSchema = z.object({

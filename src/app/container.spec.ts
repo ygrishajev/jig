@@ -1,5 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
+import { Result } from 'better-result';
+import { readFile } from 'node:fs/promises';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
@@ -7,10 +9,12 @@ import { runId } from '../../tests/support/builders.js';
 import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { runLogFile } from '../adapters/local-store/run-paths.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
-import { orThrow, SetupCommandFailed } from '../domain/errors.js';
+import { orThrow, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
+import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, withRunScope, withThrowawaySandbox } from './container.js';
 
@@ -26,8 +30,19 @@ describe('withRunScope', () => {
       async (dependencies) => dependencies.ports.agent,
     );
 
-    expect(used).toBe(session);
+    expect(orThrow(used)).toBe(session);
     expect(session.closed).toBe(true);
+  });
+
+  it('gives up opening the sandbox after the bounded retries with the last failure', async () => {
+    const { app, run, openAttempts } = await setup({ failWith: sandboxUnavailable() });
+    const store = new InMemoryRunStore();
+
+    const result = await withRunScope(app, run, store, {}, async () => faker.lorem.word());
+
+    expect(result.isErr() && result.error).toBeInstanceOf(SandboxUnavailable);
+    expect(openAttempts()).toBe(3);
+    expect(await warnings(app.cradle.repoRoot, run.runId)).toHaveLength(3);
   });
 
   it('closes the sandbox when the work inside it fails', async () => {
@@ -42,19 +57,37 @@ describe('withRunScope', () => {
     expect(session.closed).toBe(true);
   });
 
-  async function setup() {
+  async function setup(input: { failWith?: SandboxUnavailable } = {}) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
+    const config = orThrow(loadConfig(repoRoot));
     const app = createAppContainer({
       repoRoot,
       logFormat: 'json',
-      logLevel: 'silent',
+      logLevel: 'warn',
       environment: orThrow(parseEnvironment({})),
-      config: orThrow(loadConfig(repoRoot)),
+      config,
     });
-    app.register({ openSession: asValue(async () => session) });
+    let attempts = 0;
+    app.register({
+      settings: asValue({ ...app.cradle.settings, maxStepRetries: 2, retryDelayMs: 0 }),
+      openSession: asValue(async () => {
+        attempts++;
+        return input.failWith ? Result.err(input.failWith) : Result.ok(session);
+      }),
+    });
     onTestFinished(() => app.dispose());
-    return { app, session, run: { runId: runId(), baseBranch: faker.git.branch() } };
+    return {
+      app,
+      session,
+      run: { runId: runId(), baseBranch: faker.git.branch() },
+      openAttempts: () => attempts,
+    };
+  }
+
+  async function warnings(repoRoot: string, id: RunId) {
+    const log = await readFile(runLogFile(repoRoot, id), 'utf-8');
+    return log.split('\n').filter((line) => line.includes('the sandbox did not start'));
   }
 });
 
@@ -81,13 +114,13 @@ describe('withThrowawaySandbox', () => {
     });
     const { app, opened } = await setup({ failWith: failure });
 
-    await expect(
-      withThrowawaySandbox(app, `npm ${faker.word.verb()}`, async () => {}),
-    ).rejects.toBe(failure);
+    const result = await withThrowawaySandbox(app, `npm ${faker.word.verb()}`, async () => {});
+
+    expect(result.isErr() && result.error).toBe(failure);
     expect(opened()).toBe(1);
   });
 
-  async function setup(input: { failWith?: Error } = {}) {
+  async function setup(input: { failWith?: SetupCommandFailed } = {}) {
     const { dir: repoRoot } = await createTempRepo();
     const session = new FakeAgentSession(repoRoot);
     const branches: string[] = [];
@@ -102,14 +135,18 @@ describe('withThrowawaySandbox', () => {
     app.register({
       openSession: asValue(async ({ run }: OpenSessionInput) => {
         opened++;
-        if (input.failWith) throw input.failWith;
+        if (input.failWith) return Result.err(input.failWith);
         const branch = runBranchFor(run.runId);
         await simpleGit({ baseDir: repoRoot }).branch([branch]);
         branches.push(branch);
-        return session;
+        return Result.ok(session);
       }),
     });
     onTestFinished(() => app.dispose());
     return { app, session, branches, repoRoot, opened: () => opened };
   }
 });
+
+function sandboxUnavailable() {
+  return new SandboxUnavailable({ message: faker.lorem.sentence() });
+}

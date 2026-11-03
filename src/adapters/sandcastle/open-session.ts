@@ -1,16 +1,22 @@
 import type { AgentProvider } from '@ai-hero/sandcastle';
+import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
 import type { JigEnvironment } from '../../config/environment.js';
 import { configuredSteps, type JigConfig } from '../../config/load-config.js';
-import { type AgentRole, byRole } from '../../domain/agent-role.js';
+import type { AgentRole } from '../../domain/agent-role.js';
+import type { ConfigInvalid } from '../../domain/errors.js';
 import type { RunIdentity } from '../../domain/run-state.js';
 import type { EventSink } from '../../ports/observability.js';
 import { agentLogFile } from '../local-store/run-paths.js';
 import { sandboxTelemetryEnvironment } from '../telemetry/open-telemetry.js';
 import { AGENTS, collectCredentials } from './agents.js';
 import { sandcastleEnvKeys } from './sandcastle-env.js';
-import { SandcastleSession, type SandcastleSessionOptions } from './sandcastle-session.js';
+import {
+  SandcastleSession,
+  type SandcastleSessionOptions,
+  type SessionOpenFailure,
+} from './sandcastle-session.js';
 
 export interface OpenSessionInput {
   run: RunIdentity;
@@ -31,9 +37,11 @@ export interface SandcastleContext {
 export async function openSandcastleSession(
   context: SandcastleContext & { logger: Logger },
   input: OpenSessionInput,
-): Promise<SandcastleSession> {
+): Promise<Result<SandcastleSession, SessionOpenFailure>> {
   await warnWhenSandcastleEnvAddsVariables(context.repoRoot, context.logger);
-  return SandcastleSession.open(sandcastleSessionOptions(context, input));
+  const options = sandcastleSessionOptions(context, input);
+  if (options.isErr()) return Result.err(options.error);
+  return SandcastleSession.open(options.value);
 }
 
 /** jig passes credentials from the environment; a variable from `.sandcastle/.env` is usually a mistake. */
@@ -52,9 +60,13 @@ export async function warnWhenSandcastleEnvAddsVariables(
 export function sandcastleSessionOptions(
   { repoRoot, config, environment, imageName }: SandcastleContext,
   { run, events, setupCommand }: OpenSessionInput,
-): SandcastleSessionOptions {
+): Result<SandcastleSessionOptions, ConfigInvalid> {
   const steps = configuredSteps(config);
-  return {
+  const credentials = collectCredentials(Object.values(steps), environment.credential);
+  if (credentials.isErr()) return Result.err(credentials.error);
+  const agents = agentsFor(steps);
+  if (agents.isErr()) return Result.err(agents.error);
+  return Result.ok({
     repoRoot,
     ...run,
     imageName,
@@ -62,19 +74,27 @@ export function sandcastleSessionOptions(
       ? environment.codexAuthDirectory
       : undefined,
     credentials: {
-      ...collectCredentials(Object.values(steps), environment.credential),
+      ...credentials.value,
       ...sandboxTelemetryEnvironment(environment.telemetry),
     },
-    agents: agentsFor(steps),
+    agents: agents.value,
     skipCommitSigning: config.commitSigning === 'skip',
     setupCommand: setupCommand === null ? undefined : (setupCommand ?? config.setupCommand),
     setupTimeoutSeconds: config.setupTimeoutSeconds,
     idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
     agentLogFile: agentLogFile(repoRoot, run.runId),
     events,
-  };
+  });
 }
 
-function agentsFor(steps: ReturnType<typeof configuredSteps>): Record<AgentRole, AgentProvider> {
-  return byRole((role) => AGENTS[steps[role].provider].create(steps[role].model));
+function agentsFor(
+  steps: ReturnType<typeof configuredSteps>,
+): Result<Record<AgentRole, AgentProvider>, ConfigInvalid> {
+  return Result.gen(function* () {
+    const planner = yield* AGENTS[steps.planner.provider].create(steps.planner.model);
+    const implementer = yield* AGENTS[steps.implementer.provider].create(steps.implementer.model);
+    const reviewer = yield* AGENTS[steps.reviewer.provider].create(steps.reviewer.model);
+    const describer = yield* AGENTS[steps.describer.provider].create(steps.describer.model);
+    return Result.ok({ planner, implementer, reviewer, describer });
+  });
 }

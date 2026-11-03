@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import type { ZodType } from 'zod';
 
 import { AgentOutputInvalid, messageOf } from '../../domain/errors.js';
@@ -14,28 +15,25 @@ export function outputInstruction(): string {
 export const OUTPUT_TAG = 'jig-output';
 
 /** Reads the last tag in the agent's reply, tolerating a code fence around the JSON and nothing else. */
-export function extractOutput<T>(reply: string, schema: ZodType<T>): T {
+export function extractOutput<T>(reply: string, schema: ZodType<T>): Result<T, AgentOutputInvalid> {
   const tagged = [
     ...reply.matchAll(new RegExp(`<${OUTPUT_TAG}>([\\s\\S]*?)</${OUTPUT_TAG}>`, 'g')),
   ].at(-1)?.[1];
   if (tagged === undefined) {
-    throw new AgentOutputInvalid({ message: `The reply has no <${OUTPUT_TAG}> result.` });
+    return invalid(`The reply has no <${OUTPUT_TAG}> result.`);
   }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(withoutFence(tagged.trim()));
-  } catch (error) {
-    throw new AgentOutputInvalid({
-      message: `The <${OUTPUT_TAG}> result is not valid JSON: ${messageOf(error)}`,
-    });
+  const raw = Result.try(() => JSON.parse(withoutFence(tagged.trim())) as unknown);
+  if (raw.isErr()) {
+    return invalid(`The <${OUTPUT_TAG}> result is not valid JSON: ${messageOf(raw.error.cause)}`);
   }
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) {
-    throw new AgentOutputInvalid({
-      message: `The <${OUTPUT_TAG}> result has the wrong shape: ${parsed.error.message}`,
-    });
-  }
-  return parsed.data;
+  const parsed = schema.safeParse(raw.value);
+  return parsed.success
+    ? Result.ok(parsed.data)
+    : invalid(`The <${OUTPUT_TAG}> result has the wrong shape: ${parsed.error.message}`);
+}
+
+function invalid(message: string): Result<never, AgentOutputInvalid> {
+  return Result.err(new AgentOutputInvalid({ message }));
 }
 
 function withoutFence(text: string): string {
