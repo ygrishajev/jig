@@ -7,7 +7,13 @@ import { describe, expect, it } from 'vitest';
 import { runId } from '../../../tests/support/builders.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { isWorkingTreeClean } from '../../git/repository.js';
-import { JIG_DIR, makeRunDirectory } from './run-paths.js';
+import {
+  agentLogFile,
+  JIG_DIR,
+  makeRunDirectory,
+  runLogFile,
+  stateDirectory,
+} from './run-paths.js';
 
 describe('makeRunDirectory', () => {
   it("keeps everything it puts under .jig out of the target repository's status", async () => {
@@ -33,5 +39,17 @@ describe('makeRunDirectory', () => {
 
     expect(first.startsWith(path.join(dir, JIG_DIR))).toBe(true);
     expect(await readFile(gitignore, 'utf-8')).toBe(own);
+  });
+});
+
+describe('run log files', () => {
+  it("keeps jig's log and the agents' log apart, both in the run's state directory", () => {
+    const repoRoot = faker.system.directoryPath();
+    const id = runId();
+    const directory = stateDirectory(repoRoot, id);
+
+    expect(path.dirname(runLogFile(repoRoot, id))).toBe(directory);
+    expect(path.dirname(agentLogFile(repoRoot, id))).toBe(directory);
+    expect(runLogFile(repoRoot, id)).not.toBe(agentLogFile(repoRoot, id));
   });
 });

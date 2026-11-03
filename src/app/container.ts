@@ -1,14 +1,13 @@
 import type { AgentProvider } from '@ai-hero/sandcastle';
 import type { Tracer } from '@opentelemetry/api';
 import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMode } from 'awilix';
-import path from 'node:path';
 import pRetry from 'p-retry';
 import type { Logger } from 'pino';
 
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
-import { stateDirectory } from '../adapters/local-store/run-paths.js';
+import { agentLogFile, runLogFile } from '../adapters/local-store/run-paths.js';
 import {
   createConsoleLogger,
   createRunLogger,
@@ -158,12 +157,7 @@ async function openRunScope(
     run: asValue(run),
     runStore: asValue(runStore),
     runLogger: asFunction(({ logFormat, logLevel }: RunCradle) =>
-      createRunLogger(
-        logFormat,
-        // TODO(cohesion-14): 'run.log' and 'agents.log' name files in the state directory here, 'metrics.jsonl' in MetricsLog; let run-paths.ts name them all.
-        path.join(stateDirectory(repoRoot, run.runId), 'run.log'),
-        logLevel,
-      ).child({
+      createRunLogger(logFormat, runLogFile(repoRoot, run.runId), logLevel).child({
         runId: run.runId,
       }),
     ).scoped(),
@@ -269,7 +263,7 @@ export function sandcastleSessionOptions(
     setupCommand: setupCommand === null ? undefined : (setupCommand ?? config.setupCommand),
     setupTimeoutSeconds: config.setupTimeoutSeconds,
     idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
-    agentLogFile: path.join(stateDirectory(repoRoot, run.runId), 'agents.log'),
+    agentLogFile: agentLogFile(repoRoot, run.runId),
     events,
   };
 }
