@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
 import { tempDirectory } from '../../tests/support/temp-directory.js';
-import { CONFIG_FILE, loadConfig } from './load-config.js';
+import { MAX_STEP_RETRIES, RETRY_DELAY_MS } from '../domain/settings.js';
+import { CONFIG_FILE, loadConfig, runSettingsFrom } from './load-config.js';
 
 describe('loadConfig', () => {
   it('runs every step on claude, merging by hand, when the repository has no config', async () => {
@@ -76,4 +77,27 @@ describe('loadConfig', () => {
     if (contents) await writeFile(path.join(repoRoot, CONFIG_FILE), JSON.stringify(contents));
     return repoRoot;
   }
+});
+
+describe('runSettingsFrom', () => {
+  it("takes how a run moves from the config, and the retry policy from jig's own", async () => {
+    const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const config = {
+      ...loadConfig(await tempDirectory('jig-config-')),
+      reviewCycleCap,
+      verifyCommand,
+      designGate: 'checkpoint' as const,
+      mergeMode: 'auto' as const,
+    };
+
+    expect(runSettingsFrom(config)).toEqual({
+      reviewCycleCap,
+      verifyCommand,
+      designGate: 'checkpoint',
+      mergeMode: 'auto',
+      maxStepRetries: MAX_STEP_RETRIES,
+      retryDelayMs: RETRY_DELAY_MS,
+    });
+  });
 });

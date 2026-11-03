@@ -24,7 +24,12 @@ import {
 } from '../adapters/sandcastle/sandcastle-session.js';
 import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
 import type { JigEnvironment } from '../config/environment.js';
-import { configuredSteps, type JigConfig, loadConfig } from '../config/load-config.js';
+import {
+  configuredSteps,
+  type JigConfig,
+  loadConfig,
+  runSettingsFrom,
+} from '../config/load-config.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
 import { isTransient } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
@@ -40,13 +45,6 @@ import type { RunStore } from '../ports/run-store.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { sandboxImageName } from './sandbox-image.js';
-
-// TODO(cohesion-12): retry constants and settingsFrom are run policy, not wiring; constants to domain/settings.ts, the config→settings mapping to config/.
-/** How many times a step that failed transiently is tried again before the run blocks. */
-const MAX_STEP_RETRIES = 2;
-
-/** Long enough for a rate limit or a container hiccup to clear. */
-const RETRY_DELAY_MS = 5000;
 
 export interface RunIdentity {
   runId: RunId;
@@ -110,7 +108,7 @@ export function createAppContainer(input: {
     logFormat: asValue(input.logFormat),
     logLevel: asValue(input.logLevel ?? 'info'),
     config: asFunction(({ repoRoot }: AppCradle) => loadConfig(repoRoot)).singleton(),
-    settings: asFunction(({ config }: AppCradle) => settingsFrom(config)).singleton(),
+    settings: asFunction(({ config }: AppCradle) => runSettingsFrom(config)).singleton(),
     logger: asFunction(({ logFormat, logLevel }: AppCradle) =>
       createConsoleLogger(logFormat, logLevel),
     ).singleton(),
@@ -278,15 +276,4 @@ export function sandcastleSessionOptions(
 
 function agentsFor(steps: ReturnType<typeof configuredSteps>): Record<AgentRole, AgentProvider> {
   return byRole((role) => AGENTS[steps[role].provider].create(steps[role].model));
-}
-
-function settingsFrom(config: JigConfig): RunSettings {
-  return {
-    reviewCycleCap: config.reviewCycleCap,
-    maxStepRetries: MAX_STEP_RETRIES,
-    retryDelayMs: RETRY_DELAY_MS,
-    designGate: config.designGate,
-    mergeMode: config.mergeMode,
-    verifyCommand: config.verifyCommand,
-  };
 }

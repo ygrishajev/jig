@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
+import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
 
 export const CONFIG_FILE = 'jig.config.json';
 
@@ -55,4 +56,16 @@ export function loadConfig(repoRoot: string): JigConfig {
 
 export function configuredSteps(config: JigConfig): Record<AgentRole, StepConfig> {
   return byRole((role) => config[role]);
+}
+
+/** The parts of the config that decide how a run moves, with the retry policy jig fixes. */
+export function runSettingsFrom(config: JigConfig): RunSettings {
+  return {
+    reviewCycleCap: config.reviewCycleCap,
+    maxStepRetries: MAX_STEP_RETRIES,
+    retryDelayMs: RETRY_DELAY_MS,
+    designGate: config.designGate,
+    mergeMode: config.mergeMode,
+    verifyCommand: config.verifyCommand,
+  };
 }

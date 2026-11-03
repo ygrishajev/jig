@@ -101,37 +101,6 @@ describe('sandcastleSessionOptions', () => {
   }
 });
 
-describe('createAppContainer', () => {
-  it('derives the run settings from the config', async () => {
-    const repoRoot = await tempDirectory('jig-container-');
-    const app = createAppContainer({
-      repoRoot,
-      logFormat: 'json',
-      logLevel: 'silent',
-      environment: parseEnvironment({}),
-    });
-    const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
-    const verifyCommand = `npm run ${faker.word.verb()}`;
-    app.register({
-      config: asValue({
-        ...loadConfig(repoRoot),
-        reviewCycleCap,
-        verifyCommand,
-        designGate: 'checkpoint',
-        mergeMode: 'auto',
-      }),
-    });
-
-    expect(app.cradle.settings).toMatchObject({
-      reviewCycleCap,
-      verifyCommand,
-      designGate: 'checkpoint',
-      mergeMode: 'auto',
-    });
-    await app.dispose();
-  });
-});
-
 describe('withRunScope', () => {
   it("hands the work the run's sandbox and closes it once the work is done", async () => {
     const { app, session, run } = await setup();
