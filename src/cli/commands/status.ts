@@ -20,17 +20,14 @@ export function registerStatusCommand(program: Command) {
       withErrorHandling(
         withInput(z.object({ id: runIdSchema }), async ({ id }) => {
           await withApp(defaultLogFormat(), async (app) => {
-            const status = await readRunStatus(app, id);
-            console.log(describeRun(status));
-            // TODO(cohesion-8): describeRun already gets status.metrics; render this line there, not in the action.
-            if (status.metrics.steps > 0) console.log(`So far: ${formatSummary(status.metrics)}`);
+            console.log(describeRun(await readRunStatus(app, id)));
           });
         }),
       ),
     );
 }
 
-export function describeRun({ state, documents }: RunStatus) {
+export function describeRun({ state, documents, metrics }: RunStatus) {
   const slices = slicesInOrder(state.slices).map((slice) => {
     const line = `  [${slice.status}] ${slice.id} — ${slice.title}`;
     return slice.lastFeedback ? `${line}\n      feedback: ${slice.lastFeedback}` : line;
@@ -41,5 +38,6 @@ export function describeRun({ state, documents }: RunStatus) {
     `${'branch'.padEnd(18)} ${runBranchFor(state.runId)}`,
     ...documents.map((document) => `${document.name.padEnd(18)} ${document.path}`),
     ...(slices.length > 0 ? ['Slices:', ...slices] : []),
+    ...(metrics.steps > 0 ? [`So far: ${formatSummary(metrics)}`] : []),
   ].join('\n');
 }

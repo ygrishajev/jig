@@ -5,6 +5,7 @@ import { aMetricsSummary, aRunState, aSlice } from '../../../tests/support/build
 import type { RunStatus } from '../../app/run-status.js';
 import type { RunState } from '../../domain/run-state.js';
 import { runBranchFor } from '../../domain/run-state.js';
+import { formatSummary } from '../../observers/metrics.js';
 import { describeRun } from './status.js';
 
 describe('describeRun', () => {
@@ -46,6 +47,22 @@ describe('describeRun', () => {
     expect(shown).toContain(path);
   });
 
+  it('sums up the run so far once a step has run', () => {
+    const metrics = aMetricsSummary({ steps: faker.number.int({ min: 1, max: 30 }) });
+
+    const lines = describeRun(aStatus({ state: aRunState(), metrics })).split('\n');
+
+    expect(lines.at(-1)).toContain(formatSummary(metrics));
+  });
+
+  it('shows no summary before any step has run', () => {
+    const metrics = aMetricsSummary({ steps: 0 });
+
+    expect(describeRun(aStatus({ state: aRunState(), metrics }))).not.toContain(
+      formatSummary(metrics),
+    );
+  });
+
   it('shows no slice list for a run that has none yet', () => {
     const plain = describeRun(aStatus({ state: aRunState({ slices: [] }) }));
     const sliced = describeRun(aStatus({ state: aRunState({ slices: [aSlice()] }) }));
@@ -57,9 +74,11 @@ describe('describeRun', () => {
 function aStatus({
   state,
   documents = [],
+  metrics = aMetricsSummary(),
 }: {
   state: RunState;
   documents?: RunStatus['documents'];
+  metrics?: RunStatus['metrics'];
 }): RunStatus {
-  return { state, documents, metrics: aMetricsSummary() };
+  return { state, documents, metrics };
 }
