@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pino } from 'pino';
@@ -7,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import { loadConfig } from '../config/load-config.js';
-import { ConfigInvalid, orThrow } from '../domain/errors.js';
+import { ConfigInvalid, ImageBuildFailed, orThrow } from '../domain/errors.js';
 import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
 import {
   type AgentNeeded,
@@ -23,13 +24,17 @@ class FakeSandboxImages implements SandboxImages {
   readonly built: ImageBuildSpec[] = [];
   private readonly images = new Map<string, Record<string, string>>();
 
+  failNextBuild: ImageBuildFailed | undefined;
+
   async labels(tag: string) {
-    return this.images.get(tag);
+    return Result.ok(this.images.get(tag));
   }
 
   async build(spec: ImageBuildSpec) {
+    if (this.failNextBuild) return Result.err(this.failNextBuild);
     this.built.push(spec);
     this.images.set(spec.tag, spec.labels ?? {});
+    return Result.ok();
   }
 
   forget() {
@@ -116,18 +121,34 @@ describe('ensureSandboxImage', () => {
     expect(lookups()).toBe(1);
   });
 
-  it('refuses to build without a sandbox Dockerfile', async () => {
-    const { ensure, removeDockerfile } = await setup({});
+  it('asks for jig init when the repository has no sandbox Dockerfile', async () => {
+    const { ensure, images, removeDockerfile } = await setup({});
     await removeDockerfile();
 
-    await expect(ensure()).rejects.toBeInstanceOf(ConfigInvalid);
+    const result = await ensure();
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(images.built).toEqual([]);
+  });
+
+  it('reports a failed build with its output', async () => {
+    const { ensure, images } = await setup({});
+    const failure = new ImageBuildFailed({
+      message: faker.lorem.sentence(),
+      output: faker.lorem.lines(2),
+    });
+    images.failNextBuild = failure;
+
+    const result = await ensure();
+
+    expect(result.isErr() && result.error).toBe(failure);
   });
 
   it('uses an image named in the config as it is', async () => {
     const sandboxImage = faker.word.noun();
     const { ensure, images } = await setup({ sandboxImage });
 
-    expect(await ensure()).toBe(sandboxImage);
+    expect((await ensure()).unwrap()).toBe(sandboxImage);
     expect(images.built).toEqual([]);
   });
 

@@ -19,7 +19,8 @@ export type JigError =
   | RunRequestInvalid
   | RunInProgress
   | MetricsLogCorrupt
-  | LocalStateUnwritable;
+  | LocalStateUnwritable
+  | ImageBuildFailed;
 
 /** JavaScript can throw anything, not only an `Error`. */
 export function messageOf(error: unknown): string {
@@ -113,6 +114,14 @@ export class LocalStateUnwritable extends TaggedError('LocalStateUnwritable')<{
   readonly kind = 'fatal' as const;
 }
 
+/** A sandbox image could not be built, or docker could not be asked about one; `output` is what docker said. */
+export class ImageBuildFailed extends TaggedError('ImageBuildFailed')<{
+  message: string;
+  output: string;
+}> {
+  readonly kind = 'fatal' as const;
+}
+
 const jigErrorClasses = [
   AgentRunFailed,
   AgentOutputInvalid,
@@ -127,6 +136,7 @@ const jigErrorClasses = [
   RunInProgress,
   MetricsLogCorrupt,
   LocalStateUnwritable,
+  ImageBuildFailed,
 ];
 
 /** Transitional: returns the value or throws the error; Task 11 deletes it. */

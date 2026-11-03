@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import { createHash } from 'node:crypto';
 
 import { ConfigInvalid } from '../../domain/errors.js';
@@ -55,20 +56,27 @@ export function agentLayerDockerfile(baseImage: string, agents: AgentInstall[]):
 }
 
 /** Replaces whatever sits between the toolchain markers, leaving the rest of the Dockerfile alone. */
-export function withToolchain(dockerfile: string, toolchain: string): string {
+export function withToolchain(
+  dockerfile: string,
+  toolchain: string,
+): Result<string, ConfigInvalid> {
   const start = dockerfile.indexOf(TOOLCHAIN_START);
   const end = dockerfile.indexOf(TOOLCHAIN_END);
   if (start === -1 || end === -1 || end < start) {
-    throw new ConfigInvalid({
-      message: `The Dockerfile has no "${TOOLCHAIN_START}" section to fill in.`,
-    });
+    return Result.err(
+      new ConfigInvalid({
+        message: `The Dockerfile has no "${TOOLCHAIN_START}" section to fill in.`,
+      }),
+    );
   }
   const body = toolchain.trim();
-  return [
-    dockerfile.slice(0, start + TOOLCHAIN_START.length),
-    ...(body ? [body] : []),
-    dockerfile.slice(end),
-  ].join('\n');
+  return Result.ok(
+    [
+      dockerfile.slice(0, start + TOOLCHAIN_START.length),
+      ...(body ? [body] : []),
+      dockerfile.slice(end),
+    ].join('\n'),
+  );
 }
 
 /** Changes whenever the Dockerfile or the user it is built for changes. */

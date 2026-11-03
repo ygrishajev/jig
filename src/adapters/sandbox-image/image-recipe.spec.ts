@@ -19,7 +19,7 @@ describe('image recipe', () => {
   it("puts the project's toolchain between the markers and leaves the rest alone", () => {
     const toolchain = `RUN apt-get install -y ${faker.word.noun()}`;
 
-    const filled = withToolchain(BASE_DOCKERFILE, toolchain);
+    const filled = withToolchain(BASE_DOCKERFILE, toolchain).unwrap();
 
     expect(filled).toContain(`${TOOLCHAIN_START}\n${toolchain}\n${TOOLCHAIN_END}`);
     expect(filled.replace(`${toolchain}\n`, '')).toBe(BASE_DOCKERFILE);
@@ -29,7 +29,7 @@ describe('image recipe', () => {
     const first = `RUN echo ${faker.word.noun()}`;
     const second = `RUN echo ${faker.word.noun()}`;
 
-    const filled = withToolchain(withToolchain(BASE_DOCKERFILE, first), second);
+    const filled = withToolchain(withToolchain(BASE_DOCKERFILE, first).unwrap(), second).unwrap();
 
     expect(filled).toContain(second);
     expect(filled).not.toContain(first);
@@ -44,17 +44,18 @@ describe('image recipe', () => {
       `FROM node:22\n${TOOLCHAIN_END}\n`,
       `FROM node:22\n${TOOLCHAIN_END}\n${TOOLCHAIN_START}\n`,
     ]) {
-      expect(() => withToolchain(dockerfile, toolchain)).toThrow(ConfigInvalid);
+      const result = withToolchain(dockerfile, toolchain);
+      expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
     }
   });
 
   it('trims the toolchain, and leaves the markers adjacent for an empty one', () => {
     const toolchain = `RUN ${faker.word.verb()}`;
 
-    expect(withToolchain(BASE_DOCKERFILE, `\n  ${toolchain}  \n`)).toContain(
+    expect(withToolchain(BASE_DOCKERFILE, `\n  ${toolchain}  \n`).unwrap()).toContain(
       `${TOOLCHAIN_START}\n${toolchain}\n${TOOLCHAIN_END}`,
     );
-    expect(withToolchain(BASE_DOCKERFILE, '  \n')).toBe(BASE_DOCKERFILE);
+    expect(withToolchain(BASE_DOCKERFILE, '  \n').unwrap()).toBe(BASE_DOCKERFILE);
   });
 
   it('installs each agent at its exact version on top of the base image', () => {

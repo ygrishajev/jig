@@ -1,5 +1,5 @@
 import type { AwilixContainer } from 'awilix';
-import type { Result } from 'better-result';
+import { Result } from 'better-result';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -11,13 +11,10 @@ import {
   SANDBOX_DIRECTORY,
   withToolchain,
 } from '../adapters/sandbox-image/image-recipe.js';
-import {
-  ignoreSandcastleDirectory,
-  type SessionOpenFailure,
-} from '../adapters/sandcastle/sandcastle-session.js';
+import { ignoreSandcastleDirectory } from '../adapters/sandcastle/sandcastle-session.js';
 import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
-import { orThrow, SetupCommandFailed } from '../domain/errors.js';
+import { type ConfigInvalid, type JigError, SetupCommandFailed } from '../domain/errors.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
 import { type AppCradle, type RunSession, withThrowawaySandbox } from './container.js';
 import { ensureSandboxImage } from './sandbox-image.js';
@@ -33,36 +30,47 @@ export type InitResult =
  * result counts only once both commands pass inside the built sandbox — a failure goes back to
  * the planner. Without an agent, the commands already configured are checked.
  */
-export async function initSandbox(
+export function initSandbox(
   app: AwilixContainer<AppCradle>,
   options: { useAgent: boolean },
-): Promise<InitResult> {
-  const { repoRoot } = app.cradle;
-  await writeStarterFiles(repoRoot);
-  if (!options.useAgent) {
-    const config = orThrow(loadConfig(repoRoot));
-    if (!config.verifyCommand) return { status: 'written' };
-    const failure = await checkInSandbox(app, config.setupCommand, config.verifyCommand);
-    return failure
-      ? { status: 'failed', attempts: 1, failure }
-      : { status: 'verified', attempts: 1 };
-  }
+): Promise<Result<InitResult, JigError>> {
+  return Result.gen(async function* () {
+    const { repoRoot } = app.cradle;
+    await writeStarterFiles(repoRoot);
+    if (!options.useAgent) {
+      const config = yield* loadConfig(repoRoot);
+      if (!config.verifyCommand) return Result.ok<InitResult, JigError>({ status: 'written' });
+      const failure = yield* Result.await(
+        checkInSandbox(app, config.setupCommand, config.verifyCommand),
+      );
+      return Result.ok<InitResult, JigError>(
+        failure ? { status: 'failed', attempts: 1, failure } : { status: 'verified', attempts: 1 },
+      );
+    }
 
-  let previousFailure: string | undefined;
-  for (let attempt = 1; attempt <= TOOLCHAIN_ATTEMPTS; attempt++) {
-    const proposal = await proposeToolchain(app, previousFailure);
-    await writeToolchain(repoRoot, proposal.toolchain);
-    orThrow(
-      await updateConfigFile(repoRoot, {
-        setupCommand: proposal.setupCommand,
-        verifyCommand: proposal.verifyCommand,
-      }),
-    );
-    previousFailure = await checkInSandbox(app, proposal.setupCommand, proposal.verifyCommand);
-    if (!previousFailure) return { status: 'verified', attempts: attempt };
-    app.cradle.logger.warn(`attempt ${attempt} did not pass in the sandbox`);
-  }
-  return { status: 'failed', attempts: TOOLCHAIN_ATTEMPTS, failure: previousFailure ?? '' };
+    let previousFailure: string | undefined;
+    for (let attempt = 1; attempt <= TOOLCHAIN_ATTEMPTS; attempt++) {
+      const proposal = yield* Result.await(proposeToolchain(app, previousFailure));
+      yield* Result.await(writeToolchain(repoRoot, proposal.toolchain));
+      yield* Result.await(
+        updateConfigFile(repoRoot, {
+          setupCommand: proposal.setupCommand,
+          verifyCommand: proposal.verifyCommand,
+        }),
+      );
+      previousFailure = yield* Result.await(
+        checkInSandbox(app, proposal.setupCommand, proposal.verifyCommand),
+      );
+      if (!previousFailure)
+        return Result.ok<InitResult, JigError>({ status: 'verified', attempts: attempt });
+      app.cradle.logger.warn(`attempt ${attempt} did not pass in the sandbox`);
+    }
+    return Result.ok<InitResult, JigError>({
+      status: 'failed',
+      attempts: TOOLCHAIN_ATTEMPTS,
+      failure: previousFailure ?? '',
+    });
+  });
 }
 
 async function writeStarterFiles(repoRoot: string): Promise<void> {
@@ -80,29 +88,32 @@ async function writeIfMissing(file: string, contents: string): Promise<void> {
 /**
  * Rebuilds the image and runs both commands in a fresh sandbox; returns how either command
  * failed, if one did. Anything else — Docker, credentials — is not the toolchain's fault and is
- * thrown, rather than spending the planner's attempts on it.
+ * returned as the error, rather than spending the planner's attempts on it.
  */
 async function checkInSandbox(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | undefined,
   verifyCommand: string,
-): Promise<string | undefined> {
+): Promise<Result<string | undefined, JigError>> {
   const checked = await withSandbox(app, setupCommand ?? null, async (session) => {
     const verify = await session.exec(verifyCommand);
     return verify.exitCode === 0
       ? undefined
       : `verifyCommand "${verifyCommand}" exited with ${verify.exitCode}:\n${verify.output.slice(-3000)}`;
   });
-  if (checked.isErr() && checked.error instanceof SetupCommandFailed) return checked.error.message;
-  return orThrow(checked);
+  if (checked.isErr() && checked.error instanceof SetupCommandFailed) {
+    return Result.ok(checked.error.message);
+  }
+  return checked;
 }
 
 async function withSandbox<T>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<T>,
-): Promise<Result<T, SessionOpenFailure>> {
-  await ensureSandboxImage(app.cradle);
+): Promise<Result<T, JigError>> {
+  const image = await ensureSandboxImage(app.cradle);
+  if (image.isErr()) return Result.err(image.error);
   return withThrowawaySandbox(app, setupCommand, use);
 }
 
@@ -112,23 +123,27 @@ const TOOLCHAIN_ATTEMPTS = 3;
 async function proposeToolchain(
   app: AwilixContainer<AppCradle>,
   previousFailure?: string,
-): Promise<z.infer<typeof toolchainSchema>> {
-  const { repoRoot } = app.cradle;
-  const config = orThrow(loadConfig(repoRoot));
-  const dockerfile = await readFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), 'utf-8');
-  const proposed = await withSandbox(app, null, (session) =>
-    session.runForOutput({
-      role: 'planner',
-      prompt: toolchainPrompt({
-        dockerfile,
-        setupCommand: config.setupCommand,
-        verifyCommand: config.verifyCommand,
-        previousFailure,
-      }),
-      schema: toolchainSchema,
-    }),
-  );
-  return orThrow(orThrow(proposed));
+): Promise<Result<z.infer<typeof toolchainSchema>, JigError>> {
+  return Result.gen(async function* () {
+    const { repoRoot } = app.cradle;
+    const config = yield* loadConfig(repoRoot);
+    const dockerfile = await readFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), 'utf-8');
+    const proposed = yield* Result.await(
+      withSandbox(app, null, (session) =>
+        session.runForOutput({
+          role: 'planner',
+          prompt: toolchainPrompt({
+            dockerfile,
+            setupCommand: config.setupCommand,
+            verifyCommand: config.verifyCommand,
+            previousFailure,
+          }),
+          schema: toolchainSchema,
+        }),
+      ),
+    );
+    return proposed;
+  });
 }
 
 const toolchainSchema = z.object({
@@ -137,7 +152,13 @@ const toolchainSchema = z.object({
   verifyCommand: z.string(),
 });
 
-async function writeToolchain(repoRoot: string, toolchain: string): Promise<void> {
+async function writeToolchain(
+  repoRoot: string,
+  toolchain: string,
+): Promise<Result<void, ConfigInvalid>> {
   const file = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
-  await writeFile(file, withToolchain(await readFile(file, 'utf-8'), toolchain));
+  const filled = withToolchain(await readFile(file, 'utf-8'), toolchain);
+  if (filled.isErr()) return Result.err(filled.error);
+  await writeFile(file, filled.value);
+  return Result.ok();
 }

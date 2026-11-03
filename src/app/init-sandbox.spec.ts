@@ -122,13 +122,15 @@ describe('initSandbox', () => {
     ['missing credentials', () => new ConfigInvalid({ message: faker.lorem.sentence() })],
   ])('stops on %s instead of spending the planner on it', async (_case, failure) => {
     const error = failure();
-    const { init, agent } = await setup({
+    const { initResult, agent } = await setup({
       proposals: [toolchainProposal(), toolchainProposal()],
       exec: () => ({ exitCode: 0, output: '' }),
       checkSandboxFailures: [error],
     });
 
-    await expect(init({ useAgent: true })).rejects.toBe(error);
+    const result = await initResult({ useAgent: true });
+
+    expect(result.isErr() && result.error).toBe(error);
     expect(agent.calls).toHaveLength(1);
   });
 
@@ -150,7 +152,12 @@ describe('initSandbox', () => {
       config: orThrow(loadConfig(repo.dir)),
     });
     app.register({
-      images: asValue(mock<SandboxImages>({ labels: vi.fn().mockResolvedValue(undefined) })),
+      images: asValue(
+        mock<SandboxImages>({
+          labels: vi.fn().mockResolvedValue(Result.ok(undefined)),
+          build: vi.fn().mockResolvedValue(Result.ok()),
+        }),
+      ),
       latestVersions: asValue(async () => ({})),
       openSession: asValue(async ({ setupCommand }: OpenSessionInput) => {
         const failure = setupCommand === null ? undefined : checkSandboxFailures.shift();
@@ -158,14 +165,15 @@ describe('initSandbox', () => {
         return Result.ok(agent);
       }),
     });
-    const init = (options: { useAgent: boolean }) => initSandbox(app, options);
+    const initResult = (options: { useAgent: boolean }) => initSandbox(app, options);
+    const init = async (options: { useAgent: boolean }) => (await initResult(options)).unwrap();
     const file = (relativePath: string) => readFile(path.join(repo.dir, relativePath), 'utf-8');
     const write = async (relativePath: string, contents: string) => {
       const target = path.join(repo.dir, relativePath);
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, contents);
     };
-    return { init, file, write, agent };
+    return { init, initResult, file, write, agent };
   }
 });
 

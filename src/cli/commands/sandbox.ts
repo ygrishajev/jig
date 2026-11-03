@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { type InitResult, initSandbox } from '../../app/init-sandbox.js';
 import { ensureSandboxImage } from '../../app/sandbox-image.js';
+import { orThrow } from '../../domain/errors.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
@@ -18,7 +19,7 @@ export function registerSandboxCommands(program: Command): void {
       withErrorHandling(
         withInput(initInputSchema, async ({ agent, logFormat }) => {
           await withApp(logFormat, async (app) => {
-            const result = await initSandbox(app, { useAgent: agent });
+            const result = orThrow(await initSandbox(app, { useAgent: agent }));
             app.cradle.logger.info(initSummary(result));
             if (result.status === 'failed') process.exitCode = 1;
           });
@@ -35,7 +36,7 @@ export function registerSandboxCommands(program: Command): void {
       withErrorHandling(
         withInput(buildInputSchema, async ({ pullAgents, logFormat }) => {
           await withApp(logFormat, async (app) => {
-            const image = await ensureSandboxImage(app.cradle, { pullAgents });
+            const image = orThrow(await ensureSandboxImage(app.cradle, { pullAgents }));
             app.cradle.logger.info(`Sandbox image ready: ${image}`);
           });
         }),

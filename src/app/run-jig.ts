@@ -91,7 +91,7 @@ async function advance(
   store: RunStore,
   state: RunState,
 ): Promise<EngineResult> {
-  await ensureSandboxImage(app.cradle);
+  orThrow(await ensureSandboxImage(app.cradle));
   const telemetry = await startTelemetry(app.cradle.environment.telemetry);
   try {
     return orThrow(
