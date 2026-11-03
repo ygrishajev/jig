@@ -12,6 +12,10 @@ change — they are rules, not suggestions, and they override your defaults.
 
 - [`.claude/instructions/clean-code-over-comments.md`](.claude/instructions/clean-code-over-comments.md)
   — writing or changing any code — naming, structure, and why new code carries almost no comments
+- [`.claude/instructions/callee-owns-its-rules.md`](.claude/instructions/callee-owns-its-rules.md)
+  — writing or changing any code — a rule lives once, in the module it is about; callers ask for answers, not ingredients
+- [`.claude/instructions/parse-input-at-the-edge.md`](.claude/instructions/parse-input-at-the-edge.md)
+  — reading anything from outside jig, or adding a CLI argument or option — parse once at the edge, typed values inside
 - [`.claude/instructions/testing-conventions.md`](.claude/instructions/testing-conventions.md)
   — writing or changing any spec — ports over module mocks, fakes over stubs, faker-built data, what not to assert
 - [`.claude/instructions/setup-function-instead-of-beforeeach-in-unit-service-level-tests.md`](.claude/instructions/setup-function-instead-of-beforeeach-in-unit-service-level-tests.md)
