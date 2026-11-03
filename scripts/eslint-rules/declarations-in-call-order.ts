@@ -29,9 +29,16 @@ interface Reference {
 }
 
 /**
- * Reports a module whose declarations are not in call order; see
- * `.claude/instructions/declarations-in-call-order.md`. It only reports: a reorder can be valid
- * TypeScript and still throw at import, which only the tests can tell.
+ * A module reads top-down in the order its code runs. The entry point comes first, then each
+ * callee straight after its first caller, depth first. Types and interfaces go at the top, except
+ * one taken from a value (`z.infer<typeof schema>`), which sits right after that value. Statements
+ * that run at load go last. In a class, fields, the constructor and static members come first,
+ * then the public methods, each private one after the first method that calls it.
+ *
+ * Anything read while the module loads stays above what reads it, including a constant read by a
+ * callback that runs at import, as in `byRole(() => stepConfigSchema)`; below it, the import throws.
+ * For that reason the rule only reports: a reorder can be valid TypeScript and still throw at
+ * import, which only the tests can tell.
  */
 export const declarationsInCallOrder: Rule.RuleModule = {
   meta: {

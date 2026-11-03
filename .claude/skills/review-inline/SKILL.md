@@ -20,8 +20,7 @@ and removed with its fix.
 
 Read `CLAUDE.md` and every file in `.claude/instructions/` now; do not work from memory, they
 change. Each one is a checklist: `callee-owns-its-rules.md` and `parse-input-at-the-edge.md` for
-design, `clean-code-over-comments.md` for naming and comments, `declarations-in-call-order.md`
-for the order of a file, the testing rules for specs.
+design, `clean-code-over-comments.md` for naming and comments, the testing rules for specs.
 
 ## 3. Sweep
 
