@@ -5,6 +5,7 @@ import {
   AgentOutputInvalid,
   AgentRunFailed,
   ConfigInvalid,
+  isTransient,
   type JigError,
   MergeFailed,
   messageOf,
@@ -28,6 +29,15 @@ describe('messageOf', () => {
     const thrown = faker.number.int();
 
     expect(messageOf(thrown)).toBe(String(thrown));
+  });
+});
+
+describe('isTransient', () => {
+  it('counts only a retry-kind jig error as worth another attempt', () => {
+    expect(isTransient(new SandboxUnavailable(faker.lorem.sentence()))).toBe(true);
+    expect(isTransient(new MergeFailed(faker.lorem.sentence()))).toBe(false);
+    expect(isTransient(new ConfigInvalid(faker.lorem.sentence()))).toBe(false);
+    expect(isTransient(new Error(faker.lorem.sentence()))).toBe(false);
   });
 });
 

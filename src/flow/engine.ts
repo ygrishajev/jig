@@ -1,7 +1,7 @@
 import pRetry from 'p-retry';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { JigError, messageOf } from '../domain/errors.js';
+import { isTransient, JigError, messageOf } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome, OutcomeType } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
@@ -276,8 +276,4 @@ class Engine {
     this.d.events.publish({ type: 'runBlocked', runId: state.runId, phase: state.phase, reason });
     return { state: blocked, status: 'blocked', reason };
   }
-}
-
-function isTransient(error: unknown) {
-  return error instanceof JigError && error.kind === 'retry';
 }

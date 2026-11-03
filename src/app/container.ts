@@ -26,7 +26,7 @@ import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetr
 import type { JigEnvironment } from '../config/environment.js';
 import { configuredSteps, type JigConfig, loadConfig } from '../config/load-config.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
-import { JigError } from '../domain/errors.js';
+import { isTransient } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
@@ -213,8 +213,7 @@ function openSessionRetrying({ openSession, run, events, settings, runLogger }: 
   return pRetry(() => openSession({ run, events }), {
     retries: settings.maxStepRetries,
     minTimeout: settings.retryDelayMs,
-    // TODO(cohesion-11): same predicate as isTransient in flow/engine.ts; make it one isTransient(error) in domain/errors.ts next to FailureKind.
-    shouldRetry: ({ error }) => error instanceof JigError && error.kind === 'retry',
+    shouldRetry: ({ error }) => isTransient(error),
     onFailedAttempt: ({ error, attemptNumber }) =>
       runLogger.warn({ err: error, attempt: attemptNumber }, 'the sandbox did not start'),
   });

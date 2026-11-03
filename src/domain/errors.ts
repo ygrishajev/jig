@@ -9,6 +9,11 @@ export function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** A failure worth another attempt: a step, or a sandbox that did not start, gets bounded retries. */
+export function isTransient(error: unknown) {
+  return error instanceof JigError && error.kind === 'retry';
+}
+
 export abstract class JigError extends Error {
   abstract readonly kind: FailureKind;
 
