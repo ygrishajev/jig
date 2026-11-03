@@ -49,15 +49,18 @@ export function isAgentName(name: string): name is AgentName {
 }
 
 /**
- * The env vars every configured step needs, read from `environment`. Fails before any
- * container starts, naming what to set, when a step's agent has no credential at all.
+ * The credentials every configured step needs, looked up by name. Fails before any container
+ * starts, naming what to set, when a step's agent has no credential at all.
  */
-export function collectCredentials(steps: AgentChoice[], environment: NodeJS.ProcessEnv) {
+export function collectCredentials(
+  steps: AgentChoice[],
+  credential: (name: string) => string | undefined,
+) {
   const credentials: Record<string, string> = {};
   for (const step of steps) {
     const keys = AGENTS[step.provider].credentialKeys(step.model);
     const present = keys.flatMap((key) => {
-      const value = environment[key];
+      const value = credential(key);
       return value ? [[key, value] as const] : [];
     });
     if (present.length === 0) {

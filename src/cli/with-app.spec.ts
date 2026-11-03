@@ -30,16 +30,24 @@ describe('withApp', () => {
     expect(disposed).toHaveBeenCalledOnce();
   });
 
-  it('opens the app on the directory and environment it was started with', async () => {
-    const environment = { [faker.word.noun().toUpperCase()]: faker.lorem.word() };
-    const { run, cwd } = await setup({ environment });
+  it('opens the app on the directory and the environment it was started with, parsed', async () => {
+    const directory = faker.system.directoryPath();
+    const { run, cwd } = await setup({ environment: { JIG_CODEX_AUTH_DIR: directory } });
 
     const opened = await run(async (app) => ({
       repoRoot: app.cradle.repoRoot,
-      environment: app.cradle.environment,
+      codexAuthDirectory: app.cradle.environment.codexAuthDirectory,
     }));
 
-    expect(opened).toEqual({ repoRoot: cwd, environment });
+    expect(opened).toEqual({ repoRoot: cwd, codexAuthDirectory: directory });
+  });
+
+  it('refuses an environment it cannot parse, before the command runs', async () => {
+    const { run } = await setup({ environment: { JIG_IMAGE_CACHE: faker.word.noun() } });
+    const command = vi.fn();
+
+    await expect(run(command)).rejects.toBeInstanceOf(ConfigInvalid);
+    expect(command).not.toHaveBeenCalled();
   });
 
   it('refuses to start below the repository root, before the command runs', async () => {

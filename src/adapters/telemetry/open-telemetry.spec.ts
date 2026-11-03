@@ -3,39 +3,28 @@ import { describe, expect, it } from 'vitest';
 
 import { sandboxTelemetryEnvironment, startTelemetry } from './open-telemetry.js';
 
-describe('telemetry environment', () => {
-  it('starts nothing unless an OTLP endpoint is configured', async () => {
-    expect(await startTelemetry({ OTEL_SERVICE_NAME: faker.word.noun() })).toBeUndefined();
+describe('telemetry', () => {
+  it('starts nothing when telemetry is off', async () => {
+    expect(await startTelemetry(undefined)).toBeUndefined();
   });
 
-  it.each(['OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT'])(
-    'starts tracing once %s is configured',
-    async (variable) => {
-      const telemetry = await startTelemetry({ [variable]: faker.internet.url() });
+  it('starts tracing when telemetry is on', async () => {
+    const telemetry = await startTelemetry({ serviceName: faker.word.noun(), forwarded: {} });
 
-      expect(telemetry?.tracer).toBeDefined();
-      await telemetry?.shutdown();
-    },
-  );
+    expect(telemetry?.tracer).toBeDefined();
+    await telemetry?.shutdown();
+  });
 
-  it('forwards only OTEL_ variables into the sandbox and switches on Claude Code telemetry', () => {
-    const endpoint = faker.internet.url();
-    const serviceName = faker.word.noun();
+  it('passes the OTEL_ variables into the sandbox and switches on Claude Code telemetry', () => {
+    const forwarded = { OTEL_EXPORTER_OTLP_ENDPOINT: faker.internet.url() };
 
-    const forwarded = sandboxTelemetryEnvironment({
-      OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
-      OTEL_SERVICE_NAME: serviceName,
-      CLAUDE_CODE_OAUTH_TOKEN: faker.string.alphanumeric(40),
-    });
-
-    expect(forwarded).toEqual({
-      OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
-      OTEL_SERVICE_NAME: serviceName,
+    expect(sandboxTelemetryEnvironment({ serviceName: faker.word.noun(), forwarded })).toEqual({
+      ...forwarded,
       CLAUDE_CODE_ENABLE_TELEMETRY: '1',
     });
   });
 
-  it('forwards nothing when telemetry is off', () => {
-    expect(sandboxTelemetryEnvironment({ OTEL_SERVICE_NAME: faker.word.noun() })).toEqual({});
+  it('passes nothing into the sandbox when telemetry is off', () => {
+    expect(sandboxTelemetryEnvironment(undefined)).toEqual({});
   });
 });

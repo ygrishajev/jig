@@ -8,6 +8,7 @@ import { mock } from 'vitest-mock-extended';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
+import { parseEnvironment } from '../config/environment.js';
 import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import type { ExecResult } from '../ports/agent-session.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
@@ -130,7 +131,7 @@ describe('initSandbox', () => {
       repoRoot: repo.dir,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: {},
+      environment: parseEnvironment({}),
     });
     app.register({
       images: asValue(mock<SandboxImages>({ labels: vi.fn().mockResolvedValue(undefined) })),

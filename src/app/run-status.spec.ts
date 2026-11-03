@@ -9,6 +9,7 @@ import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
+import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
@@ -70,7 +71,7 @@ describe('readRunStatus', () => {
         repoRoot,
         logFormat: 'json',
         logLevel: 'silent',
-        environment: {},
+        environment: parseEnvironment({}),
       });
       onTestFinished(() => app.dispose());
       app.register({ config: asValue({ ...loadConfig(repoRoot), runStores }) });

@@ -23,6 +23,7 @@ import {
   type SandcastleSessionOptions,
 } from '../adapters/sandcastle/sandcastle-session.js';
 import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
+import type { JigEnvironment } from '../config/environment.js';
 import { configuredSteps, type JigConfig, loadConfig } from '../config/load-config.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
 import { JigError } from '../domain/errors.js';
@@ -68,8 +69,7 @@ export interface OpenSessionInput {
 /** Lives for the whole process: configuration and everything shared by every run. */
 export interface AppCradle {
   repoRoot: string;
-  /** The process environment, read once by the CLI; jig's code reads variables only from here. */
-  environment: NodeJS.ProcessEnv;
+  environment: JigEnvironment;
   logFormat: LogFormat;
   logLevel: string;
   config: JigConfig;
@@ -98,7 +98,7 @@ export function createAppContainer(input: {
   repoRoot: string;
   logFormat: LogFormat;
   logLevel?: string;
-  environment: NodeJS.ProcessEnv;
+  environment: JigEnvironment;
 }) {
   const container = createContainer<AppCradle>({
     injectionMode: InjectionMode.PROXY,
@@ -119,8 +119,7 @@ export function createAppContainer(input: {
     images: asFunction(
       ({ logger, environment }: AppCradle) =>
         new DockerImages({
-          // TODO(cohesion-13): interprets JIG_IMAGE_CACHE inline; let DockerImages (or one parsed environment schema) own what the variable means.
-          cache: environment.JIG_IMAGE_CACHE === 'gha' ? 'gha' : undefined,
+          cache: environment.imageCache,
           onOutput: (line) => logger.debug(line.trimEnd()),
         }),
     ).singleton(),
@@ -254,7 +253,7 @@ export function sandcastleSessionOptions(
   repoRoot: string,
   config: JigConfig,
   { run, events, setupCommand }: OpenSessionInput,
-  environment: NodeJS.ProcessEnv,
+  environment: JigEnvironment,
 ): SandcastleSessionOptions {
   const steps = configuredSteps(config);
   return {
@@ -262,11 +261,11 @@ export function sandcastleSessionOptions(
     ...run,
     imageName: sandboxImageName(repoRoot, config),
     codexAuthDirectory: Object.values(steps).some((step) => step.provider === 'codex')
-      ? environment.JIG_CODEX_AUTH_DIR
+      ? environment.codexAuthDirectory
       : undefined,
     credentials: {
-      ...collectCredentials(Object.values(steps), environment),
-      ...sandboxTelemetryEnvironment(environment),
+      ...collectCredentials(Object.values(steps), environment.credential),
+      ...sandboxTelemetryEnvironment(environment.telemetry),
     },
     agents: agentsFor(steps),
     skipCommitSigning: config.commitSigning === 'skip',

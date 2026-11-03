@@ -2,6 +2,7 @@ import type { AwilixContainer } from 'awilix';
 
 import type { LogFormat } from '../adapters/logging/create-logger.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
+import { parseEnvironment } from '../config/environment.js';
 import { ensureRepositoryRoot } from '../git/repository.js';
 
 /** Where the CLI was started and what it was started with; the only reads of `process`. */
@@ -17,7 +18,11 @@ export async function withApp<T>(
   { cwd, environment }: Invocation = { cwd: process.cwd(), environment: process.env },
 ) {
   await ensureRepositoryRoot(cwd);
-  const app = createAppContainer({ repoRoot: cwd, logFormat, environment });
+  const app = createAppContainer({
+    repoRoot: cwd,
+    logFormat,
+    environment: parseEnvironment(environment),
+  });
   try {
     return await command(app);
   } finally {

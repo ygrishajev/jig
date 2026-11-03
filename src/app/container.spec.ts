@@ -10,6 +10,7 @@ import {
 } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
+import { parseEnvironment } from '../config/environment.js';
 import { type JigConfig, loadConfig } from '../config/load-config.js';
 import {
   createAppContainer,
@@ -82,7 +83,9 @@ describe('sandcastleSessionOptions', () => {
   async function setup(input: { config?: Partial<JigConfig>; environment?: NodeJS.ProcessEnv }) {
     const repoRoot = await tempDirectory('jig-container-');
     const config = { ...loadConfig(repoRoot), ...input.config };
-    const environment = input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) };
+    const environment = parseEnvironment(
+      input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
+    );
     const options = (overrides: Partial<OpenSessionInput> = {}) =>
       sandcastleSessionOptions(
         repoRoot,
@@ -105,7 +108,7 @@ describe('createAppContainer', () => {
       repoRoot,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: {},
+      environment: parseEnvironment({}),
     });
     const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
     const verifyCommand = `npm run ${faker.word.verb()}`;
@@ -164,7 +167,7 @@ describe('withRunScope', () => {
       repoRoot,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: {},
+      environment: parseEnvironment({}),
     });
     app.register({ openSession: asValue(async () => session) });
     onTestFinished(() => app.dispose());

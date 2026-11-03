@@ -13,6 +13,7 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
+import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import {
   ConfigInvalid,
@@ -171,7 +172,7 @@ describe('runJig', () => {
       repoRoot: repo.dir,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: {},
+      environment: parseEnvironment({}),
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
