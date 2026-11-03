@@ -13,7 +13,7 @@ import { type EngineResult, runEngine } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
 import { getCurrentBranch } from '../git/branch.js';
 import type { RunStore } from '../ports/run-store.js';
-import { type AppCradle, closeRunScope, openRunScope } from './container.js';
+import { type AppCradle, withRunScope } from './container.js';
 import { openRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 
@@ -87,14 +87,9 @@ async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: 
   // TODO(cohesion-5): the caller knows the on/off guard; startTelemetry should return undefined when disabled and keep telemetryEnabled private.
   const telemetry = telemetryEnabled(environment) ? await startTelemetry(environment) : undefined;
   try {
-    // TODO(cohesion-4): the caller knows the scope protocol (build identity, open, reach into cradle, close session before dispose); a withRunScope in container.ts would own it.
-    const run = { runId: state.runId, baseBranch: state.baseBranch };
-    const scope = await openRunScope(app, run, store, { tracer: telemetry?.tracer });
-    try {
-      return await runEngine(runFlow, state, scope.cradle.engineDependencies);
-    } finally {
-      await closeRunScope(scope);
-    }
+    return await withRunScope(app, state, store, { tracer: telemetry?.tracer }, (dependencies) =>
+      runEngine(runFlow, state, dependencies),
+    );
   } finally {
     await telemetry?.shutdown();
   }

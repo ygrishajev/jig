@@ -128,12 +128,30 @@ export function createAppContainer(input: {
   return container;
 }
 
-/** Starts the run's sandbox and builds everything scoped to the run. Dispose the scope when done. */
-export async function openRunScope(
+/**
+ * Starts the run's sandbox, builds everything scoped to the run and hands `use` what the engine
+ * needs. The sandbox is closed and the scope disposed afterwards, however `use` ends.
+ */
+export async function withRunScope<T>(
+  app: AwilixContainer<AppCradle>,
+  { runId, baseBranch }: RunIdentity,
+  runStore: RunStore,
+  options: { tracer?: Tracer },
+  use: (dependencies: EngineDependencies) => Promise<T>,
+): Promise<T> {
+  const scope = await openRunScope(app, { runId, baseBranch }, runStore, options);
+  try {
+    return await use(scope.cradle.engineDependencies);
+  } finally {
+    await closeRunScope(scope);
+  }
+}
+
+async function openRunScope(
   app: AwilixContainer<AppCradle>,
   run: RunIdentity,
   runStore: RunStore,
-  options: { tracer?: Tracer } = {},
+  options: { tracer?: Tracer },
 ): Promise<AwilixContainer<RunCradle>> {
   const { repoRoot } = app.cradle;
   const scope = app.createScope<RunCradle>();
@@ -199,8 +217,8 @@ function openSessionRetrying({ openSession, run, events, settings, runLogger }: 
   });
 }
 
-/** Closes the run's sandbox and then the rest of its scope. */
-export async function closeRunScope(scope: AwilixContainer<RunCradle>) {
+/** Awilix's `dispose` alone would leave the sandbox running, so the session is closed first. */
+async function closeRunScope(scope: AwilixContainer<RunCradle>) {
   try {
     await scope.cradle.session.close();
   } finally {
