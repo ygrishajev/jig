@@ -85,6 +85,7 @@ export class FakeAgentSession implements AgentSession {
 
   async close() {
     this.closed = true;
+    return Result.ok();
   }
 
   private nextTurn(role: AgentRole) {

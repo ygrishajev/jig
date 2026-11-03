@@ -42,9 +42,23 @@ describe('Codex auth cache', () => {
     const newer = login();
     await writeFile(path.join(source, 'auth.json'), newer);
     await writeFile(path.join(cache.directory, 'auth.json'), login());
-    await expect(cache.close()).rejects.toThrow('changed during the run');
+    const closed = await cache.close();
+    expect(closed.isErr() && closed.error).toBeInstanceOf(ConfigInvalid);
+    expect(closed.isErr() && closed.error.message).toContain('changed during the run');
     expect(await readFile(path.join(source, 'auth.json'), 'utf8')).toBe(newer);
     await rm(cache.directory, { recursive: true, force: true });
+  });
+
+  it('reports an invalid refreshed login, still removing the copy and releasing the lock', async () => {
+    const { source } = await setup();
+    const cache = orThrow(await openCodexAuthCache(source));
+    await writeFile(path.join(cache.directory, 'auth.json'), faker.lorem.word());
+
+    const closed = await cache.close();
+
+    expect(closed.isErr() && closed.error).toBeInstanceOf(ConfigInvalid);
+    await expect(readdir(cache.directory)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await openCodexAuthCache(source)).isOk()).toBe(true);
   });
 
   it('rejects malformed credentials without including their contents in the error', async () => {

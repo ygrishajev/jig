@@ -6,11 +6,11 @@ import lockfile from 'proper-lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
-import { ConfigInvalid, messageOf, orThrow } from '../../domain/errors.js';
+import { ConfigInvalid, messageOf } from '../../domain/errors.js';
 
 export interface CodexAuthCache {
   directory: string;
-  close(): Promise<void>;
+  close(): Promise<Result<void, ConfigInvalid>>;
 }
 
 /** Mounts only a private login copy; Codex can atomically refresh it without exposing host config. */
@@ -99,12 +99,24 @@ async function persistAndRelease(
   original: string,
   directory: string,
   release: () => Promise<void>,
-): Promise<void> {
+): Promise<Result<void, ConfigInvalid>> {
   try {
-    const refreshed = await readFile(path.join(directory, 'auth.json'), 'utf8');
-    orThrow(validateSubscription(refreshed));
-    if (refreshed !== original) await persistRefresh(source, original, refreshed, directory);
-    await rm(directory, { recursive: true, force: true });
+    const refreshed = await Result.tryPromise({
+      try: () => readFile(path.join(directory, 'auth.json'), 'utf8'),
+      catch: (cause) =>
+        new ConfigInvalid({
+          message: `Could not read the refreshed Codex login: ${messageOf(cause)}`,
+        }),
+    });
+    if (refreshed.isErr()) return refreshed.map(() => undefined);
+    const valid = validateSubscription(refreshed.value);
+    const persisted =
+      valid.isOk() && refreshed.value !== original
+        ? await persistRefresh(source, original, refreshed.value, directory)
+        : valid;
+    const retained = persisted.isErr() && valid.isOk();
+    if (!retained) await rm(directory, { recursive: true, force: true });
+    return persisted;
   } finally {
     await release();
   }
@@ -115,11 +127,25 @@ async function persistRefresh(
   original: string,
   refreshed: string,
   directory: string,
-): Promise<void> {
-  if ((await readFile(source, 'utf8')) !== original) {
-    throw new ConfigInvalid({
-      message: `The Codex login changed during the run. Refreshed credentials are retained at ${directory}.`,
-    });
+): Promise<Result<void, ConfigInvalid>> {
+  const current = await Result.tryPromise({
+    try: () => readFile(source, 'utf8'),
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Could not read the Codex login: ${messageOf(cause)}` }),
+  });
+  if (current.isErr()) return current.map(() => undefined);
+  if (current.value !== original) {
+    return Result.err(
+      new ConfigInvalid({
+        message: `The Codex login changed during the run. Refreshed credentials are retained at ${directory}.`,
+      }),
+    );
   }
-  await writeFileAtomic(source, refreshed, { mode: 0o600 });
+  return Result.tryPromise({
+    try: () => writeFileAtomic(source, refreshed, { mode: 0o600 }),
+    catch: (cause) =>
+      new ConfigInvalid({
+        message: `Could not save the refreshed Codex login: ${messageOf(cause)}`,
+      }),
+  });
 }

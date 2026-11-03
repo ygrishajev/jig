@@ -205,12 +205,14 @@ export class SandcastleSession implements AgentSession {
     return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() };
   }
 
-  async close(): Promise<void> {
+  async close(): Promise<Result<void, ConfigInvalid>> {
+    let authClosed: Result<void, ConfigInvalid> = Result.ok();
     try {
       await this.sandbox.close();
     } finally {
-      await this.codexAuth?.close();
+      authClosed = (await this.codexAuth?.close()) ?? authClosed;
     }
+    return authClosed;
   }
 }
 

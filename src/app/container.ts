@@ -22,7 +22,12 @@ import {
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
-import { isTransient, orThrow } from '../domain/errors.js';
+import {
+  type ConfigInvalid,
+  type GitCommandFailed,
+  isTransient,
+  type JigError,
+} from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
 import { retryResult } from '../domain/retry.js';
 import { runIdSchema } from '../domain/run-id.js';
@@ -72,7 +77,7 @@ export interface AppCradle {
 /** The run's sandbox: where agents and commands run, and the worktree they share with the host. */
 export interface RunSession extends AgentSession {
   readonly worktreePath: string;
-  close(): Promise<void>;
+  close(): Promise<Result<void, ConfigInvalid>>;
 }
 
 export function createAppContainer(input: {
@@ -137,11 +142,14 @@ export async function withRunScope<T, E>(
 ): Promise<Result<T, SessionOpenFailure | E>> {
   const scope = await openRunScope(app, { runId, baseBranch }, runStore, options);
   if (scope.isErr()) return Result.err(scope.error);
+  let used: Result<T, E>;
+  let closed: Result<void, ConfigInvalid>;
   try {
-    return await use(scope.value.cradle.engineDependencies);
+    used = await use(scope.value.cradle.engineDependencies);
   } finally {
-    await closeRunScope(scope.value);
+    closed = await closeRunScope(scope.value);
   }
+  return reportCleanup(used, closed, app.cradle.logger);
 }
 
 async function openRunScope(
@@ -226,12 +234,26 @@ function openSessionRetrying({
 }
 
 /** Awilix's `dispose` alone would leave the sandbox running, so the session is closed first. */
-async function closeRunScope(scope: AwilixContainer<RunCradle>): Promise<void> {
+async function closeRunScope(
+  scope: AwilixContainer<RunCradle>,
+): Promise<Result<void, ConfigInvalid>> {
   try {
-    await scope.cradle.session.close();
+    return await scope.cradle.session.close();
   } finally {
     await scope.dispose();
   }
+}
+
+/** A failed cleanup is the outcome only when the work itself succeeded; otherwise it is logged. */
+function reportCleanup<T, E, C extends JigError>(
+  used: Result<T, E>,
+  cleanup: Result<void, C>,
+  logger: Logger,
+): Result<T, E | C> {
+  if (cleanup.isOk()) return used;
+  if (used.isOk()) return Result.err(cleanup.error);
+  logger.warn({ err: cleanup.error }, 'cleanup failed after the run failed');
+  return used;
 }
 
 /**
@@ -243,7 +265,7 @@ export async function withThrowawaySandbox<T>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<T>,
-): Promise<Result<T, SessionOpenFailure>> {
+): Promise<Result<T, SessionOpenFailure | GitCommandFailed | ConfigInvalid>> {
   const { repoRoot, logger, openSession } = app.cradle;
   const baseBranch = await getCurrentBranch(repoRoot);
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
@@ -254,10 +276,15 @@ export async function withThrowawaySandbox<T>(
   const events = observedEvents(logger, [new LoggingObserver(logger)]);
   const session = await openSession({ run, events, setupCommand });
   if (session.isErr()) return Result.err(session.error);
+  let used: Result<T, SessionOpenFailure>;
+  let closed: Result<void, ConfigInvalid>;
+  let deleted: Result<void, GitCommandFailed>;
   try {
-    return Result.ok(await use(session.value));
+    used = Result.ok(await use(session.value));
   } finally {
-    await session.value.close();
-    orThrow(await deleteBranch(repoRoot, runBranchFor(run.runId)));
+    closed = await session.value.close();
+    deleted = await deleteBranch(repoRoot, runBranchFor(run.runId));
   }
+  const cleaned: Result<void, ConfigInvalid | GitCommandFailed> = closed.isErr() ? closed : deleted;
+  return reportCleanup(used, cleaned, logger);
 }
