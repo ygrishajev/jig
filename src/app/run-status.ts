@@ -24,7 +24,7 @@ export async function readRunStatus(
   runId: RunId,
 ): Promise<RunStatus> {
   const state = await (await openRunStore(app.cradle)).peek(runId);
-  if (!state) throw new RunRequestInvalid(`No run found with id "${runId}".`);
+  if (!state) throw new RunRequestInvalid({ message: `No run found with id "${runId}".` });
   const { repoRoot, artefacts } = app.cradle;
   const documents = artefacts.documents(runId);
   const metrics = new MetricsLog(repoRoot, runId).summary();

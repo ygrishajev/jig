@@ -92,7 +92,10 @@ describe('initSandbox', () => {
   });
 
   it('hands a failing setup command back to the planner', async () => {
-    const failure = new SetupCommandFailed(faker.lorem.sentence(), faker.lorem.sentence());
+    const failure = new SetupCommandFailed({
+      message: faker.lorem.sentence(),
+      output: faker.lorem.sentence(),
+    });
     const { init, agent } = await setup({
       proposals: [toolchainProposal(), toolchainProposal()],
       exec: () => ({ exitCode: 0, output: '' }),
@@ -104,8 +107,11 @@ describe('initSandbox', () => {
   });
 
   it.each([
-    ['a sandbox that would not start', () => new SandboxUnavailable(faker.lorem.sentence())],
-    ['missing credentials', () => new ConfigInvalid(faker.lorem.sentence())],
+    [
+      'a sandbox that would not start',
+      () => new SandboxUnavailable({ message: faker.lorem.sentence() }),
+    ],
+    ['missing credentials', () => new ConfigInvalid({ message: faker.lorem.sentence() })],
   ])('stops on %s instead of spending the planner on it', async (_case, failure) => {
     const error = failure();
     const { init, agent } = await setup({

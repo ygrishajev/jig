@@ -68,7 +68,9 @@ async function fetchUpstreamOf(repoRoot: string, branch: string): Promise<string
   const mergeRef = succeeded(await git(repoRoot, ['config', '--get', `branch.${branch}.merge`]));
   const fetched = await git(repoRoot, ['fetch', '--quiet', succeeded(remote), mergeRef]);
   if (fetched.exitCode !== 0) {
-    throw new RemoteUnavailable(`Fetching the upstream of "${branch}" failed: ${fetched.stderr}`);
+    throw new RemoteUnavailable({
+      message: `Fetching the upstream of "${branch}" failed: ${fetched.stderr}`,
+    });
   }
   return `${branch}@{upstream}`;
 }

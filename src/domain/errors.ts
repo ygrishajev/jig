@@ -1,8 +1,23 @@
+import { type Result, TaggedError } from 'better-result';
+
 /**
  * How the engine reacts to a failure: try the step again, stop and wait for a person, or abort
  * the run. A failure is always the failing step's own; it never becomes work for another role.
  */
 export type FailureKind = 'retry' | 'block' | 'fatal';
+
+export type JigError =
+  | AgentRunFailed
+  | AgentOutputInvalid
+  | RemoteUnavailable
+  | SandboxUnavailable
+  | SetupCommandFailed
+  | RunStateConflict
+  | MergeFailed
+  | ConfigInvalid
+  | RunRequestInvalid
+  | RunInProgress
+  | MetricsLogCorrupt;
 
 /** JavaScript can throw anything, not only an `Error`. */
 export function messageOf(error: unknown): string {
@@ -11,38 +26,33 @@ export function messageOf(error: unknown): string {
 
 /** A failure worth another attempt: a step, or a sandbox that did not start, gets bounded retries. */
 export function isTransient(error: unknown): boolean {
-  return error instanceof JigError && error.kind === 'retry';
+  return isJigError(error) && error.kind === 'retry';
 }
 
-export abstract class JigError extends Error {
-  abstract readonly kind: FailureKind;
-
-  constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
-  }
+export function isJigError(value: unknown): value is JigError {
+  return jigErrorClasses.some((errorClass) => value instanceof errorClass);
 }
 
-export class AgentRunFailed extends JigError {
-  readonly kind = 'retry';
+export class AgentRunFailed extends TaggedError('AgentRunFailed')<{ message: string }> {
+  readonly kind = 'retry' as const;
 }
 
 /** The agent's own reply was malformed; a fresh attempt at the same step may well get it right. */
-export class AgentOutputInvalid extends JigError {
-  readonly kind = 'retry';
+export class AgentOutputInvalid extends TaggedError('AgentOutputInvalid')<{ message: string }> {
+  readonly kind = 'retry' as const;
 }
 
 /** A fetch or push to the remote failed; the network may well be back on the next attempt. */
-export class RemoteUnavailable extends JigError {
-  readonly kind = 'retry';
+export class RemoteUnavailable extends TaggedError('RemoteUnavailable')<{ message: string }> {
+  readonly kind = 'retry' as const;
 }
 
 /**
  * The sandbox did not start: the Docker daemon, a container start, or creating the worktree
  * failed in a way sandcastle does not tell apart from a passing hiccup, so it is worth another go.
  */
-export class SandboxUnavailable extends JigError {
-  readonly kind = 'retry';
+export class SandboxUnavailable extends TaggedError('SandboxUnavailable')<{ message: string }> {
+  readonly kind = 'retry' as const;
 }
 
 /**
@@ -50,40 +60,56 @@ export class SandboxUnavailable extends JigError {
  * `init` hands it back to the planner; in a run it is retried, since `npm ci` fails on a network
  * blip as readily as on a broken lockfile.
  */
-export class SetupCommandFailed extends JigError {
-  readonly kind = 'retry';
-
-  constructor(
-    message: string,
-    readonly output: string,
-  ) {
-    super(message);
-  }
+export class SetupCommandFailed extends TaggedError('SetupCommandFailed')<{
+  message: string;
+  output: string;
+}> {
+  readonly kind = 'retry' as const;
 }
 
 /** The remote copy of a run moved in a way this process cannot follow without losing someone's work. */
-export class RunStateConflict extends JigError {
-  readonly kind = 'block';
+export class RunStateConflict extends TaggedError('RunStateConflict')<{ message: string }> {
+  readonly kind = 'block' as const;
 }
 
-export class MergeFailed extends JigError {
-  readonly kind = 'block';
+export class MergeFailed extends TaggedError('MergeFailed')<{ message: string }> {
+  readonly kind = 'block' as const;
 }
 
-export class ConfigInvalid extends JigError {
-  readonly kind = 'fatal';
+export class ConfigInvalid extends TaggedError('ConfigInvalid')<{ message: string }> {
+  readonly kind = 'fatal' as const;
 }
 
-export class RunRequestInvalid extends JigError {
-  readonly kind = 'fatal';
+export class RunRequestInvalid extends TaggedError('RunRequestInvalid')<{ message: string }> {
+  readonly kind = 'fatal' as const;
 }
 
 /** Another jig process is already running this run; two writers would overwrite each other. */
-export class RunInProgress extends JigError {
-  readonly kind = 'fatal';
+export class RunInProgress extends TaggedError('RunInProgress')<{ message: string }> {
+  readonly kind = 'fatal' as const;
 }
 
 /** A complete line of a run's metrics log is not a metric record: the file was edited or damaged. */
-export class MetricsLogCorrupt extends JigError {
-  readonly kind = 'fatal';
+export class MetricsLogCorrupt extends TaggedError('MetricsLogCorrupt')<{ message: string }> {
+  readonly kind = 'fatal' as const;
+}
+
+const jigErrorClasses = [
+  AgentRunFailed,
+  AgentOutputInvalid,
+  RemoteUnavailable,
+  SandboxUnavailable,
+  SetupCommandFailed,
+  RunStateConflict,
+  MergeFailed,
+  ConfigInvalid,
+  RunRequestInvalid,
+  RunInProgress,
+  MetricsLogCorrupt,
+];
+
+/** Transitional: returns the value or throws the error; Task 11 deletes it. */
+export function orThrow<T, E>(result: Result<T, E>): T {
+  if (result.isErr()) throw result.error;
+  return result.value;
 }

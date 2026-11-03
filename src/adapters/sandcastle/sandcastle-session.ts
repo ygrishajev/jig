@@ -121,7 +121,7 @@ export class SandcastleSession implements AgentSession {
       });
       return result.stdout;
     } catch (error) {
-      throw new AgentRunFailed(`The ${role} agent failed: ${messageOf(error)}`);
+      throw new AgentRunFailed({ message: `The ${role} agent failed: ${messageOf(error)}` });
     }
   }
 
@@ -229,8 +229,8 @@ function sandboxStartFailure(error: unknown): JigError {
   const message = `Could not start the sandbox: ${messageOf(error)}`;
   const tag = sandcastleFailureTag(error);
   return tag && CONFIGURATION_FAILURES.has(tag)
-    ? new ConfigInvalid(message)
-    : new SandboxUnavailable(message);
+    ? new ConfigInvalid({ message: message })
+    : new SandboxUnavailable({ message: message });
 }
 
 function sandcastleFailureTag(error: unknown): string | undefined {
@@ -264,7 +264,7 @@ async function runSetupCommand(
 ): Promise<void> {
   const failure = await setupFailure(sandbox, command, setupTimeoutSeconds).catch(
     (error: unknown) =>
-      new SandboxUnavailable(`Could not run the setup command: ${messageOf(error)}`),
+      new SandboxUnavailable({ message: `Could not run the setup command: ${messageOf(error)}` }),
   );
   if (!failure) return;
   await sandbox.close();
@@ -282,17 +282,17 @@ async function setupFailure(
     delay(timeoutSeconds * 1000, undefined, { signal: timer.signal }),
   ]).finally(() => timer.abort());
   if (!finished) {
-    return new SetupCommandFailed(
-      `setupCommand "${command}" did not finish within ${timeoutSeconds}s`,
-      '',
-    );
+    return new SetupCommandFailed({
+      message: `setupCommand "${command}" did not finish within ${timeoutSeconds}s`,
+      output: '',
+    });
   }
   if (finished.exitCode === 0) return undefined;
   const output = `${finished.stdout}${finished.stderr}`.trim().slice(-SETUP_OUTPUT_TAIL);
-  return new SetupCommandFailed(
-    `setupCommand "${command}" exited with ${finished.exitCode}:\n${output}`,
+  return new SetupCommandFailed({
+    message: `setupCommand "${command}" exited with ${finished.exitCode}:\n${output}`,
     output,
-  );
+  });
 }
 
 /** How much of a failed setup command's output is kept; the end is where the error is. */

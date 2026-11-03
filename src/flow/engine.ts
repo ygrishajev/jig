@@ -1,9 +1,10 @@
+import { panic } from 'better-result';
 import pRetry from 'p-retry';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { isTransient, JigError, messageOf } from '../domain/errors.js';
+import { isJigError, isTransient, messageOf } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
-import type { Outcome, OutcomeType } from '../domain/outcome.js';
+import type { Outcome } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
 import {
   currentSlice,
@@ -91,7 +92,7 @@ class Engine {
       await this.d.store.save(state);
       onSaved(state);
     }
-    throw new FlowDoesNotSettle(state.runId);
+    panic(`Run ${state.runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`);
   }
 
   private async leaveHaltOrBlock(state: RunState): Promise<RunState> {
@@ -200,7 +201,7 @@ class Engine {
       });
       return { outcome };
     } catch (error) {
-      if (!(error instanceof JigError) || error.kind === 'fatal') throw error;
+      if (!isJigError(error) || error.kind === 'fatal') throw error;
       return { blockedReason: error.message };
     }
   }
@@ -231,10 +232,10 @@ class Engine {
     context: GuardContext,
   ): S {
     const target: Target<S> | undefined = transitions[outcome.type];
-    if (target === undefined) throw new FlowHasNoTransition(outcome.type);
+    if (target === undefined) panic(`The flow has no transition for outcome "${outcome.type}"`);
     if (typeof target === 'string') return target;
     const match = target.find((entry) => !entry.when || entry.when(context));
-    if (!match) throw new FlowHasNoTransition(outcome.type);
+    if (!match) panic(`The flow has no transition for outcome "${outcome.type}"`);
     return match.to;
   }
 
@@ -266,21 +267,3 @@ class Engine {
 
 /** A guard against a flow that never settles; every healthy pass moves a phase or a slice forward. */
 const MAX_PASSES = 1000;
-
-/** The flow cycles without ever finishing, halting or blocking: a bug in the flow, not the run. */
-export class FlowDoesNotSettle extends JigError {
-  readonly kind = 'fatal';
-
-  constructor(readonly runId: RunId) {
-    super(`Run ${runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`);
-  }
-}
-
-/** The flow leaves an outcome a step can return with nowhere to go: a bug in the flow, not the run. */
-export class FlowHasNoTransition extends JigError {
-  readonly kind = 'fatal';
-
-  constructor(readonly outcome: OutcomeType) {
-    super(`The flow has no transition for outcome "${outcome}"`);
-  }
-}

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { JigError } from '../domain/errors.js';
+import { isJigError } from '../domain/errors.js';
 import type { RunStateIn } from '../domain/run-state.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
 import { pullRequestPrompt } from '../prompts/pull-request.js';
@@ -52,7 +52,7 @@ async function fillTemplate(
     });
     return body.trim();
   } catch (error) {
-    if (error instanceof JigError && error.kind !== 'fatal') return undefined;
+    if (isJigError(error) && error.kind !== 'fatal') return undefined;
     throw error;
   }
 }

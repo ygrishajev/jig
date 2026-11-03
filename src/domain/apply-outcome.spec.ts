@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { Panic } from 'better-result';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -11,7 +12,7 @@ import {
   aSlice,
   designDocs,
 } from '../../tests/support/builders.js';
-import { applyOutcome, NoCurrentSlice } from './apply-outcome.js';
+import { applyOutcome } from './apply-outcome.js';
 
 describe('applyOutcome', () => {
   it.each(['continue', 'pause', 'approved', 'merged', 'awaitingManualMerge'] as const)(
@@ -99,8 +100,6 @@ describe('applyOutcome', () => {
   });
 
   it('refuses a slice outcome when no slice is left', () => {
-    expect(() => applyOutcome(aRunState({ slices: [] }), { type: 'verified' })).toThrow(
-      NoCurrentSlice,
-    );
+    expect(() => applyOutcome(aRunState({ slices: [] }), { type: 'verified' })).toThrow(Panic);
   });
 });

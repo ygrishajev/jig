@@ -1,3 +1,4 @@
+import { panic } from 'better-result';
 import { z } from 'zod';
 
 import { type RunId, runIdSchema } from './run-id.js';
@@ -20,9 +21,7 @@ export function startRun(input: { runId: RunId; baseBranch: string; request: str
 export function enterPhase(state: RunState, phase: RunPhase): RunState {
   const entered = runStateSchema.safeParse({ ...state, phase });
   if (!entered.success) {
-    throw new PhaseOutOfOrder(
-      `Run ${state.runId} cannot enter "${phase}": ${entered.error.message}`,
-    );
+    panic(`Run ${state.runId} cannot enter "${phase}": ${entered.error.message}`);
   }
   return entered.data;
 }
@@ -105,9 +104,6 @@ export const runStateSchema = z.discriminatedUnion('phase', [
 ]);
 
 export type RunState = z.infer<typeof runStateSchema>;
-
-/** A run was moved into a phase without what that phase guarantees: the flow is out of order. */
-export class PhaseOutOfOrder extends Error {}
 
 /** Every slice commits onto this one branch, so the whole feature lands as one merge. */
 export function runBranchFor(runId: RunId): string {

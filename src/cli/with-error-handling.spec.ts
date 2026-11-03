@@ -6,7 +6,7 @@ import { type FailureOutput, withErrorHandling } from './with-error-handling.js'
 
 describe('withErrorHandling', () => {
   it('prints the error and sets a failing exit code instead of rejecting', async () => {
-    const failure = new ConfigInvalid(faker.lorem.sentence());
+    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
     const { handle, output } = setup({
       command: async () => {
         throw failure;

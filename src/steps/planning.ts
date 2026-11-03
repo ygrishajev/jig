@@ -56,9 +56,9 @@ const plannedSlicesSchema = z
 function assertUniqueIds(ids: string[]): void {
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
   if (duplicates.length > 0) {
-    throw new AgentOutputInvalid(
-      `The slice plan repeats slice ids: ${[...new Set(duplicates)].join(', ')}`,
-    );
+    throw new AgentOutputInvalid({
+      message: `The slice plan repeats slice ids: ${[...new Set(duplicates)].join(', ')}`,
+    });
   }
 }
 

@@ -77,7 +77,7 @@ describe('finishing steps', () => {
     it('falls back to a summary from the run itself when the describer fails', async () => {
       const plan = aFeaturePlan();
       const { run } = await setup({
-        describer: { fail: new AgentRunFailed(faker.lorem.sentence()) },
+        describer: { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) },
         state: { plan },
       });
 
@@ -89,7 +89,7 @@ describe('finishing steps', () => {
     it('keeps the reviewer feedback of a slice that did not get approved', async () => {
       const lastFeedback = faker.lorem.sentence();
       const { run } = await setup({
-        describer: { fail: new AgentRunFailed(faker.lorem.sentence()) },
+        describer: { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) },
         state: { slices: [aSlice({ status: 'stuck', lastFeedback })] },
       });
 

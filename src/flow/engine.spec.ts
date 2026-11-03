@@ -4,6 +4,7 @@ import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
+import { Panic } from 'better-result';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
@@ -24,7 +25,7 @@ import {
   MergeFailed,
 } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
-import { PhaseOutOfOrder, type RunState } from '../domain/run-state.js';
+import { type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
@@ -39,7 +40,7 @@ import {
   type SliceFlow,
   type SliceStep,
 } from './define-flow.js';
-import { FlowDoesNotSettle, FlowHasNoTransition, runEngine } from './engine.js';
+import { runEngine } from './engine.js';
 
 describe('runEngine', () => {
   it('walks phases by the outcome each step returns and finishes done', async () => {
@@ -117,7 +118,7 @@ describe('runEngine', () => {
         context: async () => ({ type: 'contextBuilt', context: aContext() }),
         planning: async () => {
           calls++;
-          if (calls <= failures) throw new AgentRunFailed(faker.lorem.sentence());
+          if (calls <= failures) throw new AgentRunFailed({ message: faker.lorem.sentence() });
           return { type: 'featurePlanned', plan };
         },
       }),
@@ -137,7 +138,7 @@ describe('runEngine', () => {
       settings: runSettings({ maxStepRetries: retries }),
       flow: linearFlow({
         context: async () => {
-          throw new AgentRunFailed(reason);
+          throw new AgentRunFailed({ message: reason });
         },
       }),
     });
@@ -194,7 +195,7 @@ describe('runEngine', () => {
       settings: runSettings({ maxStepRetries: 0 }),
       flow: linearFlow({
         context: async () => {
-          throw new MergeFailed(reason);
+          throw new MergeFailed({ message: reason });
         },
       }),
     });
@@ -250,9 +251,7 @@ describe('runEngine', () => {
       }),
     });
 
-    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toBeInstanceOf(
-      FlowDoesNotSettle,
-    );
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toThrow(Panic);
   });
 
   it('refuses an outcome whose guarded transitions all decline', async () => {
@@ -265,9 +264,7 @@ describe('runEngine', () => {
       }),
     });
 
-    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toBeInstanceOf(
-      FlowHasNoTransition,
-    );
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toThrow(Panic);
   });
 
   it('reports a failed attempt before a fatal error propagates', async () => {
@@ -292,7 +289,7 @@ describe('runEngine', () => {
       flow: linearFlow({
         context: async () => ({ type: 'contextBuilt', context: aContext() }),
         planning: async () => {
-          throw new ConfigInvalid(reason);
+          throw new ConfigInvalid({ message: reason });
         },
       }),
     });
@@ -316,7 +313,7 @@ describe('runEngine', () => {
       events,
       flow: linearFlow({
         context: async () => {
-          throw new ConfigInvalid(faker.lorem.sentence());
+          throw new ConfigInvalid({ message: faker.lorem.sentence() });
         },
       }),
     });
@@ -335,7 +332,7 @@ describe('runEngine', () => {
       settings: runSettings({ maxStepRetries: 1 }),
       flow: linearFlow({
         context: async () => {
-          throw new AgentRunFailed(reason);
+          throw new AgentRunFailed({ message: reason });
         },
       }),
     });
@@ -362,7 +359,7 @@ describe('runEngine', () => {
   it('blocks straight away on a failure that needs a person', async () => {
     const reason = faker.lorem.sentence();
     const merge = vi.fn<RunStep>(async () => {
-      throw new MergeFailed(reason);
+      throw new MergeFailed({ message: reason });
     });
     const { run } = setup({
       settings: runSettings({ maxStepRetries: 3 }),
@@ -377,7 +374,7 @@ describe('runEngine', () => {
   });
 
   it('aborts on a fatal failure', async () => {
-    const failure = new ConfigInvalid(faker.lorem.sentence());
+    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
     const { run } = setup({
       flow: linearFlow({
         context: async () => {
@@ -393,7 +390,7 @@ describe('runEngine', () => {
     const reason = faker.lorem.sentence();
     const maxStepRetries = faker.number.int({ min: 0, max: 3 });
     const review = vi.fn<SliceStep>(async () => {
-      throw new AgentOutputInvalid(reason);
+      throw new AgentOutputInvalid({ message: reason });
     });
     const { run } = setup({
       flow: sliceOnlyFlow({
@@ -496,16 +493,13 @@ describe('runEngine', () => {
       }),
     });
 
-    await expect(run(aRunState({ phase: 'context' }))).rejects.toBeInstanceOf(PhaseOutOfOrder);
+    await expect(run(aRunState({ phase: 'context' }))).rejects.toThrow(Panic);
   });
 
   it('refuses an outcome the flow has no transition for', async () => {
     const { run } = setup({ flow: linearFlow({ context: async () => ({ type: 'pause' }) }) });
 
-    const running = run(aDescribedRun({ phase: 'context' }));
-
-    await expect(running).rejects.toBeInstanceOf(FlowHasNoTransition);
-    await expect(running).rejects.toMatchObject({ outcome: 'pause' });
+    await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toThrow(Panic);
   });
 
   function setup(input: {

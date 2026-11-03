@@ -59,7 +59,9 @@ export function withToolchain(dockerfile: string, toolchain: string): string {
   const start = dockerfile.indexOf(TOOLCHAIN_START);
   const end = dockerfile.indexOf(TOOLCHAIN_END);
   if (start === -1 || end === -1 || end < start) {
-    throw new ConfigInvalid(`The Dockerfile has no "${TOOLCHAIN_START}" section to fill in.`);
+    throw new ConfigInvalid({
+      message: `The Dockerfile has no "${TOOLCHAIN_START}" section to fill in.`,
+    });
   }
   const body = toolchain.trim();
   return [

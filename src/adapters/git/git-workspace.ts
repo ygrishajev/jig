@@ -65,9 +65,9 @@ export class GitWorkspace implements Workspace {
       await mergeBranchInto(repoRoot, this.runBranch, baseBranch);
     } catch (error) {
       await abortMergeInProgress(repoRoot);
-      throw new MergeFailed(
-        `Merging "${this.runBranch}" into "${baseBranch}" failed: ${messageOf(error)}`,
-      );
+      throw new MergeFailed({
+        message: `Merging "${this.runBranch}" into "${baseBranch}" failed: ${messageOf(error)}`,
+      });
     }
   }
 

@@ -73,7 +73,10 @@ describe('withThrowawaySandbox', () => {
   });
 
   it('gives up at once when the setup command fails, so the caller gets the failure', async () => {
-    const failure = new SetupCommandFailed(faker.lorem.sentence(), faker.lorem.paragraph());
+    const failure = new SetupCommandFailed({
+      message: faker.lorem.sentence(),
+      output: faker.lorem.paragraph(),
+    });
     const { app, opened } = await setup({ failWith: failure });
 
     await expect(

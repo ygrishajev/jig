@@ -16,9 +16,9 @@ export interface CodexAuthCache {
 export async function openCodexAuthCache(sourceDirectory: string): Promise<CodexAuthCache> {
   const source = await realpath(path.join(sourceDirectory, 'auth.json'));
   const release = await lockfile.lock(source, { retries: 0 }).catch(() => {
-    throw new ConfigInvalid(
-      'The Codex login is in use or cannot be locked. Serialize runs using this login.',
-    );
+    throw new ConfigInvalid({
+      message: 'The Codex login is in use or cannot be locked. Serialize runs using this login.',
+    });
   });
   let directory: string | undefined;
   try {
@@ -40,12 +40,12 @@ function validateSubscription(text: string): void {
   try {
     value = JSON.parse(text);
   } catch {
-    throw new ConfigInvalid('Invalid Codex subscription login JSON.');
+    throw new ConfigInvalid({ message: 'Invalid Codex subscription login JSON.' });
   }
   if (!subscriptionSchema.safeParse(value).success) {
-    throw new ConfigInvalid(
-      'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
-    );
+    throw new ConfigInvalid({
+      message: 'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
+    });
   }
 }
 
@@ -82,9 +82,9 @@ async function persistRefresh(
   directory: string,
 ): Promise<void> {
   if ((await readFile(source, 'utf8')) !== original) {
-    throw new ConfigInvalid(
-      `The Codex login changed during the run. Refreshed credentials are retained at ${directory}.`,
-    );
+    throw new ConfigInvalid({
+      message: `The Codex login changed during the run. Refreshed credentials are retained at ${directory}.`,
+    });
   }
   await writeFileAtomic(source, refreshed, { mode: 0o600 });
 }

@@ -61,15 +61,15 @@ async function startOrResume(
 ): Promise<RunState> {
   const existing = await store.load(runId);
   if ('resume' in input) {
-    if (!existing) throw new RunRequestInvalid(`No run found with id "${runId}".`);
+    if (!existing) throw new RunRequestInvalid({ message: `No run found with id "${runId}".` });
     return existing;
   }
   const request = await readFile(input.start, 'utf-8');
   if (!existing) return startNewRun(cradle, store, runId, request);
   if (request !== existing.request) {
-    throw new RunRequestInvalid(
-      `Run "${runId}" was started from a different request — pass a new --id to start a new run.`,
-    );
+    throw new RunRequestInvalid({
+      message: `Run "${runId}" was started from a different request — pass a new --id to start a new run.`,
+    });
   }
   return existing;
 }

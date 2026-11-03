@@ -1,3 +1,5 @@
+import { panic } from 'better-result';
+
 import type { Outcome } from './outcome.js';
 import { currentSlice, type RunState } from './run-state.js';
 import { type Slice, sliceFromPlan } from './slice.js';
@@ -38,16 +40,9 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
 
 export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Slice): RunState {
   const target = currentSlice(state);
-  if (!target) throw new NoCurrentSlice();
+  if (!target) panic('No current slice to update');
   return {
     ...state,
     slices: state.slices.map((slice) => (slice.id === target.id ? update(slice) : slice)),
   };
-}
-
-/** A slice outcome arrived for a run with every slice already settled: a bug in the flow. */
-export class NoCurrentSlice extends Error {
-  constructor() {
-    super('No current slice to update');
-  }
 }

@@ -61,9 +61,9 @@ export class MetricsLog {
   private parseLine(line: string, lineNumber: number): MetricRecord {
     const parsed = metricRecordSchema.safeParse(parseJson(line));
     if (!parsed.success) {
-      throw new MetricsLogCorrupt(
-        `Line ${lineNumber} of ${this.file} is not a metric record: ${parsed.error.message}`,
-      );
+      throw new MetricsLogCorrupt({
+        message: `Line ${lineNumber} of ${this.file} is not a metric record: ${parsed.error.message}`,
+      });
     }
     return parsed.data;
   }

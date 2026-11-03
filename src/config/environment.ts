@@ -29,7 +29,7 @@ export function parseEnvironment(raw: NodeJS.ProcessEnv): JigEnvironment {
     const problems = parsed.error.issues.map(
       (issue) => `${issue.path.join('.')}: ${issue.message}`,
     );
-    throw new ConfigInvalid(`The environment is not valid — ${problems.join('; ')}`);
+    throw new ConfigInvalid({ message: `The environment is not valid — ${problems.join('; ')}` });
   }
   const known = parsed.data;
   return {

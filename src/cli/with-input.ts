@@ -1,3 +1,4 @@
+import { panic } from 'better-result';
 import { Command } from 'commander';
 import type { z } from 'zod';
 
@@ -11,7 +12,7 @@ export function withInput<Schema extends z.ZodTypeAny>(
 ) {
   return async (...actionArguments: unknown[]) => {
     const command = actionArguments.at(-1);
-    if (!(command instanceof Command)) throw new Error('withInput must wrap a commander action');
+    if (!(command instanceof Command)) panic('withInput must wrap a commander action');
     const parsed = schema.safeParse(inputOf(command));
     if (!parsed.success) throw new CommandInputInvalid(describeIssues(parsed.error));
     await run(parsed.data);

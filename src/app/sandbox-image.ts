@@ -93,9 +93,9 @@ async function readRecipe(repoRoot: string): Promise<ImageRecipe> {
 async function readSandboxDockerfile(repoRoot: string): Promise<string> {
   const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
   if (!existsSync(file)) {
-    throw new ConfigInvalid(
-      `No sandbox Dockerfile at ${path.join(SANDBOX_DIRECTORY, DOCKERFILE)} — run jig init first.`,
-    );
+    throw new ConfigInvalid({
+      message: `No sandbox Dockerfile at ${path.join(SANDBOX_DIRECTORY, DOCKERFILE)} — run jig init first.`,
+    });
   }
   return readFile(file, 'utf-8');
 }

@@ -19,21 +19,21 @@ export function extractOutput<T>(reply: string, schema: ZodType<T>): T {
     ...reply.matchAll(new RegExp(`<${OUTPUT_TAG}>([\\s\\S]*?)</${OUTPUT_TAG}>`, 'g')),
   ].at(-1)?.[1];
   if (tagged === undefined) {
-    throw new AgentOutputInvalid(`The reply has no <${OUTPUT_TAG}> result.`);
+    throw new AgentOutputInvalid({ message: `The reply has no <${OUTPUT_TAG}> result.` });
   }
   let raw: unknown;
   try {
     raw = JSON.parse(withoutFence(tagged.trim()));
   } catch (error) {
-    throw new AgentOutputInvalid(
-      `The <${OUTPUT_TAG}> result is not valid JSON: ${messageOf(error)}`,
-    );
+    throw new AgentOutputInvalid({
+      message: `The <${OUTPUT_TAG}> result is not valid JSON: ${messageOf(error)}`,
+    });
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    throw new AgentOutputInvalid(
-      `The <${OUTPUT_TAG}> result has the wrong shape: ${parsed.error.message}`,
-    );
+    throw new AgentOutputInvalid({
+      message: `The <${OUTPUT_TAG}> result has the wrong shape: ${parsed.error.message}`,
+    });
   }
   return parsed.data;
 }

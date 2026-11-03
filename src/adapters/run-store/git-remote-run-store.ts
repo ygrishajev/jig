@@ -77,10 +77,12 @@ export class GitRemoteRunStore implements RunStore {
         const result = await this.git(args);
         if (result.exitCode === 0 || result.exitCode === alsoAcceptedExitCode) return result;
         throw isLeaseRejection(result.stderr)
-          ? new RunStateConflict(
-              `The run's state on ${this.remote} moved since it was loaded: ${result.stderr}`,
-            )
-          : new RemoteUnavailable(`git ${args[0]} to ${this.remote} failed: ${result.stderr}`);
+          ? new RunStateConflict({
+              message: `The run's state on ${this.remote} moved since it was loaded: ${result.stderr}`,
+            })
+          : new RemoteUnavailable({
+              message: `git ${args[0]} to ${this.remote} failed: ${result.stderr}`,
+            });
       },
       {
         retries: REMOTE_RETRIES,
@@ -116,9 +118,9 @@ export class GitRemoteRunStore implements RunStore {
     if (!local) return this.required(['update-ref', branchRef(runId), remoteHead, '']);
     if (await this.isAncestor(remoteHead, local)) return;
     if (!(await this.isAncestor(local, remoteHead))) {
-      throw new RunStateConflict(
-        `The run branch "${runBranchFor(runId)}" here and on ${this.remote} have diverged.`,
-      );
+      throw new RunStateConflict({
+        message: `The run branch "${runBranchFor(runId)}" here and on ${this.remote} have diverged.`,
+      });
     }
     await this.fastForward(runId, local, remoteHead);
   }

@@ -61,7 +61,7 @@ export class FakeAgentSession implements AgentSession {
     if ('fail' in turn) throw turn.fail;
     if (!('output' in turn)) throw new Error(`The ${input.role} turn has no output scripted`);
     const parsed = input.schema.safeParse(turn.output);
-    if (!parsed.success) throw new AgentOutputInvalid(parsed.error.message);
+    if (!parsed.success) throw new AgentOutputInvalid({ message: parsed.error.message });
     return parsed.data;
   }
 

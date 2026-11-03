@@ -40,7 +40,9 @@ export const AGENTS = {
     credentialKeys: () => ['JIG_CODEX_AUTH_DIR'],
     create: (model?: string) => {
       if (!model)
-        throw new ConfigInvalid('codex needs an explicit model — set "model" on the step.');
+        throw new ConfigInvalid({
+          message: 'codex needs an explicit model — set "model" on the step.',
+        });
       return codex(model, { captureSessions: false });
     },
   },
@@ -54,9 +56,10 @@ function modelProvider(model: string): string {
 
 function requireModel(model: string | undefined): string {
   if (!model) {
-    throw new ConfigInvalid(
-      'opencode needs a model as "provider/model" (e.g. "openrouter/<model>") — set "model" on the step.',
-    );
+    throw new ConfigInvalid({
+      message:
+        'opencode needs a model as "provider/model" (e.g. "openrouter/<model>") — set "model" on the step.',
+    });
   }
   return model;
 }
@@ -77,9 +80,9 @@ export function collectCredentials(
       return value ? [[key, value] as const] : [];
     });
     if (present.length === 0) {
-      throw new ConfigInvalid(
-        `No ${step.provider} credentials found — set ${keys.join(' or ')} in the environment.`,
-      );
+      throw new ConfigInvalid({
+        message: `No ${step.provider} credentials found — set ${keys.join(' or ')} in the environment.`,
+      });
     }
     for (const [key, value] of present) credentials[key] = value;
   }

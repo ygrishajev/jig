@@ -21,7 +21,9 @@ export async function updateConfigFile(
 function parseConfigObject(contents: string): Record<string, unknown> {
   const parsed = z.record(z.unknown()).safeParse(parseJson(contents));
   if (!parsed.success) {
-    throw new ConfigInvalid(`${CONFIG_FILE} must hold a JSON object to add settings to.`);
+    throw new ConfigInvalid({
+      message: `${CONFIG_FILE} must hold a JSON object to add settings to.`,
+    });
   }
   return parsed.data;
 }

@@ -112,8 +112,11 @@ describe('runJig', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
     const opened = failNextSessions(
-      new SandboxUnavailable(faker.lorem.sentence()),
-      new SetupCommandFailed(faker.lorem.sentence(), faker.lorem.sentence()),
+      new SandboxUnavailable({ message: faker.lorem.sentence() }),
+      new SetupCommandFailed({
+        message: faker.lorem.sentence(),
+        output: faker.lorem.sentence(),
+      }),
     );
 
     const report = await runJig(app, { start: await writeRequest(), runId: id });
@@ -126,7 +129,7 @@ describe('runJig', () => {
     const { app, writeRequest, agentFor, failNextSessions } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    const opened = failNextSessions(new ConfigInvalid(faker.lorem.sentence()));
+    const opened = failNextSessions(new ConfigInvalid({ message: faker.lorem.sentence() }));
 
     await expect(runJig(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
       ConfigInvalid,

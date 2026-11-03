@@ -30,5 +30,7 @@ export async function ensureRepositoryRoot(cwd: string): Promise<void> {
     .revparse(['--show-toplevel'])
     .catch(() => undefined);
   if (root === undefined || root === (await realpath(cwd))) return;
-  throw new ConfigInvalid(`Run jig from the repository's root, ${root} — not from ${cwd}.`);
+  throw new ConfigInvalid({
+    message: `Run jig from the repository's root, ${root} — not from ${cwd}.`,
+  });
 }

@@ -20,7 +20,9 @@ export async function lockRun(repoRoot: string, runId: RunId): Promise<() => Pro
     });
   } catch (error) {
     if (isHeldElsewhere(error)) {
-      throw new RunInProgress(`Run "${runId}" is already running in another jig process.`);
+      throw new RunInProgress({
+        message: `Run "${runId}" is already running in another jig process.`,
+      });
     }
     throw error;
   }

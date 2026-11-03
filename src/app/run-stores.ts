@@ -47,15 +47,15 @@ async function storeNamed(name: string, repoRoot: string): Promise<RunStore> {
   );
   const factory = imported.default;
   if (typeof factory !== 'function') {
-    throw new ConfigInvalid(
-      `Run store "${name}" must default-export a function that returns a store.`,
-    );
+    throw new ConfigInvalid({
+      message: `Run store "${name}" must default-export a function that returns a store.`,
+    });
   }
   const store: unknown = await factory({ repoRoot });
   if (!isModuleStore(store)) {
-    throw new ConfigInvalid(
-      `Run store "${name}" must return an object with load and save methods.`,
-    );
+    throw new ConfigInvalid({
+      message: `Run store "${name}" must return an object with load and save methods.`,
+    });
   }
   return new ModuleRunStore(name, store);
 }
@@ -86,9 +86,9 @@ class ModuleRunStore implements RunStore {
     if (loaded === undefined || loaded === null) return undefined;
     const parsed = runStateSchema.safeParse(loaded);
     if (!parsed.success) {
-      throw new ConfigInvalid(
-        `Run store "${this.name}" returned a malformed run: ${parsed.error.message}`,
-      );
+      throw new ConfigInvalid({
+        message: `Run store "${this.name}" returned a malformed run: ${parsed.error.message}`,
+      });
     }
     return parsed.data;
   }

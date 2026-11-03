@@ -43,6 +43,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
     "@opentelemetry/sdk-node": "^0.223.0",
     "awilix": "^13.0.5",
+    "better-result": "^3.0.1",
     "commander": "^13.0.0",
     "execa": "^9.5.0",
     "latest-version": "^9.0.0",
