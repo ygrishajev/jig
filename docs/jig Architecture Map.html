@@ -219,16 +219,17 @@ svg text{font-family:var(--sans)}
 
   /* ---------- level 3: the flow inside each box ---------- */
   var cTNew = flowCv("tn", "Start a run", "jig run request.md [--id <id>]. src/cli/commands/run.ts → src/app/run-jig.ts.", [
-    ["Parse the command", "commander: the request file, --id, --log-format.", "iface"],
-    ["Build the container", "awilix (src/app/container.ts): config, logger, stores, image builder, sandbox opener.", "step"],
-    ["Pick the run stores", "runStores: local, git-remote, or a module path (src/app/run-stores.ts).", "infra"],
-    ["Start the run", "a new id or --id; the base branch is the current branch; saved at phase context.", "domain"],
+    ["Parse the command", "commander, then one zod schema: the request file, --id, --log-format.", "iface"],
+    ["Build the container", "awilix (src/app/container.ts): config, settings, logger, image builder, sandbox opener.", "step"],
+    ["Lock the run", "a second process for the same id fails with RunInProgress; a stale lock expires.", "infra"],
+    ["Open the run stores", "openRunStore: local, git-remote, or a module path (src/app/run-stores.ts).", "infra"],
+    ["Start the run", "a new id or --id; the base branch is the current branch. A finished run is returned as it is.", "domain"],
     ["Make sure the image is current", "ensureSandboxImage rebuilds only what changed.", "domain"],
-    ["Open the run scope", "the sandbox, run.log, metrics.jsonl and the observers, scoped to this run.", "infra"],
+    ["withRunScope", "the sandbox (retried if it fails to start), run.log, metrics.jsonl and the observers.", "infra"],
     ["runEngine(runFlow)", "until the run is done, halted, blocked or stuck.", "domain"],
-    ["Write the result", "result.json with metrics; a summary footer on PR_DESCRIPTION.md.", "infra"],
-    ["Close", "sandbox closed, scope disposed, traces flushed.", "step"]
-  ], { h: 62, gap: 14 });
+    ["Write the result", "RunArtefacts: result.json with metrics, design.md, plan.md, PR_DESCRIPTION.md.", "infra"],
+    ["Close", "sandbox closed, scope disposed, traces flushed, lock released.", "step"]
+  ], { h: 54, gap: 12 });
   var cTResume = flowCv("tr", "Resume a run", "jig run --id <id>, or the same request file with the same id.", [
     ["Load the run", "from the first store that has it; git-remote fetches the state ref and the run branch.", "infra"],
     ["Same request?", "a different request file with an existing id is refused (RunRequestInvalid).", "fail"],
@@ -236,17 +237,17 @@ svg text{font-family:var(--sans)}
     ["Carry on from the saved phase", "everything after this is the same as a new run.", "domain"]
   ]);
   var cTStatus = flowCv("ts", "Show a run", "jig status <id>. Read-only: no sandbox, no agents.", [
-    ["Load run.json", "LocalRunStore, validated with zod.", "infra"],
+    ["Peek at the run", "the freshest copy in every configured store; no branch or ref moves.", "infra"],
     ["Documents", "design.md, plan.md and PR_DESCRIPTION.md, when written.", "step"],
     ["Slices", "status of each, with the last reviewer feedback.", "domain"],
-    ["So far", "a one-line summary of metrics.jsonl: slices, review rounds, tokens, cost, time.", "domain"]
+    ["So far", "MetricsLog's summary of metrics.jsonl: slices, review rounds, tokens, cost, time.", "domain"]
   ]);
   var cTInitAgent = flowCv("ia", "jig init", "src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
     ["Write the starter files", ".sandcastle/Dockerfile, its .gitignore, jig.config.json — only those missing.", "step"],
     ["The planner proposes", "in a throwaway sandbox: toolchain lines, setupCommand, verifyCommand.", "infra"],
     ["Write and rebuild", "the toolchain goes between the Dockerfile markers; the config is updated.", "domain"],
-    ["Check in a fresh sandbox", "setupCommand runs on start, then verifyCommand by exec.", "infra"],
-    ["It fails", "the output goes back to the planner, up to three attempts.", "fail"],
+    ["Check in a throwaway sandbox", "setupCommand on start, then verifyCommand by exec; its branch is removed.", "infra"],
+    ["It fails", "a failing setup or verify goes back to the planner, up to three attempts; anything else stops init.", "fail"],
     ["Verified", "commit .sandcastle/Dockerfile and jig.config.json.", "domain"]
   ]);
   var cTInitPlain = flowCv("ip", "jig init --no-agent", "Writes the starter files and checks what is already configured.", [
@@ -273,11 +274,11 @@ svg text{font-family:var(--sans)}
     ["Stop", "at a final (done, stuck) or a halt (paused, awaitingMerge).", "step"]
   ], { h: 60, gap: 14 });
   var cFFail = flowCv("ef", "Failure policy", "Steps throw typed errors (src/domain/errors.ts); the engine decides what happens next.", [
-    ["A step throws an JigError", "its kind decides.", "fail"],
-    ["retry — AgentRunFailed", "p-retry, up to maxStepRetries with backoff; a stepRetried event each time.", "domain"],
-    ["feedback — AgentOutputInvalid", "becomes changesRequested where the flow accepts one.", "domain"],
-    ["block — MergeFailed, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
-    ["fatal — ConfigInvalid, RunRequestInvalid", "aborts the run with a clear message.", "fail"],
+    ["A step throws a JigError", "its kind decides; isTransient says which are worth another attempt.", "fail"],
+    ["retry — AgentRunFailed, AgentOutputInvalid", "also RemoteUnavailable, SandboxUnavailable, SetupCommandFailed.", "domain"],
+    ["Tried again", "p-retry, up to maxStepRetries (2) with backoff; a stepRetried event each time.", "domain"],
+    ["block — MergeFailed, RunStateConflict, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
+    ["fatal — ConfigInvalid, RunRequestInvalid, RunInProgress", "also MetricsLogCorrupt and a flow bug; aborts the run with a clear message.", "fail"],
     ["Anything else", "a bug: it propagates unchanged.", "fail"]
   ]);
   var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/flow/run-flow.ts, nested in the slices phase.", [
@@ -303,16 +304,17 @@ svg text{font-family:var(--sans)}
     ["applyDesignGate", "checkpoint → pause, auto → continue.", "step"]
   ]);
   var cFImpl = flowCv("si", "Implement", "implementSlice in src/steps/slice.ts.", [
-    ["Prompt with the slice", "and the last feedback; rebase onto a moved base before finishing.", "step"],
-    ["The implementer works in the sandbox", "AgentSession.run: edits files, does not commit.", "infra"],
-    ["Commit everything", "Workspace.commitAll on the run branch: sha and diff stats.", "infra"],
-    ["implemented", "with the commit, or null when nothing changed.", "domain"]
+    ["Prompt with the slice", "and the last feedback; never rewrite the commits already on the branch.", "step"],
+    ["The implementer works in the sandbox", "AgentSession.run: edits files; jig commits what it leaves.", "infra"],
+    ["Commit everything", "Workspace.commitAll on the run branch.", "infra"],
+    ["implemented", "with a summary of the attempt's commits: sha and diff stats.", "domain"],
+    ["Nothing changed", "changesRequested, saying the slice is still not done.", "fail"]
   ]);
   var cFReview = flowCv("sr", "Review", "reviewSlice in src/steps/slice.ts.", [
     ["The reviewer judges HEAD", "runForOutput → { approved, feedback }.", "infra"],
     ["approved", "→ verifying.", "domain"],
     ["changesRequested", "the feedback counts as a review cycle.", "domain"],
-    ["Unusable output", "corrected once in the same session, then treated as feedback.", "fail"]
+    ["Unusable output", "corrected once in the same session; still unusable, the step is retried, then blocks.", "fail"]
   ]);
   var cFVerify = flowCv("sv", "Verify", "verifySlice in src/steps/slice.ts.", [
     ["No verifyCommand", "verified straight away.", "step"],
@@ -340,7 +342,7 @@ svg text{font-family:var(--sans)}
     ["Compare the image labels", "all, agents only, or nothing; agentUpdates auto, warn or off.", "domain"]
   ]);
   var cFBuild = flowCv("bb", "Build", "DockerImages in src/adapters/sandbox-image.", [
-    ["Base image", "docker build .sandcastle with AGENT_UID/GID → <image>-base.", "infra"],
+    ["Base image", "docker build .sandcastle with AGENT_UID/GID → <image>-base (or <image>:base).", "infra"],
     ["Agent layer", "generated: npm install -g each agent@version, then labels.", "infra"],
     ["CI cache", "JIG_IMAGE_CACHE=gha builds through buildx with the GitHub Actions cache.", "infra"],
     ["sandboxImage set", "the named image is used as it is; nothing is built.", "step"]
@@ -348,7 +350,7 @@ svg text{font-family:var(--sans)}
   var cFInit = flowCv("bi", "Toolchain loop", "initSandbox in src/app/init-sandbox.ts.", [
     ["The planner proposes", "toolchain, setupCommand, verifyCommand.", "infra"],
     ["Write and rebuild", "only the toolchain section of the Dockerfile changes.", "domain"],
-    ["Check in a fresh sandbox", "setup on start, verify by exec.", "infra"],
+    ["Check in a throwaway sandbox", "setup on start, verify by exec.", "infra"],
     ["It fails", "back to the planner with the output, up to three attempts.", "fail"]
   ]);
 
@@ -362,7 +364,7 @@ svg text{font-family:var(--sans)}
     ["agentUsage events", "cost and tokens from each agent's own raw stream.", "infra"],
     ["MetricsObserver", "attributes each agent call to the step it ran in.", "domain"],
     ["metrics.jsonl", "one line per step, agent call and retry, across every invocation.", "infra"],
-    ["summarizeMetrics", "for result.json, the PR footer and jig status.", "domain"]
+    ["MetricsLog.summary", "summarizeMetrics over the log, for result.json, the PR footer and jig status.", "domain"]
   ]);
   var cFTrace = flowCv("ot", "Tracing", "src/observers/tracing-observer.ts, src/adapters/telemetry.", [
     ["OTEL endpoint set?", "otherwise the SDK is never loaded.", "step"],
@@ -374,14 +376,15 @@ svg text{font-family:var(--sans)}
   var cFOpen = flowCv("xo", "Open", "SandcastleSession.open in src/adapters/sandcastle.", [
     ["Resolve the real repo path", "git inside the container breaks on a symlinked path otherwise.", "step"],
     ["Scoped .sandcastle/.gitignore", "scratch ignored, the Dockerfile committable.", "step"],
-    ["createSandbox", "on branch jig/run/<id>; sandcastle owns the worktree.", "ext"],
-    ["Credentials", "docker({ env }): only what the configured agents need.", "infra"],
-    ["Hooks", "setupCommand on start; commit signing off when configured.", "infra"]
+    ["createSandbox", "on branch jig/run/<id>; sandcastle owns the worktree. A failed start is retried.", "ext"],
+    ["Credentials", "docker({ env }): only what the configured agents need; .sandcastle/.env keys are warned about.", "infra"],
+    ["Codex login", "with JIG_CODEX_AUTH_DIR, a private copy of auth.json mounted at ~/.codex.", "infra"],
+    ["setupCommand", "run by jig, checking its exit code and setupTimeoutSeconds; commit signing off when configured.", "infra"]
   ]);
   var cFCall = flowCv("xc", "Agent call", "run and runForOutput.", [
-    ["sandbox.run", "the agent for the role — claude or opencode — with an idle timeout.", "ext"],
+    ["sandbox.run", "the agent for the role — claude, opencode or codex — with an idle timeout.", "ext"],
     ["Read the tagged result", "the last <jig-output> JSON in the reply, validated with zod.", "domain"],
-    ["Unusable result", "one correction with --continue, in the same agent session.", "fail"],
+    ["Unusable result", "one correction in the same session (--continue; codex exec resume --last).", "fail"],
     ["Stream events", "tool calls, messages and usage, published as run events.", "infra"]
   ]);
   var cFExec = flowCv("xe", "Exec", "Commands in the run's container.", [
@@ -406,8 +409,7 @@ svg text{font-family:var(--sans)}
     ["describing → merging → done", "or awaitingMerge, or stuck.", "domain"]
   ]);
   var cCKinds = flowCv("ck", "Failure kinds", "What the engine does with an error.", [
-    ["retry", "transient: tried again with backoff.", "step"],
-    ["feedback", "back to the agent as a change request.", "domain"],
+    ["retry", "transient: tried again with backoff, then block.", "step"],
     ["block", "stop and wait for a person.", "fail"],
     ["fatal", "abort with a message.", "fail"]
   ]);
@@ -436,7 +438,7 @@ svg text{font-family:var(--sans)}
 
   var engineModule = domainCanvas("Flow engine", [
     box("f-loop", "Engine loop", ["Step, reduce, transition, save, publish."], cFLoop),
-    box("f-fail", "Failure policy", ["retry, feedback, block, fatal."], cFFail),
+    box("f-fail", "Failure policy", ["retry, block, fatal."], cFFail),
     box("f-slices", "Slice loop", ["Implement, review, verify, per slice."], cFSlices),
     box("f-halt", "Halts and resume", ["Checkpoint, manual merge, blocked, crash."], cFHalt)
   ]);
@@ -467,7 +469,7 @@ svg text{font-family:var(--sans)}
   var conceptCanvas = cv("Level 2 · Inside a module", "How a run moves", "A concept, not a module. The rules every part of the run follows.", [
     cont("c-out", "Outcomes, not mutations", "concept", 60, 250, 380, ["Steps report; the engine changes state."], cCOut),
     cont("c-phase", "The run's phases", "concept", 510, 250, 380, ["runFlow from request to merge."], cCPhase),
-    cont("c-kinds", "Failure kinds", "concept", 960, 250, 380, ["retry, feedback, block, fatal."], cCKinds)
+    cont("c-kinds", "Failure kinds", "concept", 960, 250, 380, ["retry, block, fatal."], cCKinds)
   ], []);
 
   /* ---------- level 1: the layered map ---------- */
@@ -488,7 +490,7 @@ svg text{font-family:var(--sans)}
     cont("b-sandbox", "Sandcastle sandbox", "infra", 229, 650, 170, ["One container per run."], sandboxModule),
     leaf("x-git", "Git", "infra", 411, 650, 170, 109, ["run branch, worktree, merge"]),
     leaf("x-docker", "Docker", "ext", 593, 650, 170, 109, ["images, buildx cache, npm"]),
-    leaf("x-llm", "Agent APIs", "ext", 775, 650, 170, 109, ["Anthropic, OpenRouter — called from the sandbox"]),
+    leaf("x-llm", "Agent APIs", "ext", 775, 650, 170, 109, ["Anthropic, OpenRouter, OpenAI — called from the sandbox"]),
     leaf("x-otel", "OTel collector", "ext", 957, 650, 170, 109, ["optional, OTLP/HTTP"]),
     cont("c-run", "How a run moves", "concept", 1170, 418, 190, ["A concept, not a module."], conceptCanvas)
   ], [

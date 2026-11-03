@@ -4,7 +4,8 @@ An agentic SDLC pipeline orchestrator. It turns a markdown request into
 reviewed, merge-ready commits by driving an agentic coding CLI (e.g.
 [Claude Code](https://claude.com/claude-code)) through a fixed pipeline:
 plan the feature, slice it into small reviewable units, then for each
-slice — implement, review, merge, repeat.
+slice — implement, review, verify, repeat. Every slice lands on one run branch, and jig
+writes its pull request description; you merge it, or jig does with `mergeMode: "auto"`.
 
 Agents run unattended inside a [sandcastle](https://github.com/mattpocock/sandcastle)
 Docker sandbox, one per run. The current design is in
@@ -93,7 +94,9 @@ expires after 30 seconds.
   anything else.
 - **Credentials** come from the environment and go into the container as env vars:
   claude needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`; opencode needs its provider's
-  key, e.g. `OPENROUTER_API_KEY` for an `openrouter/...` model. Sandcastle also injects every
+  key, e.g. `OPENROUTER_API_KEY` for an `openrouter/...` model; codex needs `JIG_CODEX_AUTH_DIR`,
+  a directory holding a saved ChatGPT login (`auth.json`) — the one exception to env-only
+  credentials, described under [Live E2E](#live-e2e). Sandcastle also injects every
   key listed in `.sandcastle/.env`, if the repository has one; jig warns with their names.
 - **What the sandbox sees.** Besides the run's worktree, the repository's `.git` directory is
   mounted writable, because the agents use git. Anything in `.git/config` is visible to them —
@@ -105,7 +108,7 @@ expires after 30 seconds.
 
 | Key                                               | Default                    |                                                                                                                                                                           |
 | ------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `planner`, `implementer`, `reviewer`, `describer` | `{ "provider": "claude" }` | Agent per step; `model` optional for claude (default `opus`), required for opencode (`provider/model`).                                                                   |
+| `planner`, `implementer`, `reviewer`, `describer` | `{ "provider": "claude" }` | Agent per step: `claude`, `opencode` or `codex`; `model` optional for claude (default `opus`), required for opencode (`provider/model`) and codex.                        |
 | `setupCommand` / `setupTimeoutSeconds`            | — / `900`                  | Runs once in the sandbox before any agent, e.g. `npm ci`.                                                                                                                 |
 | `verifyCommand`                                   | —                          | Must pass in the sandbox before a reviewed slice is approved.                                                                                                             |
 | `mergeMode`                                       | `"manual"`                 | `auto` merges the run branch at the end.                                                                                                                                  |
