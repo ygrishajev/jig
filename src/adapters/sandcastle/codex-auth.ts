@@ -53,11 +53,12 @@ async function copyLogin(
   const directory = await Result.tryPromise({
     try: async () => {
       const created = await mkdtemp(path.join(tmpdir(), 'jig-codex-auth-'));
+      let copied = false;
       try {
         await writeFileAtomic(path.join(created, 'auth.json'), original.value, { mode: 0o600 });
-      } catch (error) {
-        await rm(created, { recursive: true, force: true });
-        throw error;
+        copied = true;
+      } finally {
+        if (!copied) await rm(created, { recursive: true, force: true });
       }
       return created;
     },

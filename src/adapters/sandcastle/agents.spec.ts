@@ -1,7 +1,8 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { ConfigInvalid, orThrow } from '../../domain/errors.js';
+import { unwrap } from '../../../tests/support/unwrap.js';
+import { ConfigInvalid } from '../../domain/errors.js';
 import { AGENTS, collectCredentials } from './agents.js';
 
 describe('collectCredentials', () => {
@@ -11,7 +12,7 @@ describe('collectCredentials', () => {
       [{ provider: 'codex', model: faker.word.noun() }],
       lookup({ JIG_CODEX_AUTH_DIR: directory, OPENAI_API_KEY: faker.string.alphanumeric(40) }),
     );
-    expect(orThrow(credentials)).toEqual({ JIG_CODEX_AUTH_DIR: directory });
+    expect(unwrap(credentials)).toEqual({ JIG_CODEX_AUTH_DIR: directory });
   });
 
   it('requires an explicit model for Codex', () => {
@@ -28,7 +29,7 @@ describe('collectCredentials', () => {
       lookup({ CLAUDE_CODE_OAUTH_TOKEN: token }),
     );
 
-    expect(orThrow(credentials)).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: token });
+    expect(unwrap(credentials)).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: token });
   });
 
   it("derives opencode's credential from the provider in its model", () => {
@@ -39,7 +40,7 @@ describe('collectCredentials', () => {
       lookup({ OPENROUTER_API_KEY: key, UNRELATED_SECRET: faker.string.alphanumeric(20) }),
     );
 
-    expect(orThrow(credentials)).toEqual({ OPENROUTER_API_KEY: key });
+    expect(unwrap(credentials)).toEqual({ OPENROUTER_API_KEY: key });
   });
 
   it('gathers what every configured step needs, and nothing else from the environment', () => {
@@ -55,7 +56,7 @@ describe('collectCredentials', () => {
       }),
     );
 
-    expect(orThrow(credentials)).toEqual({
+    expect(unwrap(credentials)).toEqual({
       CLAUDE_CODE_OAUTH_TOKEN: token,
       OPENROUTER_API_KEY: key,
     });
@@ -65,7 +66,7 @@ describe('collectCredentials', () => {
     const collected = collectCredentials([{ provider: 'claude' }], lookup({}));
 
     expect(collected.isErr() && collected.error).toBeInstanceOf(ConfigInvalid);
-    for (const key of orThrow(AGENTS.claude.credentialKeys())) {
+    for (const key of unwrap(AGENTS.claude.credentialKeys())) {
       expect(collected.isErr() && collected.error.message).toContain(key);
     }
   });
@@ -82,7 +83,7 @@ describe('AGENTS', () => {
     const model = `openrouter/${faker.word.noun()}`;
 
     for (const agent of Object.values(AGENTS)) {
-      expect(orThrow(agent.create(model)).captureSessions).toBe(false);
+      expect(unwrap(agent.create(model)).captureSessions).toBe(false);
     }
   });
 });

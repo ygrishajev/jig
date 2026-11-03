@@ -4,14 +4,15 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import { ConfigInvalid, orThrow } from '../../domain/errors.js';
+import { unwrap } from '../../../tests/support/unwrap.js';
+import { ConfigInvalid } from '../../domain/errors.js';
 import { openCodexAuthCache } from './codex-auth.js';
 
 describe('Codex auth cache', () => {
   it('isolates only the login and preserves refreshed credentials on close', async () => {
     const { source, original } = await setup();
     await writeFile(path.join(source, 'config.toml'), faker.lorem.sentence());
-    const cache = orThrow(await openCodexAuthCache(source));
+    const cache = unwrap(await openCodexAuthCache(source));
     expect(await readdir(cache.directory)).toEqual(['auth.json']);
     expect((await stat(cache.directory)).mode & 0o777).toBe(0o700);
     expect((await stat(path.join(cache.directory, 'auth.json'))).mode & 0o777).toBe(0o600);
@@ -25,7 +26,7 @@ describe('Codex auth cache', () => {
 
   it('refuses a second run using the same login', async () => {
     const { source } = await setup();
-    const cache = orThrow(await openCodexAuthCache(source));
+    const cache = unwrap(await openCodexAuthCache(source));
     try {
       const second = await openCodexAuthCache(source);
 
@@ -38,7 +39,7 @@ describe('Codex auth cache', () => {
 
   it('preserves a newer host login rather than overwriting it', async () => {
     const { source } = await setup();
-    const cache = orThrow(await openCodexAuthCache(source));
+    const cache = unwrap(await openCodexAuthCache(source));
     const newer = login();
     await writeFile(path.join(source, 'auth.json'), newer);
     await writeFile(path.join(cache.directory, 'auth.json'), login());
@@ -51,7 +52,7 @@ describe('Codex auth cache', () => {
 
   it('reports an invalid refreshed login, still removing the copy and releasing the lock', async () => {
     const { source } = await setup();
-    const cache = orThrow(await openCodexAuthCache(source));
+    const cache = unwrap(await openCodexAuthCache(source));
     await writeFile(path.join(cache.directory, 'auth.json'), faker.lorem.word());
 
     const closed = await cache.close();

@@ -11,6 +11,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import type { Logger } from 'pino';
 import { z, type ZodType } from 'zod';
 
 import {
@@ -54,6 +55,7 @@ export interface SandcastleSessionOptions {
   idleTimeoutSeconds: number;
   agentLogFile: string;
   events: EventSink;
+  logger: Logger;
 }
 
 /**
@@ -100,14 +102,14 @@ export class SandcastleSession implements AgentSession {
       catch: sandboxStartFailure,
     });
     if (sandbox.isErr()) {
-      await cache?.close();
+      await releaseAfterFailedOpen(cache, options.logger);
       return Result.err(sandbox.error);
     }
     const ready = options.setupCommand
       ? await runSetupCommand(sandbox.value, options.setupCommand, options)
       : Result.ok();
     if (ready.isErr()) {
-      await cache?.close();
+      await releaseAfterFailedOpen(cache, options.logger);
       return Result.err(ready.error);
     }
     return Result.ok(new SandcastleSession(sandbox.value, options, cache));
@@ -289,6 +291,16 @@ const FIBER_FAILURE_CAUSE = Symbol.for('effect/Runtime/FiberFailure/Cause');
  * repository path it cannot use is told apart; the rest is retried a bounded number of times.
  */
 const CONFIGURATION_FAILURES = new Set(['CwdError']);
+
+/** The open already failed, so a failure to release the login is logged and the open's failure kept. */
+async function releaseAfterFailedOpen(
+  cache: CodexAuthCache | undefined,
+  logger: Logger,
+): Promise<void> {
+  const released = await cache?.close();
+  if (released?.isErr())
+    logger.warn({ err: released.error }, 'cleanup failed after the open failed');
+}
 
 async function runSetupCommand(
   sandbox: Sandbox,

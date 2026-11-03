@@ -58,7 +58,7 @@ export async function warnWhenSandcastleEnvAddsVariables(
 
 /** What the run's sandbox is started with: the configured agents, their credentials and limits. */
 export function sandcastleSessionOptions(
-  { repoRoot, config, environment, imageName }: SandcastleContext,
+  { repoRoot, config, environment, imageName, logger }: SandcastleContext & { logger: Logger },
   { run, events, setupCommand }: OpenSessionInput,
 ): Result<SandcastleSessionOptions, ConfigInvalid> {
   const steps = configuredSteps(config);
@@ -84,6 +84,7 @@ export function sandcastleSessionOptions(
     idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
     agentLogFile: agentLogFile(repoRoot, run.runId),
     events,
+    logger,
   });
 }
 

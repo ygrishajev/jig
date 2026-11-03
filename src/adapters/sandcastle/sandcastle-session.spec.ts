@@ -7,6 +7,7 @@ import type {
 import { faker } from '@faker-js/faker';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import pino from 'pino';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 import { z } from 'zod';
@@ -14,11 +15,11 @@ import { z } from 'zod';
 import { runId } from '../../../tests/support/builders.js';
 import { RecordingEventSink } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { unwrap } from '../../../tests/support/unwrap.js';
 import {
   AgentOutputInvalid,
   AgentRunFailed,
   ConfigInvalid,
-  orThrow,
   SandboxUnavailable,
   SetupCommandFailed,
 } from '../../domain/errors.js';
@@ -34,8 +35,8 @@ describe('SandcastleSession', () => {
     const { open, runs, agents } = await setup({
       replies: [{ stdout: faker.lorem.sentence() }, { stdout: tagged(answer) }],
     });
-    agents.planner = orThrow(AGENTS.codex.create(faker.word.noun()));
-    expect(orThrow(await (await open()).runForOutput(outputCall()))).toEqual(answer);
+    agents.planner = unwrap(AGENTS.codex.create(faker.word.noun()));
+    expect(unwrap(await (await open()).runForOutput(outputCall()))).toEqual(answer);
     const prompt = faker.lorem.sentence();
     const command = runs[1].agent.buildPrintCommand({ ...printOptions(), prompt });
     expect(command.command).toContain('codex exec resume --last');
@@ -47,7 +48,7 @@ describe('SandcastleSession', () => {
     const answer = { summary: faker.lorem.sentence() };
     const { open } = await setup({ replies: [{ stdout: tagged(answer) }] });
 
-    expect(orThrow(await (await open()).runForOutput(outputCall()))).toEqual(answer);
+    expect(unwrap(await (await open()).runForOutput(outputCall()))).toEqual(answer);
   });
 
   it('asks the same agent, in its own conversation, to correct a reply that did not parse', async () => {
@@ -58,7 +59,7 @@ describe('SandcastleSession', () => {
 
     const result = await (await open()).runForOutput(outputCall());
 
-    expect(orThrow(result)).toEqual(answer);
+    expect(unwrap(result)).toEqual(answer);
     expect(runs).toHaveLength(2);
     expect(runs[0].agent.buildPrintCommand(printOptions()).command).toBe(printCommand);
     expect(runs[1].agent.buildPrintCommand(printOptions()).command).toBe(
@@ -311,10 +312,11 @@ describe('SandcastleSession', () => {
           idleTimeoutSeconds: 60,
           agentLogFile: path.join(repoRoot, 'agents.log'),
           events,
+          logger: pino({ level: 'silent' }),
         },
         start,
       );
-    const open = async () => orThrow(await tryOpen());
+    const open = async () => unwrap(await tryOpen());
     const failure = async () => {
       const result = await tryOpen();
       if (result.isOk()) throw new Error('The session opened');
@@ -322,7 +324,7 @@ describe('SandcastleSession', () => {
     };
     const codexLoginIsFree = async () => {
       if (!codexAuthDirectory) return false;
-      const cache = orThrow(await openCodexAuthCache(codexAuthDirectory));
+      const cache = unwrap(await openCodexAuthCache(codexAuthDirectory));
       await cache.close();
       return true;
     };
