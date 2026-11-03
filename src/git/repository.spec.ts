@@ -13,14 +13,14 @@ describe('git repository helpers', () => {
   it('sees a tree as clean right after a commit', async () => {
     const { repo } = await setup();
 
-    expect(await isWorkingTreeClean(repo)).toBe(true);
+    expect((await isWorkingTreeClean(repo)).unwrap()).toBe(true);
   });
 
   it('sees a tree with an untracked file as dirty', async () => {
     const { repo, writeUntrackedFile } = await setup();
     await writeUntrackedFile();
 
-    expect(await isWorkingTreeClean(repo)).toBe(false);
+    expect((await isWorkingTreeClean(repo)).unwrap()).toBe(false);
   });
 
   it('commits every pending change under the message and returns the new commit', async () => {
@@ -28,21 +28,21 @@ describe('git repository helpers', () => {
     const file = await writeUntrackedFile();
     const message = faker.git.commitMessage();
 
-    const sha = await commitAll(repo, message);
+    const sha = (await commitAll(repo, message)).unwrap();
 
     const git = simpleGit({ baseDir: repo });
     const head = await git.log(['-1']);
     expect(head.latest?.message).toBe(message);
     expect(head.latest?.hash.startsWith(sha ?? 'no commit')).toBe(true);
     expect((await git.raw(['show', '--name-only', '--format='])).trim()).toBe(file);
-    expect(await isWorkingTreeClean(repo)).toBe(true);
+    expect((await isWorkingTreeClean(repo)).unwrap()).toBe(true);
   });
 
   it('commits nothing when nothing changed', async () => {
     const { repo } = await setup();
     const before = await simpleGit({ baseDir: repo }).revparse(['HEAD']);
 
-    expect(await commitAll(repo, faker.git.commitMessage())).toBeNull();
+    expect((await commitAll(repo, faker.git.commitMessage())).unwrap()).toBeNull();
     expect(await simpleGit({ baseDir: repo }).revparse(['HEAD'])).toBe(before);
   });
 

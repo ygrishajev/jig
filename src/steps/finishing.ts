@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { isJigError } from '../domain/errors.js';
+import { isJigError, orThrow } from '../domain/errors.js';
 import type { RunStateIn } from '../domain/run-state.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
 import { pullRequestPrompt } from '../prompts/pull-request.js';
@@ -60,8 +60,8 @@ async function fillTemplate(
 const descriptionSchema = z.object({ body: z.string().min(1) });
 
 export const mergeRunBranch: RunStep = async ({ ports, settings }) => {
-  if (await ports.workspace.isRunBranchMerged()) return { type: 'merged' };
+  if (orThrow(await ports.workspace.isRunBranchMerged())) return { type: 'merged' };
   if (settings.mergeMode === 'manual') return { type: 'awaitingManualMerge' };
-  await ports.workspace.mergeRunBranch();
+  orThrow(await ports.workspace.mergeRunBranch());
   return { type: 'merged' };
 };

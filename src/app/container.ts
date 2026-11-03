@@ -21,7 +21,7 @@ import {
 } from '../adapters/sandcastle/open-session.js';
 import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
-import { isTransient } from '../domain/errors.js';
+import { isTransient, orThrow } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
 import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
@@ -239,7 +239,7 @@ export async function withThrowawaySandbox<T>(
   const { repoRoot, logger, openSession } = app.cradle;
   const run: RunIdentity = {
     runId: runIdSchema.parse(`init-${randomBytes(3).toString('hex')}`),
-    baseBranch: await getCurrentBranch(repoRoot),
+    baseBranch: orThrow(await getCurrentBranch(repoRoot)),
   };
   const events = observedEvents(logger, [new LoggingObserver(logger)]);
   const session = await openSession({ run, events, setupCommand });
@@ -247,6 +247,6 @@ export async function withThrowawaySandbox<T>(
     return await use(session);
   } finally {
     await session.close();
-    await deleteBranch(repoRoot, runBranchFor(run.runId));
+    orThrow(await deleteBranch(repoRoot, runBranchFor(run.runId)));
   }
 }

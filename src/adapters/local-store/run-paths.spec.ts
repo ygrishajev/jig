@@ -25,7 +25,7 @@ describe('makeRunDirectory', () => {
     const directory = await makeRunDirectory(dir, runId());
     await writeFile(path.join(directory, `${faker.word.noun()}.json`), '{}');
 
-    expect(await isWorkingTreeClean(dir)).toBe(true);
+    expect((await isWorkingTreeClean(dir)).unwrap()).toBe(true);
   });
 
   it('leaves a .jig/.gitignore the operator already has alone', async () => {

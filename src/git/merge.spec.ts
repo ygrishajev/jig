@@ -1,22 +1,22 @@
 import { faker } from '@faker-js/faker';
 import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { GitResponseError, type SimpleGit, simpleGit } from 'simple-git';
+import { type SimpleGit, simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
 import { createRemote, createTempRepo } from '../../tests/support/temp-repo.js';
-import { RemoteUnavailable } from '../domain/errors.js';
-import { GitCommandFailed, isBranchMergedInto, mergeBranchInto, MergeRefused } from './merge.js';
+import { GitCommandFailed, MergeFailed, RemoteUnavailable } from '../domain/errors.js';
+import { isBranchMergedInto, mergeBranchInto } from './merge.js';
 import { commitAll } from './repository.js';
 
 describe('mergeBranchInto', () => {
   it('merges a branch into the checked-out base and returns the merge commit', async () => {
     const { repo, branch, git } = await setup();
 
-    const sha = await mergeBranchInto(repo, branch, 'main');
+    const sha = (await mergeBranchInto(repo, branch, 'main')).unwrap();
 
     expect(sha).toBe(await git.revparse(['main']));
-    expect(await isBranchMergedInto(repo, branch, 'main')).toBe(true);
+    expect((await isBranchMergedInto(repo, branch, 'main')).unwrap()).toBe(true);
   });
 
   it('refuses to merge while the base is not checked out, leaving the branches as they were', async () => {
@@ -24,11 +24,12 @@ describe('mergeBranchInto', () => {
     await git.checkout(branch);
     const base = await git.revparse(['main']);
 
-    const refusal = mergeBranchInto(repo, branch, 'main');
+    const refusal = await mergeBranchInto(repo, branch, 'main');
 
-    await expect(refusal).rejects.toBeInstanceOf(MergeRefused);
-    await expect(refusal).rejects.toMatchObject({ reason: 'baseNotCheckedOut' });
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(MergeFailed);
+    expect(refusal.isErr() && refusal.error.message).toContain('is not checked out');
     expect(await git.revparse(['main'])).toBe(base);
+    expect(await git.revparse(['HEAD'])).toBe(await git.revparse([branch]));
   });
 
   it('refuses to merge into a tree with uncommitted changes', async () => {
@@ -36,20 +37,23 @@ describe('mergeBranchInto', () => {
     await writeFile(path.join(repo, `${faker.string.uuid()}.txt`), faker.lorem.paragraph());
     const base = await git.revparse(['main']);
 
-    const refusal = mergeBranchInto(repo, branch, 'main');
+    const refusal = await mergeBranchInto(repo, branch, 'main');
 
-    await expect(refusal).rejects.toBeInstanceOf(MergeRefused);
-    await expect(refusal).rejects.toMatchObject({ reason: 'uncommittedChanges' });
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(MergeFailed);
+    expect(refusal.isErr() && refusal.error.message).toContain('uncommitted changes');
     expect(await git.revparse(['main'])).toBe(base);
+    expect((await git.status()).isClean()).toBe(false);
   });
 
-  it("fails with git's own error when the branches conflict", async () => {
+  it('fails the merge when the branches conflict', async () => {
     const { repo, branch, git } = await setup({ touching: 'README.md' });
     await writeFile(path.join(repo, 'README.md'), faker.lorem.paragraph());
     await commitAll(repo, faker.git.commitMessage());
 
-    await expect(mergeBranchInto(repo, branch, 'main')).rejects.toBeInstanceOf(GitResponseError);
-    expect(await isBranchMergedInto(repo, branch, 'main')).toBe(false);
+    const failure = await mergeBranchInto(repo, branch, 'main');
+
+    expect(failure.isErr() && failure.error).toBeInstanceOf(MergeFailed);
+    expect((await isBranchMergedInto(repo, branch, 'main')).unwrap()).toBe(false);
     await git.merge(['--abort']);
   });
 
@@ -76,7 +80,7 @@ describe('isBranchMergedInto', () => {
       await mergeOnRemote(strategy);
       await pullBase();
 
-      expect(await isBranchMergedInto(here, branch, 'main')).toBe(true);
+      expect((await isBranchMergedInto(here, branch, 'main')).unwrap()).toBe(true);
     },
   );
 
@@ -84,7 +88,7 @@ describe('isBranchMergedInto', () => {
     const { here, branch, mergeOnRemote } = await setup();
     await mergeOnRemote('squash');
 
-    expect(await isBranchMergedInto(here, branch, 'main')).toBe(true);
+    expect((await isBranchMergedInto(here, branch, 'main')).unwrap()).toBe(true);
   });
 
   it('does not see a branch whose changes are not in the base', async () => {
@@ -92,7 +96,7 @@ describe('isBranchMergedInto', () => {
     await advanceRemoteBase();
     await pullBase();
 
-    expect(await isBranchMergedInto(here, branch, 'main')).toBe(false);
+    expect((await isBranchMergedInto(here, branch, 'main')).unwrap()).toBe(false);
   });
 
   it('does not see a branch that would conflict with the base', async () => {
@@ -100,7 +104,7 @@ describe('isBranchMergedInto', () => {
     await rewriteBranchFilesOnRemote();
     await pullBase();
 
-    expect(await isBranchMergedInto(here, branch, 'main')).toBe(false);
+    expect((await isBranchMergedInto(here, branch, 'main')).unwrap()).toBe(false);
   });
 
   it('counts a branch with no commits of its own as merged, since nothing is left to land', async () => {
@@ -108,24 +112,24 @@ describe('isBranchMergedInto', () => {
     const empty = `${faker.word.noun()}-${faker.string.alphanumeric(6).toLowerCase()}`;
     await simpleGit({ baseDir: here }).branch([empty, 'main']);
 
-    expect(await isBranchMergedInto(here, empty, 'main')).toBe(true);
+    expect((await isBranchMergedInto(here, empty, 'main')).unwrap()).toBe(true);
   });
 
   it('reports a remote it cannot reach as unavailable rather than answering', async () => {
     const { here, branch, loseRemote } = await setup();
     await loseRemote();
 
-    await expect(isBranchMergedInto(here, branch, 'main')).rejects.toBeInstanceOf(
-      RemoteUnavailable,
-    );
+    const answer = await isBranchMergedInto(here, branch, 'main');
+
+    expect(answer.isErr() && answer.error).toBeInstanceOf(RemoteUnavailable);
   });
 
   it('fails rather than answering for a branch that does not exist', async () => {
     const { here } = await setup();
 
-    await expect(isBranchMergedInto(here, faker.string.uuid(), 'main')).rejects.toBeInstanceOf(
-      GitCommandFailed,
-    );
+    const answer = await isBranchMergedInto(here, faker.string.uuid(), 'main');
+
+    expect(answer.isErr() && answer.error).toBeInstanceOf(GitCommandFailed);
   });
 
   async function setup() {

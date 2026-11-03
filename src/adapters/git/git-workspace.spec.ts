@@ -12,15 +12,15 @@ import { isWorkingTreeClean } from '../../git/repository.js';
 describe('GitWorkspace', () => {
   it("measures the run branch's commits since a point, by files and lines", async () => {
     const { workspace, writeInWorktree } = await setup();
-    const since = await workspace.forkPoint();
+    const since = (await workspace.forkPoint()).unwrap();
     await writeInWorktree('one.txt', 'a\nb\nc\n');
     await writeInWorktree('two.txt', 'd\n');
     await workspace.commitAll(faker.git.commitMessage());
 
-    const summary = await workspace.summariseCommitsSince(since);
+    const summary = (await workspace.summariseCommitsSince(since)).unwrap();
 
     expect(summary).toEqual({
-      sha: await workspace.headCommit(),
+      sha: (await workspace.headCommit()).unwrap(),
       filesChanged: 2,
       insertions: 4,
       deletions: 0,
@@ -29,12 +29,12 @@ describe('GitWorkspace', () => {
 
   it('commits nothing when the worktree has no changes', async () => {
     const { workspace } = await setup();
-    const head = await workspace.headCommit();
+    const head = (await workspace.headCommit()).unwrap();
 
     await workspace.commitAll(faker.git.commitMessage());
 
-    expect(await workspace.headCommit()).toBe(head);
-    expect(await workspace.forkPoint()).toBe(head);
+    expect((await workspace.headCommit()).unwrap()).toBe(head);
+    expect((await workspace.forkPoint()).unwrap()).toBe(head);
   });
 
   it("reads a file from the operator's repository, and nothing for one that is not there", async () => {
@@ -46,18 +46,20 @@ describe('GitWorkspace', () => {
     expect(await workspace.readRepoFile(`${faker.string.uuid()}.md`)).toBeUndefined();
   });
 
-  it("leaves the operator's repository as it was when the merge conflicts", async () => {
+  it('aborts a conflicting merge and reports it as a failed merge', async () => {
     const { workspace, repo, git, writeInWorktree } = await setup();
     await writeInWorktree('README.md', faker.lorem.paragraph());
     await workspace.commitAll(faker.git.commitMessage());
     await writeFile(path.join(repo, 'README.md'), faker.lorem.paragraph());
     await git.add('README.md').commit(faker.git.commitMessage());
 
-    await expect(workspace.mergeRunBranch()).rejects.toBeInstanceOf(MergeFailed);
+    const merge = await workspace.mergeRunBranch();
 
+    expect(merge.isErr() && merge.error).toBeInstanceOf(MergeFailed);
     expect(existsSync(path.join(repo, '.git', 'MERGE_HEAD'))).toBe(false);
-    expect(await isWorkingTreeClean(repo)).toBe(true);
-    expect(await workspace.isRunBranchMerged()).toBe(false);
+    expect((await git.status()).conflicted).toEqual([]);
+    expect((await isWorkingTreeClean(repo)).unwrap()).toBe(true);
+    expect((await workspace.isRunBranchMerged()).unwrap()).toBe(false);
   });
 
   async function setup() {

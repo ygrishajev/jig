@@ -68,14 +68,14 @@ describe('slice steps', () => {
       reviewer: [approval()],
     });
     await writeFile(path.join(worktreePath, 'previous.txt'), faker.lorem.sentence());
-    await workspace.commitAll(faker.lorem.sentence());
+    (await workspace.commitAll(faker.lorem.sentence())).unwrap();
     const previous = aSlice({
       order: 0,
       status: 'approved',
       commit: await git.revparse([runBranch]),
     });
     await writeFile(path.join(worktreePath, 'interrupted.txt'), faker.lorem.sentence());
-    await workspace.commitAll(faker.lorem.sentence());
+    (await workspace.commitAll(faker.lorem.sentence())).unwrap();
     const slice = aSlice({ order: 1 });
     await run(implementSlice, slice, [previous]);
 

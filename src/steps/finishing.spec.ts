@@ -118,9 +118,9 @@ describe('finishing steps', () => {
         path.join(created.worktreePath, `${faker.word.noun()}.txt`),
         faker.lorem.sentence(),
       );
-      await workspace.commitAll(faker.lorem.sentence());
+      (await workspace.commitAll(faker.lorem.sentence())).unwrap();
     };
-    const isMerged = () => workspace.isRunBranchMerged();
+    const isMerged = async () => (await workspace.isRunBranchMerged()).unwrap();
     const mergeByHand = () => created.git.merge([created.runBranch, '--no-edit']);
     const writeRepoFile = async (relativePath: string, contents: string) => {
       const target = path.join(created.repo.dir, relativePath);

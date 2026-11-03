@@ -2,23 +2,42 @@ import { Result } from 'better-result';
 import { realpath } from 'node:fs/promises';
 import { type SimpleGit, simpleGit } from 'simple-git';
 
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid, GitCommandFailed, messageOf } from '../domain/errors.js';
 
-export async function commitAll(cwd: string, message: string): Promise<string | null> {
-  const git = openRepo(cwd);
-  if (await isWorkingTreeClean(cwd)) return null;
-  await git.add('-A');
-  const result = await git.commit(message);
-  return result.commit;
+export async function commitAll(
+  cwd: string,
+  message: string,
+): Promise<Result<string | null, GitCommandFailed>> {
+  return gitCommand('commit', async () => {
+    const git = openRepo(cwd);
+    if ((await git.status()).isClean()) return null;
+    await git.add('-A');
+    return (await git.commit(message)).commit;
+  });
+}
+
+/** Runs simple-git work, returning whatever it throws as a failed git command. */
+export function gitCommand<T>(
+  command: string,
+  run: () => Promise<T>,
+): Promise<Result<T, GitCommandFailed>> {
+  return Result.tryPromise({
+    try: run,
+    catch: (error) =>
+      new GitCommandFailed({
+        message: `git ${command} failed: ${messageOf(error)}`,
+        command,
+        stderr: messageOf(error),
+      }),
+  });
 }
 
 export function openRepo(cwd: string): SimpleGit {
   return simpleGit({ baseDir: cwd });
 }
 
-export async function isWorkingTreeClean(cwd: string): Promise<boolean> {
-  const status = await openRepo(cwd).status();
-  return status.isClean();
+export function isWorkingTreeClean(cwd: string): Promise<Result<boolean, GitCommandFailed>> {
+  return gitCommand('status', async () => (await openRepo(cwd).status()).isClean());
 }
 
 /**

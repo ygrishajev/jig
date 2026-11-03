@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { orThrow } from '../domain/errors.js';
 import type { RunState } from '../domain/run-state.js';
 import { type Slice, slicesInOrder } from '../domain/slice.js';
 import type { SliceStep, StepPorts } from '../flow/define-flow.js';
@@ -7,13 +8,13 @@ import { implementPrompt, nothingChangedFeedback, reviewPrompt } from '../prompt
 
 export const implementSlice: SliceStep = async ({ state, slice, ports }) => {
   const { workspace } = ports;
-  const attemptStart = await workspace.headCommit();
+  const attemptStart = orThrow(await workspace.headCommit());
   await ports.agent.run({ role: 'implementer', prompt: implementPrompt(slice) });
-  await workspace.commitAll(`jig: implement ${slice.id} — ${slice.title}`);
-  if ((await workspace.headCommit()) === (await sliceStart(state, slice, ports))) {
+  orThrow(await workspace.commitAll(`jig: implement ${slice.id} — ${slice.title}`));
+  if (orThrow(await workspace.headCommit()) === (await sliceStart(state, slice, ports))) {
     return { type: 'changesRequested', feedback: nothingChangedFeedback(slice) };
   }
-  return { type: 'implemented', commit: await workspace.summariseCommitsSince(attemptStart) };
+  return { type: 'implemented', commit: orThrow(await workspace.summariseCommitsSince(attemptStart)) };
 };
 
 /**
@@ -25,7 +26,7 @@ async function sliceStart(state: RunState, slice: Slice, ports: StepPorts): Prom
   const previousEnd = slicesInOrder(state.slices)
     .filter((candidate) => candidate.order < slice.order && candidate.commit)
     .at(-1)?.commit;
-  return previousEnd ?? ports.workspace.forkPoint();
+  return previousEnd ?? orThrow(await ports.workspace.forkPoint());
 }
 
 export const reviewSlice: SliceStep = async ({ state, slice, ports }) => {

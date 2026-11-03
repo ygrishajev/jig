@@ -14,6 +14,7 @@ export type JigError =
   | SetupCommandFailed
   | RunStateConflict
   | MergeFailed
+  | GitCommandFailed
   | ConfigInvalid
   | RunRequestInvalid
   | RunInProgress
@@ -76,6 +77,15 @@ export class MergeFailed extends TaggedError('MergeFailed')<{ message: string }>
   readonly kind = 'block' as const;
 }
 
+/** A git command failed for a reason the operator has to look at: a missing ref, a broken repository. */
+export class GitCommandFailed extends TaggedError('GitCommandFailed')<{
+  message: string;
+  command: string;
+  stderr: string;
+}> {
+  readonly kind = 'block' as const;
+}
+
 export class ConfigInvalid extends TaggedError('ConfigInvalid')<{ message: string }> {
   readonly kind = 'fatal' as const;
 }
@@ -102,6 +112,7 @@ const jigErrorClasses = [
   SetupCommandFailed,
   RunStateConflict,
   MergeFailed,
+  GitCommandFailed,
   ConfigInvalid,
   RunRequestInvalid,
   RunInProgress,

@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { startTelemetry } from '../adapters/telemetry/open-telemetry.js';
-import { RunRequestInvalid } from '../domain/errors.js';
+import { orThrow, RunRequestInvalid } from '../domain/errors.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
@@ -80,7 +80,7 @@ async function startNewRun(
   runId: RunId,
   request: string,
 ): Promise<RunState> {
-  const baseBranch = await getCurrentBranch(cradle.repoRoot);
+  const baseBranch = orThrow(await getCurrentBranch(cradle.repoRoot));
   const started = startRun({ runId, baseBranch, request });
   await store.save(started);
   return started;
