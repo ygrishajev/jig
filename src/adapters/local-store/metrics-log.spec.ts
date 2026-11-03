@@ -73,7 +73,7 @@ describe('MetricsLog', () => {
   });
 
   async function setup() {
-    const repoRoot = await tempDirectory('sdlc-metrics-');
+    const repoRoot = await tempDirectory('jig-metrics-');
     const id = runId();
     const reopen = () => new MetricsLog(repoRoot, id);
     const appendRaw = (text: string) =>

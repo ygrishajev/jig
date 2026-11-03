@@ -64,7 +64,7 @@ describe('git repository helpers', () => {
   });
 
   it('accepts a directory that is not a repository yet', async () => {
-    const directory = await tempDirectory('sdlc-not-a-repo-');
+    const directory = await tempDirectory('jig-not-a-repo-');
 
     await expect(ensureRepositoryRoot(directory)).resolves.toBeUndefined();
   });

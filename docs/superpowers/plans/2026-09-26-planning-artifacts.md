@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Planning docs are NEVER committed to the target repo — they live only in `<stateDir>` (`.sdlc/<runId>/state/`).
+- Planning docs are NEVER committed to the target repo — they live only in `<stateDir>` (`.jig/<runId>/state/`).
 - `designGate` default is `'auto'`; valid values `'auto' | 'checkpoint'`.
 - All planning docs are read via `node:fs/promises` + `existsSync` from `node:fs` — no new dependencies.
 - Follow existing code style: no comments unless explaining a non-obvious invariant; prettier + eslint clean; every task is TDD (failing test first).
@@ -62,7 +62,7 @@ it('runs a design step that writes design.md and plan.md into the state dir, the
         }),
       );
     } else if (call === 3) {
-      const stateDir = path.join(repo.dir, '.sdlc', await currentRunId(repo.dir), 'state');
+      const stateDir = path.join(repo.dir, '.jig', await currentRunId(repo.dir), 'state');
       await writeFile(
         path.join(stateDir, 'design.md'),
         '# Design\n\n## Chosen approach\n\nA route returning 200 OK.',
@@ -94,7 +94,7 @@ it('runs a design step that writes design.md and plan.md into the state dir, the
     provider,
   });
 
-  const stateDir = path.join(repo.dir, '.sdlc', meta.runId, 'state');
+  const stateDir = path.join(repo.dir, '.jig', meta.runId, 'state');
   expect(existsSync(path.join(stateDir, 'design.md'))).toBe(true);
   expect(existsSync(path.join(stateDir, 'plan.md'))).toBe(true);
   expect(slicePrompt).toContain('## Step 1 — Add health route');
@@ -103,18 +103,18 @@ it('runs a design step that writes design.md and plan.md into the state dir, the
 });
 ```
 
-The helper `currentRunId` reads the single run dir (createTempRepo starts clean, so the first dir under `.sdlc/` is this run). Add it at the bottom of the file:
+The helper `currentRunId` reads the single run dir (createTempRepo starts clean, so the first dir under `.jig/` is this run). Add it at the bottom of the file:
 
 ```ts
 import { readdir } from 'node:fs/promises';
 
 async function currentRunId(repoDir: string): Promise<string> {
-  const entries = await readdir(path.join(repoDir, '.sdlc'));
+  const entries = await readdir(path.join(repoDir, '.jig'));
   return entries[0];
 }
 ```
 
-Also update the FIVE existing tests with provider fakes (`runs context, plan, and slice-plan steps and persists the result`, `runs the planning steps with the real repository as cwd, not an empty scratch directory`, `leaves no structured-output file behind in the repo root once done`, `throws a clear error when the slice-plan step returns zero slices`, `throws a clear error naming the duplicate id…`, `throws when the slice-plan step returns an id with characters unsafe…`): every provider fake in this file must gain the extra design-step call — renumber `call === 2` (feature plan) / `call === 3` (design: write design.md + plan.md into `path.join(repo.dir, '.sdlc', currentRunId(repo.dir), 'state')` + ack JSON) / `call === 4` (slices). For the cwd test, the expected array becomes `[repo.dir, repo.dir, repo.dir, repo.dir]`.
+Also update the FIVE existing tests with provider fakes (`runs context, plan, and slice-plan steps and persists the result`, `runs the planning steps with the real repository as cwd, not an empty scratch directory`, `leaves no structured-output file behind in the repo root once done`, `throws a clear error when the slice-plan step returns zero slices`, `throws a clear error naming the duplicate id…`, `throws when the slice-plan step returns an id with characters unsafe…`): every provider fake in this file must gain the extra design-step call — renumber `call === 2` (feature plan) / `call === 3` (design: write design.md + plan.md into `path.join(repo.dir, '.jig', currentRunId(repo.dir), 'state')` + ack JSON) / `call === 4` (slices). For the cwd test, the expected array becomes `[repo.dir, repo.dir, repo.dir, repo.dir]`.
 
 Add a failure test:
 
@@ -327,7 +327,7 @@ git -c commit.gpgsign=false commit -m "Add a design step producing design.md and
 **Interfaces:**
 
 - Consumes: nothing.
-- Produces: `SdlcConfig.designGate: 'auto' | 'checkpoint'` (default `'auto'`).
+- Produces: `JigConfig.designGate: 'auto' | 'checkpoint'` (default `'auto'`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -337,7 +337,7 @@ In `tests/config/load-config.test.ts`, extend the defaults test with `expect(con
 it('accepts designGate checkpoint', async () => {
   repo = await createTempRepo();
   await writeFile(
-    path.join(repo.dir, 'sdlc.config.json'),
+    path.join(repo.dir, 'jig.config.json'),
     JSON.stringify({ designGate: 'checkpoint' }),
   );
   expect(loadConfig(repo.dir).designGate).toBe('checkpoint');
@@ -345,7 +345,7 @@ it('accepts designGate checkpoint', async () => {
 
 it('throws on an invalid designGate value', async () => {
   repo = await createTempRepo();
-  await writeFile(path.join(repo.dir, 'sdlc.config.json'), JSON.stringify({ designGate: 'maybe' }));
+  await writeFile(path.join(repo.dir, 'jig.config.json'), JSON.stringify({ designGate: 'maybe' }));
   expect(() => loadConfig(repo.dir)).toThrow();
 });
 ```
@@ -362,7 +362,7 @@ In `src/config/load-config.ts` configSchema add:
 ```ts
 // 'auto' (default): implementation starts immediately after planning.
 // 'checkpoint': the autopilot command stops after planning so a human can
-// read design.md/plan.md and resumes with `sdlc resume`.
+// read design.md/plan.md and resumes with `jig resume`.
 designGate: z.enum(['auto', 'checkpoint']).default('auto'),
 ```
 
@@ -388,7 +388,7 @@ git -c commit.gpgsign=false commit -m "Add designGate config value"
 **Interfaces:**
 
 - Consumes: `config.designGate` (Task 2), `prepareRun`, `loadCliRunContext`, run state docs at `paths.stateDir/design.md` and `paths.stateDir/plan.md`.
-- Produces: `sdlc autopilot` in checkpoint mode prints doc paths and exits 0 WITHOUT calling `runAutopilot`; `resume` is unchanged (never gates).
+- Produces: `jig autopilot` in checkpoint mode prints doc paths and exits 0 WITHOUT calling `runAutopilot`; `resume` is unchanged (never gates).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -435,8 +435,8 @@ describe('autopilot command with designGate checkpoint', () => {
       paths: {
         runId: 'r1',
         repoRoot: '/tmp/repo',
-        stateDir: '/tmp/repo/.sdlc/r1/state',
-        workspaceDir: '/tmp/repo/.sdlc/r1/workspace',
+        stateDir: '/tmp/repo/.jig/r1/state',
+        workspaceDir: '/tmp/repo/.jig/r1/workspace',
       },
       baseBranch: 'main',
       config,
@@ -448,12 +448,12 @@ describe('autopilot command with designGate checkpoint', () => {
 
     const program = new Command();
     registerAutopilotCommands(program);
-    await program.parseAsync(['node', 'sdlc', 'autopilot', '--input', 'request.md']);
+    await program.parseAsync(['node', 'jig', 'autopilot', '--input', 'request.md']);
 
     expect(vi.mocked(runReconcilerPass)).not.toHaveBeenCalled();
     const logged = logSpy.mock.calls.map((args) => args.join(' '));
     expect(logged.some((line) => line.includes('design.md'))).toBe(true);
-    expect(logged.some((line) => line.includes('sdlc resume --run r1'))).toBe(true);
+    expect(logged.some((line) => line.includes('jig resume --run r1'))).toBe(true);
   });
 });
 ```
@@ -475,7 +475,7 @@ if (config.designGate === 'checkpoint') {
   console.log(`Plan:   ${path.join(context.paths.stateDir, 'plan.md')}`);
   console.log(
     `Run ${meta.runId} planning complete — review the design and plan, then run ` +
-      `sdlc resume --run ${meta.runId} to start implementation.`,
+      `jig resume --run ${meta.runId} to start implementation.`,
   );
   return;
 }
@@ -505,7 +505,7 @@ git -c commit.gpgsign=false commit -m "Stop autopilot after planning when design
 **Interfaces:**
 
 - Consumes: `paths.stateDir`, `existsSync` from `node:fs`.
-- Produces: `sdlc status --run <id>` prints `Design: <path>` and `Plan: <path>` lines when the files exist.
+- Produces: `jig status --run <id>` prints `Design: <path>` and `Plan: <path>` lines when the files exist.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -537,7 +537,7 @@ describe('status command', () => {
 
     const program = new Command();
     registerStatusCommand(program);
-    await program.parseAsync(['node', 'sdlc', 'status', '--run', 'run1']);
+    await program.parseAsync(['node', 'jig', 'status', '--run', 'run1']);
 
     const logged = logSpy.mock.calls.map((args) => args.join(' '));
     expect(
@@ -555,7 +555,7 @@ describe('status command', () => {
 
     const program = new Command();
     registerStatusCommand(program);
-    await program.parseAsync(['node', 'sdlc', 'status', '--run', 'run1']);
+    await program.parseAsync(['node', 'jig', 'status', '--run', 'run1']);
 
     const logged = logSpy.mock.calls.map((args) => args.join(' '));
     expect(logged.some((line) => line.includes('Design:'))).toBe(false);
@@ -630,7 +630,7 @@ it('embeds the design and plan and marks the current slice in the mapping', asyn
     description: 'Implements plan step 1. Adds GET /health returning 200.',
     order: 0,
     status: 'ready_to_merge',
-    branch: 'sdlc/slice/run2/s1',
+    branch: 'jig/slice/run2/s1',
     reviewCycles: 0,
     mergeAttempts: 0,
   };
@@ -641,7 +641,7 @@ it('embeds the design and plan and marks the current slice in the mapping', asyn
     description: 'Implements plan step 2. Wire the route into the app.',
     order: 1,
     status: 'pending',
-    branch: 'sdlc/slice/run2/s2',
+    branch: 'jig/slice/run2/s2',
   };
   await writeSlices(paths2, [s1, s2]);
   const meta = await readRunMeta(paths2);
@@ -668,7 +668,7 @@ it('omits the design and plan sections when the run has no planning docs', async
     description: 'Adds GET /health returning 200.',
     order: 0,
     status: 'ready_to_merge',
-    branch: 'sdlc/slice/run3/s1',
+    branch: 'jig/slice/run3/s1',
     reviewCycles: 0,
     mergeAttempts: 0,
   };

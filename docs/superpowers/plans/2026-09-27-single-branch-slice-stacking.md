@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace sdlc's per-slice branch-and-merge model with a single run branch: every slice's commits stack on one branch, and the whole feature merges into the base branch once, in one PR, after every slice has been approved.
+**Goal:** Replace jig's per-slice branch-and-merge model with a single run branch: every slice's commits stack on one branch, and the whole feature merges into the base branch once, in one PR, after every slice has been approved.
 
-**Architecture:** Each run gets one derived branch, `sdlc/run/<runId>`, instead of one branch per slice (`sdlc/slice/<runId>/<sliceId>`). The implement step always works on that one branch, so slice 2's commits sit on top of slice 1's. The reconciler no longer merges anything per slice — a slice reaching `ready_to_merge` is immediately marked `merged` (meaning "folded into the run branch", not "merged into base") and the reconciler advances to the next slice with zero git action. Only once every slice is `merged` does a new `finalizeRun` step (replacing `advance.ts`) attempt the single git merge of the run branch into the base branch, gated by `mergeStrategy` exactly the way slice merges were gated before (manual mode waits for a human `sdlc merge`, auto mode does it immediately).
+**Architecture:** Each run gets one derived branch, `jig/run/<runId>`, instead of one branch per slice (`jig/slice/<runId>/<sliceId>`). The implement step always works on that one branch, so slice 2's commits sit on top of slice 1's. The reconciler no longer merges anything per slice — a slice reaching `ready_to_merge` is immediately marked `merged` (meaning "folded into the run branch", not "merged into base") and the reconciler advances to the next slice with zero git action. Only once every slice is `merged` does a new `finalizeRun` step (replacing `advance.ts`) attempt the single git merge of the run branch into the base branch, gated by `mergeStrategy` exactly the way slice merges were gated before (manual mode waits for a human `jig merge`, auto mode does it immediately).
 
 **Tech Stack:** TypeScript, vitest, simple-git, execa, commander, zod — no new dependencies.
 
@@ -16,7 +16,7 @@
 - Preserve existing `mergeMode: 'manual' | 'auto'` semantics exactly — apply them once per run instead of once per slice. Manual mode must still never touch git on its own; auto mode must still merge immediately once merging is due.
 - Preserve `reviewCycleCap` / `stuck` behavior unchanged — per-slice AI review still happens for every slice, only the post-approval merge step changes.
 - `Slice.mergeAttempts` stays as-is (already unused elsewhere; removing it is out of scope for this change).
-- No migration path for on-disk state from runs created before this change. A `.sdlc/<runId>/state/slices.json` written by the old code has a `branch` field the new stricter zod schema doesn't expect but does not reject (zod objects allow extra keys by default unless `.strict()` is used, and `sliceSchema` isn't `.strict()`), so old slice files still parse — but any such run should be treated as stale and restarted, not resumed, since its slices reference per-slice branches (`sdlc/slice/...`) nothing in the new code creates or looks for anymore. Do not add a shim to bridge old and new state.
+- No migration path for on-disk state from runs created before this change. A `.jig/<runId>/state/slices.json` written by the old code has a `branch` field the new stricter zod schema doesn't expect but does not reject (zod objects allow extra keys by default unless `.strict()` is used, and `sliceSchema` isn't `.strict()`), so old slice files still parse — but any such run should be treated as stale and restarted, not resumed, since its slices reference per-slice branches (`jig/slice/...`) nothing in the new code creates or looks for anymore. Do not add a shim to bridge old and new state.
 
 ---
 
@@ -137,7 +137,7 @@ describe('state schemas', () => {
   });
 
   it('derives one stable branch name per run id, not per slice', () => {
-    expect(runBranchFor('abc12345')).toBe('sdlc/run/abc12345');
+    expect(runBranchFor('abc12345')).toBe('jig/run/abc12345');
     expect(runBranchFor('abc12345')).toBe(runBranchFor('abc12345'));
   });
 });
@@ -159,13 +159,13 @@ In `tests/state/store.test.ts`, find the slice literal inside the `'round-trips 
         description: 'Does the first thing.',
         order: 0,
         status: 'pending',
-        branch: 'sdlc/slice/run2/s1',
+        branch: 'jig/slice/run2/s1',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
 ```
 
-Delete the `branch: 'sdlc/slice/run2/s1',` line so it reads:
+Delete the `branch: 'jig/slice/run2/s1',` line so it reads:
 
 ```ts
       {
@@ -247,7 +247,7 @@ export type RunMeta = z.infer<typeof runMetaSchema>;
  * not one per slice — so the whole feature lands as one merge/PR.
  */
 export function runBranchFor(runId: string): string {
-  return `sdlc/run/${runId}`;
+  return `jig/run/${runId}`;
 }
 ```
 
@@ -328,9 +328,9 @@ describe('finalizeRun', () => {
     });
 
     const logged = logSpy.mock.calls.map((args) => args.join(' '));
-    expect(logged.some((line) => line.includes('[sdlc runlog]'))).toBe(true);
+    expect(logged.some((line) => line.includes('[jig runlog]'))).toBe(true);
     expect(
-      logged.some((line) => line.includes('run branch "sdlc/run/runlog" merged into "main"')),
+      logged.some((line) => line.includes('run branch "jig/run/runlog" merged into "main"')),
     ).toBe(true);
   });
 
@@ -609,7 +609,7 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     const logged = logSpy.mock.calls.map((args) => args.join(' '));
-    expect(logged.some((line) => line.includes(`[sdlc runlog]`))).toBe(true);
+    expect(logged.some((line) => line.includes(`[jig runlog]`))).toBe(true);
     expect(logged.some((line) => line.includes('implementing slice "s1"'))).toBe(true);
     expect(logged.some((line) => line.includes(paths.workspaceDir))).toBe(true);
   });
@@ -626,7 +626,7 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     expect(slice.status).toBe('in_review');
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/run1');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('jig/run/run1');
     expect(await isWorkingTreeClean(paths.workspaceDir)).toBe(true);
   });
 
@@ -646,7 +646,7 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     expect(calls).toBe(2);
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/run2');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('jig/run/run2');
   });
 
   it('throws and leaves status untouched when the provider fails', async () => {
@@ -676,16 +676,16 @@ describe('runImplementStep', () => {
     await openRepo(paths.workspaceDir).raw([
       'branch',
       '-m',
-      'sdlc/run/run5',
-      'sdlc/run/renamed-away',
+      'jig/run/run5',
+      'jig/run/renamed-away',
     ]);
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/renamed-away');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('jig/run/renamed-away');
 
     slice.status = 'pending';
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     expect(slice.status).toBe('in_review');
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/run/run5');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('jig/run/run5');
   });
 
   it('disables commit signing in the workspace only when skipCommitSigning is set', async () => {
@@ -737,7 +737,7 @@ describe('runImplementStep', () => {
 - [ ] **Step 2: Run it to confirm it fails**
 
 Run: `npx vitest run tests/orchestrator/implement-step.test.ts`
-Expected: FAIL — the branch assertions expect `sdlc/run/<id>` but the code still checks out `slice.branch` (`sdlc/slice/<id>/s1`), and `makeSlice()` no longer produces a `branch` field the current `Slice` type requires (TypeScript compile error until Task 1's schema change, which is already in place from Task 1 — so this fails on the branch-name assertions specifically).
+Expected: FAIL — the branch assertions expect `jig/run/<id>` but the code still checks out `slice.branch` (`jig/slice/<id>/s1`), and `makeSlice()` no longer produces a `branch` field the current `Slice` type requires (TypeScript compile error until Task 1's schema change, which is already in place from Task 1 — so this fails on the branch-name assertions specifically).
 
 - [ ] **Step 3: Point `runImplementStep` at the run branch**
 
@@ -811,7 +811,7 @@ git commit -m "sdlc: implement step commits onto the run branch, not a per-slice
 In `tests/orchestrator/prepare.test.ts`, delete this line (around line 210):
 
 ```ts
-expect(slices[0].branch).toBe(`sdlc/slice/${meta.runId}/add-health-route`);
+expect(slices[0].branch).toBe(`jig/slice/${meta.runId}/add-health-route`);
 ```
 
 Rename the test title around line 373 from:
@@ -830,10 +830,10 @@ to:
 
 In `tests/orchestrator/review-step.test.ts`, remove the now-nonexistent `branch` field/overrides — `runReviewStep` never reads `slice.branch`, so these were always inert:
 
-- Line 28: delete `    branch: 'sdlc/slice/run1/s1',` from `makeSlice`'s defaults.
-- Line 50: change `const slice = makeSlice({ branch: 'sdlc/slice/runlog/s1' });` to `const slice = makeSlice();`.
-- Line 72: change `const slice = makeSlice({ branch: 'sdlc/slice/runlog2/s1' });` to `const slice = makeSlice();`.
-- Line 385: change `const slice = makeSlice({ branch: 'sdlc/slice/run7/s1' });` to `const slice = makeSlice();`.
+- Line 28: delete `    branch: 'jig/slice/run1/s1',` from `makeSlice`'s defaults.
+- Line 50: change `const slice = makeSlice({ branch: 'jig/slice/runlog/s1' });` to `const slice = makeSlice();`.
+- Line 72: change `const slice = makeSlice({ branch: 'jig/slice/runlog2/s1' });` to `const slice = makeSlice();`.
+- Line 385: change `const slice = makeSlice({ branch: 'jig/slice/run7/s1' });` to `const slice = makeSlice();`.
 
 - [ ] **Step 2: Run the tests to confirm the prepare assertion is gone and the rest still fails to compile**
 
@@ -851,7 +851,7 @@ const slices: Slice[] = sliceOutput.map((slice, order) => ({
   ...slice,
   order,
   status: 'pending',
-  branch: `sdlc/slice/${runId}/${slice.id}`,
+  branch: `jig/slice/${runId}/${slice.id}`,
   reviewCycles: 0,
   mergeAttempts: 0,
 }));
@@ -938,7 +938,7 @@ import {
   writeSlices,
 } from '../../src/state/store.js';
 import { runBranchFor } from '../../src/state/types.js';
-import type { SdlcConfig } from '../../src/config/load-config.js';
+import type { JigConfig } from '../../src/config/load-config.js';
 import type { Slice } from '../../src/state/types.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
 
@@ -948,7 +948,7 @@ afterEach(async () => {
   await repo?.cleanup();
 });
 
-const baseConfig: SdlcConfig = {
+const baseConfig: JigConfig = {
   mergeMode: 'manual',
   reviewCycleCap: 3,
   conflictResolveCap: 3,
@@ -1351,7 +1351,7 @@ Expected: FAIL — `src/orchestrator/reconcile.ts` still imports the now-deleted
 Replace the whole contents of `src/orchestrator/reconcile.ts` with:
 
 ```ts
-import type { SdlcConfig } from '../config/load-config.js';
+import type { JigConfig } from '../config/load-config.js';
 import type { AgentProvider } from '../strategies/provider/types.js';
 import type { MergeStrategy } from '../strategies/merge/types.js';
 import type { RunPaths } from '../state/run-paths.js';
@@ -1369,7 +1369,7 @@ export interface ReconcilePassInput {
   provider: AgentProvider;
   /** Overrides `provider` for the implement step only — see `implementProviderCommand`. */
   implementProvider?: AgentProvider;
-  config: SdlcConfig;
+  config: JigConfig;
   mergeStrategy: MergeStrategy;
 }
 
@@ -1882,13 +1882,13 @@ export function registerCreatePrCommand(program: Command): void {
 In `README.md`, change:
 
 ```
-| `sdlc create-pr --run <id>`     | Writes a local PR description for the current slice (no `gh` integration in v1).                                |
+| `jig create-pr --run <id>`     | Writes a local PR description for the current slice (no `gh` integration in v1).                                |
 ```
 
 to:
 
 ```
-| `sdlc create-pr --run <id>`     | Writes a local PR description for the whole run — every slice ships as one PR (no `gh` integration in v1).      |
+| `jig create-pr --run <id>`     | Writes a local PR description for the whole run — every slice ships as one PR (no `gh` integration in v1).      |
 ```
 
 - [ ] **Step 6: Run the tests to verify they pass**
@@ -1905,7 +1905,7 @@ git commit -m "sdlc: one PR description per run instead of per current slice"
 
 ---
 
-## Task 8: `sdlc merge` merges the whole run, once, when every slice is done
+## Task 8: `jig merge` merges the whole run, once, when every slice is done
 
 **Files:**
 
@@ -1915,7 +1915,7 @@ git commit -m "sdlc: one PR description per run instead of per current slice"
 **Interfaces:**
 
 - Consumes: `finalizeRun` from Task 2, `readRunMeta` from `src/state/store.ts` (unchanged).
-- Produces: no change to the command's CLI surface (`sdlc merge --run <id>`), only to what it does internally.
+- Produces: no change to the command's CLI surface (`jig merge --run <id>`), only to what it does internally.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1943,8 +1943,8 @@ const fakeContext = {
   paths: {
     runId: 'r1',
     repoRoot: '/tmp/repo',
-    stateDir: '/tmp/repo/.sdlc/r1/state',
-    workspaceDir: '/tmp/repo/.sdlc/r1/workspace',
+    stateDir: '/tmp/repo/.jig/r1/state',
+    workspaceDir: '/tmp/repo/.jig/r1/workspace',
   },
   baseBranch: 'main',
   config: {
@@ -1973,7 +1973,7 @@ describe('merge command', () => {
 
     const program = new Command();
     registerMergeCommand(program);
-    await program.parseAsync(['node', 'sdlc', 'merge', '--run', 'r1']);
+    await program.parseAsync(['node', 'jig', 'merge', '--run', 'r1']);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('still has a slice'));
     expect(finalizeRun).not.toHaveBeenCalled();
@@ -1993,7 +1993,7 @@ describe('merge command', () => {
 
     const program = new Command();
     registerMergeCommand(program);
-    await program.parseAsync(['node', 'sdlc', 'merge', '--run', 'r1']);
+    await program.parseAsync(['node', 'jig', 'merge', '--run', 'r1']);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('complete'));
   });
@@ -2030,7 +2030,7 @@ export function registerMergeCommand(program: Command): void {
           return;
         }
         // Deliberately a fresh AutoMergeStrategy(), not context.mergeStrategy:
-        // an explicit `sdlc merge` invocation IS the human's decision to
+        // an explicit `jig merge` invocation IS the human's decision to
         // merge now, regardless of the configured mergeMode. Under manual
         // mode, context.mergeStrategy would be a no-op ManualMergeStrategy,
         // which would make this command do nothing.
@@ -2060,13 +2060,13 @@ to:
 And change:
 
 ```
-| `sdlc merge --run <id>`         | Manually merges an approved slice now, regardless of `mergeMode`.                                               |
+| `jig merge --run <id>`         | Manually merges an approved slice now, regardless of `mergeMode`.                                               |
 ```
 
 to:
 
 ```
-| `sdlc merge --run <id>`         | Manually merges the run's branch (every slice's commits, as one unit) now, once every slice is approved — regardless of `mergeMode`. |
+| `jig merge --run <id>`         | Manually merges the run's branch (every slice's commits, as one unit) now, once every slice is approved — regardless of `mergeMode`. |
 ```
 
 - [ ] **Step 5: Run the tests to verify they pass**
@@ -2102,7 +2102,7 @@ Expected: PASS.
 
 - [ ] **Step 3: Confirm no stray references remain**
 
-Run: `grep -rn "sdlc/slice/\|advanceRun\|\.branch\b" src tests --include="*.ts"`
+Run: `grep -rn "jig/slice/\|advanceRun\|\.branch\b" src tests --include="*.ts"`
 Expected: no output. (`src/git/branch.ts`'s own `openRepo(cwd).branch([...])` call is a `simple-git` API method, not `Slice.branch` — if this grep flags it, that's a false positive to leave alone; everything else should be gone.)
 
 - [ ] **Step 4: Commit if anything was left uncommitted**

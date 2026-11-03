@@ -5,7 +5,7 @@ import { initSummary } from './sandbox.js';
 
 describe('initSummary', () => {
   it('tells the operator to check the starter files without an agent', () => {
-    expect(initSummary({ status: 'written' })).toContain('sdlc init --no-agent');
+    expect(initSummary({ status: 'written' })).toContain('jig init --no-agent');
   });
 
   it('counts the attempts a verified sandbox took only when it took more than one', () => {

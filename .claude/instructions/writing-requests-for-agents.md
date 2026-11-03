@@ -1,11 +1,11 @@
 ## Writing Requests for Agents
 
-Applies to three kinds of text: a request file passed to `sdlc run`, a GitHub issue that a workflow
-turns into one, and the prompts sdlc itself sends to its agents (`src/prompts/`).
+Applies to three kinds of text: a request file passed to `jig run`, a GitHub issue that a workflow
+turns into one, and the prompts jig itself sends to its agents (`src/prompts/`).
 
 ## Description
 
-- **The text is the agent's entire input.** sdlc builds the planner's prompt from the request file alone; a workflow that runs sdlc on an issue typically passes `gh issue view --json title,body` — title plus body, nothing else. No comments, no linked issues, no conversation. Whatever is missing from the text is missing from the run. The same holds for each prompt sdlc sends: an agent sees that prompt, the repository, and nothing from earlier steps unless the prompt carries it.
+- **The text is the agent's entire input.** jig builds the planner's prompt from the request file alone; a workflow that runs jig on an issue typically passes `gh issue view --json title,body` — title plus body, nothing else. No comments, no linked issues, no conversation. Whatever is missing from the text is missing from the run. The same holds for each prompt jig sends: an agent sees that prompt, the repository, and nothing from earlier steps unless the prompt carries it.
 - **Every request is self-contained.** Never "see #3", "as discussed", "same as the last one", or a number standing in for a description. Say so explicitly in the opening line — _"Treat this request as self-contained; don't assume access to #3"_ — so an agent that notices the reference does not go looking for it.
 - **`What` and `Why` first, in plain words.** A product description for a human — no paths, code or technical terms. The technical sections follow them.
 - **Open with orientation, then narrow.** A few lines on what this part of the repo is and where the relevant code lives, _then_ the concrete target. An agent that starts cold needs to be told the layering (`domain` → `flow`/`steps` → `ports` → `adapters`), that specs sit beside the code, and which unit owns the rule it is about to change.
@@ -37,7 +37,7 @@ The tests let a broken version of that rule through unnoticed.
 
 ## Context — read this first
 
-sdlc is a Node CLI tested with Vitest. Specs sit beside the code they cover —
+jig is a Node CLI tested with Vitest. Specs sit beside the code they cover —
 `engine.ts` → `engine.spec.ts`. Pipeline code receives its ports (`AgentSession`, `RunStore`)
 as arguments; specs pass fakes, never `vi.mock`.
 

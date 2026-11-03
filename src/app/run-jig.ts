@@ -23,12 +23,12 @@ import { ensureSandboxImage } from './sandbox-image.js';
  * Starting with the id of an existing run resumes it only when the file is the request it was
  * started with, so a retried CI job resumes safely and a new request is never attached to an old run.
  */
-export type RunSdlcInput = { start: string; runId?: RunId } | { resume: RunId };
+export type RunJigInput = { start: string; runId?: RunId } | { resume: RunId };
 
 export type RunReport = EngineResult;
 
-/** What `sdlc run [request] [--id <id>]` asks for; it needs at least one of the two. */
-export function runInputFrom(requestPath?: string, id?: string): RunSdlcInput {
+/** What `jig run [request] [--id <id>]` asks for; it needs at least one of the two. */
+export function runInputFrom(requestPath?: string, id?: string): RunJigInput {
   const runId = id === undefined ? undefined : parseRunId(id);
   if (requestPath !== undefined)
     return runId ? { start: requestPath, runId } : { start: requestPath };
@@ -41,9 +41,9 @@ export function runInputFrom(requestPath?: string, id?: string): RunSdlcInput {
  * same id fails with `RunInProgress` instead of writing over it. A run that already ended is
  * reported as it is, without touching the sandbox.
  */
-export async function runSdlc(
+export async function runJig(
   app: AwilixContainer<AppCradle>,
-  input: RunSdlcInput,
+  input: RunJigInput,
 ): Promise<RunReport> {
   const runId = 'resume' in input ? input.resume : (input.runId ?? newRunId());
   const releaseLock = await lockRun(app.cradle.repoRoot, runId);
@@ -66,7 +66,7 @@ function newRunId() {
 async function startOrResume(
   cradle: AppCradle,
   store: RunStore,
-  input: RunSdlcInput,
+  input: RunJigInput,
   runId: RunId,
 ): Promise<RunState> {
   const existing = await store.load(runId);

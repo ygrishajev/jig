@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
 
-export const CONFIG_FILE = 'sdlc.config.json';
+export const CONFIG_FILE = 'jig.config.json';
 
 const agentNameSchema = z
   .string()
@@ -32,7 +32,7 @@ const configSchema = z
     commitSigning: z.enum(['repo', 'skip']).default('repo'),
     /** `checkpoint` stops after planning so a person can read the design and plan before any code is written. */
     designGate: z.enum(['auto', 'checkpoint']).default('auto'),
-    /** An image managed elsewhere: sdlc starts it as it is and never builds it. */
+    /** An image managed elsewhere: jig starts it as it is and never builds it. */
     sandboxImage: z.string().optional(),
     /** Where run state is saved: `local`, `git-remote` (push to origin), or a path to a store module. */
     runStores: z.array(z.string()).min(1).default(['local']),
@@ -45,14 +45,14 @@ const configSchema = z
     ...byRole(() => stepConfigSchema.default({ provider: 'claude' })),
   })
   .strict();
-export type SdlcConfig = z.infer<typeof configSchema>;
+export type JigConfig = z.infer<typeof configSchema>;
 
-export function loadConfig(repoRoot: string): SdlcConfig {
+export function loadConfig(repoRoot: string): JigConfig {
   const configPath = path.join(repoRoot, CONFIG_FILE);
   if (!existsSync(configPath)) return configSchema.parse({});
   return configSchema.parse(JSON.parse(readFileSync(configPath, 'utf-8')));
 }
 
-export function configuredSteps(config: SdlcConfig): Record<AgentRole, StepConfig> {
+export function configuredSteps(config: JigConfig): Record<AgentRole, StepConfig> {
   return byRole((role) => config[role]);
 }

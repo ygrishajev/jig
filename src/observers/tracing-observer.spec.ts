@@ -19,7 +19,7 @@ describe('TracingObserver', () => {
     observe({ type: 'runHalted', runId: id, phase: 'designing' });
     expect(spans()).toEqual([
       expect.objectContaining({
-        attributes: expect.objectContaining({ 'sdlc.phase.end': 'designing' }),
+        attributes: expect.objectContaining({ 'jig.phase.end': 'designing' }),
         status: { code: SpanStatusCode.UNSET },
       }),
     ]);
@@ -42,12 +42,12 @@ describe('TracingObserver', () => {
 
     const [step, run] = spans();
     expect(run).toMatchObject({
-      name: 'sdlc.run',
-      attributes: { 'sdlc.run_id': id, 'sdlc.phase.end': 'done' },
+      name: 'jig.run',
+      attributes: { 'jig.run_id': id, 'jig.phase.end': 'done' },
     });
     expect(step).toMatchObject({
-      name: 'sdlc.step planning',
-      attributes: { 'sdlc.outcome': 'featurePlanned' },
+      name: 'jig.step planning',
+      attributes: { 'jig.outcome': 'featurePlanned' },
     });
     expect(step.parentSpanContext?.spanId).toBe(run.spanContext().spanId);
   });
@@ -81,7 +81,7 @@ describe('TracingObserver', () => {
       attributes: {
         'gen_ai.agent.name': 'implementer',
         'gen_ai.usage.input_tokens': input,
-        'sdlc.usage.cost_usd': costUsd,
+        'jig.usage.cost_usd': costUsd,
       },
     });
   });
@@ -107,7 +107,7 @@ describe('TracingObserver', () => {
 
     const [failed, succeeded] = spans();
     expect(failed.status).toEqual({ code: SpanStatusCode.ERROR, message: reason });
-    expect(succeeded.attributes).toMatchObject({ 'sdlc.outcome': 'featurePlanned' });
+    expect(succeeded.attributes).toMatchObject({ 'jig.outcome': 'featurePlanned' });
   });
 
   it('ends the failed step of a blocked run before the run itself', () => {
@@ -120,7 +120,7 @@ describe('TracingObserver', () => {
     observe({ type: 'stepFailed', runId: id, at: { phase: 'merging' }, reason, durationMs: 1 });
     observe({ type: 'runBlocked', runId: id, phase: 'merging', reason });
 
-    expect(spans().map((span) => span.name)).toEqual(['sdlc.step merging', 'sdlc.run']);
+    expect(spans().map((span) => span.name)).toEqual(['jig.step merging', 'jig.run']);
   });
 
   it('marks a blocked run as an error with the reason', () => {
@@ -143,9 +143,9 @@ describe('TracingObserver', () => {
     observe({ type: 'runFailed', runId: id, phase: 'slices', reason });
 
     expect(spans()[0]).toMatchObject({
-      name: 'sdlc.run',
+      name: 'jig.run',
       status: { code: SpanStatusCode.ERROR, message: reason },
-      attributes: { 'sdlc.phase.end': 'slices' },
+      attributes: { 'jig.phase.end': 'slices' },
     });
   });
 

@@ -21,7 +21,7 @@ describe('initSandbox', () => {
     expect(await init({ useAgent: false })).toEqual({ status: 'written' });
     expect(await file('.sandcastle/Dockerfile')).toContain(TOOLCHAIN_START);
     expect(await file('.sandcastle/.gitignore')).toContain('worktrees/');
-    expect(JSON.parse(await file('sdlc.config.json'))).toEqual({});
+    expect(JSON.parse(await file('jig.config.json'))).toEqual({});
   });
 
   it('keeps a Dockerfile and config the repository already has', async () => {
@@ -29,12 +29,12 @@ describe('initSandbox', () => {
     const config = { verifyCommand: `npm run ${faker.word.verb()}` };
     const { init, file, write } = await setup({ exec: () => ({ exitCode: 0, output: '' }) });
     await write('.sandcastle/Dockerfile', dockerfile);
-    await write('sdlc.config.json', JSON.stringify(config));
+    await write('jig.config.json', JSON.stringify(config));
 
     await init({ useAgent: false });
 
     expect(await file('.sandcastle/Dockerfile')).toBe(dockerfile);
-    expect(JSON.parse(await file('sdlc.config.json'))).toEqual(config);
+    expect(JSON.parse(await file('jig.config.json'))).toEqual(config);
   });
 
   it('stops a catch-all gitignore from hiding the Dockerfile', async () => {
@@ -57,7 +57,7 @@ describe('initSandbox', () => {
     expect(await file('.sandcastle/Dockerfile')).toContain(
       `${TOOLCHAIN_START}\n${proposal.toolchain}\n${TOOLCHAIN_END}`,
     );
-    expect(JSON.parse(await file('sdlc.config.json'))).toEqual({
+    expect(JSON.parse(await file('jig.config.json'))).toEqual({
       setupCommand: proposal.setupCommand,
       verifyCommand: proposal.verifyCommand,
     });

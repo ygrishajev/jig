@@ -9,10 +9,10 @@ describe('collectCredentials', () => {
     const directory = faker.system.directoryPath();
     expect(
       collectCredentials([{ provider: 'codex', model: faker.word.noun() }], {
-        SDLC_CODEX_AUTH_DIR: directory,
+        JIG_CODEX_AUTH_DIR: directory,
         OPENAI_API_KEY: faker.string.alphanumeric(40),
       }),
-    ).toEqual({ SDLC_CODEX_AUTH_DIR: directory });
+    ).toEqual({ JIG_CODEX_AUTH_DIR: directory });
   });
 
   it('requires an explicit model for Codex', () => {

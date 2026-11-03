@@ -4,7 +4,7 @@ Date: 2026-10-29
 
 ## Problem
 
-sdlc's sandbox is a hand-rolled `docker run --rm` per agent call
+jig's sandbox is a hand-rolled `docker run --rm` per agent call
 (`docker-cli.ts`, `provider-profiles.ts`, `docker/agent-sandbox/`). It works,
 but:
 
@@ -16,7 +16,7 @@ but:
   host.
 - No timeout on any agent call — a hung agent hangs the run.
 - Structured output goes through a file in the agent's cwd
-  (`.sdlc-step-output.json`) that has to be reset around every call and has
+  (`.jig-step-output.json`) that has to be reset around every call and has
   leaked into a commit before.
 
 [Sandcastle](https://github.com/mattpocock/sandcastle) (`@ai-hero/sandcastle`,
@@ -25,14 +25,14 @@ management, agent factories for six agents, and idle timeouts.
 
 ## Goal
 
-Replace sdlc's sandbox layer with sandcastle, run every agent call and every
+Replace jig's sandbox layer with sandcastle, run every agent call and every
 validation inside one reusable sandbox per run, and shrink the CLI to the
-commands people actually need. sdlc keeps owning the pipeline: run state,
+commands people actually need. jig keeps owning the pipeline: run state,
 slices, prompts, review loop, the run branch, and the final merge.
 
 ## Non-Goals
 
-- No gradual rollout or compatibility layer. sdlc has no users yet: implement,
+- No gradual rollout or compatibility layer. jig has no users yet: implement,
   test, roll back on failure.
 - No published sandbox image. Images are built per machine, per repo.
 - No network egress controls (neither the current sandbox nor sandcastle has
@@ -47,14 +47,14 @@ slices, prompts, review loop, the run branch, and the final merge.
 `createSandbox` (the only reusable-sandbox API) requires a `branch` and always
 creates its own worktree at `.sandcastle/worktrees/<branch-with-dashes>`. It
 throws if the branch is checked out in a worktree it doesn't manage
-(`WorktreeManager.ts:289`), so sdlc can't keep `.sdlc/<id>/workspace`.
+(`WorktreeManager.ts:289`), so jig can't keep `.jig/<id>/workspace`.
 
-- A run calls `createSandbox({ branch: "sdlc/run/<id>", baseBranch, cwd: repoRoot, sandbox: docker(...) })`.
+- A run calls `createSandbox({ branch: "jig/run/<id>", baseBranch, cwd: repoRoot, sandbox: docker(...) })`.
 - Resume works natively: sandcastle reuses a managed worktree on the same
   branch (clean → fast-forwarded from origin; dirty → reused with a warning).
 - Host-side steps use `sandbox.worktreePath`.
 - `commitSigning: "skip"` moves into a `hooks.host.onWorktreeReady` hook.
-- sdlc writes `.sandcastle/.gitignore` (`*`) if missing — sandcastle only
+- jig writes `.sandcastle/.gitignore` (`*`) if missing — sandcastle only
   writes it from `init`, and without it `.sandcastle/worktrees/` makes the
   operator's tree dirty, which blocks `mergeBranchInto`.
 - Linked-worktree git mounts are handled by sandcastle
@@ -64,18 +64,18 @@ Removed: `git/worktree.ts`, `ensureWorkspaceOnBranch`, `RunPaths.workspaceDir`.
 
 ### 2. One sandbox per run, reused across calls
 
-- Opened at the start of `sdlc run`, closed when the run completes or blocks
+- Opened at the start of `jig run`, closed when the run completes or blocks
   (`await using`).
 - Every agent call in the run — planner, implementer, reviewer, describer —
   is a `sandbox.run()` with its own agent; validations use `sandbox.exec()`.
 - A crash or resume gets a fresh container. Nothing may depend on in-container
-  state across `sdlc run` invocations.
+  state across `jig run` invocations.
 - `setupCommand` (e.g. `npm ci`) runs once per sandbox via
   `hooks.sandbox.onSandboxReady`.
 
 ### 3. Our own narrow interface, sandcastle behind an adapter
 
-The orchestrator depends on sdlc's interface, not sandcastle's types:
+The orchestrator depends on jig's interface, not sandcastle's types:
 
 ```ts
 interface AgentSession {
@@ -120,7 +120,7 @@ pins are derived from the registry's keys. Roles are one list
 
 ### 5. Credentials
 
-- sdlc collects the credential env vars for every provider used in config
+- jig collects the credential env vars for every provider used in config
   from `process.env` and passes them to `docker({ env })` at sandbox creation.
 - Agent-level `env` appears to be ignored by `createSandbox`
   (`agentProviderEnv: {}`, `createSandbox.ts:779, 968`) — confirm in spike.
@@ -132,20 +132,20 @@ pins are derived from the registry's keys. Roles are one list
   shipping `auth.json`. Removed: `OPENCODE_AUTH_JSON`, `hostEnvFileMounts`,
   `entrypoint.sh`.
 
-### 6. Image: repo-owned toolchain, sdlc-owned agents
+### 6. Image: repo-owned toolchain, jig-owned agents
 
 Sandcastle publishes no image; it ships per-agent Dockerfile templates built
-locally with the host UID baked in. sdlc follows that model:
+locally with the host UID baked in. jig follows that model:
 
 ```
 .sandcastle/Dockerfile        committed, repo-owned: base + project toolchain
         │ docker build → <name>-base
         ▼
-agent layer                   generated by sdlc, never committed
+agent layer                   generated by jig, never committed
   FROM <name>-base
   ARG CLAUDE_VERSION OPENCODE_VERSION
   RUN npm i -g @anthropic-ai/claude-code@${CLAUDE_VERSION} opencode-ai@${OPENCODE_VERSION}
-  LABEL sdlc.agents=… sdlc.agent-versions=… sdlc.dockerfile-hash=…
+  LABEL jig.agents=… jig.agent-versions=… jig.dockerfile-hash=…
   ENTRYPOINT ["sleep", "infinity"]
         │ docker build → <name>
         ▼
@@ -159,13 +159,13 @@ image passed to docker({ imageName })
 - Image name defaults to sandcastle's convention (repo dir name);
   `sandboxImage` in config overrides it (and disables building).
 
-**When `sdlc run` builds** — it inspects the image labels first:
+**When `jig run` builds** — it inspects the image labels first:
 
-| Check                                              | Mismatch →            |
-| -------------------------------------------------- | --------------------- |
-| `sdlc.dockerfile-hash` vs `.sandcastle/Dockerfile` | rebuild base + agents |
-| `sdlc.agents` vs providers in config               | rebuild agent layer   |
-| `sdlc.agent-versions` vs target versions           | rebuild agent layer   |
+| Check                                             | Mismatch →            |
+| ------------------------------------------------- | --------------------- |
+| `jig.dockerfile-hash` vs `.sandcastle/Dockerfile` | rebuild base + agents |
+| `jig.agents` vs providers in config               | rebuild agent layer   |
+| `jig.agent-versions` vs target versions           | rebuild agent layer   |
 
 All match → no build.
 
@@ -179,13 +179,13 @@ All match → no build.
 **CI**: per-repo layer cache via `docker buildx` with
 `--cache-from/--cache-to type=gha`, enabled by flag or env var.
 
-### 7. `sdlc init` sets up the toolchain, verified
+### 7. `jig init` sets up the toolchain, verified
 
-`setupCommand` and `verifyCommand` in `sdlc.config.json` define what "proper
+`setupCommand` and `verifyCommand` in `jig.config.json` define what "proper
 toolchain" means: the image is correct when both pass inside it.
 
 1. Write `.sandcastle/Dockerfile` (base, empty toolchain section),
-   `.sandcastle/.gitignore`, and a starter `sdlc.config.json`.
+   `.sandcastle/.gitignore`, and a starter `jig.config.json`.
 2. Planner agent, sandboxed on the base image, inspects the repo (manifests,
    lockfiles, version files, CI workflows) and fills the toolchain section;
    proposes `setupCommand`/`verifyCommand` if unset.
@@ -196,7 +196,7 @@ toolchain" means: the image is correct when both pass inside it.
 6. Operator reviews and commits.
 
 `--no-agent` skips 2 and 5 (template only; the check still runs). The loop is
-driven by sdlc on the host — the agent can't run `docker build`.
+driven by jig on the host — the agent can't run `docker build`.
 
 ### 8. Validations run in the sandbox
 
@@ -208,10 +208,10 @@ driven by sdlc on the host — the agent can't run `docker build`.
 ### 9. Structured output via a tag in stdout
 
 Sandcastle's `Output.object` exists only on one-shot `run()`, not on
-`sandbox.run()`, and its extractor isn't exported. sdlc implements the same
+`sandbox.run()`, and its extractor isn't exported. jig implements the same
 protocol (ADR 0010 in sandcastle) in ~25 lines:
 
-- Prompt instructs the agent to end with `<sdlc-output>{json}</sdlc-output>`.
+- Prompt instructs the agent to end with `<jig-output>{json}</jig-output>`.
 - Take the last tag in `result.stdout` (parsed assistant text for both
   agents — spike #4), strip an optional code fence, `JSON.parse`, validate
   with zod.
@@ -223,8 +223,8 @@ protocol (ADR 0010 in sandcastle) in ~25 lines:
   so the last session is the failed one. Works for opencode, which sandcastle
   marks non-resumable only because it won't transfer SQLite sessions across
   containers (its ADR 0016) — not needed inside one container.
-- Design step returns `{ design, plan }` markdown in its output; sdlc writes
-  them to `.sdlc/<id>/state/`. Nothing is written into the worktree.
+- Design step returns `{ design, plan }` markdown in its output; jig writes
+  them to `.jig/<id>/state/`. Nothing is written into the worktree.
 
 Removed: `structured-output.ts` file protocol, every
 `resetStructuredOutput` call, `assertPlanningDocsWritten`, the relative-path
@@ -233,13 +233,13 @@ workaround in `buildDesignPrompt`.
 ### 10. CLI: four commands
 
 ```
-sdlc init                         # Dockerfile + config, toolchain verified (§7)
-sdlc build [--pull-agents]        # explicit image build (§6)
-sdlc run [request.md] [--id <id>] # start or resume
-sdlc status <id>                  # read-only
+jig init                         # Dockerfile + config, toolchain verified (§7)
+jig build [--pull-agents]        # explicit image build (§6)
+jig run [request.md] [--id <id>] # start or resume
+jig status <id>                  # read-only
 ```
 
-`sdlc run` dispatch:
+`jig run` dispatch:
 
 | Request file | `--id` | Run exists | Result                                                 |
 | ------------ | ------ | ---------- | ------------------------------------------------------ |
@@ -253,7 +253,7 @@ sdlc status <id>                  # read-only
 A run that exists but crashed before `context.json` was written re-plans.
 
 A run whose phase is final (`done`, or `stuck` — a slice hit `reviewCycleCap`) is returned as
-it is: no image check, no sandbox. `stuck` has no way out inside sdlc; the operator finishes the
+it is: no image check, no sandbox. `stuck` has no way out inside jig; the operator finishes the
 branch by hand or starts a new run, and the CLI says so.
 
 `run` ends with: all slices approved → PR description (describer agent) →
@@ -273,13 +273,13 @@ Agent calls use sandcastle's idle timeout (default 600 s), configurable.
   `createBranchFrom`.
 - CLI version read from `package.json` (hardcoded `0.1.0`).
 - Slice commit messages become configurable, defaulting to a conventional
-  commit (`commitMessage: "feat(sdlc): {title}"`, with `{sliceId}` and
-  `{title}` placeholders). Today's fixed `sdlc: implement <id> — <title>`
+  commit (`commitMessage: "feat(jig): {title}"`, with `{sliceId}` and
+  `{title}` placeholders). Today's fixed `jig: implement <id> — <title>`
   fails commitlint in target repos — firefly's `validate` workflow and
   commit hook both carry an exception just for it.
 - README: configuration and sandbox sections rewritten.
 - Removed from the package: `docker/`, `docker:build` script, ghcr
-  sandbox-image publish job, `SDLC_AGENT_SANDBOX_IMAGE`.
+  sandbox-image publish job, `JIG_AGENT_SANDBOX_IMAGE`.
 
 ### 13. Architecture: layers, flow as data, events
 
@@ -354,13 +354,13 @@ export const sliceFlow = defineFlow({
 - The engine applies outcomes through a pure `transition()`, saves state,
   emits events, and picks the next step. Resume is uniform: a crash in any
   phase (planning included) resumes at that state.
-- `sdlc flow --mermaid` (rendering the definition) is optional, not planned.
+- `jig flow --mermaid` (rendering the definition) is optional, not planned.
 - A slice's change is every commit after where it started — where the
   previous approved slice ended, or the run branch's fork point for the first
   slice — and the reviewer reviews exactly that range, every attempt
   together. The start is derived from approved work, never read from HEAD, so
   an attempt resumed after a crash still sees the commits the interrupted one
-  left. Whoever made the commits (sdlc or the agent) does not matter: a slice
+  left. Whoever made the commits (jig or the agent) does not matter: a slice
   whose range is empty never reaches review; it goes back to the implementer
   as `changesRequested` and counts toward `reviewCycleCap`. Agents never
   rewrite the run branch (that would move approved slices' ends); a base
@@ -420,9 +420,9 @@ interface RunStore {
   ahead of or behind the code.
 - The engine saves after every transition.
 - Implementations:
-  - `local` (default) — `.sdlc/<id>/state`.
+  - `local` (default) — `.jig/<id>/state`.
   - `git-remote` — pushes the run branch, plus state on a hidden ref
-    (`refs/sdlc/<id>`) so the user's branch list stays clean. Enables
+    (`refs/jig/<id>`) so the user's branch list stays clean. Enables
     resuming on another machine, e.g. a retried CI job on a fresh runner.
     Loading fast-forwards a stale local run branch (or the worktree that has
     it checked out); saving pushes with `--force-with-lease` against what was
@@ -435,7 +435,7 @@ interface RunStore {
     before revisions existed loads as revision 0.
 - `run`, `status` and the engine all read and write state through the one
   store built from `runStores`. `result.json`, `metrics.jsonl`, the logs and
-  the markdown documents are per-machine artefacts in `.sdlc/<id>/state/`,
+  the markdown documents are per-machine artefacts in `.jig/<id>/state/`,
   not part of the run, so they stay local.
 
 Replaces `state/store.ts`'s direct file I/O at call sites.
@@ -445,7 +445,7 @@ Replaces `state/store.ts`'s direct file I/O at call sites.
 - pino as the core; format chosen by transport:
   - TTY → human-readable (pino-pretty or a compact custom formatter).
   - CI or `--log-format json` → JSON lines on stdout.
-  - Always → JSON log file at `.sdlc/<id>/state/run.log`.
+  - Always → JSON log file at `.jig/<id>/state/run.log`.
 - Agent output is structured using sandcastle's parsed stream events
   (`text`, `tool_call`, `usage`, `session_id`), e.g.
   `tool_call: Bash "npm test"` as fields, not raw lines. A verbosity flag
@@ -461,7 +461,7 @@ Replaces `state/store.ts`'s direct file I/O at call sites.
 - Loaded only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; the core never
   imports `@opentelemetry/*`.
 - When enabled, `OTEL_*` env is forwarded into the sandbox so Claude Code's
-  own telemetry can nest under sdlc's spans (verify in spike).
+  own telemetry can nest under jig's spans (verify in spike).
 
 ### 17. Metrics
 
@@ -514,7 +514,7 @@ rounds · 412k tokens · $1.84 · 18 min"). Exported via OTel when enabled.
 6. Agent CLIs installed via npm at a pinned version in the generated layer run
    as the baked UID with a writable `$HOME`.
 7. Token usage and cost are obtainable for opencode.
-8. Forwarded `OTEL_*` env makes Claude Code emit spans under sdlc's trace.
+8. Forwarded `OTEL_*` env makes Claude Code emit spans under jig's trace.
 
 ### Spike findings
 
@@ -528,12 +528,12 @@ Run 2026-10-29, sandcastle 0.12.0, Docker 29.4, macOS, `spike/check-sandbox.ts`
 - **Symlinked repo paths break git.** With the repo under macOS `/var` (a
   symlink to `/private/var`), git records the worktree's real path in the
   `gitdir:` pointer while sandcastle mounts `.git` at the path it was given:
-  every git command fails with "not a git repository". Fix in sdlc:
+  every git command fails with "not a git repository". Fix in jig:
   `realpath(repoRoot)` before `createSandbox`. Worth reporting upstream.
   Not macOS-specific: reproduced on Linux by opening the repo through a
   symlink, and fixed there by the same `realpath`.
 - **Linux (GitHub Actions `ubuntu-latest`, UID 1001,
-  [run 40900851055](https://github.com/ygrishajev/sdlc/actions/runs/40900851055))** —
+  [run 40900851055](https://github.com/ygrishajev/jig/actions/runs/40900851055))** —
   15/15, same as macOS: direct path passes all checks, symlinked path
   reproduces the git failure, resolved symlink passes.
 - **#2 confirmed** — `docker({ env })` reaches the container; agent-level
@@ -550,7 +550,7 @@ Agent calls (`spike/check-agents.ts`, `spike/check-usage.ts`; claude via
   `auth.json`.
 - **#4 resolved** — `result.stdout` is the parsed assistant text for both
   agents, not raw JSON events. A plain-text search for the last
-  `<sdlc-output>` tag works for both.
+  `<jig-output>` tag works for both.
 - **#5 passes** — wrapping the factory to append `--continue` resumes the
   previous session for both agents (verified with a random number a fresh
   session could not guess).
@@ -585,14 +585,14 @@ adapter: `withArgs(agent, '--continue')` for retries and
 5. ✅ Structured output as a tagged reply; one correction via `--continue`.
 6. ✅ Verify and planning inside the sandbox; `setupCommand`; idle timeout.
 7. ✅ Image build (generated agent layer, label and version checks, gha
-   cache flag); `sdlc init` and `sdlc build`.
+   cache flag); `jig init` and `jig build`.
 8. ✅ Metrics observer; `git-remote` and custom run stores; OTel adapter.
-9. Cleanup: ✅ README and architecture map (`docs/sdlc Architecture Map.html`);
+9. Cleanup: ✅ README and architecture map (`docs/jig Architecture Map.html`);
    ✅ `docker/agent-sandbox/`, its publish job and `docker:build` removed;
-   ✅ firefly's workflow moved to `sdlc run`, `OPENROUTER_API_KEY`, the
-   `status`/`phase` result fields and `SDLC_IMAGE_CACHE=gha`, with a
+   ✅ firefly's workflow moved to `jig run`, `OPENROUTER_API_KEY`, the
+   `status`/`phase` result fields and `JIG_IMAGE_CACHE=gha`, with a
    generated `.sandcastle/Dockerfile` (branch
-   `chore/sdlc-switch-to-sandcastle-run` in firefly).
+   `chore/jig-switch-to-sandcastle-run` in firefly).
    Open: the gha cache has not run in real CI yet; firefly's first run is
    the test.
 

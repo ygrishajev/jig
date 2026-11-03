@@ -3,5 +3,5 @@ coverage/
 reports/
 .stryker-tmp/
 node_modules/
-.sdlc/
+.jig/
 docs/*.html

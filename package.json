@@ -1,5 +1,5 @@
 {
-  "name": "@ygrishajev/sdlc",
+  "name": "@ygrishajev/jig",
   "version": "0.1.19",
   "description": "Agentic SDLC pipeline orchestrator",
   "type": "module",
@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "bin": {
-    "sdlc": "./dist/cli/main.js"
+    "jig": "./dist/cli/main.js"
   },
   "main": "./dist/cli/main.js",
   "files": [
@@ -15,7 +15,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ygrishajev/sdlc.git"
+    "url": "git+https://github.com/ygrishajev/jig.git"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

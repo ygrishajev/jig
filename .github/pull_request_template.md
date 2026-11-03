@@ -1,6 +1,6 @@
 ## What
 
-<!-- The result, in plain words: what someone running sdlc can do or see now. No code, paths or technical terms. -->
+<!-- The result, in plain words: what someone running jig can do or see now. No code, paths or technical terms. -->
 
 ## Why
 

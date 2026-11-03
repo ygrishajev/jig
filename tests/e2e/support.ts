@@ -19,22 +19,16 @@ const codexLoginSchema = z.object({
 export function e2eAgents(environment: NodeJS.ProcessEnv) {
   const agents: AgentChoice[] = [];
   if (environment.CLAUDE_CODE_OAUTH_TOKEN || environment.ANTHROPIC_API_KEY) {
-    agents.push({ provider: 'claude', model: environment.SDLC_E2E_CLAUDE_MODEL ?? 'haiku' });
+    agents.push({ provider: 'claude', model: environment.JIG_E2E_CLAUDE_MODEL ?? 'haiku' });
   }
   if (environment.OPENROUTER_API_KEY) {
-    const model = environment.SDLC_E2E_OPENROUTER_MODEL ?? environment.OPENCODE_MODEL;
-    assert(
-      model?.startsWith('openrouter/'),
-      'Set SDLC_E2E_OPENROUTER_MODEL to openrouter/<model>.',
-    );
+    const model = environment.JIG_E2E_OPENROUTER_MODEL ?? environment.OPENCODE_MODEL;
+    assert(model?.startsWith('openrouter/'), 'Set JIG_E2E_OPENROUTER_MODEL to openrouter/<model>.');
     agents.push({ provider: 'opencode', model });
   }
-  if (environment.SDLC_CODEX_AUTH_DIR) {
-    assert(
-      environment.SDLC_E2E_CODEX_MODEL,
-      'Set SDLC_E2E_CODEX_MODEL for the Codex subscription.',
-    );
-    agents.push({ provider: 'codex', model: environment.SDLC_E2E_CODEX_MODEL });
+  if (environment.JIG_CODEX_AUTH_DIR) {
+    assert(environment.JIG_E2E_CODEX_MODEL, 'Set JIG_E2E_CODEX_MODEL for the Codex subscription.');
+    agents.push({ provider: 'codex', model: environment.JIG_E2E_CODEX_MODEL });
   }
   assert(agents.length, 'Provide a Claude, OpenRouter, or Codex subscription credential.');
   let index = 0;
@@ -42,16 +36,16 @@ export function e2eAgents(environment: NodeJS.ProcessEnv) {
 }
 
 /**
- * Points `SDLC_CODEX_AUTH_DIR` at the operator's own Codex login (`$CODEX_HOME` or `~/.codex`)
+ * Points `JIG_CODEX_AUTH_DIR` at the operator's own Codex login (`$CODEX_HOME` or `~/.codex`)
  * when none is set and that login is a complete subscription one, so Codex joins the agents
  * without extra setup.
  */
 export async function withCodexSubscription(environment: NodeJS.ProcessEnv) {
-  if (environment.SDLC_CODEX_AUTH_DIR) return environment;
+  if (environment.JIG_CODEX_AUTH_DIR) return environment;
   const home = environment.CODEX_HOME || path.join(homedir(), '.codex');
   const login = await readCodexLogin(home);
   return codexLoginSchema.safeParse(login).success
-    ? { ...environment, SDLC_CODEX_AUTH_DIR: home }
+    ? { ...environment, JIG_CODEX_AUTH_DIR: home }
     : environment;
 }
 

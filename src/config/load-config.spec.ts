@@ -72,7 +72,7 @@ describe('loadConfig', () => {
   });
 
   async function setup(contents?: Record<string, unknown>) {
-    const repoRoot = await tempDirectory('sdlc-config-');
+    const repoRoot = await tempDirectory('jig-config-');
     if (contents) await writeFile(path.join(repoRoot, CONFIG_FILE), JSON.stringify(contents));
     return repoRoot;
   }

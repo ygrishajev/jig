@@ -14,7 +14,7 @@ export const implementSlice: SliceStep = async ({ state, slice, ports }) => {
   const { workspace } = ports;
   const attemptStart = await workspace.headCommit();
   await ports.agent.run({ role: 'implementer', prompt: implementPrompt(slice) });
-  await workspace.commitAll(`sdlc: implement ${slice.id} — ${slice.title}`);
+  await workspace.commitAll(`jig: implement ${slice.id} — ${slice.title}`);
   if ((await workspace.headCommit()) === (await sliceStart(state, slice, ports))) {
     return { type: 'changesRequested', feedback: nothingChangedFeedback(slice) };
   }

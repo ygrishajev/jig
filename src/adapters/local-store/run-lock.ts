@@ -26,7 +26,7 @@ export async function lockRun(repoRoot: string, runId: RunId): Promise<() => Pro
     });
   } catch (error) {
     if (isHeldElsewhere(error)) {
-      throw new RunInProgress(`Run "${runId}" is already running in another sdlc process.`);
+      throw new RunInProgress(`Run "${runId}" is already running in another jig process.`);
     }
     throw error;
   }

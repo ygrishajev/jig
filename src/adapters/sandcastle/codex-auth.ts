@@ -34,7 +34,7 @@ export async function openCodexAuthCache(sourceDirectory: string): Promise<Codex
   try {
     const original = await readFile(source, 'utf8');
     validateSubscription(original);
-    directory = await mkdtemp(path.join(tmpdir(), 'sdlc-codex-auth-'));
+    directory = await mkdtemp(path.join(tmpdir(), 'jig-codex-auth-'));
     await writeFileAtomic(path.join(directory, 'auth.json'), original, { mode: 0o600 });
     const cache = directory;
     return { directory: cache, close: () => persistAndRelease(source, original, cache, release) };

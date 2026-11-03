@@ -3,7 +3,7 @@ import path from 'node:path';
 
 /**
  * The variables sandcastle injects into every sandbox from `.sandcastle/.env`, beside the
- * credentials sdlc passes: each key in the file, valued from the file or else the host's
+ * credentials jig passes: each key in the file, valued from the file or else the host's
  * environment. Only the names are read, so they can be reported without the values.
  */
 export async function sandcastleEnvKeys(repoRoot: string) {

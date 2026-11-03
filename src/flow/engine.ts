@@ -1,7 +1,7 @@
 import pRetry from 'p-retry';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { messageOf, SdlcError } from '../domain/errors.js';
+import { JigError, messageOf } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome, OutcomeType } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
@@ -48,7 +48,7 @@ const MAX_PASSES = 1000;
 type Attempt = { outcome: Outcome } | { blockedReason: string };
 
 /** The flow cycles without ever finishing, halting or blocking: a bug in the flow, not the run. */
-export class FlowDoesNotSettle extends SdlcError {
+export class FlowDoesNotSettle extends JigError {
   readonly kind = 'fatal';
 
   constructor(readonly runId: RunId) {
@@ -57,7 +57,7 @@ export class FlowDoesNotSettle extends SdlcError {
 }
 
 /** The flow leaves an outcome a step can return with nowhere to go: a bug in the flow, not the run. */
-export class FlowHasNoTransition extends SdlcError {
+export class FlowHasNoTransition extends JigError {
   readonly kind = 'fatal';
 
   constructor(readonly outcome: OutcomeType) {
@@ -219,7 +219,7 @@ class Engine {
       });
       return { outcome };
     } catch (error) {
-      if (!(error instanceof SdlcError) || error.kind === 'fatal') throw error;
+      if (!(error instanceof JigError) || error.kind === 'fatal') throw error;
       return { blockedReason: error.message };
     }
   }
@@ -279,5 +279,5 @@ class Engine {
 }
 
 function isTransient(error: unknown) {
-  return error instanceof SdlcError && error.kind === 'retry';
+  return error instanceof JigError && error.kind === 'retry';
 }

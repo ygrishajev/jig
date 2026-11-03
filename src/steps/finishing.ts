@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { SdlcError } from '../domain/errors.js';
+import { JigError } from '../domain/errors.js';
 import type { RunStateIn } from '../domain/run-state.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
 import { pullRequestPrompt } from '../prompts/pull-request.js';
@@ -61,7 +61,7 @@ async function fillTemplate(
     });
     return body.trim();
   } catch (error) {
-    if (error instanceof SdlcError && error.kind !== 'fatal') return undefined;
+    if (error instanceof JigError && error.kind !== 'fatal') return undefined;
     throw error;
   }
 }

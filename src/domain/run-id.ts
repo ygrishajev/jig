@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { RunRequestInvalid } from './errors.js';
 
 /**
- * A run id becomes a `.sdlc/<runId>` directory, a `sdlc/run/<runId>` branch and a
- * `refs/sdlc/<runId>` ref, so only lowercase letters, digits and hyphens get through.
+ * A run id becomes a `.jig/<runId>` directory, a `jig/run/<runId>` branch and a
+ * `refs/jig/<runId>` ref, so only lowercase letters, digits and hyphens get through.
  */
 export const runIdSchema = z
   .string()

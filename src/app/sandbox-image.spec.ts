@@ -136,7 +136,7 @@ describe('ensureSandboxImage', () => {
     latest?: () => string;
     agentUpdates?: AgentUpdatePolicy;
   }) {
-    const repoRoot = await tempDirectory('sdlc-image-');
+    const repoRoot = await tempDirectory('jig-image-');
     const writeDockerfile = async (contents: string) => {
       await mkdir(path.join(repoRoot, SANDBOX_DIRECTORY), { recursive: true });
       await writeFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), contents);

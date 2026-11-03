@@ -23,9 +23,9 @@ import {
   type SandcastleSessionOptions,
 } from '../adapters/sandcastle/sandcastle-session.js';
 import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
-import { configuredSteps, loadConfig, type SdlcConfig } from '../config/load-config.js';
+import { configuredSteps, type JigConfig, loadConfig } from '../config/load-config.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
-import { SdlcError } from '../domain/errors.js';
+import { JigError } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
@@ -67,11 +67,11 @@ export interface OpenSessionInput {
 /** Lives for the whole process: configuration and everything shared by every run. */
 export interface AppCradle {
   repoRoot: string;
-  /** The process environment, read once by the CLI; sdlc's code reads variables only from here. */
+  /** The process environment, read once by the CLI; jig's code reads variables only from here. */
   environment: NodeJS.ProcessEnv;
   logFormat: LogFormat;
   logLevel: string;
-  config: SdlcConfig;
+  config: JigConfig;
   settings: RunSettings;
   logger: Logger;
   clock: Clock;
@@ -118,7 +118,7 @@ export function createAppContainer(input: {
     images: asFunction(
       ({ logger, environment }: AppCradle) =>
         new DockerImages({
-          cache: environment.SDLC_IMAGE_CACHE === 'gha' ? 'gha' : undefined,
+          cache: environment.JIG_IMAGE_CACHE === 'gha' ? 'gha' : undefined,
           onOutput: (line) => logger.debug(line.trimEnd()),
         }),
     ).singleton(),
@@ -193,7 +193,7 @@ function openSessionRetrying({ openSession, run, events, settings, runLogger }: 
   return pRetry(() => openSession({ run, events }), {
     retries: settings.maxStepRetries,
     minTimeout: settings.retryDelayMs,
-    shouldRetry: ({ error }) => error instanceof SdlcError && error.kind === 'retry',
+    shouldRetry: ({ error }) => error instanceof JigError && error.kind === 'retry',
     onFailedAttempt: ({ error, attemptNumber }) =>
       runLogger.warn({ err: error, attempt: attemptNumber }, 'the sandbox did not start'),
   });
@@ -218,7 +218,7 @@ function sandcastleOpener({
     const injected = await sandcastleEnvKeys(repoRoot);
     if (injected.length > 0) {
       logger.warn(
-        `.sandcastle/.env also puts ${injected.join(', ')} into the sandbox — sdlc passes credentials from the environment; remove the file unless the agents need these`,
+        `.sandcastle/.env also puts ${injected.join(', ')} into the sandbox — jig passes credentials from the environment; remove the file unless the agents need these`,
       );
     }
     return SandcastleSession.open(sandcastleSessionOptions(repoRoot, config, input, environment));
@@ -228,7 +228,7 @@ function sandcastleOpener({
 /** What the run's sandbox is started with: the configured agents, their credentials and limits. */
 export function sandcastleSessionOptions(
   repoRoot: string,
-  config: SdlcConfig,
+  config: JigConfig,
   { run, events, setupCommand }: OpenSessionInput,
   environment: NodeJS.ProcessEnv,
 ): SandcastleSessionOptions {
@@ -238,7 +238,7 @@ export function sandcastleSessionOptions(
     ...run,
     imageName: sandboxImageName(repoRoot, config),
     codexAuthDirectory: Object.values(steps).some((step) => step.provider === 'codex')
-      ? environment.SDLC_CODEX_AUTH_DIR
+      ? environment.JIG_CODEX_AUTH_DIR
       : undefined,
     credentials: {
       ...collectCredentials(Object.values(steps), environment),
@@ -258,7 +258,7 @@ function agentsFor(steps: ReturnType<typeof configuredSteps>): Record<AgentRole,
   return byRole((role) => AGENTS[steps[role].provider].create(steps[role].model));
 }
 
-function settingsFrom(config: SdlcConfig): RunSettings {
+function settingsFrom(config: JigConfig): RunSettings {
   return {
     reviewCycleCap: config.reviewCycleCap,
     maxStepRetries: MAX_STEP_RETRIES,

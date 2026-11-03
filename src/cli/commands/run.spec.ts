@@ -17,7 +17,7 @@ describe('nextStep', () => {
 
     const step = nextStep({ state, status: 'halted' });
 
-    expect(step).toContain(`sdlc run --id ${state.runId}`);
+    expect(step).toContain(`jig run --id ${state.runId}`);
     expect(step).not.toContain(runBranchFor(state.runId));
   });
 
@@ -27,7 +27,7 @@ describe('nextStep', () => {
     const step = nextStep({ state, status: 'halted' });
 
     expect(step).toContain(runBranchFor(state.runId));
-    expect(step).toContain(`sdlc run --id ${state.runId}`);
+    expect(step).toContain(`jig run --id ${state.runId}`);
   });
 
   it('gives the reason a blocked run stopped and how to resume it', () => {
@@ -37,7 +37,7 @@ describe('nextStep', () => {
     const step = nextStep({ state, status: 'blocked', reason });
 
     expect(step).toContain(reason);
-    expect(step).toContain(`sdlc run --id ${state.runId}`);
+    expect(step).toContain(`jig run --id ${state.runId}`);
   });
 
   it('names the stuck slice and its branch, and points to status rather than a resume', () => {
@@ -48,7 +48,7 @@ describe('nextStep', () => {
 
     expect(step).toContain(stuck.id);
     expect(step).toContain(runBranchFor(state.runId));
-    expect(step).toContain(`sdlc status ${state.runId}`);
-    expect(step).not.toContain('sdlc run --id');
+    expect(step).toContain(`jig status ${state.runId}`);
+    expect(step).not.toContain('jig run --id');
   });
 });

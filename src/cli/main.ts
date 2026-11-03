@@ -12,7 +12,7 @@ const packageManifestSchema = z.object({ version: z.string() });
 
 export function buildCli() {
   const program = new Command();
-  program.name('sdlc').description('Agentic SDLC pipeline orchestrator').version(packageVersion());
+  program.name('jig').description('Agentic SDLC pipeline orchestrator').version(packageVersion());
   registerSandboxCommands(program);
   registerRunCommand(program);
   registerStatusCommand(program);

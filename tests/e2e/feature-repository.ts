@@ -29,16 +29,16 @@ const metricSchema = z.object({ kind: z.string(), outcome: z.string().optional()
 
 /**
  * A fresh git repository on `main` holding the feature fixture — an unimplemented
- * `summary.mjs` and the tests it fails — plus the sandbox recipe and an sdlc config that
+ * `summary.mjs` and the tests it fails — plus the sandbox recipe and an jig config that
  * runs unattended with the given agents.
  */
 export async function createFeatureRepository(agents: Record<AgentRole, AgentChoice>) {
-  const repo = await realpath(await mkdtemp(path.join(tmpdir(), 'sdlc-feature-e2e-')));
+  const repo = await realpath(await mkdtemp(path.join(tmpdir(), 'jig-feature-e2e-')));
   await copyFixture(repo);
   await writeSandboxRecipe(repo);
-  await writeFile(path.join(repo, '.gitignore'), '.sdlc/\n');
+  await writeFile(path.join(repo, '.gitignore'), '.jig/\n');
   await writeJson(repo, 'package.json', { name: 'feature-e2e', private: true, type: 'module' });
-  await writeJson(repo, 'sdlc.config.json', {
+  await writeJson(repo, 'jig.config.json', {
     ...agents,
     mergeMode: 'auto',
     designGate: 'auto',
@@ -76,9 +76,9 @@ export function runFeatureTests(repo: string, image: string, cancelSignal: Abort
   );
 }
 
-/** What a run left under `.sdlc/<runId>/state/`: its result, saved state, documents and the step outcomes it recorded. */
+/** What a run left under `.jig/<runId>/state/`: its result, saved state, documents and the step outcomes it recorded. */
 export async function readRunRecord(repo: string, runId: string) {
-  const directory = path.join(repo, '.sdlc', runId, 'state');
+  const directory = path.join(repo, '.jig', runId, 'state');
   const read = (name: string) => readFile(path.join(directory, name), 'utf8');
   return {
     result: resultSchema.parse(JSON.parse(await read('result.json'))),
@@ -116,7 +116,7 @@ function writeJson(repo: string, name: string, content: object) {
 async function commitEverything(repo: string) {
   const git = simpleGit(repo);
   await git.init(['--initial-branch=main']);
-  await git.addConfig('user.name', 'sdlc e2e');
+  await git.addConfig('user.name', 'jig e2e');
   await git.addConfig('user.email', 'e2e@example.invalid');
   await git.addConfig('commit.gpgsign', 'false');
   await git.add('.');

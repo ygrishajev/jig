@@ -1,4 +1,4 @@
-# sdlc — house rules
+# jig — house rules
 
 An agentic SDLC orchestrator: a CLI that turns a markdown request into planned slices, has an agent
 implement and another review each one inside a sandbox, and lands them on one run branch.
@@ -21,7 +21,7 @@ change — they are rules, not suggestions, and they override your defaults.
 - [`.claude/instructions/commit-and-pr-conventions.md`](.claude/instructions/commit-and-pr-conventions.md)
   — committing, naming a branch, opening a PR
 - [`.claude/instructions/writing-requests-for-agents.md`](.claude/instructions/writing-requests-for-agents.md)
-  — writing a request file, a GitHub issue, or a prompt sdlc sends — the text is an agent's entire input
+  — writing a request file, a GitHub issue, or a prompt jig sends — the text is an agent's entire input
 
 ## Use the library, don't rebuild it
 
@@ -37,12 +37,12 @@ pino, zod, simple-git, execa, commander.
 - **Agents run unattended only inside the sandbox.** Every agent call uses
   `--dangerously-skip-permissions`, for claude and opencode alike. Never wire an agent call that
   runs on the host, and never add a code path that does so "just for local dev".
-- **sdlc runs against other people's repos.** Its scratch in a target repo (`.sdlc/`, and
+- **jig runs against other people's repos.** Its scratch in a target repo (`.jig/`, and
   `.sandcastle/` worktrees, logs and `.env`) must ignore itself, and nothing may touch the target's
   tracked files outside the run's worktree — a dirty operator tree blocks the final merge. The one
-  exception is `sdlc init`, which writes `.sandcastle/Dockerfile` and `sdlc.config.json` for the
+  exception is `jig init`, which writes `.sandcastle/Dockerfile` and `jig.config.json` for the
   operator to review and commit.
-- **Credentials never land in a file sdlc writes, a log line, or the image.** They come from the
+- **Credentials never land in a file jig writes, a log line, or the image.** They come from the
   environment and go into the container as env vars. `spike/.env` is git-ignored; keep it that way.
 - **Tags publish.** Pushing a `v*.*.*` tag runs `.github/workflows/publish.yml`, which publishes
   the package to GitHub Packages. Bump the version in a commit first; never push a tag casually.

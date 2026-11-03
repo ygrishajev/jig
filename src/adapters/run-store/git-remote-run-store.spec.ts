@@ -30,8 +30,8 @@ describe('GitRemoteRunStore', () => {
     expect(await simpleGit({ baseDir: elsewhere }).revparse([runBranchFor(state.runId)])).toBe(
       branchHead,
     );
-    expect(await refsUnder(origin, 'refs/sdlc')).toEqual([`refs/sdlc/${state.runId}`]);
-    expect(await refsUnder(origin, 'refs/heads')).not.toContain(`refs/heads/sdlc/${state.runId}`);
+    expect(await refsUnder(origin, 'refs/jig')).toEqual([`refs/jig/${state.runId}`]);
+    expect(await refsUnder(origin, 'refs/heads')).not.toContain(`refs/heads/jig/${state.runId}`);
   });
 
   it('keeps every save as history and loads the latest', async () => {
@@ -48,11 +48,11 @@ describe('GitRemoteRunStore', () => {
     const history = await simpleGit({ baseDir: here }).raw([
       'log',
       '--format=%s',
-      `refs/sdlc/${first.runId}`,
+      `refs/jig/${first.runId}`,
     ]);
     expect(history.trim().split('\n')).toEqual([
-      `sdlc run ${first.runId}: designing`,
-      `sdlc run ${first.runId}: planning`,
+      `jig run ${first.runId}: designing`,
+      `jig run ${first.runId}: planning`,
     ]);
   });
 
@@ -168,7 +168,7 @@ describe('GitRemoteRunStore', () => {
   async function setup() {
     const { origin, cloneOf } = await createRemote();
     const checkOutInWorktree = async (repo: string, branch: string) => {
-      const directory = await tempDirectory('sdlc-worktree-');
+      const directory = await tempDirectory('jig-worktree-');
       await simpleGit({ baseDir: repo }).raw(['worktree', 'add', directory, branch]);
       return directory;
     };

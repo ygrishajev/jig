@@ -237,7 +237,7 @@ describe('SandcastleSession', () => {
     execFails?: Error;
     replies?: Reply[];
   }) {
-    const repoRoot = await tempDirectory('sdlc-session-');
+    const repoRoot = await tempDirectory('jig-session-');
     const id = runId();
     const events = new RecordingEventSink();
     const replies = [...(input.replies ?? [])];

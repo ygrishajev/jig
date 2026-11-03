@@ -58,7 +58,7 @@ function resultFor(state: RunState, status: string, metrics: MetricsSummary) {
 
 function pullRequestDescription(state: RunState, metrics: MetricsSummary) {
   if (state.prDescription === undefined) return undefined;
-  const footer = `<sub>sdlc run ${state.runId}: ${formatSummary(metrics)}</sub>`;
+  const footer = `<sub>jig run ${state.runId}: ${formatSummary(metrics)}</sub>`;
   return `${state.prDescription}\n\n---\n${footer}\n`;
 }
 

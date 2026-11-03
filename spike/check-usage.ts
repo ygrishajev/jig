@@ -8,8 +8,8 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const IMAGE = 'sdlc-spike';
-const TAG = 'sdlc-output';
+const IMAGE = 'jig-spike';
+const TAG = 'jig-output';
 
 const env: Record<string, string> = {};
 for (const line of readFileSync(path.join(import.meta.dirname, '.env'), 'utf-8').split('\n')) {
@@ -20,7 +20,7 @@ const credentialEnv = Object.fromEntries(
   ['CLAUDE_CODE_OAUTH_TOKEN', 'OPENROUTER_API_KEY'].filter((k) => env[k]).map((k) => [k, env[k]!]),
 );
 
-// The two wrappers sdlc would own: extra CLI args, and a raw-line tap.
+// The two wrappers jig would own: extra CLI args, and a raw-line tap.
 const withArgs = (agent: AgentProvider, extra: string): AgentProvider => ({
   ...agent,
   buildPrintCommand: (options) => {
@@ -77,7 +77,7 @@ function usageFromRaw(lines: string[]): unknown[] {
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
-const repo = realpathSync(mkdtempSync(path.join(tmpdir(), 'sdlc-spike-usage-')));
+const repo = realpathSync(mkdtempSync(path.join(tmpdir(), 'jig-spike-usage-')));
 git(repo, 'init', '-q', '-b', 'main');
 git(repo, 'config', 'user.email', 'spike@example.com');
 git(repo, 'config', 'user.name', 'spike');
@@ -93,7 +93,7 @@ const agents: [string, () => AgentProvider][] = [
 ];
 
 const sandbox = await createSandbox({
-  branch: 'sdlc/run/spike-usage',
+  branch: 'jig/run/spike-usage',
   baseBranch: 'main',
   cwd: repo,
   sandbox: docker({ imageName: IMAGE, env: credentialEnv }),

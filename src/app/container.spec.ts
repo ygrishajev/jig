@@ -6,7 +6,7 @@ import { runId } from '../../tests/support/builders.js';
 import { RecordingEventSink } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
-import { loadConfig, type SdlcConfig } from '../config/load-config.js';
+import { type JigConfig, loadConfig } from '../config/load-config.js';
 import {
   createAppContainer,
   type OpenSessionInput,
@@ -74,8 +74,8 @@ describe('sandcastleSessionOptions', () => {
     );
   });
 
-  async function setup(input: { config?: Partial<SdlcConfig>; environment?: NodeJS.ProcessEnv }) {
-    const repoRoot = await tempDirectory('sdlc-container-');
+  async function setup(input: { config?: Partial<JigConfig>; environment?: NodeJS.ProcessEnv }) {
+    const repoRoot = await tempDirectory('jig-container-');
     const config = { ...loadConfig(repoRoot), ...input.config };
     const environment = input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) };
     const options = (overrides: Partial<OpenSessionInput> = {}) =>
@@ -95,7 +95,7 @@ describe('sandcastleSessionOptions', () => {
 
 describe('createAppContainer', () => {
   it('derives the run settings from the config', async () => {
-    const repoRoot = await tempDirectory('sdlc-container-');
+    const repoRoot = await tempDirectory('jig-container-');
     const app = createAppContainer({
       repoRoot,
       logFormat: 'json',

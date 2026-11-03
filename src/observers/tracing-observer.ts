@@ -24,12 +24,12 @@ export class TracingObserver {
         return this.endStep();
       case 'stepRetried':
         this.runSpan?.addEvent('retry', {
-          'sdlc.retry.attempt': event.attempt,
-          'sdlc.retry.reason': event.reason,
+          'jig.retry.attempt': event.attempt,
+          'jig.retry.reason': event.reason,
         });
         return;
       case 'stepFinished':
-        this.stepSpan?.setAttribute('sdlc.outcome', event.outcome.type);
+        this.stepSpan?.setAttribute('jig.outcome', event.outcome.type);
         return this.endStep();
       default:
         return this.handleRunLifecycle(event);
@@ -39,8 +39,8 @@ export class TracingObserver {
   private handleRunLifecycle(event: RunEvent) {
     switch (event.type) {
       case 'runResumed':
-        this.runSpan = this.tracer.startSpan('sdlc.run', {
-          attributes: { 'sdlc.run_id': event.runId, 'sdlc.phase.start': event.phase },
+        this.runSpan = this.tracer.startSpan('jig.run', {
+          attributes: { 'jig.run_id': event.runId, 'jig.phase.start': event.phase },
         });
         return;
       case 'runBlocked':
@@ -66,10 +66,10 @@ export class TracingObserver {
       'gen_ai.agent.name': event.role,
       'gen_ai.usage.input_tokens': event.tokens.input,
       'gen_ai.usage.output_tokens': event.tokens.output,
-      'sdlc.usage.cache_read_tokens': event.tokens.cacheRead,
-      'sdlc.usage.cache_write_tokens': event.tokens.cacheWrite,
-      'sdlc.usage.reasoning_tokens': event.tokens.reasoning,
-      ...(event.costUsd !== undefined ? { 'sdlc.usage.cost_usd': event.costUsd } : {}),
+      'jig.usage.cache_read_tokens': event.tokens.cacheRead,
+      'jig.usage.cache_write_tokens': event.tokens.cacheWrite,
+      'jig.usage.reasoning_tokens': event.tokens.reasoning,
+      ...(event.costUsd !== undefined ? { 'jig.usage.cost_usd': event.costUsd } : {}),
     });
   }
 
@@ -79,21 +79,21 @@ export class TracingObserver {
   }
 
   private endRun(phase: string) {
-    this.runSpan?.setAttribute('sdlc.phase.end', phase);
+    this.runSpan?.setAttribute('jig.phase.end', phase);
     this.runSpan?.end();
     this.runSpan = undefined;
   }
 }
 
 function stepName(at: StepLocation) {
-  return at.sliceId !== undefined ? `sdlc.step ${at.sliceStatus}` : `sdlc.step ${at.phase}`;
+  return at.sliceId !== undefined ? `jig.step ${at.sliceStatus}` : `jig.step ${at.phase}`;
 }
 
 function locationAttributes(at: StepLocation) {
   return {
-    'sdlc.phase': at.phase,
+    'jig.phase': at.phase,
     ...(at.sliceId !== undefined
-      ? { 'sdlc.slice.id': at.sliceId, 'sdlc.slice.status': at.sliceStatus }
+      ? { 'jig.slice.id': at.sliceId, 'jig.slice.status': at.sliceStatus }
       : {}),
   };
 }

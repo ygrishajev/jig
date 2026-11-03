@@ -4,7 +4,7 @@
 
 **Goal:** Build the v1 CLI orchestrator that turns a markdown request into reviewed, merge-ready commits via a reconciler-driven pipeline (prepare → implement → review → merge), wrapping an agentic coding CLI as a pluggable provider.
 
-**Architecture:** A reconciler core reads persisted run state (context, plan, ordered slices) plus real git state, decides the next actionable step for the current slice, and executes it through swappable strategies (input source, agent provider, merge mode). State is plain gitignored JSON on local disk (`.sdlc/<runId>/state/`); slice implementation happens in a dedicated git worktree, one branch at a time (v1 is sequential — no parallel slices, no conflict preflight/auto-resolve — see Global Constraints).
+**Architecture:** A reconciler core reads persisted run state (context, plan, ordered slices) plus real git state, decides the next actionable step for the current slice, and executes it through swappable strategies (input source, agent provider, merge mode). State is plain gitignored JSON on local disk (`.jig/<runId>/state/`); slice implementation happens in a dedicated git worktree, one branch at a time (v1 is sequential — no parallel slices, no conflict preflight/auto-resolve — see Global Constraints).
 
 **Tech Stack:** TypeScript (strict, ESM, Node >=20), commander (CLI), simple-git (git operations), zod (state/config validation), execa (subprocess spawning for the real agent provider), Vitest (tests), ESLint + Prettier, StrykerJS (mutation testing), secretlint.
 
@@ -15,12 +15,12 @@
 - Node >=20, TypeScript strict mode, ESM (`"type": "module"`), npm as package manager.
 - ESLint and Prettier must both be clean; this is an acceptance bar, not advisory.
 - No `gh` dependency anywhere in v1. No `gh-issue.ts` / `gh.ts` stub files — the strategy interfaces are designed so adding them later doesn't require touching existing code, but v1 does not ship placeholder files for unimplemented strategies.
-- `sdlc.config.json` only in v1 (no `.ts`/`.js` config loading — avoids needing a runtime TS loader for config alone).
-- **State is plain local JSON, not git-backed.** An earlier version of this plan stored run state on a dedicated git branch checked out in its own worktree, for cross-machine durability. That was cut: it was the buggiest mechanism in review (an untracked nested worktree registers as a dirty embedded repo in the primary checkout, breaking every "is the working tree clean" check used by merge), and its payoff only matters for a future multi-machine "software factory," not a working v1. State now lives at `.sdlc/<runId>/state/*.json`, plain files, gitignored. Crash recovery still works (`resume` reads it back off local disk); only "survives a wiped local disk" is lost, which nothing else in v1 promised either.
-- `.sdlc/` (all run state and workspace worktrees) and `.sdlc-step-output.json` (the agent-provider structured-output convention, written into whatever `cwd` a provider runs in) must both be listed in the repo's `.gitignore` — added in Task 1. Neither may ever be picked up by `commitAll`.
-- **No conflict preflight and no `resolve-conflicts` step in v1.** An earlier version of this plan checked every slice for merge conflicts before acting and auto-resolved them via the agent, capped and retried. That was cut: in a sequential (non-parallel) pipeline, conflicts are rare — they only come from your own unrelated commits to main or time passing under manual-merge mode — and it was the second-buggiest area in review (ignored failure results, assumed worktree state that may not exist after a restart). `mergeBranchInto` (Task 4) throws a plain git error on a real conflict; you resolve it by hand in the workspace worktree and re-run `sdlc merge`, exactly like an ordinary local `git merge` conflict.
+- `jig.config.json` only in v1 (no `.ts`/`.js` config loading — avoids needing a runtime TS loader for config alone).
+- **State is plain local JSON, not git-backed.** An earlier version of this plan stored run state on a dedicated git branch checked out in its own worktree, for cross-machine durability. That was cut: it was the buggiest mechanism in review (an untracked nested worktree registers as a dirty embedded repo in the primary checkout, breaking every "is the working tree clean" check used by merge), and its payoff only matters for a future multi-machine "software factory," not a working v1. State now lives at `.jig/<runId>/state/*.json`, plain files, gitignored. Crash recovery still works (`resume` reads it back off local disk); only "survives a wiped local disk" is lost, which nothing else in v1 promised either.
+- `.jig/` (all run state and workspace worktrees) and `.jig-step-output.json` (the agent-provider structured-output convention, written into whatever `cwd` a provider runs in) must both be listed in the repo's `.gitignore` — added in Task 1. Neither may ever be picked up by `commitAll`.
+- **No conflict preflight and no `resolve-conflicts` step in v1.** An earlier version of this plan checked every slice for merge conflicts before acting and auto-resolved them via the agent, capped and retried. That was cut: in a sequential (non-parallel) pipeline, conflicts are rare — they only come from your own unrelated commits to main or time passing under manual-merge mode — and it was the second-buggiest area in review (ignored failure results, assumed worktree state that may not exist after a restart). `mergeBranchInto` (Task 4) throws a plain git error on a real conflict; you resolve it by hand in the workspace worktree and re-run `jig merge`, exactly like an ordinary local `git merge` conflict.
 - **Known v1 limitation: a manually squash-merged slice is not reliably detected as merged.** "Is this slice done" is decided by checking whether the slice branch's commits are reachable from the base branch (`isBranchMergedInto`, Task 4). A regular merge or fast-forward is detected correctly; a squash-merge is not, because it produces a new commit rather than replaying the original ones. This mostly matters for a future `gh` integration (GitHub's default PR-merge button squashes); v1 has no `gh` dependency, so it's not the primary manual-merge path today, but the limitation is real and undocumented nowhere else — this is that documentation.
-- Slice implementation happens in a dedicated worktree at `.sdlc/<runId>/workspace/`, created lazily on first use (not during `prepare`), reused across all of a run's slices by checking out a new branch per slice.
+- Slice implementation happens in a dedicated worktree at `.jig/<runId>/workspace/`, created lazily on first use (not during `prepare`), reused across all of a run's slices by checking out a new branch per slice.
 - Naming: every exported name must be understandable without opening its definition — no `utils`/`helpers`/`manager`/`data` dumping-ground names.
 - File/module boundaries: one responsibility per file; split rather than grow a file that's taking on a second concern.
 - Declaration order within a file: usage before declaration, ordered by first use — not alphabetical.
@@ -45,11 +45,11 @@
 - Create: `src/cli/main.ts`
 - Test: `tests/cli/main.test.ts`
 - Modify: `index.js` (delete — superseded by `src/cli/main.ts`)
-- Modify: `.gitignore` (add `.sdlc/` and the structured-output filename)
+- Modify: `.gitignore` (add `.jig/` and the structured-output filename)
 
 **Interfaces:**
 
-- Produces: `sdlc` CLI binary entry point at `src/cli/main.ts` (extended by later tasks); npm scripts `build`, `lint`, `format`, `format:check`, `test`, `test:mutation`, `secretlint`, `dev`.
+- Produces: `jig` CLI binary entry point at `src/cli/main.ts` (extended by later tasks); npm scripts `build`, `lint`, `format`, `format:check`, `test`, `test:mutation`, `secretlint`, `dev`.
 
 - [ ] **Step 1: Remove the placeholder scaffold and gitignore run state/scratch output**
 
@@ -60,8 +60,8 @@ git rm index.js
 Append to `.gitignore` (it already has `.idea/` and `node_modules/` from an earlier commit):
 
 ```
-.sdlc/
-.sdlc-step-output.json
+.jig/
+.jig-step-output.json
 ```
 
 This matters from the very first task: without it, every run's local state and
@@ -74,12 +74,12 @@ to diagnose after the fact than to prevent now.
 
 ```json
 {
-  "name": "sdlc",
+  "name": "jig",
   "version": "0.1.0",
   "description": "Agentic SDLC pipeline orchestrator",
   "type": "module",
   "engines": { "node": ">=20" },
-  "bin": { "sdlc": "./dist/cli/main.js" },
+  "bin": { "jig": "./dist/cli/main.js" },
   "main": "./dist/cli/main.js",
   "private": true,
   "scripts": {
@@ -150,7 +150,7 @@ import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(js.configs.recommended, ...tseslint.configs.recommended, prettier, {
-  ignores: ['dist/**', 'node_modules/**', '.sdlc/**'],
+  ignores: ['dist/**', 'node_modules/**', '.jig/**'],
 });
 ```
 
@@ -172,7 +172,7 @@ export default tseslint.config(js.configs.recommended, ...tseslint.configs.recom
 ```
 dist/
 node_modules/
-.sdlc/
+.jig/
 ```
 
 - [ ] **Step 7: Write `vitest.config.ts`**
@@ -217,9 +217,9 @@ import { describe, expect, it } from 'vitest';
 import { buildCli } from '../../src/cli/main.js';
 
 describe('buildCli', () => {
-  it('exposes the sdlc program name', () => {
+  it('exposes the jig program name', () => {
     const program = buildCli();
-    expect(program.name()).toBe('sdlc');
+    expect(program.name()).toBe('jig');
   });
 });
 ```
@@ -238,7 +238,7 @@ import { Command } from 'commander';
 
 export function buildCli(): Command {
   const program = new Command();
-  program.name('sdlc').description('Agentic SDLC pipeline orchestrator').version('0.1.0');
+  program.name('jig').description('Agentic SDLC pipeline orchestrator').version('0.1.0');
   return program;
 }
 
@@ -296,7 +296,7 @@ export interface TempRepo {
 }
 
 export async function createTempRepo(): Promise<TempRepo> {
-  const dir = await mkdtemp(path.join(tmpdir(), 'sdlc-test-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'jig-test-'));
   const git = simpleGit({ baseDir: dir });
   await git.init(['--initial-branch=main']);
   await git.addConfig('user.email', 'test@example.com');
@@ -786,7 +786,7 @@ describe('state schemas', () => {
         description: 'Add the auth middleware that checks the session token.',
         order: 0,
         status: 'pending',
-        branch: 'sdlc/slice/run1/add-auth-middleware',
+        branch: 'jig/slice/run1/add-auth-middleware',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -928,7 +928,7 @@ git commit -m "feat: add run state schema and types"
 
 ### Task 6: State store
 
-v1 keeps run state as plain gitignored JSON files under `.sdlc/<runId>/state/`
+v1 keeps run state as plain gitignored JSON files under `.jig/<runId>/state/`
 — no dedicated git branch, no state worktree. That mechanism was cut (see
 Global Constraints): it was the single buggiest part of the original design
 (an untracked nested worktree showing up as a dirty embedded repo in the
@@ -966,8 +966,8 @@ export function getRunPaths(repoRoot: string, runId: string): RunPaths {
   return {
     runId,
     repoRoot,
-    stateDir: path.join(repoRoot, '.sdlc', runId, 'state'),
-    workspaceDir: path.join(repoRoot, '.sdlc', runId, 'workspace'),
+    stateDir: path.join(repoRoot, '.jig', runId, 'state'),
+    workspaceDir: path.join(repoRoot, '.jig', runId, 'workspace'),
   };
 }
 ```
@@ -1013,7 +1013,7 @@ describe('state store', () => {
         description: 'Does the first thing.',
         order: 0,
         status: 'pending',
-        branch: 'sdlc/slice/run2/s1',
+        branch: 'jig/slice/run2/s1',
         reviewCycles: 0,
         mergeAttempts: 0,
       },
@@ -1170,7 +1170,7 @@ git commit -m "feat: add local JSON run state store"
 
 **Interfaces:**
 
-- Produces: `SdlcConfig` type, `loadConfig(repoRoot): SdlcConfig`. `conflictResolveCap` has no reader in v1 (Task 13, its only consumer, was removed) — kept in the schema, reserved for when conflict-handling returns; do not remove it or repurpose it.
+- Produces: `JigConfig` type, `loadConfig(repoRoot): JigConfig`. `conflictResolveCap` has no reader in v1 (Task 13, its only consumer, was removed) — kept in the schema, reserved for when conflict-handling returns; do not remove it or repurpose it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1199,10 +1199,10 @@ describe('loadConfig', () => {
     expect(config.providerCommand).toBe('claude');
   });
 
-  it('merges values from sdlc.config.json over defaults', async () => {
+  it('merges values from jig.config.json over defaults', async () => {
     repo = await createTempRepo();
     await writeFile(
-      path.join(repo.dir, 'sdlc.config.json'),
+      path.join(repo.dir, 'jig.config.json'),
       JSON.stringify({ mergeMode: 'auto', verifyCommand: 'npm test' }),
     );
     const config = loadConfig(repo.dir);
@@ -1214,7 +1214,7 @@ describe('loadConfig', () => {
   it('throws on an invalid mergeMode value', async () => {
     repo = await createTempRepo();
     await writeFile(
-      path.join(repo.dir, 'sdlc.config.json'),
+      path.join(repo.dir, 'jig.config.json'),
       JSON.stringify({ mergeMode: 'sometimes' }),
     );
     expect(() => loadConfig(repo.dir)).toThrow();
@@ -1242,10 +1242,10 @@ const configSchema = z.object({
   inputSource: z.enum(['markdown-file']).default('markdown-file'),
   providerCommand: z.string().default('claude'),
 });
-export type SdlcConfig = z.infer<typeof configSchema>;
+export type JigConfig = z.infer<typeof configSchema>;
 
-export function loadConfig(repoRoot: string): SdlcConfig {
-  const configPath = path.join(repoRoot, 'sdlc.config.json');
+export function loadConfig(repoRoot: string): JigConfig {
+  const configPath = path.join(repoRoot, 'jig.config.json');
   if (!existsSync(configPath)) return configSchema.parse({});
   return configSchema.parse(JSON.parse(readFileSync(configPath, 'utf-8')));
 }
@@ -1261,7 +1261,7 @@ Expected: PASS
 ```bash
 npm run lint
 git add -A
-git commit -m "feat: add sdlc.config.json loader"
+git commit -m "feat: add jig.config.json loader"
 ```
 
 ---
@@ -1337,11 +1337,11 @@ afterEach(async () => {
 
 describe('structured output helper', () => {
   it('builds an instruction that names the expected file', () => {
-    expect(structuredOutputInstruction()).toContain('.sdlc-step-output.json');
+    expect(structuredOutputInstruction()).toContain('.jig-step-output.json');
   });
 
   it('reads and validates the file the provider wrote', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-output-'));
+    dir = await mkdtemp(path.join(tmpdir(), 'jig-output-'));
     const schema = z.object({ approved: z.boolean() });
     await writeFile(structuredOutputPath(dir), JSON.stringify({ approved: true }));
     const result = await readStructuredOutput(dir, (raw) => schema.parse(raw));
@@ -1349,19 +1349,19 @@ describe('structured output helper', () => {
   });
 
   it('throws a clear error when the file was not written', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-output-'));
+    dir = await mkdtemp(path.join(tmpdir(), 'jig-output-'));
     await expect(readStructuredOutput(dir, (raw) => raw)).rejects.toThrow();
   });
 
   it('reset removes an existing file so a stale result cannot be re-read', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-output-'));
+    dir = await mkdtemp(path.join(tmpdir(), 'jig-output-'));
     await writeFile(structuredOutputPath(dir), JSON.stringify({ approved: true }));
     await resetStructuredOutput(dir);
     await expect(readStructuredOutput(dir, (raw) => raw)).rejects.toThrow();
   });
 
   it('reset is a no-op when no file exists yet', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-output-'));
+    dir = await mkdtemp(path.join(tmpdir(), 'jig-output-'));
     await expect(resetStructuredOutput(dir)).resolves.toBeUndefined();
   });
 });
@@ -1378,7 +1378,7 @@ Expected: FAIL — `src/orchestrator/structured-output.ts` does not exist.
 import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-export const STRUCTURED_OUTPUT_FILENAME = '.sdlc-step-output.json';
+export const STRUCTURED_OUTPUT_FILENAME = '.jig-step-output.json';
 
 export function structuredOutputPath(cwd: string): string {
   return path.join(cwd, STRUCTURED_OUTPUT_FILENAME);
@@ -1455,7 +1455,7 @@ afterEach(async () => {
 
 describe('MarkdownFileInputSource', () => {
   it('resolves the file contents', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-input-'));
+    dir = await mkdtemp(path.join(tmpdir(), 'jig-input-'));
     const filePath = path.join(dir, 'request.md');
     await writeFile(filePath, '# Add feature X\n\nDetails here.');
     const source = new MarkdownFileInputSource(filePath);
@@ -1463,7 +1463,7 @@ describe('MarkdownFileInputSource', () => {
   });
 
   it('throws a clear error when the file does not exist', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-input-'));
+    dir = await mkdtemp(path.join(tmpdir(), 'jig-input-'));
     const source = new MarkdownFileInputSource(path.join(dir, 'missing.md'));
     await expect(source.resolve()).rejects.toThrow();
   });
@@ -1652,7 +1652,7 @@ describe('prepareRun', () => {
     const slices = await readSlices(paths);
     expect(slices).toHaveLength(1);
     expect(slices[0].status).toBe('pending');
-    expect(slices[0].branch).toBe(`sdlc/slice/${meta.runId}/add-health-route`);
+    expect(slices[0].branch).toBe(`jig/slice/${meta.runId}/add-health-route`);
   });
 
   it('runs the planning steps with the real repository as cwd, not an empty scratch directory', async () => {
@@ -1819,7 +1819,7 @@ export async function prepareRun(options: PrepareOptions): Promise<RunMeta> {
     ...slice,
     order,
     status: 'pending',
-    branch: `sdlc/slice/${runId}/${slice.id}`,
+    branch: `jig/slice/${runId}/${slice.id}`,
     reviewCycles: 0,
     mergeAttempts: 0,
   }));
@@ -1895,7 +1895,7 @@ function makeSlice(overrides: Partial<Slice> = {}): Slice {
     description: 'Do the first thing.',
     order: 0,
     status: 'pending',
-    branch: 'sdlc/slice/run1/s1',
+    branch: 'jig/slice/run1/s1',
     reviewCycles: 0,
     mergeAttempts: 0,
     ...overrides,
@@ -1915,14 +1915,14 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     expect(slice.status).toBe('in_review');
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run1/s1');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('jig/slice/run1/s1');
     expect(await isWorkingTreeClean(paths.workspaceDir)).toBe(true);
   });
 
   it('reuses the existing branch on a second call instead of recreating it', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run2');
-    const slice = makeSlice({ branch: 'sdlc/slice/run2/s1' });
+    const slice = makeSlice({ branch: 'jig/slice/run2/s1' });
     let calls = 0;
     const provider = new FakeAgentProvider(async (input) => {
       calls += 1;
@@ -1935,13 +1935,13 @@ describe('runImplementStep', () => {
     await runImplementStep({ repoRoot: repo.dir, paths, slice, baseBranch: 'main', provider });
 
     expect(calls).toBe(2);
-    expect(await getCurrentBranch(paths.workspaceDir)).toBe('sdlc/slice/run2/s1');
+    expect(await getCurrentBranch(paths.workspaceDir)).toBe('jig/slice/run2/s1');
   });
 
   it('throws and leaves status untouched when the provider fails', async () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run3');
-    const slice = makeSlice({ branch: 'sdlc/slice/run3/s1' });
+    const slice = makeSlice({ branch: 'jig/slice/run3/s1' });
     const provider = new FakeAgentProvider(async () => ({ success: false, output: 'boom' }));
 
     await expect(
@@ -1954,7 +1954,7 @@ describe('runImplementStep', () => {
     repo = await createTempRepo();
     const paths = getRunPaths(repo.dir, 'run4');
     const slice = makeSlice({
-      branch: 'sdlc/slice/run4/s1',
+      branch: 'jig/slice/run4/s1',
       lastFeedback: 'The health check must also verify the database connection.',
     });
     let seenPrompt = '';
@@ -2012,7 +2012,7 @@ export async function runImplementStep(input: ImplementStepInput): Promise<void>
     throw new ImplementStepFailedError(slice.id, result.output);
   }
 
-  await commitAll(paths.workspaceDir, `sdlc: implement ${slice.id} — ${slice.title}`);
+  await commitAll(paths.workspaceDir, `jig: implement ${slice.id} — ${slice.title}`);
   slice.status = 'in_review';
 }
 
@@ -2081,8 +2081,8 @@ git commit -m "feat: add reconciler implement step"
 
 **Interfaces:**
 
-- Consumes: `AgentProvider`, `FakeAgentProvider` (Task 8); `structuredOutputInstruction`, `resetStructuredOutput`, `readStructuredOutput` (Task 8); `Slice` (Task 5); `SdlcConfig` (Task 7).
-- Produces: `runReviewStep(input: ReviewStepInput): Promise<void>` where `ReviewStepInput = { paths: RunPaths; slice: Slice; provider: AgentProvider; config: SdlcConfig }`. Mutates `slice.status` to one of `'pending'` (changes requested, under cap), `'stuck'` (cap exceeded), or `'ready_to_merge'` (approved and verify passed); increments `slice.reviewCycles` on a changes-requested outcome. On a changes-requested outcome, sets `slice.lastFeedback` to the reviewer's feedback (or a verify-failure message) so Task 11's implement step can act on it; clears it on approval.
+- Consumes: `AgentProvider`, `FakeAgentProvider` (Task 8); `structuredOutputInstruction`, `resetStructuredOutput`, `readStructuredOutput` (Task 8); `Slice` (Task 5); `JigConfig` (Task 7).
+- Produces: `runReviewStep(input: ReviewStepInput): Promise<void>` where `ReviewStepInput = { paths: RunPaths; slice: Slice; provider: AgentProvider; config: JigConfig }`. Mutates `slice.status` to one of `'pending'` (changes requested, under cap), `'stuck'` (cap exceeded), or `'ready_to_merge'` (approved and verify passed); increments `slice.reviewCycles` on a changes-requested outcome. On a changes-requested outcome, sets `slice.lastFeedback` to the reviewer's feedback (or a verify-failure message) so Task 11's implement step can act on it; clears it on approval.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2095,7 +2095,7 @@ import { runReviewStep } from '../../src/orchestrator/review-step.js';
 import { FakeAgentProvider } from '../../src/strategies/provider/fake.js';
 import { structuredOutputPath } from '../../src/orchestrator/structured-output.js';
 import { getRunPaths } from '../../src/state/run-paths.js';
-import type { SdlcConfig } from '../../src/config/load-config.js';
+import type { JigConfig } from '../../src/config/load-config.js';
 import type { Slice } from '../../src/state/types.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
 
@@ -2112,14 +2112,14 @@ function makeSlice(overrides: Partial<Slice> = {}): Slice {
     description: 'Do the first thing.',
     order: 0,
     status: 'in_review',
-    branch: 'sdlc/slice/run1/s1',
+    branch: 'jig/slice/run1/s1',
     reviewCycles: 0,
     mergeAttempts: 0,
     ...overrides,
   };
 }
 
-const baseConfig: SdlcConfig = {
+const baseConfig: JigConfig = {
   mergeMode: 'manual',
   reviewCycleCap: 3,
   conflictResolveCap: 3,
@@ -2268,7 +2268,7 @@ Expected: FAIL — `src/orchestrator/review-step.ts` does not exist.
 ```ts
 import { execa } from 'execa';
 import { z } from 'zod';
-import type { SdlcConfig } from '../config/load-config.js';
+import type { JigConfig } from '../config/load-config.js';
 import type { AgentProvider } from '../strategies/provider/types.js';
 import type { RunPaths } from '../state/run-paths.js';
 import type { Slice } from '../state/types.js';
@@ -2284,7 +2284,7 @@ export interface ReviewStepInput {
   paths: RunPaths;
   slice: Slice;
   provider: AgentProvider;
-  config: SdlcConfig;
+  config: JigConfig;
 }
 
 export async function runReviewStep(input: ReviewStepInput): Promise<void> {
@@ -2379,7 +2379,7 @@ guards against is rare in a sequential v1: main only drifts under a slice
 branch from your own unrelated commits or the passage of time under
 manual-merge mode. See Global Constraints for the accepted alternative —
 `mergeBranchInto` (Task 4) throws a plain git error on a real conflict, and
-you resolve it by hand in the workspace worktree, then re-run `sdlc merge`.
+you resolve it by hand in the workspace worktree, then re-run `jig merge`.
 
 ---
 
@@ -2474,7 +2474,7 @@ function makeSlices(runId: string): Slice[] {
       description: 'first',
       order: 0,
       status: 'ready_to_merge',
-      branch: `sdlc/slice/${runId}/first`,
+      branch: `jig/slice/${runId}/first`,
       reviewCycles: 0,
       mergeAttempts: 0,
     },
@@ -2484,7 +2484,7 @@ function makeSlices(runId: string): Slice[] {
       description: 'second',
       order: 1,
       status: 'pending',
-      branch: `sdlc/slice/${runId}/second`,
+      branch: `jig/slice/${runId}/second`,
       reviewCycles: 0,
       mergeAttempts: 0,
     },
@@ -2573,7 +2573,7 @@ describe('advanceRun', () => {
       description: 'only',
       order: 0,
       status: 'ready_to_merge',
-      branch: 'sdlc/slice/run4/only',
+      branch: 'jig/slice/run4/only',
       reviewCycles: 0,
       mergeAttempts: 0,
     };
@@ -2688,7 +2688,7 @@ git commit -m "feat: add merge strategies and slice advancement"
 **Interfaces:**
 
 - Consumes: everything from Tasks 5–12 and 14 (no Task 13 — removed).
-- Produces: `PrCreateStrategy` interface (`create(paths, slice): Promise<void>`); `LocalPrCreateStrategy` (writes a PR description markdown file into the workspace); `runReconcilerPass(input: ReconcilePassInput): Promise<ReconcilePassResult>` where `ReconcilePassInput = { repoRoot: string; paths: RunPaths; baseBranch: string; provider: AgentProvider; config: SdlcConfig; mergeStrategy: MergeStrategy }` — does one dispatch, acting on the current slice's status, returning `{ blocked: boolean; reason?: string; complete: boolean }`. A merge conflict thrown by the merge strategy is caught here and turned into a `blocked` result rather than propagating as an unhandled error. This is the single mechanism every CLI command in Task 16 calls into.
+- Produces: `PrCreateStrategy` interface (`create(paths, slice): Promise<void>`); `LocalPrCreateStrategy` (writes a PR description markdown file into the workspace); `runReconcilerPass(input: ReconcilePassInput): Promise<ReconcilePassResult>` where `ReconcilePassInput = { repoRoot: string; paths: RunPaths; baseBranch: string; provider: AgentProvider; config: JigConfig; mergeStrategy: MergeStrategy }` — does one dispatch, acting on the current slice's status, returning `{ blocked: boolean; reason?: string; complete: boolean }`. A merge conflict thrown by the merge strategy is caught here and turned into a `blocked` result rather than propagating as an unhandled error. This is the single mechanism every CLI command in Task 16 calls into.
 
 - [ ] **Step 1: Write `src/strategies/pr/types.ts`**
 
@@ -2730,7 +2730,7 @@ describe('LocalPrCreateStrategy', () => {
       description: 'Adds GET /health returning 200.',
       order: 0,
       status: 'ready_to_merge',
-      branch: 'sdlc/slice/run1/s1',
+      branch: 'jig/slice/run1/s1',
       reviewCycles: 0,
       mergeAttempts: 0,
     };
@@ -2788,7 +2788,7 @@ import {
   writeRunMeta,
   writeSlices,
 } from '../../src/state/store.js';
-import type { SdlcConfig } from '../../src/config/load-config.js';
+import type { JigConfig } from '../../src/config/load-config.js';
 import type { Slice } from '../../src/state/types.js';
 import { createTempRepo, type TempRepo } from '../support/temp-repo.js';
 
@@ -2798,7 +2798,7 @@ afterEach(async () => {
   await repo?.cleanup();
 });
 
-const baseConfig: SdlcConfig = {
+const baseConfig: JigConfig = {
   mergeMode: 'manual',
   reviewCycleCap: 3,
   conflictResolveCap: 3,
@@ -2817,7 +2817,7 @@ async function setUpSingleSliceRun(
     description: 'Do the only thing.',
     order: 0,
     status: 'pending',
-    branch: `sdlc/slice/${runId}/only`,
+    branch: `jig/slice/${runId}/only`,
     reviewCycles: 0,
     mergeAttempts: 0,
   };
@@ -2932,7 +2932,7 @@ Expected: FAIL — `src/orchestrator/reconcile.ts` does not exist.
 - [ ] **Step 8: Write `src/orchestrator/reconcile.ts`**
 
 ```ts
-import type { SdlcConfig } from '../config/load-config.js';
+import type { JigConfig } from '../config/load-config.js';
 import type { AgentProvider } from '../strategies/provider/types.js';
 import type { MergeStrategy } from '../strategies/merge/types.js';
 import type { RunPaths } from '../state/run-paths.js';
@@ -2946,7 +2946,7 @@ export interface ReconcilePassInput {
   paths: RunPaths;
   baseBranch: string;
   provider: AgentProvider;
-  config: SdlcConfig;
+  config: JigConfig;
   mergeStrategy: MergeStrategy;
 }
 
@@ -3064,7 +3064,7 @@ git commit -m "feat: add local PR-create strategy and the unified reconciler pas
 - [ ] **Step 1: Write `src/cli/run-context.ts`** (shared setup used by every command)
 
 ```ts
-import { loadConfig, type SdlcConfig } from '../config/load-config.js';
+import { loadConfig, type JigConfig } from '../config/load-config.js';
 import { getCurrentBranch } from '../git/branch.js';
 import { AutoMergeStrategy } from '../strategies/merge/auto.js';
 import { ManualMergeStrategy } from '../strategies/merge/manual.js';
@@ -3077,7 +3077,7 @@ export interface CliRunContext {
   repoRoot: string;
   paths: RunPaths;
   baseBranch: string;
-  config: SdlcConfig;
+  config: JigConfig;
   mergeStrategy: MergeStrategy;
 }
 
@@ -3260,8 +3260,8 @@ describe('implement/review commands', () => {
       paths: {
         runId: 'r1',
         repoRoot: '/tmp/repo',
-        stateDir: '/tmp/repo/.sdlc/r1/state',
-        workspaceDir: '/tmp/repo/.sdlc/r1/workspace',
+        stateDir: '/tmp/repo/.jig/r1/state',
+        workspaceDir: '/tmp/repo/.jig/r1/workspace',
       },
       baseBranch: 'main',
       config: {
@@ -3283,7 +3283,7 @@ describe('implement/review commands', () => {
 
     const program = new Command();
     registerStepCommands(program);
-    await program.parseAsync(['node', 'sdlc', 'implement', '--run', 'r1']);
+    await program.parseAsync(['node', 'jig', 'implement', '--run', 'r1']);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('stuck'));
   });
@@ -3486,7 +3486,7 @@ import { registerAutopilotCommands } from './commands/autopilot.js';
 
 export function buildCli(): Command {
   const program = new Command();
-  program.name('sdlc').description('Agentic SDLC pipeline orchestrator').version('0.1.0');
+  program.name('jig').description('Agentic SDLC pipeline orchestrator').version('0.1.0');
   registerPrepareCommand(program);
   registerStepCommands(program);
   registerMergeCommand(program);
@@ -3527,7 +3527,7 @@ git commit -m "feat: wire prepare/implement/review/merge/create-pr/status/autopi
 
 **Interfaces:**
 
-- Consumes: `AgentProvider`, `AgentRunInput`, `AgentRunResult` (Task 8); `SdlcConfig` (Task 7).
+- Consumes: `AgentProvider`, `AgentRunInput`, `AgentRunResult` (Task 8); `JigConfig` (Task 7).
 - Produces: `AgenticCliProvider` class implementing `AgentProvider`, constructed with `{ command: string; args?: string[]; timeoutMs?: number }`; spawns `command [...args, prompt]` headless via execa in `input.cwd`, captures stdout/stderr, writes a log, and maps exit code to `AgentRunResult.success`.
 
 - [ ] **Step 1: Write the failing test**
@@ -3548,7 +3548,7 @@ afterEach(async () => {
 
 describe('AgenticCliProvider', () => {
   it('reports success when the underlying command exits 0', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-provider-'));
+    dir = await mkdtemp(path.join(tmpdir(), 'jig-provider-'));
     const script = path.join(dir, 'fake-agent.sh');
     await writeFile(script, '#!/bin/sh\necho "got: $@"\nexit 0\n');
     await chmod(script, 0o755);
@@ -3561,7 +3561,7 @@ describe('AgenticCliProvider', () => {
   });
 
   it('reports failure when the underlying command exits non-zero', async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'sdlc-provider-'));
+    dir = await mkdtemp(path.join(tmpdir(), 'jig-provider-'));
     const script = path.join(dir, 'fake-agent.sh');
     await writeFile(script, '#!/bin/sh\necho "failing" 1>&2\nexit 1\n');
     await chmod(script, 0o755);
@@ -3623,7 +3623,7 @@ Expected: PASS
 // src/cli/run-context.ts — replace the selectProvider stub
 import { AgenticCliProvider } from '../strategies/provider/agentic-cli.js';
 // ...
-export function selectProvider(config: SdlcConfig): AgentProvider {
+export function selectProvider(config: JigConfig): AgentProvider {
   return new AgenticCliProvider({
     command: config.providerCommand,
     args: ['-p', '--output-format', 'text'],
@@ -3631,7 +3631,7 @@ export function selectProvider(config: SdlcConfig): AgentProvider {
 }
 ```
 
-Update every call site to pass a loaded `SdlcConfig` instead of calling the no-arg stub:
+Update every call site to pass a loaded `JigConfig` instead of calling the no-arg stub:
 
 ```ts
 // src/cli/commands/prepare.ts — inside the action handler, before prepareRun is called
@@ -3712,16 +3712,16 @@ agentic CLI (cost, non-determinism), matching the spec's Testing Strategy.
 1. In a scratch git repository with a trivial Node project and a passing
    `npm test`, write a one-paragraph markdown request file describing a small,
    real change (e.g. "add a GET /health endpoint returning 200").
-2. Set `sdlc.config.json`: `{ "verifyCommand": "npm test", "mergeMode": "manual" }`.
-3. Run `sdlc autopilot --input request.md` with `providerCommand` pointed at a
+2. Set `jig.config.json`: `{ "verifyCommand": "npm test", "mergeMode": "manual" }`.
+3. Run `jig autopilot --input request.md` with `providerCommand` pointed at a
    real agentic CLI (e.g. `claude`).
-4. Confirm: a run directory appears under `.sdlc/<runId>/`; `sdlc status --run
+4. Confirm: a run directory appears under `.jig/<runId>/`; `jig status --run
 <runId>` shows at least one slice; the workspace worktree
-   (`.sdlc/<runId>/workspace`) contains real code changes on a
-   `sdlc/slice/<runId>/<sliceId>` branch; the command exits reporting either
+   (`.jig/<runId>/workspace`) contains real code changes on a
+   `jig/slice/<runId>/<sliceId>` branch; the command exits reporting either
    completion or a clear blocked reason (e.g. manual-mode `ready_to_merge`).
 5. If blocked on `ready_to_merge`, manually merge the slice branch into `main`
-   and run `sdlc resume --run <runId>`; confirm it detects the manual merge
+   and run `jig resume --run <runId>`; confirm it detects the manual merge
    and either completes or advances to the next slice.
 6. Record any prompt-quality issues (vague implement/review prompts, a
    reviewer that rubber-stamps) as follow-up work — this plan's prompts in

@@ -5,6 +5,7 @@ import {
   AgentOutputInvalid,
   AgentRunFailed,
   ConfigInvalid,
+  type JigError,
   MergeFailed,
   messageOf,
   MetricsLogCorrupt,
@@ -13,7 +14,6 @@ import {
   RunRequestInvalid,
   RunStateConflict,
   SandboxUnavailable,
-  type SdlcError,
   SetupCommandFailed,
 } from './errors.js';
 
@@ -34,7 +34,7 @@ describe('messageOf', () => {
 describe('failure kinds', () => {
   const message = () => faker.lorem.sentence();
 
-  it.each<[string, () => SdlcError, SdlcError['kind']]>([
+  it.each<[string, () => JigError, JigError['kind']]>([
     ['an agent run that failed', () => new AgentRunFailed(message()), 'retry'],
     ['malformed agent output', () => new AgentOutputInvalid(message()), 'retry'],
     ['an unreachable remote', () => new RemoteUnavailable(message()), 'retry'],

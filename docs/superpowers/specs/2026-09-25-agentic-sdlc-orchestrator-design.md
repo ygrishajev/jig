@@ -62,8 +62,8 @@ Five layers:
 3. **Strategies** — pluggable, config-selected implementations behind fixed
    interfaces (see [Strategies](#strategies) below).
 4. **State store** — reads/writes run state to a dedicated git ref
-   (`refs/sdlc/runs/<run-id>`), never the code branch, with a gitignored
-   `.sdlc/` local checkout of that ref as a fast-read cache.
+   (`refs/jig/runs/<run-id>`), never the code branch, with a gitignored
+   `.jig/` local checkout of that ref as a fast-read cache.
 5. **Git utility layer** — branch/worktree creation, dry-run conflict check,
    commit, merge, push.
 
@@ -82,7 +82,7 @@ src/
     pr/           local.ts, gh.ts (stub)
   state/          read/write run state to git ref + local cache, schema/types
   git/            branch, worktree, conflict-check, merge, commit helpers
-  config/         loads sdlc.config.{ts,json}
+  config/         loads jig.config.{ts,json}
 ```
 
 ## Strategies
@@ -104,8 +104,8 @@ src/
 
 ## State & Data Model
 
-Local cache at `.sdlc/<run-id>/`, source of truth on
-`refs/sdlc/runs/<run-id>`:
+Local cache at `.jig/<run-id>/`, source of truth on
+`refs/jig/runs/<run-id>`:
 
 ```
 context.json     { rawRequest, classification, repoContext: {...}, createdAt }
@@ -128,7 +128,7 @@ Side-states reachable from most of the above: `conflict`, `stuck`.
 
 ## Data Flow
 
-**`sdlc prepare`:**
+**`jig prepare`:**
 
 1. `InputSource` resolves the raw request.
 2. Context step (`AgentProvider`) reads the request + scans the repo ->
@@ -137,7 +137,7 @@ Side-states reachable from most of the above: `conflict`, `stuck`.
 4. Slice-plan step (`AgentProvider`, fed `plan.json`) -> `slices.json`, an
    **ordered list** (no dependency graph in v1).
 5. A dedicated worktree is created off current `main`; the first slice's
-   branch is created; state is committed to `refs/sdlc/runs/<run-id>`.
+   branch is created; state is committed to `refs/jig/runs/<run-id>`.
 
 **Reconciler pass** (shared by `implement`/`review`/`autopilot`/`resume`):
 
@@ -167,20 +167,20 @@ manual`, stop here — a legitimate exit, not an error.
 ## CLI Command Reference (v1)
 
 ```
-sdlc prepare   --input <file>              start a run: context -> plan -> slices
-sdlc implement [--slice <id>]              run implement once on current/given slice
-sdlc review    [--slice <id>]              run AI review + verification once
-sdlc resolve-conflicts [--slice <id>]      manually resolve a conflicted slice
-sdlc merge     [--slice <id>]              manual convenience: merge an approved slice
-sdlc create-pr [--slice <id>]              local: write PR description; future: gh pr create
-sdlc status    [--run <id>]                show current run state
-sdlc resume    [--run <id>]                re-enter the reconciler until blocked/done
-sdlc autopilot --input <file>              prepare, then loop the reconciler to completion
+jig prepare   --input <file>              start a run: context -> plan -> slices
+jig implement [--slice <id>]              run implement once on current/given slice
+jig review    [--slice <id>]              run AI review + verification once
+jig resolve-conflicts [--slice <id>]      manually resolve a conflicted slice
+jig merge     [--slice <id>]              manual convenience: merge an approved slice
+jig create-pr [--slice <id>]              local: write PR description; future: gh pr create
+jig status    [--run <id>]                show current run state
+jig resume    [--run <id>]                re-enter the reconciler until blocked/done
+jig autopilot --input <file>              prepare, then loop the reconciler to completion
 ```
 
 ## Config
 
-`sdlc.config.{ts,json}`: per-step provider/model overrides, `mergeMode:
+`jig.config.{ts,json}`: per-step provider/model overrides, `mergeMode:
 manual|auto`, `reviewCycleCap` (default 3), `conflictResolveCap`,
 `verifyCommand`, `inputSource`.
 
@@ -292,7 +292,7 @@ where each lands without requiring changes to the reconciler core:
   by the preflight conflict-check + merge strategy regardless of which run
   a colliding change came from. What's genuinely new and not yet designed:
   a trigger/watch loop (poll or webhook GitHub issues, spin up a run per
-  issue), fleet-level status (enumerate `refs/sdlc/runs/*`), and a
+  issue), fleet-level status (enumerate `refs/jig/runs/*`), and a
   concurrency/cost throttle across concurrent runs.
 - **Mirroring run state onto the GitHub issue via labels**, once
   `gh-issue` exists — cheap external visibility without inspecting

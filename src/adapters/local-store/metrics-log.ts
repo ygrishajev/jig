@@ -55,7 +55,7 @@ const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.dis
 );
 
 /**
- * Appends metric records to `.sdlc/<runId>/state/metrics.jsonl`, one JSON object per line,
+ * Appends metric records to `.jig/<runId>/state/metrics.jsonl`, one JSON object per line,
  * across every invocation of the run. Appends are synchronous so records keep event order.
  * A record counts once its line is complete: a process killed mid-append can only leave the
  * last line without its newline, so that tail is ignored on read and cut off before the next

@@ -7,7 +7,7 @@
 // Run per scenario, to pin down the symlinked-path bug on any OS:
 //   direct            repo opened by its real path                  → expect pass
 //   symlink-raw       repo opened through a symlink, path as given  → expect git to fail (the bug)
-//   symlink-resolved  same symlink, realpath() applied first        → expect pass (sdlc's fix)
+//   symlink-resolved  same symlink, realpath() applied first        → expect pass (jig's fix)
 import { createSandbox } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { execFileSync } from 'node:child_process';
@@ -15,19 +15,19 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const IMAGE = process.env.SPIKE_IMAGE ?? 'sdlc-spike';
+const IMAGE = process.env.SPIKE_IMAGE ?? 'jig-spike';
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
 
 function makeRepo(): string {
   // realpath: on macOS tmpdir() is itself under a symlink (/var → /private/var).
-  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'sdlc-spike-')));
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'jig-spike-')));
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.email', 'spike@example.com');
   git(dir, 'config', 'user.name', 'spike');
   writeFileSync(path.join(dir, 'README.md'), '# spike\n');
-  // What sdlc would write before createSandbox (spec §1).
+  // What jig would write before createSandbox (spec §1).
   mkdirSync(path.join(dir, '.sandcastle'), { recursive: true });
   writeFileSync(path.join(dir, '.sandcastle', '.gitignore'), '*\n');
   git(dir, 'add', '-A');
@@ -36,7 +36,7 @@ function makeRepo(): string {
 }
 
 function linkTo(target: string): string {
-  const linkDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'sdlc-spike-link-')));
+  const linkDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'jig-spike-link-')));
   const link = path.join(linkDir, 'repo');
   symlinkSync(target, link);
   return link;
@@ -57,7 +57,7 @@ async function runScenario(
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${check}\n      ${detail.replace(/\n/g, '\n      ')}`);
   };
   const repo = realpathSync(cwd);
-  const branch = `sdlc/run/${scenario}`;
+  const branch = `jig/run/${scenario}`;
 
   const sandbox = await createSandbox({
     branch,

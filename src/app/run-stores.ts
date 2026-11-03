@@ -21,7 +21,7 @@ export type RunStoreFactory = (context: { repoRoot: string }) => unknown;
  * The one place that decides where a run's state is read from and written to: every store named
  * in `runStores` — `local`, `git-remote`, or a path to a module — holding a copy, the freshest
  * copy winning on load. Every reader and writer of run state goes through it. What else sits in
- * `.sdlc/<id>/state/` — `result.json`, `metrics.jsonl`, the logs and the markdown documents — is
+ * `.jig/<id>/state/` — `result.json`, `metrics.jsonl`, the logs and the markdown documents — is
  * this machine's record of the invocations it ran, not part of the run, and stays local.
  */
 export async function openRunStore({

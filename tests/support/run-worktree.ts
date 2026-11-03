@@ -12,7 +12,7 @@ import { createTempRepo } from './temp-repo.js';
  */
 export async function createRunWorktree(runId: RunId) {
   const repo = await createTempRepo();
-  const worktreePath = path.join(repo.dir, '.sdlc', runId, 'workspace');
+  const worktreePath = path.join(repo.dir, '.jig', runId, 'workspace');
   const runBranch = runBranchFor(runId);
   const git = simpleGit({ baseDir: repo.dir });
   await git.raw(['worktree', 'add', '-b', runBranch, worktreePath, 'main']);

@@ -324,8 +324,8 @@ describe('runEngine', () => {
     await expect(run(aDescribedRun({ phase: 'context' }))).rejects.toBeInstanceOf(ConfigInvalid);
 
     expect(exporter.getFinishedSpans().map((span) => span.name)).toEqual([
-      'sdlc.step context',
-      'sdlc.run',
+      'jig.step context',
+      'jig.run',
     ]);
   });
 

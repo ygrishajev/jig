@@ -39,13 +39,13 @@ type FeatureTestRun = Awaited<ReturnType<typeof runFeatureTests>>;
 
 describe('live feature pipeline', () => {
   it('plans, implements, reviews and verifies a request as one slice, then merges it onto main', async () => {
-    const { repo, sdlc, featureTests } = await setup();
+    const { repo, jig, featureTests } = await setup();
 
-    await sdlc('build');
+    await jig('build');
     expectFeatureTestsToFail(await featureTests());
     const baseline = (await simpleGit(repo).revparse(['HEAD'])).trim();
 
-    await sdlc('run', 'request.md', '--id', RUN_ID, '--log-format', 'json');
+    await jig('run', 'request.md', '--id', RUN_ID, '--log-format', 'json');
 
     const run = await readRunRecord(repo, RUN_ID);
     expectRunFinished(run);
@@ -74,7 +74,7 @@ describe('live feature pipeline', () => {
     const image = sandboxImageName(repo, loadConfig(repo));
     return {
       repo,
-      sdlc: async (...args: string[]) => {
+      jig: async (...args: string[]) => {
         const result = await execa(process.execPath, [CLI, ...args], {
           cwd: repo,
           env: environment,
@@ -83,7 +83,7 @@ describe('live feature pipeline', () => {
           timeout: 15 * 60 * 1000,
           cancelSignal: controller.signal,
         });
-        expect(result.failed, `sdlc ${args[0]} failed. Inspect the retained repository logs.`).toBe(
+        expect(result.failed, `jig ${args[0]} failed. Inspect the retained repository logs.`).toBe(
           false,
         );
       },

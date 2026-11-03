@@ -86,11 +86,11 @@ describe('RunArtefacts', () => {
 
     await artefacts.write(aRunState(), 'done', aMetricsSummary());
 
-    expect(await readFile(path.join(repoRoot, '.sdlc', '.gitignore'), 'utf-8')).toBe('*\n');
+    expect(await readFile(path.join(repoRoot, '.jig', '.gitignore'), 'utf-8')).toBe('*\n');
   });
 
   async function setup() {
-    const repoRoot = await tempDirectory('sdlc-artefacts-');
+    const repoRoot = await tempDirectory('jig-artefacts-');
     const read = (runId: RunId, name: string) =>
       readFile(path.join(stateDirectory(repoRoot, runId), name), 'utf-8');
     return { artefacts: new RunArtefacts(repoRoot), read, repoRoot };

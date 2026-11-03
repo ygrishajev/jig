@@ -15,7 +15,7 @@ import {
   SANDBOX_DIRECTORY,
 } from '../adapters/sandbox-image/image-recipe.js';
 import { AGENTS } from '../adapters/sandcastle/agents.js';
-import { configuredSteps, type SdlcConfig } from '../config/load-config.js';
+import { configuredSteps, type JigConfig } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 
@@ -84,7 +84,7 @@ function newerReleaseWarning(
   if (agent.pinned !== undefined || policy !== 'warn') return [];
   if (!agent.latest || !installed || agent.latest === installed) return [];
   return [
-    `${agent.name} ${agent.latest} is available (installed: ${installed}) — run sdlc build --pull-agents`,
+    `${agent.name} ${agent.latest} is available (installed: ${installed}) — run jig build --pull-agents`,
   ];
 }
 
@@ -110,7 +110,7 @@ function versionChanges(installed: Record<string, string>, agents: AgentInstall[
     .join(', ');
 }
 
-export function sandboxImageName(repoRoot: string, config: SdlcConfig) {
+export function sandboxImageName(repoRoot: string, config: JigConfig) {
   return config.sandboxImage ?? defaultImageName(repoRoot);
 }
 
@@ -121,7 +121,7 @@ export function baseImageName(image: string) {
 
 export interface EnsureImageDependencies {
   repoRoot: string;
-  config: SdlcConfig;
+  config: JigConfig;
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   logger: Logger;
@@ -202,7 +202,7 @@ async function readSandboxDockerfile(repoRoot: string) {
   const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
   if (!existsSync(file)) {
     throw new ConfigInvalid(
-      `No sandbox Dockerfile at ${path.join(SANDBOX_DIRECTORY, DOCKERFILE)} — run sdlc init first.`,
+      `No sandbox Dockerfile at ${path.join(SANDBOX_DIRECTORY, DOCKERFILE)} — run jig init first.`,
     );
   }
   return readFile(file, 'utf-8');

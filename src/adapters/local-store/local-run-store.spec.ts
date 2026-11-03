@@ -56,7 +56,7 @@ describe('LocalRunStore', () => {
 
     await store.save(aRunState());
 
-    expect(await readFile(path.join(repoRoot, '.sdlc', '.gitignore'), 'utf-8')).toBe('*\n');
+    expect(await readFile(path.join(repoRoot, '.jig', '.gitignore'), 'utf-8')).toBe('*\n');
   });
 
   it('refuses a saved run that no longer matches the expected shape', async () => {
@@ -72,7 +72,7 @@ describe('LocalRunStore', () => {
   });
 
   async function setup() {
-    const repoRoot = await tempDirectory('sdlc-store-');
+    const repoRoot = await tempDirectory('jig-store-');
     return { store: new LocalRunStore(repoRoot), repoRoot };
   }
 });

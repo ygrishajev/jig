@@ -9,11 +9,11 @@ import { logFormatOption } from './run.js';
 
 const INIT_SUMMARY: Record<InitResult['status'], (result: InitResult) => string> = {
   written: () =>
-    'Wrote .sandcastle/Dockerfile and sdlc.config.json — add your toolchain and a verifyCommand, then run sdlc init --no-agent to check them.',
+    'Wrote .sandcastle/Dockerfile and jig.config.json — add your toolchain and a verifyCommand, then run jig init --no-agent to check them.',
   verified: (result) =>
-    `Sandbox ready: setup and verify pass inside it${'attempts' in result && result.attempts > 1 ? ` (after ${result.attempts} attempts)` : ''}. Review and commit .sandcastle/Dockerfile and sdlc.config.json.`,
+    `Sandbox ready: setup and verify pass inside it${'attempts' in result && result.attempts > 1 ? ` (after ${result.attempts} attempts)` : ''}. Review and commit .sandcastle/Dockerfile and jig.config.json.`,
   failed: (result) =>
-    `Setup or verify did not pass in the sandbox${'attempts' in result && result.attempts > 1 ? ` after ${result.attempts} attempts` : ''} — fix what this shows, then run sdlc init --no-agent:\n${'failure' in result ? result.failure : ''}`,
+    `Setup or verify did not pass in the sandbox${'attempts' in result && result.attempts > 1 ? ` after ${result.attempts} attempts` : ''} — fix what this shows, then run jig init --no-agent:\n${'failure' in result ? result.failure : ''}`,
 };
 
 export function initSummary(result: InitResult) {

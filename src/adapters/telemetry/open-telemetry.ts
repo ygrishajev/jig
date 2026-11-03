@@ -23,12 +23,12 @@ export async function startTelemetry(environment: NodeJS.ProcessEnv): Promise<Te
     import('@opentelemetry/api'),
   ]);
   const sdk = new NodeSDK({
-    serviceName: environment.OTEL_SERVICE_NAME ?? 'sdlc',
+    serviceName: environment.OTEL_SERVICE_NAME ?? 'jig',
     traceExporter: new OTLPTraceExporter(),
     instrumentations: [],
   });
   sdk.start();
-  return { tracer: api.trace.getTracer('sdlc'), shutdown: () => sdk.shutdown() };
+  return { tracer: api.trace.getTracer('jig'), shutdown: () => sdk.shutdown() };
 }
 
 /**

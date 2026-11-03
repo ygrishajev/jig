@@ -31,7 +31,7 @@ describe('updateConfigFile', () => {
   });
 
   async function setup(contents: string) {
-    const repoRoot = await tempDirectory('sdlc-write-config-');
+    const repoRoot = await tempDirectory('jig-write-config-');
     const file = path.join(repoRoot, CONFIG_FILE);
     await writeFile(file, contents);
     const read = async (): Promise<unknown> => JSON.parse(await readFile(file, 'utf-8'));

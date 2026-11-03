@@ -10,9 +10,9 @@ export const TOOLCHAIN_START =
 export const TOOLCHAIN_END = '# --- end project toolchain ---';
 
 export const LABELS = {
-  dockerfileHash: 'sdlc.dockerfile-hash',
-  agents: 'sdlc.agents',
-  agentVersions: 'sdlc.agent-versions',
+  dockerfileHash: 'jig.dockerfile-hash',
+  agents: 'jig.agents',
+  agentVersions: 'jig.agent-versions',
 } as const;
 
 /**
@@ -43,7 +43,7 @@ export interface AgentInstall {
   version: string;
 }
 
-/** The layer sdlc owns: the agent CLIs the config uses, at exact versions, on top of the base image. */
+/** The layer jig owns: the agent CLIs the config uses, at exact versions, on top of the base image. */
 export function agentLayerDockerfile(baseImage: string, agents: AgentInstall[]) {
   const packages = agents.map((agent) => `${agent.npmPackage}@${agent.version}`).join(' ');
   return [

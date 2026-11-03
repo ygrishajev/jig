@@ -12,8 +12,8 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const IMAGE = 'sdlc-spike';
-const TAG = 'sdlc-output';
+const IMAGE = 'jig-spike';
+const TAG = 'jig-output';
 
 function loadEnv(file: string): Record<string, string> {
   const vars: Record<string, string> = {};
@@ -49,7 +49,7 @@ const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
 
 function makeRepo(): string {
-  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'sdlc-spike-agents-')));
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'jig-spike-agents-')));
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.email', 'spike@example.com');
   git(dir, 'config', 'user.name', 'spike');
@@ -78,7 +78,7 @@ if (agents.length === 0) {
 
 const repo = makeRepo();
 const sandbox = await createSandbox({
-  branch: 'sdlc/run/spike-agents',
+  branch: 'jig/run/spike-agents',
   baseBranch: 'main',
   cwd: repo,
   sandbox: docker({ imageName: IMAGE, env: credentialEnv }),

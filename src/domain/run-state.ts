@@ -96,7 +96,7 @@ export function enterPhase(state: RunState, phase: RunPhase): RunState {
 
 /** Every slice commits onto this one branch, so the whole feature lands as one merge. */
 export function runBranchFor(runId: RunId) {
-  return `sdlc/run/${runId}`;
+  return `jig/run/${runId}`;
 }
 
 /** The slice that hit the review cap; once there is one, the run ends and a person takes over. */

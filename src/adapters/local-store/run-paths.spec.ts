@@ -7,10 +7,10 @@ import { describe, expect, it } from 'vitest';
 import { runId } from '../../../tests/support/builders.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { isWorkingTreeClean } from '../../git/repository.js';
-import { makeRunDirectory, SDLC_DIR } from './run-paths.js';
+import { JIG_DIR, makeRunDirectory } from './run-paths.js';
 
 describe('makeRunDirectory', () => {
-  it("keeps everything it puts under .sdlc out of the target repository's status", async () => {
+  it("keeps everything it puts under .jig out of the target repository's status", async () => {
     const { dir } = await createTempRepo();
     const git = simpleGit({ baseDir: dir });
     await writeFile(path.join(dir, '.gitignore'), '');
@@ -22,16 +22,16 @@ describe('makeRunDirectory', () => {
     expect(await isWorkingTreeClean(dir)).toBe(true);
   });
 
-  it('leaves a .sdlc/.gitignore the operator already has alone', async () => {
+  it('leaves a .jig/.gitignore the operator already has alone', async () => {
     const { dir } = await createTempRepo();
     const first = await makeRunDirectory(dir, runId());
-    const gitignore = path.join(dir, SDLC_DIR, '.gitignore');
+    const gitignore = path.join(dir, JIG_DIR, '.gitignore');
     const own = `${faker.word.noun()}\n`;
     await writeFile(gitignore, own);
 
     await makeRunDirectory(dir, runId());
 
-    expect(first.startsWith(path.join(dir, SDLC_DIR))).toBe(true);
+    expect(first.startsWith(path.join(dir, JIG_DIR))).toBe(true);
     expect(await readFile(gitignore, 'utf-8')).toBe(own);
   });
 });

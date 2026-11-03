@@ -36,6 +36,6 @@ describe('lockRun', () => {
   });
 
   async function setup() {
-    return { repoRoot: await tempDirectory('sdlc-lock-'), id: runId() };
+    return { repoRoot: await tempDirectory('jig-lock-'), id: runId() };
   }
 });

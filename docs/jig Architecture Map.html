@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>sdlc Architecture Map</title>
+<title>jig Architecture Map</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: toolbar on top, one full-size zoomable SVG stage under it. Colours follow the layer: teal process, blue module, amber shared infra, grey external, rose failure. */
@@ -106,7 +106,7 @@ svg text{font-family:var(--sans)}
 .el{fill:var(--fg2);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
 </style>
 <div id="bar">
-  <span class="brand">sdlc</span>
+  <span class="brand">jig</span>
   <nav id="crumbs" aria-label="Where you are"></nav>
   <div class="group" id="levels" role="group" aria-label="Detail level">
     <button type="button" data-level="1">1 Layers</button>
@@ -120,7 +120,7 @@ svg text{font-family:var(--sans)}
     <button type="button" id="zfit">Fit</button>
   </div>
 </div>
-<svg id="stage" role="img" aria-label="Zoomable architecture map of sdlc: commands, core modules and infrastructure in layers, with the flows inside each module."><g id="world"></g></svg>
+<svg id="stage" role="img" aria-label="Zoomable architecture map of jig: commands, core modules and infrastructure in layers, with the flows inside each module."><g id="world"></g></svg>
 <div id="foot">
   <span><i class="sw iface"></i>command</span>
   <span><i class="sw dom"></i>core module / flow step</span>
@@ -218,7 +218,7 @@ svg text{font-family:var(--sans)}
   function box(id, title, lines, canvas, pills) { return { id: id, title: title, lines: lines, canvas: canvas, pills: pills }; }
 
   /* ---------- level 3: the flow inside each box ---------- */
-  var cTNew = flowCv("tn", "Start a run", "sdlc run request.md [--id <id>]. src/cli/commands/run.ts → src/app/run-sdlc.ts.", [
+  var cTNew = flowCv("tn", "Start a run", "jig run request.md [--id <id>]. src/cli/commands/run.ts → src/app/run-jig.ts.", [
     ["Parse the command", "commander: the request file, --id, --log-format.", "iface"],
     ["Build the container", "awilix (src/app/container.ts): config, logger, stores, image builder, sandbox opener.", "step"],
     ["Pick the run stores", "runStores: local, git-remote, or a module path (src/app/run-stores.ts).", "infra"],
@@ -229,33 +229,33 @@ svg text{font-family:var(--sans)}
     ["Write the result", "result.json with metrics; a summary footer on PR_DESCRIPTION.md.", "infra"],
     ["Close", "sandbox closed, scope disposed, traces flushed.", "step"]
   ], { h: 62, gap: 14 });
-  var cTResume = flowCv("tr", "Resume a run", "sdlc run --id <id>, or the same request file with the same id.", [
+  var cTResume = flowCv("tr", "Resume a run", "jig run --id <id>, or the same request file with the same id.", [
     ["Load the run", "from the first store that has it; git-remote fetches the state ref and the run branch.", "infra"],
     ["Same request?", "a different request file with an existing id is refused (RunRequestInvalid).", "fail"],
     ["Leave a halt or a block", "a halt moves to its resumeAt phase; a blocked reason is cleared.", "domain"],
     ["Carry on from the saved phase", "everything after this is the same as a new run.", "domain"]
   ]);
-  var cTStatus = flowCv("ts", "Show a run", "sdlc status <id>. Read-only: no sandbox, no agents.", [
+  var cTStatus = flowCv("ts", "Show a run", "jig status <id>. Read-only: no sandbox, no agents.", [
     ["Load run.json", "LocalRunStore, validated with zod.", "infra"],
     ["Documents", "design.md, plan.md and PR_DESCRIPTION.md, when written.", "step"],
     ["Slices", "status of each, with the last reviewer feedback.", "domain"],
     ["So far", "a one-line summary of metrics.jsonl: slices, review rounds, tokens, cost, time.", "domain"]
   ]);
-  var cTInitAgent = flowCv("ia", "sdlc init", "src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
-    ["Write the starter files", ".sandcastle/Dockerfile, its .gitignore, sdlc.config.json — only those missing.", "step"],
+  var cTInitAgent = flowCv("ia", "jig init", "src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
+    ["Write the starter files", ".sandcastle/Dockerfile, its .gitignore, jig.config.json — only those missing.", "step"],
     ["The planner proposes", "in a throwaway sandbox: toolchain lines, setupCommand, verifyCommand.", "infra"],
     ["Write and rebuild", "the toolchain goes between the Dockerfile markers; the config is updated.", "domain"],
     ["Check in a fresh sandbox", "setupCommand runs on start, then verifyCommand by exec.", "infra"],
     ["It fails", "the output goes back to the planner, up to three attempts.", "fail"],
-    ["Verified", "commit .sandcastle/Dockerfile and sdlc.config.json.", "domain"]
+    ["Verified", "commit .sandcastle/Dockerfile and jig.config.json.", "domain"]
   ]);
-  var cTInitPlain = flowCv("ip", "sdlc init --no-agent", "Writes the starter files and checks what is already configured.", [
+  var cTInitPlain = flowCv("ip", "jig init --no-agent", "Writes the starter files and checks what is already configured.", [
     ["Write the starter files", "only those missing; a catch-all .gitignore is replaced.", "step"],
     ["verifyCommand set?", "if not, there is nothing to check yet.", "step"],
     ["Check in the sandbox", "setupCommand on start, then verifyCommand.", "infra"],
     ["It fails", "exit code 1, with the output.", "fail"]
   ]);
-  var cTBuild = flowCv("tb", "sdlc build [--pull-agents]", "Also run at the start of every sdlc run.", [
+  var cTBuild = flowCv("tb", "jig build [--pull-agents]", "Also run at the start of every jig run.", [
     ["Decide what to build", "planImageBuild compares the image labels with the Dockerfile and agent versions.", "domain"],
     ["--pull-agents", "take the latest agent releases even when agentUpdates is off.", "step"],
     ["Build", "the base image, then the agent layer.", "infra"],
@@ -273,7 +273,7 @@ svg text{font-family:var(--sans)}
     ["Stop", "at a final (done, stuck) or a halt (paused, awaitingMerge).", "step"]
   ], { h: 60, gap: 14 });
   var cFFail = flowCv("ef", "Failure policy", "Steps throw typed errors (src/domain/errors.ts); the engine decides what happens next.", [
-    ["A step throws an SdlcError", "its kind decides.", "fail"],
+    ["A step throws an JigError", "its kind decides.", "fail"],
     ["retry — AgentRunFailed", "p-retry, up to maxStepRetries with backoff; a stepRetried event each time.", "domain"],
     ["feedback — AgentOutputInvalid", "becomes changesRequested where the flow accepts one.", "domain"],
     ["block — MergeFailed, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
@@ -321,7 +321,7 @@ svg text{font-family:var(--sans)}
     ["Anything else", "changesRequested with the tail of the output.", "fail"]
   ]);
   var cFDescribe = flowCv("sd", "Describe the PR", "describePullRequest in src/steps/finishing.ts.", [
-    ["Find the template", "the repository's own, or sdlc's default.", "step"],
+    ["Find the template", "the repository's own, or jig's default.", "step"],
     ["The describer fills it in", "runForOutput → { body }.", "infra"],
     ["Render", "plus the agent run, design and plan, collapsed; stuck slices keep their feedback.", "domain"],
     ["The describer fails", "falls back to a description built from the run's state.", "fail"]
@@ -334,7 +334,7 @@ svg text{font-family:var(--sans)}
   ]);
 
   var cFPlanBuild = flowCv("ib", "Decide what to build", "planImageBuild in src/app/sandbox-image.ts — a pure function.", [
-    ["Read .sandcastle/Dockerfile", "missing → run sdlc init first.", "step"],
+    ["Read .sandcastle/Dockerfile", "missing → run jig init first.", "step"],
     ["Hash it with your UID", "the image is built for the user that runs it.", "domain"],
     ["Agent versions", "pinned in agents, else npm latest (3 s timeout, never blocks).", "infra"],
     ["Compare the image labels", "all, agents only, or nothing; agentUpdates auto, warn or off.", "domain"]
@@ -342,7 +342,7 @@ svg text{font-family:var(--sans)}
   var cFBuild = flowCv("bb", "Build", "DockerImages in src/adapters/sandbox-image.", [
     ["Base image", "docker build .sandcastle with AGENT_UID/GID → <image>-base.", "infra"],
     ["Agent layer", "generated: npm install -g each agent@version, then labels.", "infra"],
-    ["CI cache", "SDLC_IMAGE_CACHE=gha builds through buildx with the GitHub Actions cache.", "infra"],
+    ["CI cache", "JIG_IMAGE_CACHE=gha builds through buildx with the GitHub Actions cache.", "infra"],
     ["sandboxImage set", "the named image is used as it is; nothing is built.", "step"]
   ]);
   var cFInit = flowCv("bi", "Toolchain loop", "initSandbox in src/app/init-sandbox.ts.", [
@@ -362,7 +362,7 @@ svg text{font-family:var(--sans)}
     ["agentUsage events", "cost and tokens from each agent's own raw stream.", "infra"],
     ["MetricsObserver", "attributes each agent call to the step it ran in.", "domain"],
     ["metrics.jsonl", "one line per step, agent call and retry, across every invocation.", "infra"],
-    ["summarizeMetrics", "for result.json, the PR footer and sdlc status.", "domain"]
+    ["summarizeMetrics", "for result.json, the PR footer and jig status.", "domain"]
   ]);
   var cFTrace = flowCv("ot", "Tracing", "src/observers/tracing-observer.ts, src/adapters/telemetry.", [
     ["OTEL endpoint set?", "otherwise the SDK is never loaded.", "step"],
@@ -374,13 +374,13 @@ svg text{font-family:var(--sans)}
   var cFOpen = flowCv("xo", "Open", "SandcastleSession.open in src/adapters/sandcastle.", [
     ["Resolve the real repo path", "git inside the container breaks on a symlinked path otherwise.", "step"],
     ["Scoped .sandcastle/.gitignore", "scratch ignored, the Dockerfile committable.", "step"],
-    ["createSandbox", "on branch sdlc/run/<id>; sandcastle owns the worktree.", "ext"],
+    ["createSandbox", "on branch jig/run/<id>; sandcastle owns the worktree.", "ext"],
     ["Credentials", "docker({ env }): only what the configured agents need.", "infra"],
     ["Hooks", "setupCommand on start; commit signing off when configured.", "infra"]
   ]);
   var cFCall = flowCv("xc", "Agent call", "run and runForOutput.", [
     ["sandbox.run", "the agent for the role — claude or opencode — with an idle timeout.", "ext"],
-    ["Read the tagged result", "the last <sdlc-output> JSON in the reply, validated with zod.", "domain"],
+    ["Read the tagged result", "the last <jig-output> JSON in the reply, validated with zod.", "domain"],
     ["Unusable result", "one correction with --continue, in the same agent session.", "fail"],
     ["Stream events", "tool calls, messages and usage, published as run events.", "infra"]
   ]);
@@ -390,7 +390,7 @@ svg text{font-family:var(--sans)}
   ]);
   var cFClose = flowCv("xx", "Close", "When the run stops, whatever the reason.", [
     ["sandbox.close", "the container stops; a clean worktree is removed.", "ext"],
-    ["The branch stays", "the work lives on sdlc/run/<id>.", "step"]
+    ["The branch stays", "the work lives on jig/run/<id>.", "step"]
   ]);
 
   var cCOut = flowCv("co", "Outcomes, not mutations", "How one step moves a run.", [
@@ -413,26 +413,26 @@ svg text{font-family:var(--sans)}
   ]);
 
   /* ---------- level 2: commands, core modules, the sandbox ---------- */
-  var runCmd = ifaceCanvas("sdlc run", "Command. Starts or resumes a run. The awilix container builds a scope per run and disposes it when the run stops.", [
+  var runCmd = ifaceCanvas("jig run", "Command. Starts or resumes a run. The awilix container builds a scope per run and disposes it when the run stops.", [
     box("t-new", "Start a run", ["A request file, optional --id."], cTNew),
     box("t-resume", "Resume a run", ["--id of a saved run."], cTResume)
   ], [
-    { id: "s-req", title: "request.md", lines: ["sdlc run request.md"] },
-    { id: "s-id", title: "--id <runId>", lines: ["sdlc run --id <id>"] }
+    { id: "s-req", title: "request.md", lines: ["jig run request.md"] },
+    { id: "s-id", title: "--id <runId>", lines: ["jig run --id <id>"] }
   ]);
-  var buildCmd = ifaceCanvas("sdlc build", "Command. Builds the sandbox image when its Dockerfile or agents changed.", [
+  var buildCmd = ifaceCanvas("jig build", "Command. Builds the sandbox image when its Dockerfile or agents changed.", [
     box("t-build", "Build the image", ["Base and agent layer, only what changed."], cTBuild)
-  ], [{ id: "s-build", title: "sdlc build", lines: ["--pull-agents optional"] }]);
-  var initCmd = ifaceCanvas("sdlc init", "Command. Sets up a repository's sandbox and proves its setup and verify commands inside it.", [
+  ], [{ id: "s-build", title: "jig build", lines: ["--pull-agents optional"] }]);
+  var initCmd = ifaceCanvas("jig init", "Command. Sets up a repository's sandbox and proves its setup and verify commands inside it.", [
     box("t-agent", "With the planner", ["Toolchain proposed, then checked."], cTInitAgent),
     box("t-plain", "--no-agent", ["Starter files, then a check."], cTInitPlain)
   ], [
-    { id: "s-init", title: "sdlc init", lines: ["default"] },
-    { id: "s-plain", title: "sdlc init --no-agent", lines: ["files only"] }
+    { id: "s-init", title: "jig init", lines: ["default"] },
+    { id: "s-plain", title: "jig init --no-agent", lines: ["files only"] }
   ]);
-  var statusCmd = ifaceCanvas("sdlc status", "Command. Read-only view of a run.", [
+  var statusCmd = ifaceCanvas("jig status", "Command. Read-only view of a run.", [
     box("t-status", "Show a run", ["Phase, slices, documents, cost."], cTStatus)
-  ], [{ id: "s-status", title: "sdlc status <id>", lines: ["no sandbox, no agents"] }]);
+  ], [{ id: "s-status", title: "jig status <id>", lines: ["no sandbox, no agents"] }]);
 
   var engineModule = domainCanvas("Flow engine", [
     box("f-loop", "Engine loop", ["Step, reduce, transition, save, publish."], cFLoop),
@@ -471,20 +471,20 @@ svg text{font-family:var(--sans)}
   ], []);
 
   /* ---------- level 1: the layered map ---------- */
-  var root = cv("Level 1 · Layers", "sdlc", "Commands start the work, core modules hold the logic, and the sandbox, git, run state and external systems sit underneath. Click a box to open it.", [
+  var root = cv("Level 1 · Layers", "jig", "Commands start the work, core modules hold the logic, and the sandbox, git, run state and external systems sit underneath. Click a box to open it.", [
     leaf("band-i", "COMMANDS", "band", 24, 152, 1126, 210, [], { tone: "i" }),
     leaf("band-d", "CORE MODULES", "band", 24, 384, 1126, 210, [], { tone: "d" }),
     leaf("band-x", "INFRA & EXTERNAL", "band", 24, 616, 1126, 177, [], { tone: "x" }),
     leaf("hint-idle", "Select a command above to see the modules and systems it uses.", "label", 190, 482, 800, 24, [], { idle: true }),
-    cont("i-run", "sdlc run", "iface", 60, 186, 236, ["Starts or resumes a run."], runCmd, { pills: [{ t: "Run state", go: "x-state" }, { t: "Image", go: "d-image" }] }),
-    cont("i-build", "sdlc build", "iface", 340, 186, 236, ["Builds the sandbox image."], buildCmd, { pills: [{ t: "Docker", go: "x-docker" }] }),
-    cont("i-init", "sdlc init", "iface", 620, 186, 236, ["Sets up and checks the sandbox."], initCmd, { pills: [{ t: "Sandbox", go: "b-sandbox" }] }),
-    cont("i-status", "sdlc status", "iface", 900, 186, 236, ["Where a run is, what it cost."], statusCmd, { pills: [{ t: "Run state", go: "x-state" }] }),
+    cont("i-run", "jig run", "iface", 60, 186, 236, ["Starts or resumes a run."], runCmd, { pills: [{ t: "Run state", go: "x-state" }, { t: "Image", go: "d-image" }] }),
+    cont("i-build", "jig build", "iface", 340, 186, 236, ["Builds the sandbox image."], buildCmd, { pills: [{ t: "Docker", go: "x-docker" }] }),
+    cont("i-init", "jig init", "iface", 620, 186, 236, ["Sets up and checks the sandbox."], initCmd, { pills: [{ t: "Sandbox", go: "b-sandbox" }] }),
+    cont("i-status", "jig status", "iface", 900, 186, 236, ["Where a run is, what it cost."], statusCmd, { pills: [{ t: "Run state", go: "x-state" }] }),
     cont("d-engine", "Flow engine", "module", 60, 418, 236, ["The run as data, and its loop."], engineModule, { pills: [{ t: "Run state", go: "x-state" }, { t: "Observers", go: "d-obs" }] }),
     cont("d-steps", "Steps", "module", 340, 418, 236, ["Plan, implement, review, verify, describe, merge."], stepsModule, { pills: [{ t: "Sandbox", go: "b-sandbox" }, { t: "Git", go: "x-git" }] }),
     cont("d-image", "Sandbox image", "module", 620, 418, 236, ["Builds it, sets up the toolchain."], imageModule, { pills: [{ t: "Docker", go: "x-docker" }, { t: "Sandbox", go: "b-sandbox" }] }),
     cont("d-obs", "Observers", "module", 900, 418, 236, ["Logging, metrics, tracing."], obsModule, { pills: [{ t: "Run state", go: "x-state" }, { t: "OTel", go: "x-otel" }] }),
-    leaf("x-state", "Run state", "infra", 47, 650, 170, 109, [".sdlc/<id>/state, git-remote"]),
+    leaf("x-state", "Run state", "infra", 47, 650, 170, 109, [".jig/<id>/state, git-remote"]),
     cont("b-sandbox", "Sandcastle sandbox", "infra", 229, 650, 170, ["One container per run."], sandboxModule),
     leaf("x-git", "Git", "infra", 411, 650, 170, 109, ["run branch, worktree, merge"]),
     leaf("x-docker", "Docker", "ext", 593, 650, 170, 109, ["images, buildx cache, npm"]),

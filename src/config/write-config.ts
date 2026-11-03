@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { ConfigInvalid } from '../domain/errors.js';
 import { CONFIG_FILE } from './load-config.js';
 
-/** Sets the given keys in `sdlc.config.json`, keeping every other key as the operator wrote it. */
+/** Sets the given keys in `jig.config.json`, keeping every other key as the operator wrote it. */
 export async function updateConfigFile(repoRoot: string, values: Record<string, unknown>) {
   const file = path.join(repoRoot, CONFIG_FILE);
   const current = existsSync(file) ? parseConfigObject(await readFile(file, 'utf-8')) : {};

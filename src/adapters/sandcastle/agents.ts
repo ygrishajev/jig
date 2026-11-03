@@ -13,7 +13,7 @@ export interface AgentDefinition {
   create(model?: string): AgentProvider;
 }
 
-/** Every agent sdlc can run; adding one here is all the config and the sandbox image need. */
+/** Every agent jig can run; adding one here is all the config and the sandbox image need. */
 export const AGENTS = {
   claude: {
     npmPackage: '@anthropic-ai/claude-code',
@@ -27,7 +27,7 @@ export const AGENTS = {
   },
   codex: {
     npmPackage: '@openai/codex',
-    credentialKeys: () => ['SDLC_CODEX_AUTH_DIR'],
+    credentialKeys: () => ['JIG_CODEX_AUTH_DIR'],
     create: (model?: string) => {
       if (!model)
         throw new ConfigInvalid('codex needs an explicit model — set "model" on the step.');

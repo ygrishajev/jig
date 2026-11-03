@@ -11,7 +11,7 @@ import { openRunStore } from './run-stores.js';
 
 describe('openRunStore', () => {
   it('saves to the local store by default', async () => {
-    const repoRoot = await tempDirectory('sdlc-stores-');
+    const repoRoot = await tempDirectory('jig-stores-');
     const store = await openRunStore({ repoRoot, config: loadConfig(repoRoot) });
     const state = aRunState();
 
@@ -24,7 +24,7 @@ describe('openRunStore', () => {
   });
 
   it('saves to every configured store, including one loaded from a module', async () => {
-    const repoRoot = await tempDirectory('sdlc-stores-');
+    const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(
       path.join(repoRoot, 'memory-store.mjs'),
       `const saved = new Map();
@@ -49,7 +49,7 @@ describe('openRunStore', () => {
   });
 
   it('peeks through a module store that has no peek of its own by loading from it', async () => {
-    const repoRoot = await tempDirectory('sdlc-stores-');
+    const repoRoot = await tempDirectory('jig-stores-');
     const state = aRunState();
     await writeFile(
       path.join(repoRoot, 'load-only-store.mjs'),
@@ -66,7 +66,7 @@ describe('openRunStore', () => {
   });
 
   it("gives a module store the repository's root and saves through it", async () => {
-    const repoRoot = await tempDirectory('sdlc-stores-');
+    const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(
       path.join(repoRoot, 'file-store.mjs'),
       `import { writeFileSync } from 'node:fs';
@@ -89,7 +89,7 @@ describe('openRunStore', () => {
   it.each(['undefined', 'null'])(
     'reads a run a module store answers %s for as not there',
     async (answer) => {
-      const repoRoot = await tempDirectory('sdlc-stores-');
+      const repoRoot = await tempDirectory('jig-stores-');
       await writeFile(
         path.join(repoRoot, 'empty-store.mjs'),
         `export default () => ({ load: async () => ${answer}, save: async () => {} });`,
@@ -103,7 +103,7 @@ describe('openRunStore', () => {
   );
 
   it('refuses a run a module store hands back that is not a run', async () => {
-    const repoRoot = await tempDirectory('sdlc-stores-');
+    const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(
       path.join(repoRoot, 'broken-store.mjs'),
       `export default () => ({ load: async () => ({ phase: 'nowhere' }), save: async () => {} });`,
@@ -115,7 +115,7 @@ describe('openRunStore', () => {
   });
 
   it('refuses a module whose factory does not return a store with load and save', async () => {
-    const repoRoot = await tempDirectory('sdlc-stores-');
+    const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(
       path.join(repoRoot, 'half-a-store.mjs'),
       'export default () => ({ load: async () => undefined });',
@@ -126,7 +126,7 @@ describe('openRunStore', () => {
   });
 
   it('refuses a module that does not export a store factory', async () => {
-    const repoRoot = await tempDirectory('sdlc-stores-');
+    const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(path.join(repoRoot, 'not-a-store.mjs'), 'export const store = {};');
     const config = { ...loadConfig(repoRoot), runStores: ['not-a-store.mjs'] };
 

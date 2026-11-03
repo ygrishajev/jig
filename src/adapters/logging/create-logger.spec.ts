@@ -40,7 +40,7 @@ describe('createRunLogger', () => {
   });
 
   async function setup() {
-    const directory = await tempDirectory('sdlc-logger-');
+    const directory = await tempDirectory('jig-logger-');
     return { logFile: path.join(directory, faker.word.noun(), 'run.log') };
   }
 });

@@ -24,19 +24,19 @@ import {
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, type OpenSessionInput } from './container.js';
-import { runInputFrom, runSdlc } from './run-sdlc.js';
+import { runInputFrom, runJig } from './run-jig.js';
 
 /** TEST-NET-1: routable nowhere, so an exporter aimed at it waits out its timeout. */
 const UNREACHABLE_COLLECTOR = 'http://192.0.2.1:4318';
 
-describe('runSdlc', () => {
+describe('runJig', () => {
   it('starts a run from a request file and stops once the work waits to be merged', async () => {
     const { app, writeRequest, agentFor, repo } = await setup();
     const id = runId();
     const agent = agentFor(id);
     scriptWholeRun(agent);
 
-    const report = await runSdlc(app, { start: await writeRequest(), runId: id });
+    const report = await runJig(app, { start: await writeRequest(), runId: id });
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(agent.closed).toBe(true);
@@ -49,7 +49,7 @@ describe('runSdlc', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
 
-    const report = await runSdlc(app, { start: await writeRequest(), runId: id });
+    const report = await runJig(app, { start: await writeRequest(), runId: id });
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
   });
@@ -58,10 +58,10 @@ describe('runSdlc', () => {
     const { app, writeRequest, agentFor, repo } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    await runSdlc(app, { start: await writeRequest(), runId: id });
+    await runJig(app, { start: await writeRequest(), runId: id });
     await simpleGit({ baseDir: repo.dir }).merge([runBranchFor(id), '--no-edit']);
 
-    const report = await runSdlc(app, { resume: id });
+    const report = await runJig(app, { resume: id });
 
     expect(report.status).toBe('done');
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'done', complete: true });
@@ -72,10 +72,10 @@ describe('runSdlc', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
     const requestPath = await writeRequest();
-    const first = await runSdlc(app, { start: requestPath, runId: id });
+    const first = await runJig(app, { start: requestPath, runId: id });
     const commitsAfterFirst = await runBranchCommits(repo.dir, id);
 
-    const second = await runSdlc(app, { start: requestPath, runId: id });
+    const second = await runJig(app, { start: requestPath, runId: id });
 
     expect(second).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(second.state.runId).toBe(id);
@@ -93,16 +93,16 @@ describe('runSdlc', () => {
     scriptWholeRun(agentFor(id));
     const requestPath = await writeRequest();
     const held = holdNextSession();
-    const first = runSdlc(app, { start: requestPath, runId: id });
+    const first = runJig(app, { start: requestPath, runId: id });
     await held.opened;
 
-    await expect(runSdlc(app, { start: requestPath, runId: id })).rejects.toBeInstanceOf(
+    await expect(runJig(app, { start: requestPath, runId: id })).rejects.toBeInstanceOf(
       RunInProgress,
     );
 
     held.release();
     await first;
-    expect(await runSdlc(app, { resume: id })).toMatchObject({ state: { phase: 'awaitingMerge' } });
+    expect(await runJig(app, { resume: id })).toMatchObject({ state: { phase: 'awaitingMerge' } });
   });
 
   it('starts the sandbox again when it failed for a reason that may pass', async () => {
@@ -114,7 +114,7 @@ describe('runSdlc', () => {
       new SetupCommandFailed(faker.lorem.sentence(), faker.lorem.sentence()),
     );
 
-    const report = await runSdlc(app, { start: await writeRequest(), runId: id });
+    const report = await runJig(app, { start: await writeRequest(), runId: id });
 
     expect(report.state.phase).toBe('awaitingMerge');
     expect(opened()).toBe(3);
@@ -126,7 +126,7 @@ describe('runSdlc', () => {
     scriptWholeRun(agentFor(id));
     const opened = failNextSessions(new ConfigInvalid(faker.lorem.sentence()));
 
-    await expect(runSdlc(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
+    await expect(runJig(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
       ConfigInvalid,
     );
     expect(opened()).toBe(1);
@@ -136,9 +136,9 @@ describe('runSdlc', () => {
     const { app, writeRequest, agentFor } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    await runSdlc(app, { start: await writeRequest(), runId: id });
+    await runJig(app, { start: await writeRequest(), runId: id });
 
-    await expect(runSdlc(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
+    await expect(runJig(app, { start: await writeRequest(), runId: id })).rejects.toBeInstanceOf(
       RunRequestInvalid,
     );
   });
@@ -146,7 +146,7 @@ describe('runSdlc', () => {
   it('refuses to resume a run that does not exist', async () => {
     const { app } = await setup();
 
-    await expect(runSdlc(app, { resume: runId() })).rejects.toBeInstanceOf(RunRequestInvalid);
+    await expect(runJig(app, { resume: runId() })).rejects.toBeInstanceOf(RunRequestInvalid);
   });
 
   it('builds a start from a request, a resume from an id alone, and refuses neither or a bad id', () => {
@@ -168,7 +168,7 @@ describe('runSdlc', () => {
       const state = aRunState({ phase });
       await new LocalRunStore(repo.dir).save(state);
 
-      const report = await runSdlc(app, { resume: state.runId });
+      const report = await runJig(app, { resume: state.runId });
 
       expect(report).toMatchObject({ status: phase, state: { phase } });
       expect(sessionsOpened()).toBe(0);
@@ -177,7 +177,7 @@ describe('runSdlc', () => {
 
   async function setup(options: { managedImage?: boolean } = {}) {
     const repo = await createTempRepo();
-    const requests = await tempDirectory('sdlc-request-');
+    const requests = await tempDirectory('jig-request-');
 
     const app = createAppContainer({
       repoRoot: repo.dir,
@@ -187,7 +187,7 @@ describe('runSdlc', () => {
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
-      const agent = new FakeAgentSession(path.join(repo.dir, '.sdlc', id, 'workspace'));
+      const agent = new FakeAgentSession(path.join(repo.dir, '.jig', id, 'workspace'));
       agents.set(id, agent);
       return agent;
     };

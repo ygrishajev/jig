@@ -16,9 +16,9 @@ import {
   AgentOutputInvalid,
   AgentRunFailed,
   ConfigInvalid,
+  type JigError,
   messageOf,
   SandboxUnavailable,
-  type SdlcError,
   SetupCommandFailed,
 } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
@@ -270,7 +270,7 @@ async function setupFailure(sandbox: Sandbox, command: string, timeoutSeconds: n
   );
 }
 
-function sandboxStartFailure(error: unknown): SdlcError {
+function sandboxStartFailure(error: unknown): JigError {
   const message = `Could not start the sandbox: ${messageOf(error)}`;
   const tag = sandcastleFailureTag(error);
   return tag && CONFIGURATION_FAILURES.has(tag)

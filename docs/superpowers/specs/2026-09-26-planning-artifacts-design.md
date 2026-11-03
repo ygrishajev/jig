@@ -4,7 +4,7 @@ Date: 2026-09-26
 
 ## Problem
 
-sdlc's planning phase produces machine state only (`plan.json` with `summary` /
+jig's planning phase produces machine state only (`plan.json` with `summary` /
 `approach` / `affectedAreas`, `slices.json` with descriptions). When a run
 reaches a merge-ready state or a PR, there is nothing a human can read to
 understand the overall design, the plan, or which part of the plan a slice
@@ -20,7 +20,7 @@ blocked-run output), and (c) never get committed to the target repository.
 ## Non-Goals
 
 - No superpowers dependency: the design-process discipline (approaches,
-  trade-offs, recorded decisions) is encoded in sdlc's own prompts. The
+  trade-offs, recorded decisions) is encoded in jig's own prompts. The
   skills' interactivity does not survive an unattended sandbox run.
 - Planning docs are never committed into the target repo — no
   `planningDocs: 'commit'` mode. They live in run state only.
@@ -29,7 +29,7 @@ blocked-run output), and (c) never get committed to the target repository.
 
 ## Artifacts
 
-Two markdown files in `<stateDir>` (i.e. `.sdlc/<runId>/state/`):
+Two markdown files in `<stateDir>` (i.e. `.jig/<runId>/state/`):
 
 - `design.md` — sections: Goal; Context; Chosen approach; Alternatives
   considered (each with why it was rejected); Assumptions; Non-goals;
@@ -44,7 +44,7 @@ Two markdown files in `<stateDir>` (i.e. `.sdlc/<runId>/state/`):
 3. **New design step** (after feature-plan, before slice-plan): the agent is
    instructed to write `design.md` and `plan.md` to explicit state-dir paths,
    then respond with structured JSON `{ "written": ["design.md", "plan.md"] }`
-   as the ack. sdlc validates both files exist and are non-empty; missing or
+   as the ack. jig validates both files exist and are non-empty; missing or
    empty files fail the run with a clear error. The prompt encodes the
    self-direction rule: "you run unattended — when you would present options
    to a human, evaluate 2–3 approaches, pick the recommended one, and record
@@ -59,15 +59,15 @@ Two markdown files in `<stateDir>` (i.e. `.sdlc/<runId>/state/`):
 - Config: `designGate: 'auto' | 'checkpoint'`, default `'auto'`.
 - `checkpoint`: the `autopilot` command stops right after `prepareRun`
   succeeds, prints the design.md / plan.md paths plus the plan, and instructs
-  `sdlc resume --run <id>`. Implementation never starts until resume.
+  `jig resume --run <id>`. Implementation never starts until resume.
   No new run-state field is needed: planning already happened exactly once,
   and `resume` only ever runs the reconciler.
 - `auto`: unchanged behavior (plan, then implement immediately).
 
 ## Review Surfaces
 
-- `sdlc status --run <id>`: prints design.md and plan.md paths when present.
-- `sdlc create-pr --run <id>`: `PR_DESCRIPTION.md` becomes: run request
+- `jig status --run <id>`: prints design.md and plan.md paths when present.
+- `jig create-pr --run <id>`: `PR_DESCRIPTION.md` becomes: run request
   title, the full `design.md`, the full `plan.md`, then a per-slice list
   (`<slice id> — Implements plan step N — <title>`), with the current
   slice's entry marked.

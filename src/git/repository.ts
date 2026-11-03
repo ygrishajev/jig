@@ -21,7 +21,7 @@ export async function commitAll(cwd: string, message: string): Promise<string | 
 }
 
 /**
- * sdlc works on the repository in the directory it was started in. Started further down, it would
+ * jig works on the repository in the directory it was started in. Started further down, it would
  * miss the config and hand the sandbox no git directory, so that is refused; a directory that is
  * not a repository yet is left for `init` and git itself to judge.
  */
@@ -30,5 +30,5 @@ export async function ensureRepositoryRoot(cwd: string) {
     .revparse(['--show-toplevel'])
     .catch(() => undefined);
   if (root === undefined || root === (await realpath(cwd))) return;
-  throw new ConfigInvalid(`Run sdlc from the repository's root, ${root} — not from ${cwd}.`);
+  throw new ConfigInvalid(`Run jig from the repository's root, ${root} — not from ${cwd}.`);
 }

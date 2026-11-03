@@ -8,12 +8,12 @@ import type { RunStore } from '../../ports/run-store.js';
 
 const STATE_FILE = 'run.json';
 
-/** Identity for the state commits; they are sdlc's bookkeeping, not anyone's work. */
+/** Identity for the state commits; they are jig's bookkeeping, not anyone's work. */
 const COMMITTER = {
-  GIT_AUTHOR_NAME: 'sdlc',
-  GIT_AUTHOR_EMAIL: 'sdlc@localhost',
-  GIT_COMMITTER_NAME: 'sdlc',
-  GIT_COMMITTER_EMAIL: 'sdlc@localhost',
+  GIT_AUTHOR_NAME: 'jig',
+  GIT_AUTHOR_EMAIL: 'jig@localhost',
+  GIT_COMMITTER_NAME: 'jig',
+  GIT_COMMITTER_EMAIL: 'jig@localhost',
 };
 
 /** How many more times a fetch or push that failed on the network is tried. */
@@ -29,7 +29,7 @@ interface RemoteRun {
 }
 
 /**
- * Keeps each run's state as a commit on a hidden `refs/sdlc/<runId>` ref and pushes it, with the
+ * Keeps each run's state as a commit on a hidden `refs/jig/<runId>` ref and pushes it, with the
  * run branch, to a remote — so another machine, such as a retried CI job, can resume the run.
  * The hidden ref keeps state commits out of the repository's branch list. A save only replaces
  * what this store last saw on the remote, so a concurrent writer is refused rather than overwritten.
@@ -164,7 +164,7 @@ export class GitRemoteRunStore implements RunStore {
       tree,
       ...(parent ? ['-p', parent] : []),
       '-m',
-      `sdlc run ${state.runId}: ${state.phase}`,
+      `jig run ${state.runId}: ${state.phase}`,
     ]);
     await this.required(['update-ref', ref, commit]);
     return commit;
@@ -231,7 +231,7 @@ function parseState(shown: string) {
 }
 
 function stateRef(runId: RunId) {
-  return `refs/sdlc/${runId}`;
+  return `refs/jig/${runId}`;
 }
 
 function branchRef(runId: RunId) {

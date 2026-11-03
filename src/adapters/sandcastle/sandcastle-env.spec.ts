@@ -33,7 +33,7 @@ describe('sandcastleEnvKeys', () => {
   });
 
   async function setup() {
-    const repoRoot = await tempDirectory('sdlc-sandcastle-env-');
+    const repoRoot = await tempDirectory('jig-sandcastle-env-');
     const writeEnvFile = async (content: string) => {
       await mkdir(path.join(repoRoot, '.sandcastle'), { recursive: true });
       await writeFile(path.join(repoRoot, '.sandcastle', '.env'), content);

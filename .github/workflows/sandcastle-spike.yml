@@ -30,7 +30,7 @@ jobs:
       - name: Build spike image with the runner's UID/GID
         working-directory: spike
         run: |
-          docker build -t sdlc-spike \
+          docker build -t jig-spike \
             --build-arg AGENT_UID=$(id -u) --build-arg AGENT_GID=$(id -g) .
 
       - name: Run sandbox checks
