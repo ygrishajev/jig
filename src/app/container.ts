@@ -40,6 +40,7 @@ import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { sandboxImageName } from './sandbox-image.js';
 
+// TODO(cohesion-12): retry constants and settingsFrom are run policy, not wiring; constants to domain/settings.ts, the config→settings mapping to config/.
 /** How many times a step that failed transiently is tried again before the run blocks. */
 const MAX_STEP_RETRIES = 2;
 
@@ -118,6 +119,7 @@ export function createAppContainer(input: {
     images: asFunction(
       ({ logger, environment }: AppCradle) =>
         new DockerImages({
+          // TODO(cohesion-13): interprets JIG_IMAGE_CACHE inline; let DockerImages (or one parsed environment schema) own what the variable means.
           cache: environment.JIG_IMAGE_CACHE === 'gha' ? 'gha' : undefined,
           onOutput: (line) => logger.debug(line.trimEnd()),
         }),
@@ -161,6 +163,7 @@ async function openRunScope(
     runLogger: asFunction(({ logFormat, logLevel }: RunCradle) =>
       createRunLogger(
         logFormat,
+        // TODO(cohesion-14): 'run.log' and 'agents.log' name files in the state directory here, 'metrics.jsonl' in MetricsLog; let run-paths.ts name them all.
         path.join(stateDirectory(repoRoot, run.runId), 'run.log'),
         logLevel,
       ).child({
@@ -211,6 +214,7 @@ function openSessionRetrying({ openSession, run, events, settings, runLogger }: 
   return pRetry(() => openSession({ run, events }), {
     retries: settings.maxStepRetries,
     minTimeout: settings.retryDelayMs,
+    // TODO(cohesion-11): same predicate as isTransient in flow/engine.ts; make it one isTransient(error) in domain/errors.ts next to FailureKind.
     shouldRetry: ({ error }) => error instanceof JigError && error.kind === 'retry',
     onFailedAttempt: ({ error, attemptNumber }) =>
       runLogger.warn({ err: error, attempt: attemptNumber }, 'the sandbox did not start'),
@@ -233,6 +237,7 @@ function sandcastleOpener({
   logger,
 }: Pick<AppCradle, 'repoRoot' | 'config' | 'environment' | 'logger'>) {
   return async (input: OpenSessionInput): Promise<RunSession> => {
+    // TODO(cohesion-10): the .sandcastle/.env warning is a sandbox rule; move it into adapters/sandcastle with the session options (cohesion-9).
     const injected = await sandcastleEnvKeys(repoRoot);
     if (injected.length > 0) {
       logger.warn(
@@ -243,6 +248,7 @@ function sandcastleOpener({
   };
 }
 
+// TODO(cohesion-9): translating config and environment into sandcastle options is adapter knowledge; move it with agentsFor to adapters/sandcastle (pass the image name in, or move sandboxImageName down to adapters/sandbox-image).
 /** What the run's sandbox is started with: the configured agents, their credentials and limits. */
 export function sandcastleSessionOptions(
   repoRoot: string,
