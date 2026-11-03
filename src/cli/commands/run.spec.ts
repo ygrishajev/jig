@@ -1,9 +1,9 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aRunState, aSlice } from '../../../tests/support/builders.js';
+import { aRunState, aSlice, runId } from '../../../tests/support/builders.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import { nextStep } from './run.js';
+import { nextStep, runInputSchema } from './run.js';
 
 describe('nextStep', () => {
   it('asks for nothing more once the run is done', () => {
@@ -50,5 +50,34 @@ describe('nextStep', () => {
     expect(step).toContain(runBranchFor(state.runId));
     expect(step).toContain(`jig status ${state.runId}`);
     expect(step).not.toContain('jig run --id');
+  });
+});
+
+describe('runInputSchema', () => {
+  const logFormat = 'json';
+
+  it('starts a run from a request, named by the id when one is given', () => {
+    const request = faker.system.filePath();
+    const id = runId();
+
+    expect(runInputSchema.parse({ request, logFormat }).run).toEqual({ start: request });
+    expect(runInputSchema.parse({ request, id, logFormat }).run).toEqual({
+      start: request,
+      runId: id,
+    });
+  });
+
+  it('resumes the run named by an id given alone', () => {
+    const id = runId();
+
+    expect(runInputSchema.parse({ id, logFormat }).run).toEqual({ resume: id });
+  });
+
+  it('refuses neither a request nor an id, and an id that is not a valid run id', () => {
+    expect(runInputSchema.safeParse({ logFormat }).success).toBe(false);
+    expect(runInputSchema.safeParse({ id: '../x', logFormat }).success).toBe(false);
+    expect(
+      runInputSchema.safeParse({ request: faker.system.filePath(), id: '../x', logFormat }).success,
+    ).toBe(false);
   });
 });

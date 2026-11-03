@@ -1,10 +1,35 @@
-import { Command, Option } from 'commander';
+import { Command } from 'commander';
+import { z } from 'zod';
 
-import { defaultLogFormat, type LogFormat } from '../../adapters/logging/create-logger.js';
-import { runInputFrom, runJig, type RunReport } from '../../app/run-jig.js';
+import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
+import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, stuckSlice } from '../../domain/run-state.js';
+import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
+import { withInput } from '../with-input.js';
+
+/**
+ * `jig run [request] [--id <id>]`: a request starts a run, named by `--id` when given; an id
+ * alone resumes that run.
+ */
+export const runInputSchema = logFormatInputSchema
+  .extend({ request: z.string().optional(), id: runIdSchema.optional() })
+  .transform(({ request, id, logFormat }, context) => {
+    const run = runToDo(request, id);
+    if (run) return { run, logFormat };
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Pass a request file to start a run, or --id to resume one.',
+    });
+    return z.NEVER;
+  });
+
+function runToDo(request: string | undefined, id: RunId | undefined): RunJigInput | undefined {
+  if (request !== undefined) return id ? { start: request, runId: id } : { start: request };
+  if (id) return { resume: id };
+  return undefined;
+}
 
 /** What the operator does next, for where the run stopped. */
 export function nextStep(report: RunReport) {
@@ -40,21 +65,15 @@ export function registerRunCommand(program: Command) {
     .addOption(logFormatOption())
     .action(
       withErrorHandling(
-        async (request: string | undefined, options: { id?: string; logFormat: LogFormat }) => {
-          await withApp(options.logFormat, async (app) => {
-            const report = await runJig(app, runInputFrom(request, options.id));
+        withInput(runInputSchema, async ({ run, logFormat }) => {
+          await withApp(logFormat, async (app) => {
+            const report = await runJig(app, run);
             app.cradle.logger.info(
               { runId: report.state.runId, branch: runBranchFor(report.state.runId) },
               nextStep(report),
             );
           });
-        },
+        }),
       ),
     );
-}
-
-export function logFormatOption() {
-  return new Option('--log-format <format>', 'pretty for a terminal, json for CI and files')
-    .choices(['pretty', 'json'])
-    .default(defaultLogFormat());
 }

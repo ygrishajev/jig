@@ -2,8 +2,11 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { type DestinationStream, type Logger, pino } from 'pino';
 import pretty from 'pino-pretty';
+import { z } from 'zod';
 
-export type LogFormat = 'pretty' | 'json';
+export const logFormatSchema = z.enum(['pretty', 'json']);
+
+export type LogFormat = z.infer<typeof logFormatSchema>;
 
 /** Pretty for a person at a terminal, JSON lines everywhere else (CI, pipes, files). */
 export function defaultLogFormat(stream: { isTTY?: boolean } = process.stdout): LogFormat {

@@ -6,7 +6,7 @@ import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { startTelemetry, telemetryEnabled } from '../adapters/telemetry/open-telemetry.js';
 import { RunRequestInvalid } from '../domain/errors.js';
-import { parseRunId, type RunId, runIdSchema } from '../domain/run-id.js';
+import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
 import { type EngineResult, runEngine } from '../flow/engine.js';
@@ -27,19 +27,10 @@ export type RunJigInput = { start: string; runId?: RunId } | { resume: RunId };
 
 export type RunReport = EngineResult;
 
-/** What `jig run [request] [--id <id>]` asks for; it needs at least one of the two. */
-export function runInputFrom(requestPath?: string, id?: string): RunJigInput {
-  const runId = id === undefined ? undefined : parseRunId(id);
-  if (requestPath !== undefined)
-    return runId ? { start: requestPath, runId } : { start: requestPath };
-  if (runId) return { resume: runId };
-  throw new RunRequestInvalid('Pass a request file to start a run, or --id to resume one.');
-}
-
 /**
- * Runs `input` to its next stop. The whole run holds the run's lock, so a second process for the
- * same id fails with `RunInProgress` instead of writing over it. A run that already ended is
- * reported as it is, without touching the sandbox.
+ * Runs `input` to its next stop. The whole run holds the run's lock, so a second
+ * process for the same id fails with `RunInProgress` instead of writing over it. A run that
+ * already ended is reported as it is, without touching the sandbox.
  */
 export async function runJig(
   app: AwilixContainer<AppCradle>,

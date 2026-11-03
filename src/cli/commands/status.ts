@@ -1,13 +1,15 @@
 import { Command } from 'commander';
+import { z } from 'zod';
 
 import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
 import { readRunStatus, type RunStatus } from '../../app/run-status.js';
-import { parseRunId } from '../../domain/run-id.js';
+import { runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { slicesInOrder } from '../../domain/slice.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
+import { withInput } from '../with-input.js';
 
 export function registerStatusCommand(program: Command) {
   program
@@ -15,13 +17,15 @@ export function registerStatusCommand(program: Command) {
     .description('Show where a run is, without changing anything')
     .argument('<id>', 'run id')
     .action(
-      withErrorHandling(async (id: string) => {
-        await withApp(defaultLogFormat(), async (app) => {
-          const status = await readRunStatus(app, parseRunId(id));
-          console.log(describeRun(status));
-          if (status.metrics.steps > 0) console.log(`So far: ${formatSummary(status.metrics)}`);
-        });
-      }),
+      withErrorHandling(
+        withInput(z.object({ id: runIdSchema }), async ({ id }) => {
+          await withApp(defaultLogFormat(), async (app) => {
+            const status = await readRunStatus(app, id);
+            console.log(describeRun(status));
+            if (status.metrics.steps > 0) console.log(`So far: ${formatSummary(status.metrics)}`);
+          });
+        }),
+      ),
     );
 }
 

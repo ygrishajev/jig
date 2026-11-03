@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
@@ -11,7 +11,7 @@ import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { loadConfig } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
-import { parseRunId, type RunId } from '../domain/run-id.js';
+import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer } from './container.js';
 import { readRunStatus } from './run-status.js';
@@ -63,19 +63,9 @@ describe('readRunStatus', () => {
     ).rejects.toBeInstanceOf(RunRequestInvalid);
   });
 
-  it('refuses an id that would lead outside the run directory', async () => {
-    const { cloneOf, statusIn } = await setup();
-    const here = await cloneOf();
-    const outside = path.join(here, 'x', 'state');
-    await mkdir(outside, { recursive: true });
-    await writeFile(path.join(outside, 'run.json'), JSON.stringify(aRunState()));
-
-    await expect(statusIn(here, ['local'], '../x')).rejects.toBeInstanceOf(RunRequestInvalid);
-  });
-
   async function setup() {
     const { cloneOf } = await createRemote();
-    const statusIn = async (repoRoot: string, runStores: string[], id: string) => {
+    const statusIn = async (repoRoot: string, runStores: string[], id: RunId) => {
       const app = createAppContainer({
         repoRoot,
         logFormat: 'json',
@@ -84,7 +74,7 @@ describe('readRunStatus', () => {
       });
       onTestFinished(() => app.dispose());
       app.register({ config: asValue({ ...loadConfig(repoRoot), runStores }) });
-      return readRunStatus(app, parseRunId(id));
+      return readRunStatus(app, id);
     };
     return { cloneOf, statusIn };
   }

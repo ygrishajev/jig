@@ -24,7 +24,7 @@ import {
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, type OpenSessionInput } from './container.js';
-import { runInputFrom, runJig } from './run-jig.js';
+import { runJig } from './run-jig.js';
 
 /** TEST-NET-1: routable nowhere, so an exporter aimed at it waits out its timeout. */
 const UNREACHABLE_COLLECTOR = 'http://192.0.2.1:4318';
@@ -147,18 +147,6 @@ describe('runJig', () => {
     const { app } = await setup();
 
     await expect(runJig(app, { resume: runId() })).rejects.toBeInstanceOf(RunRequestInvalid);
-  });
-
-  it('builds a start from a request, a resume from an id alone, and refuses neither or a bad id', () => {
-    const requestPath = faker.system.filePath();
-    const id = runId();
-
-    expect(runInputFrom(requestPath, undefined)).toEqual({ start: requestPath });
-    expect(runInputFrom(requestPath, id)).toEqual({ start: requestPath, runId: id });
-    expect(runInputFrom(undefined, id)).toEqual({ resume: id });
-    expect(() => runInputFrom(undefined, undefined)).toThrow(RunRequestInvalid);
-    expect(() => runInputFrom(requestPath, '../x')).toThrow(RunRequestInvalid);
-    expect(() => runInputFrom(undefined, '../x')).toThrow(RunRequestInvalid);
   });
 
   it.each(['done', 'stuck'] as const)(
