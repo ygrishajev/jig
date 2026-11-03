@@ -1,13 +1,22 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { sandboxTelemetryEnvironment, telemetryEnabled } from './open-telemetry.js';
+import { sandboxTelemetryEnvironment, startTelemetry } from './open-telemetry.js';
 
 describe('telemetry environment', () => {
-  it('is off unless an OTLP endpoint is configured', () => {
-    expect(telemetryEnabled({})).toBe(false);
-    expect(telemetryEnabled({ OTEL_EXPORTER_OTLP_ENDPOINT: faker.internet.url() })).toBe(true);
+  it('starts nothing unless an OTLP endpoint is configured', async () => {
+    expect(await startTelemetry({ OTEL_SERVICE_NAME: faker.word.noun() })).toBeUndefined();
   });
+
+  it.each(['OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT'])(
+    'starts tracing once %s is configured',
+    async (variable) => {
+      const telemetry = await startTelemetry({ [variable]: faker.internet.url() });
+
+      expect(telemetry?.tracer).toBeDefined();
+      await telemetry?.shutdown();
+    },
+  );
 
   it('forwards only OTEL_ variables into the sandbox and switches on Claude Code telemetry', () => {
     const endpoint = faker.internet.url();

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
-import { startTelemetry, telemetryEnabled } from '../adapters/telemetry/open-telemetry.js';
+import { startTelemetry } from '../adapters/telemetry/open-telemetry.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { type RunState, startRun } from '../domain/run-state.js';
@@ -83,9 +83,7 @@ async function startNewRun(cradle: AppCradle, store: RunStore, runId: RunId, req
 
 async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: RunState) {
   await ensureSandboxImage(app.cradle);
-  const { environment } = app.cradle;
-  // TODO(cohesion-5): the caller knows the on/off guard; startTelemetry should return undefined when disabled and keep telemetryEnabled private.
-  const telemetry = telemetryEnabled(environment) ? await startTelemetry(environment) : undefined;
+  const telemetry = await startTelemetry(app.cradle.environment);
   try {
     return await withRunScope(app, state, store, { tracer: telemetry?.tracer }, (dependencies) =>
       runEngine(runFlow, state, dependencies),
