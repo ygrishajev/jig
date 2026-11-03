@@ -16,13 +16,13 @@ import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
 import { SetupCommandFailed } from '../domain/errors.js';
 import { runIdSchema } from '../domain/run-id.js';
-import { runBranchFor } from '../domain/run-state.js';
+import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import { getCurrentBranch } from '../git/branch.js';
 import { openRepo } from '../git/repository.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { observe, RunEvents } from '../observers/run-events.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
-import type { AppCradle, RunIdentity } from './container.js';
+import type { AppCradle } from './container.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 
 /** How many times the planner gets to fix a toolchain that failed setup or verify. */

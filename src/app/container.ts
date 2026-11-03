@@ -1,4 +1,3 @@
-import type { AgentProvider } from '@ai-hero/sandcastle';
 import type { Tracer } from '@opentelemetry/api';
 import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMode } from 'awilix';
 import pRetry from 'p-retry';
@@ -7,7 +6,7 @@ import type { Logger } from 'pino';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
-import { agentLogFile, runLogFile } from '../adapters/local-store/run-paths.js';
+import { runLogFile } from '../adapters/local-store/run-paths.js';
 import {
   createConsoleLogger,
   createRunLogger,
@@ -15,23 +14,14 @@ import {
 } from '../adapters/logging/create-logger.js';
 import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
-import { AGENTS, collectCredentials } from '../adapters/sandcastle/agents.js';
-import { sandcastleEnvKeys } from '../adapters/sandcastle/sandcastle-env.js';
 import {
-  SandcastleSession,
-  type SandcastleSessionOptions,
-} from '../adapters/sandcastle/sandcastle-session.js';
-import { sandboxTelemetryEnvironment } from '../adapters/telemetry/open-telemetry.js';
+  openSandcastleSession,
+  type OpenSessionInput,
+} from '../adapters/sandcastle/open-session.js';
 import type { JigEnvironment } from '../config/environment.js';
-import {
-  configuredSteps,
-  type JigConfig,
-  loadConfig,
-  runSettingsFrom,
-} from '../config/load-config.js';
-import { type AgentRole, byRole } from '../domain/agent-role.js';
+import { type JigConfig, loadConfig, runSettingsFrom } from '../config/load-config.js';
 import { isTransient } from '../domain/errors.js';
-import type { RunId } from '../domain/run-id.js';
+import type { RunIdentity } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
@@ -39,28 +29,16 @@ import { MetricsObserver } from '../observers/metrics.js';
 import { observe, RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
-import type { Clock, EventSink } from '../ports/observability.js';
+import type { Clock } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { sandboxImageName } from './sandbox-image.js';
 
-export interface RunIdentity {
-  runId: RunId;
-  baseBranch: string;
-}
-
 /** The run's sandbox: where agents and commands run, and the worktree they share with the host. */
 export interface RunSession extends AgentSession {
   readonly worktreePath: string;
   close(): Promise<void>;
-}
-
-export interface OpenSessionInput {
-  run: RunIdentity;
-  events: EventSink;
-  /** Overrides the configured setup command; `null` starts the sandbox without one. */
-  setupCommand?: string | null;
 }
 
 /** Lives for the whole process: configuration and everything shared by every run. */
@@ -121,7 +99,20 @@ export function createAppContainer(input: {
         }),
     ).singleton(),
     latestVersions: asValue(latestAgentVersions),
-    openSession: asFunction((cradle: AppCradle) => sandcastleOpener(cradle)).singleton(),
+    openSession: asFunction(
+      ({ repoRoot, config, environment, logger }: AppCradle) =>
+        (input: OpenSessionInput) =>
+          openSandcastleSession(
+            {
+              repoRoot,
+              config,
+              environment,
+              logger,
+              imageName: sandboxImageName(repoRoot, config),
+            },
+            input,
+          ),
+    ).singleton(),
   });
   return container;
 }
@@ -218,56 +209,4 @@ async function closeRunScope(scope: AwilixContainer<RunCradle>) {
   } finally {
     await scope.dispose();
   }
-}
-
-function sandcastleOpener({
-  repoRoot,
-  config,
-  environment,
-  logger,
-}: Pick<AppCradle, 'repoRoot' | 'config' | 'environment' | 'logger'>) {
-  return async (input: OpenSessionInput): Promise<RunSession> => {
-    // TODO(cohesion-10): the .sandcastle/.env warning is a sandbox rule; move it into adapters/sandcastle with the session options (cohesion-9).
-    const injected = await sandcastleEnvKeys(repoRoot);
-    if (injected.length > 0) {
-      logger.warn(
-        `.sandcastle/.env also puts ${injected.join(', ')} into the sandbox — jig passes credentials from the environment; remove the file unless the agents need these`,
-      );
-    }
-    return SandcastleSession.open(sandcastleSessionOptions(repoRoot, config, input, environment));
-  };
-}
-
-// TODO(cohesion-9): translating config and environment into sandcastle options is adapter knowledge; move it with agentsFor to adapters/sandcastle (pass the image name in, or move sandboxImageName down to adapters/sandbox-image).
-/** What the run's sandbox is started with: the configured agents, their credentials and limits. */
-export function sandcastleSessionOptions(
-  repoRoot: string,
-  config: JigConfig,
-  { run, events, setupCommand }: OpenSessionInput,
-  environment: JigEnvironment,
-): SandcastleSessionOptions {
-  const steps = configuredSteps(config);
-  return {
-    repoRoot,
-    ...run,
-    imageName: sandboxImageName(repoRoot, config),
-    codexAuthDirectory: Object.values(steps).some((step) => step.provider === 'codex')
-      ? environment.codexAuthDirectory
-      : undefined,
-    credentials: {
-      ...collectCredentials(Object.values(steps), environment.credential),
-      ...sandboxTelemetryEnvironment(environment.telemetry),
-    },
-    agents: agentsFor(steps),
-    skipCommitSigning: config.commitSigning === 'skip',
-    setupCommand: setupCommand === null ? undefined : (setupCommand ?? config.setupCommand),
-    setupTimeoutSeconds: config.setupTimeoutSeconds,
-    idleTimeoutSeconds: config.agentIdleTimeoutSeconds,
-    agentLogFile: agentLogFile(repoRoot, run.runId),
-    events,
-  };
-}
-
-function agentsFor(steps: ReturnType<typeof configuredSteps>): Record<AgentRole, AgentProvider> {
-  return byRole((role) => AGENTS[steps[role].provider].create(steps[role].model));
 }

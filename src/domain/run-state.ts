@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { type RunId, runIdSchema } from './run-id.js';
 import { type Slice, sliceSchema, slicesInOrder } from './slice.js';
 
+/** Which run a sandbox or scope belongs to, and the branch its work started from. */
+export interface RunIdentity {
+  runId: RunId;
+  baseBranch: string;
+}
+
 export const runPhaseSchema = z.enum([
   'context',
   'planning',
