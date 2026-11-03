@@ -18,7 +18,7 @@ export function withInput<Schema extends z.ZodTypeAny>(
   };
 }
 
-function inputOf(command: Command) {
+function inputOf(command: Command): Record<string, unknown> {
   const named = command.registeredArguments.map((argument, index) => [
     argument.name(),
     command.processedArgs[index],
@@ -34,7 +34,7 @@ export class CommandInputInvalid extends Error {
   }
 }
 
-function describeIssues(error: z.ZodError) {
+function describeIssues(error: z.ZodError): string {
   return error.issues
     .map((issue) =>
       issue.path.length > 0 ? `${issue.path.join('.')}: ${issue.message}` : issue.message,

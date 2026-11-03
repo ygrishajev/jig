@@ -32,6 +32,6 @@ export async function lockRun(repoRoot: string, runId: RunId): Promise<() => Pro
  */
 const STALE_LOCK_MS = 30_000;
 
-function isHeldElsewhere(error: unknown) {
+function isHeldElsewhere(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ELOCKED';
 }

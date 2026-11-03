@@ -1,4 +1,11 @@
-import { context, type Span, SpanStatusCode, trace, type Tracer } from '@opentelemetry/api';
+import {
+  type Attributes,
+  context,
+  type Span,
+  SpanStatusCode,
+  trace,
+  type Tracer,
+} from '@opentelemetry/api';
 
 import type { RunEvent, StepLocation } from '../domain/events.js';
 
@@ -14,7 +21,7 @@ export class TracingObserver {
 
   constructor(private readonly tracer: Tracer) {}
 
-  handle(event: RunEvent) {
+  handle(event: RunEvent): void {
     switch (event.type) {
       case 'stepStarted':
         return this.startStep(event.at);
@@ -37,7 +44,7 @@ export class TracingObserver {
     }
   }
 
-  private startStep(at: StepLocation) {
+  private startStep(at: StepLocation): void {
     this.stepSpan = this.tracer.startSpan(
       stepName(at),
       { attributes: locationAttributes(at) },
@@ -45,7 +52,7 @@ export class TracingObserver {
     );
   }
 
-  private recordAgentUsage(event: Extract<RunEvent, { type: 'agentUsage' }>) {
+  private recordAgentUsage(event: Extract<RunEvent, { type: 'agentUsage' }>): void {
     this.stepSpan?.addEvent('agent call', {
       'gen_ai.agent.name': event.role,
       'gen_ai.usage.input_tokens': event.tokens.input,
@@ -57,12 +64,12 @@ export class TracingObserver {
     });
   }
 
-  private endStep() {
+  private endStep(): void {
     this.stepSpan?.end();
     this.stepSpan = undefined;
   }
 
-  private handleRunLifecycle(event: RunEvent) {
+  private handleRunLifecycle(event: RunEvent): void {
     switch (event.type) {
       case 'runResumed':
         this.runSpan = this.tracer.startSpan('jig.run', {
@@ -79,18 +86,18 @@ export class TracingObserver {
     }
   }
 
-  private endRun(phase: string) {
+  private endRun(phase: string): void {
     this.runSpan?.setAttribute('jig.phase.end', phase);
     this.runSpan?.end();
     this.runSpan = undefined;
   }
 }
 
-function stepName(at: StepLocation) {
+function stepName(at: StepLocation): string {
   return at.sliceId !== undefined ? `jig.step ${at.sliceStatus}` : `jig.step ${at.phase}`;
 }
 
-function locationAttributes(at: StepLocation) {
+function locationAttributes(at: StepLocation): Attributes {
   return {
     'jig.phase': at.phase,
     ...(at.sliceId !== undefined

@@ -57,6 +57,6 @@ const knownVariablesSchema = z.object({
   OTEL_SERVICE_NAME: z.string().optional(),
 });
 
-function otelVariables(variables: Record<string, string>) {
+function otelVariables(variables: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(variables).filter(([name]) => name.startsWith('OTEL_')));
 }

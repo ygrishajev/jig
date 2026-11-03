@@ -143,7 +143,7 @@ function unitKind(node: ts.Statement): Unit['kind'] {
 function referencesIn(node: ts.Statement, localNames: Set<string>): Reference[] {
   const references: Reference[] = [];
   const own = new Set(declaredNames(node));
-  const visit = (current: ts.Node, deferred: boolean, inType: boolean, inTypeof: boolean) => {
+  const visit = (current: ts.Node, deferred: boolean, inType: boolean, inTypeof: boolean): void => {
     if (ts.isIdentifier(current) && localNames.has(current.text) && !own.has(current.text)) {
       if (!isPropertyName(current)) {
         references.push({
@@ -168,7 +168,7 @@ function referencesIn(node: ts.Statement, localNames: Set<string>): Reference[] 
   return references;
 }
 
-function isPropertyName(identifier: ts.Identifier) {
+function isPropertyName(identifier: ts.Identifier): boolean {
   const parent = identifier.parent;
   return (
     (ts.isPropertyAccessExpression(parent) && parent.name === identifier) ||
@@ -181,7 +181,7 @@ function isPropertyName(identifier: ts.Identifier) {
 }
 
 /** Only a function that is a constant's whole value is sure not to run while the module loads. */
-function defersItsBody(node: ts.Node, deferred: boolean) {
+function defersItsBody(node: ts.Node, deferred: boolean): boolean {
   const isFunctionExpression = ts.isFunctionExpression(node) || ts.isArrowFunction(node);
   const isConstantsValue =
     isFunctionExpression &&
@@ -198,7 +198,7 @@ function defersItsBody(node: ts.Node, deferred: boolean) {
   );
 }
 
-function isTypePosition(node: ts.Node) {
+function isTypePosition(node: ts.Node): boolean {
   return (
     ts.isTypeNode(node) ||
     ts.isInterfaceDeclaration(node) ||
@@ -207,14 +207,14 @@ function isTypePosition(node: ts.Node) {
   );
 }
 
-function hasModifier(node: ts.Node, kind: ts.SyntaxKind) {
+function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
   return ts.canHaveModifiers(node) && !!ts.getModifiers(node)?.some((m) => m.kind === kind);
 }
 
 /** Types first, then values depth-first from the entry points, then load-time statements. */
 function orderUnits(units: Unit[]): Unit[] {
   const unitNamed = new Map(units.flatMap((unit) => unit.names.map((name) => [name, unit])));
-  const unitOf = (reference: Reference) => unitNamed.get(reference.name);
+  const unitOf = (reference: Reference): Unit | undefined => unitNamed.get(reference.name);
   attachDerivedTypes(units, unitOf);
   const values = orderValues(units, unitOf);
   const types = orderTypes(units, values, unitOf);
@@ -226,7 +226,7 @@ function orderUnits(units: Unit[]): Unit[] {
 }
 
 /** A type taken from a value (`typeof x`, `z.infer<typeof schema>`) sits right after it. */
-function attachDerivedTypes(units: Unit[], unitOf: UnitLookup) {
+function attachDerivedTypes(units: Unit[], unitOf: UnitLookup): void {
   for (const unit of units) {
     if (unit.kind !== 'type') continue;
     const source = unit.references.find(
@@ -238,20 +238,20 @@ function attachDerivedTypes(units: Unit[], unitOf: UnitLookup) {
 
 function orderValues(units: Unit[], unitOf: UnitLookup): Unit[] {
   const values = units.filter((unit) => unit.kind === 'value');
-  const valuesUsed = (unit: Unit, which: (reference: Reference) => boolean) =>
+  const valuesUsed = (unit: Unit, which: (reference: Reference) => boolean): Unit[] =>
     unit.references
       .filter(which)
       .map(unitOf)
       .filter((used): used is Unit => used?.kind === 'value' && used !== unit);
-  const callees = (unit: Unit) =>
+  const callees = (unit: Unit): Unit[] =>
     valuesUsed(unit, (reference) => !reference.inType && !reference.inTypeof);
-  const readAtLoad = (unit: Unit) => valuesUsed(unit, (reference) => reference.atLoad);
+  const readAtLoad = (unit: Unit): Unit[] => valuesUsed(unit, (reference) => reference.atLoad);
 
   const ordered: Unit[] = [];
   const placed = new Set<Unit>();
   const placing = new Set<Unit>();
   const traced = new Set<Unit>();
-  const place = (unit: Unit) => {
+  const place = (unit: Unit): void => {
     if (placed.has(unit) || placing.has(unit)) return;
     placing.add(unit);
     for (const dependency of readAtLoad(unit)) placeBefore(dependency);
@@ -260,7 +260,7 @@ function orderValues(units: Unit[], unitOf: UnitLookup): Unit[] {
     ordered.push(unit);
     for (const callee of callees(unit)) place(callee);
   };
-  const placeBefore = (unit: Unit) => {
+  const placeBefore = (unit: Unit): void => {
     if (placed.has(unit) || placing.has(unit)) return;
     if (!unit.nodes.every((node) => ts.isFunctionDeclaration(node))) return place(unit);
     if (traced.has(unit)) return;
@@ -283,7 +283,7 @@ function orderValues(units: Unit[], unitOf: UnitLookup): Unit[] {
 /** Types in the order the values first use them; a type another type uses goes after it. */
 function orderTypes(units: Unit[], values: Unit[], unitOf: UnitLookup): Unit[] {
   const types = units.filter((unit) => unit.kind === 'type' && !unit.derivedFrom);
-  const typesUsed = (unit: Unit) =>
+  const typesUsed = (unit: Unit): Unit[] =>
     unit.references
       .map(unitOf)
       .filter((used): used is Unit => !!used && types.includes(used) && used !== unit);
@@ -297,7 +297,7 @@ function orderTypes(units: Unit[], values: Unit[], unitOf: UnitLookup): Unit[] {
     .sort((a, b) => (firstUse.get(a) ?? -1) - (firstUse.get(b) ?? -1));
 
   const ordered: Unit[] = [];
-  const place = (unit: Unit) => {
+  const place = (unit: Unit): void => {
     if (ordered.includes(unit)) return;
     ordered.push(unit);
     for (const used of typesUsed(unit)) place(used);
@@ -309,17 +309,18 @@ function orderTypes(units: Unit[], values: Unit[], unitOf: UnitLookup): Unit[] {
 
 /** Fields, the constructor and static members first; each private method after its first caller. */
 function orderMembers(members: ts.ClassElement[]): ts.ClassElement[] {
-  const isMethod = (member: ts.ClassElement) =>
+  const isMethod = (member: ts.ClassElement): boolean =>
     ts.isMethodDeclaration(member) || ts.isGetAccessor(member) || ts.isSetAccessor(member);
-  const isStatic = (member: ts.ClassElement) => hasModifier(member, ts.SyntaxKind.StaticKeyword);
-  const isPrivate = (member: ts.ClassElement) =>
+  const isStatic = (member: ts.ClassElement): boolean =>
+    hasModifier(member, ts.SyntaxKind.StaticKeyword);
+  const isPrivate = (member: ts.ClassElement): boolean =>
     hasModifier(member, ts.SyntaxKind.PrivateKeyword) ||
     (!!member.name && ts.isPrivateIdentifier(member.name));
   const methods = members.filter((member) => isMethod(member) && !isStatic(member));
   const privateMethods = methods.filter(isPrivate);
-  const privateCalls = (member: ts.ClassElement) => {
+  const privateCalls = (member: ts.ClassElement): ts.ClassElement[] => {
     const calls: { member: ts.ClassElement; position: number }[] = [];
-    const visit = (node: ts.Node) => {
+    const visit = (node: ts.Node): void => {
       if (
         ts.isPropertyAccessExpression(node) &&
         node.expression.kind === ts.SyntaxKind.ThisKeyword
@@ -336,12 +337,12 @@ function orderMembers(members: ts.ClassElement[]): ts.ClassElement[] {
   };
 
   const ordered: ts.ClassElement[] = [];
-  const place = (member: ts.ClassElement) => {
+  const place = (member: ts.ClassElement): void => {
     if (ordered.includes(member)) return;
     ordered.push(member);
     for (const callee of privateCalls(member)) place(callee);
   };
-  const isConstructor = (member: ts.ClassElement) => ts.isConstructorDeclaration(member);
+  const isConstructor = (member: ts.ClassElement): boolean => ts.isConstructorDeclaration(member);
   for (const member of members.filter((member) => !isMethod(member) && !isConstructor(member)))
     place(member);
   for (const member of members.filter(isConstructor)) place(member);
@@ -371,16 +372,16 @@ function firstMisplaced<T>(
   };
 }
 
-function startOf(item: unknown) {
+function startOf(item: unknown): number {
   const unit = item as Partial<Unit>;
   return unit.nodes ? unit.nodes[0].getStart() : (item as ts.Node).getStart();
 }
 
-function unitName(unit: Unit) {
+function unitName(unit: Unit): string {
   return unit.names[0] ?? 'statement';
 }
 
-function memberName(member: ts.ClassElement) {
+function memberName(member: ts.ClassElement): string {
   if (ts.isConstructorDeclaration(member)) return 'constructor';
   const name = member.name;
   return name && (ts.isIdentifier(name) || ts.isPrivateIdentifier(name)) ? name.text : 'member';

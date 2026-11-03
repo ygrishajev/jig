@@ -7,7 +7,7 @@ export async function getCurrentBranch(cwd: string): Promise<string> {
 }
 
 /** Removes a local branch, merged or not; one that is already gone is left alone. */
-export async function deleteBranch(cwd: string, name: string) {
+export async function deleteBranch(cwd: string, name: string): Promise<void> {
   const git = openRepo(cwd);
   const { all } = await git.branchLocal();
   if (all.includes(name)) await git.deleteLocalBranch(name, true);

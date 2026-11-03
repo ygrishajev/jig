@@ -1,6 +1,6 @@
 import type { FeaturePlan } from '../domain/run-state.js';
 
-export function contextPrompt(request: string) {
+export function contextPrompt(request: string): string {
   return [
     'You are the context-building step of an automated SDLC pipeline.',
     'Read the following request, then explore this repository as needed to understand',
@@ -17,7 +17,7 @@ export function contextPrompt(request: string) {
   ].join('\n');
 }
 
-export function featurePlanPrompt(request: string, repoSummary: string) {
+export function featurePlanPrompt(request: string, repoSummary: string): string {
   return [
     'You are the feature-planning step of an automated SDLC pipeline.',
     '',
@@ -34,7 +34,7 @@ export function featurePlanPrompt(request: string, repoSummary: string) {
   ].join('\n');
 }
 
-export function designPrompt(request: string, repoSummary: string, plan: FeaturePlan) {
+export function designPrompt(request: string, repoSummary: string, plan: FeaturePlan): string {
   return [
     'You are the design step of an automated SDLC pipeline.',
     'You run unattended: when you would present options to a human, evaluate 2-3 approaches,',
@@ -62,7 +62,7 @@ export function designPrompt(request: string, repoSummary: string, plan: Feature
   ].join('\n');
 }
 
-export function slicePlanPrompt(planMarkdown: string) {
+export function slicePlanPrompt(planMarkdown: string): string {
   return [
     'You are the PR-slicing step of an automated SDLC pipeline.',
     '',

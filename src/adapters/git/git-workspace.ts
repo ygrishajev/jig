@@ -4,6 +4,7 @@ import path from 'node:path';
 import { MergeFailed, messageOf } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
+import type { CommitSummary } from '../../domain/usage.js';
 import { isBranchMergedInto, mergeBranchInto } from '../../git/merge.js';
 import { commitAll, openRepo } from '../../git/repository.js';
 import type { Workspace } from '../../ports/workspace.js';
@@ -22,15 +23,15 @@ export class GitWorkspace implements Workspace {
     this.runBranch = runBranchFor(options.runId);
   }
 
-  async commitAll(message: string) {
+  async commitAll(message: string): Promise<void> {
     await commitAll(this.options.worktreePath, message);
   }
 
-  headCommit() {
+  headCommit(): Promise<string> {
     return openRepo(this.options.worktreePath).revparse(['HEAD']);
   }
 
-  async forkPoint() {
+  async forkPoint(): Promise<string> {
     const forkPoint = await openRepo(this.options.worktreePath).raw([
       'merge-base',
       this.options.baseBranch,
@@ -39,7 +40,7 @@ export class GitWorkspace implements Workspace {
     return forkPoint.trim();
   }
 
-  async summariseCommitsSince(since: string) {
+  async summariseCommitsSince(since: string): Promise<CommitSummary> {
     const sha = await this.headCommit();
     const diff = await openRepo(this.options.worktreePath).diffSummary([since, sha]);
     return {
@@ -50,7 +51,7 @@ export class GitWorkspace implements Workspace {
     };
   }
 
-  async readRepoFile(relativePath: string) {
+  async readRepoFile(relativePath: string): Promise<string | undefined> {
     try {
       return await readFile(path.join(this.options.repoRoot, relativePath), 'utf-8');
     } catch {
@@ -58,7 +59,7 @@ export class GitWorkspace implements Workspace {
     }
   }
 
-  async mergeRunBranch() {
+  async mergeRunBranch(): Promise<void> {
     const { repoRoot, baseBranch } = this.options;
     try {
       await mergeBranchInto(repoRoot, this.runBranch, baseBranch);
@@ -70,13 +71,13 @@ export class GitWorkspace implements Workspace {
     }
   }
 
-  isRunBranchMerged() {
+  isRunBranchMerged(): Promise<boolean> {
     return isBranchMergedInto(this.options.repoRoot, this.runBranch, this.options.baseBranch);
   }
 }
 
 /** Leaves the operator's repository as it was; there is nothing to abort when git never started merging. */
-async function abortMergeInProgress(repoRoot: string) {
+async function abortMergeInProgress(repoRoot: string): Promise<void> {
   await openRepo(repoRoot)
     .raw(['merge', '--abort'])
     .catch(() => undefined);

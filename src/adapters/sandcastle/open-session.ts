@@ -31,13 +31,16 @@ export interface SandcastleContext {
 export async function openSandcastleSession(
   context: SandcastleContext & { logger: Logger },
   input: OpenSessionInput,
-) {
+): Promise<SandcastleSession> {
   await warnWhenSandcastleEnvAddsVariables(context.repoRoot, context.logger);
   return SandcastleSession.open(sandcastleSessionOptions(context, input));
 }
 
 /** jig passes credentials from the environment; a variable from `.sandcastle/.env` is usually a mistake. */
-export async function warnWhenSandcastleEnvAddsVariables(repoRoot: string, logger: Logger) {
+export async function warnWhenSandcastleEnvAddsVariables(
+  repoRoot: string,
+  logger: Logger,
+): Promise<void> {
   const injected = await sandcastleEnvKeys(repoRoot);
   if (injected.length === 0) return;
   logger.warn(

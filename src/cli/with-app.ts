@@ -16,7 +16,7 @@ export async function withApp<T>(
   logFormat: LogFormat,
   command: (app: AwilixContainer<AppCradle>) => Promise<T>,
   { cwd, environment }: Invocation = { cwd: process.cwd(), environment: process.env },
-) {
+): Promise<T> {
   await ensureRepositoryRoot(cwd);
   const app = createAppContainer({
     repoRoot: cwd,

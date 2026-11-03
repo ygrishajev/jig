@@ -1,6 +1,6 @@
 import type { Slice } from '../domain/slice.js';
 
-export function implementPrompt(slice: Slice) {
+export function implementPrompt(slice: Slice): string {
   return [
     'You are implementing one slice of a larger, already-planned feature.',
     '',
@@ -18,7 +18,7 @@ export function implementPrompt(slice: Slice) {
   ].join('\n');
 }
 
-function previousFeedback(slice: Slice) {
+function previousFeedback(slice: Slice): string[] {
   if (!slice.lastFeedback) return [];
   return [
     '',
@@ -28,7 +28,7 @@ function previousFeedback(slice: Slice) {
   ];
 }
 
-export function nothingChangedFeedback(slice: Slice) {
+export function nothingChangedFeedback(slice: Slice): string {
   return [
     'The previous attempt at this slice left the working tree unchanged, so there was nothing to review.',
     ...(slice.lastFeedback ? ['It was meant to address this feedback:', slice.lastFeedback] : []),
@@ -36,7 +36,7 @@ export function nothingChangedFeedback(slice: Slice) {
 }
 
 /** `range` is a git revision range holding exactly this slice's commits, e.g. `<start>..HEAD`. */
-export function reviewPrompt(slice: Slice, range: string) {
+export function reviewPrompt(slice: Slice, range: string): string {
   return [
     'You are the review step of an automated SDLC pipeline.',
     `This slice's change is exactly the commits in \`${range}\` — review all of them together`,

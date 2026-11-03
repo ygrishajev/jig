@@ -5,7 +5,7 @@ export interface ToolchainPromptInput {
   previousFailure?: string;
 }
 
-export function toolchainPrompt(input: ToolchainPromptInput) {
+export function toolchainPrompt(input: ToolchainPromptInput): string {
   const { dockerfile, setupCommand, verifyCommand, previousFailure } = input;
   return [
     'You are setting up the sandbox an automated SDLC pipeline will work in for this repository.',

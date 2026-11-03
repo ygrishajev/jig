@@ -48,11 +48,11 @@ export const AGENTS = {
 
 export type AgentName = keyof typeof AGENTS;
 
-function modelProvider(model: string) {
+function modelProvider(model: string): string {
   return model.split('/')[0] ?? model;
 }
 
-function requireModel(model: string | undefined) {
+function requireModel(model: string | undefined): string {
   if (!model) {
     throw new ConfigInvalid(
       'opencode needs a model as "provider/model" (e.g. "openrouter/<model>") — set "model" on the step.',
@@ -68,7 +68,7 @@ function requireModel(model: string | undefined) {
 export function collectCredentials(
   steps: AgentChoice[],
   credential: (name: string) => string | undefined,
-) {
+): Record<string, string> {
   const credentials: Record<string, string> = {};
   for (const step of steps) {
     const keys = AGENTS[step.provider].credentialKeys(step.model);

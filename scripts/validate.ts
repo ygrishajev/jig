@@ -1,5 +1,5 @@
 import { Argument, Command, Option } from 'commander';
-import { execa } from 'execa';
+import { execa, type Result } from 'execa';
 
 const checks = [
   'build',
@@ -34,7 +34,7 @@ await new Command()
     process.exitCode = 1;
   });
 
-async function runCheck(check: string) {
+async function runCheck(check: string): Promise<Result<{ all: true; reject: false }>> {
   const result = await execa('npm', ['run', '--silent', check], {
     all: true,
     reject: false,

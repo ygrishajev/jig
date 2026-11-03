@@ -5,15 +5,15 @@ import path from 'node:path';
 import type { RunId } from '../../domain/run-id.js';
 
 /** This machine's log of a run: what jig did, one line per event. */
-export function runLogFile(repoRoot: string, runId: RunId) {
+export function runLogFile(repoRoot: string, runId: RunId): string {
   return path.join(stateDirectory(repoRoot, runId), 'run.log');
 }
 
-export function stateDirectory(repoRoot: string, runId: RunId) {
+export function stateDirectory(repoRoot: string, runId: RunId): string {
   return path.join(runDirectory(repoRoot, runId), 'state');
 }
 
-export function runDirectory(repoRoot: string, runId: RunId) {
+export function runDirectory(repoRoot: string, runId: RunId): string {
   return path.join(repoRoot, JIG_DIR, runId);
 }
 
@@ -21,12 +21,12 @@ export function runDirectory(repoRoot: string, runId: RunId) {
 export const JIG_DIR = '.jig';
 
 /** What the agents printed during a run, kept apart from jig's own log. */
-export function agentLogFile(repoRoot: string, runId: RunId) {
+export function agentLogFile(repoRoot: string, runId: RunId): string {
   return path.join(stateDirectory(repoRoot, runId), 'agents.log');
 }
 
 /** Creates the run's directory under `.jig/`, which ignores itself so it never dirties the target repo. */
-export async function makeRunDirectory(repoRoot: string, runId: RunId) {
+export async function makeRunDirectory(repoRoot: string, runId: RunId): Promise<string> {
   const directory = runDirectory(repoRoot, runId);
   await mkdir(directory, { recursive: true });
   const gitignore = path.join(repoRoot, JIG_DIR, '.gitignore');

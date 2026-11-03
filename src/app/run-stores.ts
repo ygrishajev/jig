@@ -78,11 +78,11 @@ class ModuleRunStore implements RunStore {
     private readonly store: ModuleStore,
   ) {}
 
-  async load(runId: RunId) {
+  async load(runId: RunId): Promise<RunState | undefined> {
     return this.parsed(await this.store.load(runId));
   }
 
-  private parsed(loaded: unknown) {
+  private parsed(loaded: unknown): RunState | undefined {
     if (loaded === undefined || loaded === null) return undefined;
     const parsed = runStateSchema.safeParse(loaded);
     if (!parsed.success) {
@@ -93,11 +93,11 @@ class ModuleRunStore implements RunStore {
     return parsed.data;
   }
 
-  async peek(runId: RunId) {
+  async peek(runId: RunId): Promise<RunState | undefined> {
     return this.parsed(await (this.store.peek ? this.store.peek(runId) : this.store.load(runId)));
   }
 
-  async save(state: RunState) {
+  async save(state: RunState): Promise<void> {
     await this.store.save(state);
   }
 }

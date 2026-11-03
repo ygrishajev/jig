@@ -5,12 +5,12 @@
 export type FailureKind = 'retry' | 'block' | 'fatal';
 
 /** JavaScript can throw anything, not only an `Error`. */
-export function messageOf(error: unknown) {
+export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 /** A failure worth another attempt: a step, or a sandbox that did not start, gets bounded retries. */
-export function isTransient(error: unknown) {
+export function isTransient(error: unknown): boolean {
   return error instanceof JigError && error.kind === 'retry';
 }
 

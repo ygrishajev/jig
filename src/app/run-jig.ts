@@ -49,7 +49,7 @@ export async function runJig(
   }
 }
 
-function newRunId() {
+function newRunId(): RunId {
   return runIdSchema.parse(randomBytes(4).toString('hex'));
 }
 
@@ -74,14 +74,23 @@ async function startOrResume(
   return existing;
 }
 
-async function startNewRun(cradle: AppCradle, store: RunStore, runId: RunId, request: string) {
+async function startNewRun(
+  cradle: AppCradle,
+  store: RunStore,
+  runId: RunId,
+  request: string,
+): Promise<RunState> {
   const baseBranch = await getCurrentBranch(cradle.repoRoot);
   const started = startRun({ runId, baseBranch, request });
   await store.save(started);
   return started;
 }
 
-async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: RunState) {
+async function advance(
+  app: AwilixContainer<AppCradle>,
+  store: RunStore,
+  state: RunState,
+): Promise<EngineResult> {
   await ensureSandboxImage(app.cradle);
   const telemetry = await startTelemetry(app.cradle.environment.telemetry);
   try {
@@ -94,7 +103,10 @@ async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: 
 }
 
 /** Leaves this machine's record of where the invocation stopped; see `RunArtefacts`. */
-async function recordInvocation({ repoRoot, artefacts }: AppCradle, report: RunReport) {
+async function recordInvocation(
+  { repoRoot, artefacts }: AppCradle,
+  report: RunReport,
+): Promise<void> {
   const metrics = new MetricsLog(repoRoot, report.state.runId).summary();
   await artefacts.write(report.state, report.status, metrics);
 }

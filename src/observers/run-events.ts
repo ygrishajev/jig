@@ -6,7 +6,7 @@ import type { EventSink } from '../ports/observability.js';
 export type RunEventMap = { event: [RunEvent] };
 
 export class RunEvents extends EventEmitter<RunEventMap> implements EventSink {
-  publish(event: RunEvent) {
+  publish(event: RunEvent): void {
     this.emit('event', event);
   }
 }
@@ -19,7 +19,7 @@ export function observe(
   events: RunEvents,
   handle: (event: RunEvent) => void,
   onObserverError: (error: unknown) => void,
-) {
+): void {
   events.on('event', (event) => {
     try {
       handle(event);

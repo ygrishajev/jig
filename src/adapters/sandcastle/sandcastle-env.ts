@@ -6,7 +6,7 @@ import path from 'node:path';
  * credentials jig passes: each key in the file, valued from the file or else the host's
  * environment. Only the names are read, so they can be reported without the values.
  */
-export async function sandcastleEnvKeys(repoRoot: string) {
+export async function sandcastleEnvKeys(repoRoot: string): Promise<string[]> {
   const content = await readFile(path.join(repoRoot, '.sandcastle', '.env'), 'utf-8').catch(
     () => '',
   );

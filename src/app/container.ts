@@ -78,7 +78,7 @@ export function createAppContainer(input: {
   logFormat: LogFormat;
   logLevel?: string;
   environment: JigEnvironment;
-}) {
+}): AwilixContainer<AppCradle> {
   const container = createContainer<AppCradle>({
     injectionMode: InjectionMode.PROXY,
     strict: true,
@@ -186,9 +186,10 @@ async function openRunScope(
 }
 
 /** Events the given observers hear; one that fails is logged, and the others still hear the event. */
-function observedEvents(logger: Logger, observers: { handle(event: RunEvent): void }[]) {
+function observedEvents(logger: Logger, observers: { handle(event: RunEvent): void }[]): RunEvents {
   const events = new RunEvents();
-  const onObserverError = (error: unknown) => logger.warn({ err: error }, 'an observer failed');
+  const onObserverError = (error: unknown): void =>
+    logger.warn({ err: error }, 'an observer failed');
   for (const observer of observers) {
     observe(events, (event) => observer.handle(event), onObserverError);
   }
@@ -199,7 +200,13 @@ function observedEvents(logger: Logger, observers: { handle(event: RunEvent): vo
  * A sandbox that failed to start for a reason that may pass — Docker, the network under the
  * setup command — gets the same bounded retries as a step; a configuration problem does not.
  */
-function openSessionRetrying({ openSession, run, events, settings, runLogger }: RunCradle) {
+function openSessionRetrying({
+  openSession,
+  run,
+  events,
+  settings,
+  runLogger,
+}: RunCradle): Promise<RunSession> {
   return pRetry(() => openSession({ run, events }), {
     retries: settings.maxStepRetries,
     minTimeout: settings.retryDelayMs,
@@ -210,7 +217,7 @@ function openSessionRetrying({ openSession, run, events, settings, runLogger }: 
 }
 
 /** Awilix's `dispose` alone would leave the sandbox running, so the session is closed first. */
-async function closeRunScope(scope: AwilixContainer<RunCradle>) {
+async function closeRunScope(scope: AwilixContainer<RunCradle>): Promise<void> {
   try {
     await scope.cradle.session.close();
   } finally {

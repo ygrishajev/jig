@@ -40,7 +40,7 @@ export const BASE_DOCKERFILE = [
 ].join('\n');
 
 /** The layer jig owns: the agent CLIs the config uses, at exact versions, on top of the base image. */
-export function agentLayerDockerfile(baseImage: string, agents: AgentInstall[]) {
+export function agentLayerDockerfile(baseImage: string, agents: AgentInstall[]): string {
   const packages = agents.map((agent) => `${agent.npmPackage}@${agent.version}`).join(' ');
   return [
     `FROM ${baseImage}`,
@@ -55,7 +55,7 @@ export function agentLayerDockerfile(baseImage: string, agents: AgentInstall[]) 
 }
 
 /** Replaces whatever sits between the toolchain markers, leaving the rest of the Dockerfile alone. */
-export function withToolchain(dockerfile: string, toolchain: string) {
+export function withToolchain(dockerfile: string, toolchain: string): string {
   const start = dockerfile.indexOf(TOOLCHAIN_START);
   const end = dockerfile.indexOf(TOOLCHAIN_END);
   if (start === -1 || end === -1 || end < start) {
@@ -70,7 +70,7 @@ export function withToolchain(dockerfile: string, toolchain: string) {
 }
 
 /** Changes whenever the Dockerfile or the user it is built for changes. */
-export function recipeHash(dockerfile: string, uid: number, gid: number) {
+export function recipeHash(dockerfile: string, uid: number, gid: number): string {
   return createHash('sha256').update(`${uid}:${gid}\n${dockerfile}`).digest('hex').slice(0, 16);
 }
 
@@ -95,7 +95,7 @@ export const LABELS = {
   agentVersions: 'jig.agent-versions',
 } as const;
 
-export function formatAgentVersions(agents: AgentInstall[]) {
+export function formatAgentVersions(agents: AgentInstall[]): string {
   return [...agents]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((agent) => `${agent.name}=${agent.version}`)

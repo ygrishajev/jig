@@ -27,6 +27,11 @@ export interface EnsureImageDependencies {
   logger: Logger;
 }
 
+interface ImageRecipe {
+  dockerfileHash: string;
+  buildArgs: Record<string, number>;
+}
+
 export type AgentUpdatePolicy = 'auto' | 'warn' | 'off';
 
 export interface AgentNeeded {
@@ -53,7 +58,7 @@ export interface ImageBuildPlan {
 export async function ensureSandboxImage(
   d: EnsureImageDependencies,
   options: { pullAgents?: boolean } = {},
-) {
+): Promise<string> {
   const image = sandboxImageName(d.repoRoot, d.config);
   if (d.config.sandboxImage) return image;
 
@@ -70,12 +75,12 @@ export async function ensureSandboxImage(
   return image;
 }
 
-export function sandboxImageName(repoRoot: string, config: JigConfig) {
+export function sandboxImageName(repoRoot: string, config: JigConfig): string {
   return config.sandboxImage ?? defaultImageName(repoRoot);
 }
 
 /** The image is built for the host user, so files the agent writes in the worktree stay the operator's. */
-async function readRecipe(repoRoot: string) {
+async function readRecipe(repoRoot: string): Promise<ImageRecipe> {
   const dockerfile = await readSandboxDockerfile(repoRoot);
   const uid = process.getuid?.() ?? 1000;
   const gid = process.getgid?.() ?? 1000;
@@ -85,7 +90,7 @@ async function readRecipe(repoRoot: string) {
   };
 }
 
-async function readSandboxDockerfile(repoRoot: string) {
+async function readSandboxDockerfile(repoRoot: string): Promise<string> {
   const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
   if (!existsSync(file)) {
     throw new ConfigInvalid(
@@ -95,7 +100,7 @@ async function readSandboxDockerfile(repoRoot: string) {
   return readFile(file, 'utf-8');
 }
 
-function sandboxDirectory(repoRoot: string) {
+function sandboxDirectory(repoRoot: string): string {
   return path.join(repoRoot, SANDBOX_DIRECTORY);
 }
 
@@ -132,7 +137,7 @@ export function agentVersion(
   agent: AgentNeeded,
   installed: string | undefined,
   policy: AgentUpdatePolicy,
-) {
+): string {
   if (agent.pinned !== undefined) return agent.pinned;
   const preferred = policy === 'auto' ? [agent.latest, installed] : [installed, agent.latest];
   return preferred.find((version) => version !== undefined) ?? 'latest';
@@ -142,7 +147,7 @@ function newerReleaseWarning(
   agent: AgentNeeded,
   installed: string | undefined,
   policy: AgentUpdatePolicy,
-) {
+): string[] {
   if (agent.pinned !== undefined || policy !== 'warn') return [];
   if (!agent.latest || !installed || agent.latest === installed) return [];
   return [
@@ -165,14 +170,17 @@ function rebuildDecision(
   return { action: 'none', reason: 'the sandbox image is up to date' };
 }
 
-function versionChanges(installed: Record<string, string>, agents: AgentInstall[]) {
+function versionChanges(installed: Record<string, string>, agents: AgentInstall[]): string {
   return agents
     .filter((agent) => installed[agent.name] !== agent.version)
     .map((agent) => `${agent.name} ${installed[agent.name] ?? 'none'} → ${agent.version}`)
     .join(', ');
 }
 
-async function agentsNeeded(d: EnsureImageDependencies, policy: AgentUpdatePolicy) {
+async function agentsNeeded(
+  d: EnsureImageDependencies,
+  policy: AgentUpdatePolicy,
+): Promise<AgentNeeded[]> {
   const names = [...new Set(Object.values(configuredSteps(d.config)).map((step) => step.provider))];
   const packages = names.map((name) => AGENTS[name].npmPackage);
   const latest = policy === 'off' ? {} : await d.latestVersions(packages);
@@ -189,7 +197,7 @@ async function buildImage(
   image: string,
   plan: ImageBuildPlan,
   buildArgs: Record<string, number>,
-) {
+): Promise<void> {
   d.logger.info(`building the sandbox image ${image}: ${plan.reason}`);
   const base = baseImageName(image);
   if (plan.action === 'all' || !(await d.images.labels(base))) {
@@ -203,7 +211,7 @@ async function buildImage(
   });
 }
 
-export function baseImageName(image: string) {
+export function baseImageName(image: string): string {
   const lastSlash = image.lastIndexOf('/');
   return image.lastIndexOf(':') > lastSlash ? `${image}-base` : `${image}:base`;
 }

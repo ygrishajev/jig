@@ -18,7 +18,7 @@ export const describePullRequest: RunStep<'describing'> = async ({ state, ports,
   return { type: 'described', body: renderPullRequest(state, { filled, template }) };
 };
 
-async function findTemplate(ports: StepPorts) {
+async function findTemplate(ports: StepPorts): Promise<string | undefined> {
   for (const relativePath of TEMPLATE_PATHS) {
     const template = await ports.workspace.readRepoFile(relativePath);
     if (template !== undefined) return template.trim();
@@ -37,7 +37,7 @@ async function fillTemplate(
   ports: StepPorts,
   template: string,
   verifyCommand?: string,
-) {
+): Promise<string | undefined> {
   try {
     const { body } = await ports.agent.runForOutput({
       role: 'describer',

@@ -6,7 +6,7 @@ import type { RunEvent, StepLocation } from '../domain/events.js';
 export class LoggingObserver {
   constructor(private readonly logger: Logger) {}
 
-  handle(event: RunEvent) {
+  handle(event: RunEvent): void {
     const { type, ...fields } = event;
     const log = this.logger.child({ event: type });
     switch (event.type) {
@@ -41,15 +41,15 @@ export class LoggingObserver {
   }
 }
 
-function describe(at: StepLocation) {
+function describe(at: StepLocation): string {
   return at.sliceId !== undefined ? `${at.sliceStatus} slice ${at.sliceId}` : at.phase;
 }
 
-function seconds(durationMs: number) {
+function seconds(durationMs: number): string {
   return `${(durationMs / 1000).toFixed(1)}s`;
 }
 
-function logRunLifecycle(log: Logger, event: RunEvent, fields: object) {
+function logRunLifecycle(log: Logger, event: RunEvent, fields: object): void {
   switch (event.type) {
     case 'runResumed':
       return log.info(fields, `run ${event.runId} at ${event.phase}`);

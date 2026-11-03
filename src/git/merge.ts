@@ -1,4 +1,4 @@
-import { execa } from 'execa';
+import { execa, type ResultPromise } from 'execa';
 
 import { RemoteUnavailable } from '../domain/errors.js';
 import { getCurrentBranch } from './branch.js';
@@ -23,7 +23,11 @@ export async function isBranchMergedInto(
   return upstream !== undefined && mergeLeavesTreeAsIs(repoRoot, branchName, upstream);
 }
 
-async function mergeLeavesTreeAsIs(repoRoot: string, branchName: string, intoRef: string) {
+async function mergeLeavesTreeAsIs(
+  repoRoot: string,
+  branchName: string,
+  intoRef: string,
+): Promise<boolean> {
   const merged = await git(repoRoot, ['merge-tree', '--write-tree', intoRef, branchName]);
   if (wouldConflict(merged)) return false;
   const [mergedTree] = succeeded(merged).split('\n');
@@ -31,18 +35,18 @@ async function mergeLeavesTreeAsIs(repoRoot: string, branchName: string, intoRef
   return mergedTree === baseTree;
 }
 
-function git(cwd: string, args: string[]) {
+function git(cwd: string, args: string[]): ResultPromise<{ reject: false }> {
   return execa('git', args, { cwd, reject: false });
 }
 
 type GitResult = Awaited<ReturnType<typeof git>>;
 
 /** `git merge-tree` exits with 1 both on conflicts and on errors; only a conflict still writes a tree. */
-function wouldConflict(merged: GitResult) {
+function wouldConflict(merged: GitResult): boolean {
   return merged.exitCode === 1 && merged.stdout !== '';
 }
 
-function succeeded(result: GitResult) {
+function succeeded(result: GitResult): string {
   if (result.exitCode !== 0) throw new GitCommandFailed(result.command, result.stderr);
   return result.stdout.trim();
 }
@@ -58,7 +62,7 @@ export class GitCommandFailed extends Error {
 }
 
 /** The ref of the branch's upstream after fetching it, or undefined when it tracks nothing. */
-async function fetchUpstreamOf(repoRoot: string, branch: string) {
+async function fetchUpstreamOf(repoRoot: string, branch: string): Promise<string | undefined> {
   const remote = await git(repoRoot, ['config', '--get', `branch.${branch}.remote`]);
   if (remote.exitCode === CONFIG_KEY_MISSING) return undefined;
   const mergeRef = succeeded(await git(repoRoot, ['config', '--get', `branch.${branch}.merge`]));

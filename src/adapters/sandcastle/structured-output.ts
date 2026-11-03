@@ -2,7 +2,7 @@ import type { ZodType } from 'zod';
 
 import { AgentOutputInvalid, messageOf } from '../../domain/errors.js';
 
-export function outputInstruction() {
+export function outputInstruction(): string {
   return [
     `When you are completely done, end your reply with your result as a single JSON object`,
     `inside <${OUTPUT_TAG}></${OUTPUT_TAG}> tags, e.g. <${OUTPUT_TAG}>{"key": "value"}</${OUTPUT_TAG}>.`,
@@ -38,7 +38,7 @@ export function extractOutput<T>(reply: string, schema: ZodType<T>): T {
   return parsed.data;
 }
 
-function withoutFence(text: string) {
+function withoutFence(text: string): string {
   const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
   return fenced ? fenced[1] : text;
 }

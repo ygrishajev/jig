@@ -4,13 +4,22 @@ import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
 import type { RunId } from '../../domain/run-id.js';
-import { type RunState, stuckSlice } from '../../domain/run-state.js';
+import { type RunPhase, type RunState, stuckSlice } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 
 export interface RunDocumentFile {
   name: RunDocument;
   path: string;
+}
+
+interface RunResult {
+  runId: RunId;
+  status: string;
+  phase: RunPhase;
+  complete: boolean;
+  blockedReason: string | undefined;
+  metrics: MetricsSummary;
 }
 
 /**
@@ -21,16 +30,16 @@ export interface RunDocumentFile {
 export class RunArtefacts {
   constructor(private readonly repoRoot: string) {}
 
-  async write(state: RunState, status: string, metrics: MetricsSummary) {
+  async write(state: RunState, status: string, metrics: MetricsSummary): Promise<void> {
     const directory = await this.makeStateDirectory(state.runId);
-    const write = (name: string, contents: string | undefined) =>
+    const write = (name: string, contents: string | undefined): Promise<void> =>
       writeOrRemove(path.join(directory, name), contents);
     await write('result.json', `${JSON.stringify(resultFor(state, status, metrics), null, 2)}\n`);
     const contents = documentContents(state, metrics);
     for (const name of DOCUMENTS) await write(name, contents[name]);
   }
 
-  private async makeStateDirectory(runId: RunId) {
+  private async makeStateDirectory(runId: RunId): Promise<string> {
     await makeRunDirectory(this.repoRoot, runId);
     const directory = stateDirectory(this.repoRoot, runId);
     await mkdir(directory, { recursive: true });
@@ -46,7 +55,7 @@ export class RunArtefacts {
   }
 }
 
-async function writeOrRemove(file: string, contents: string | undefined) {
+async function writeOrRemove(file: string, contents: string | undefined): Promise<void> {
   if (contents === undefined) await rm(file, { force: true });
   else await writeFileAtomic(file, contents);
 }
@@ -55,7 +64,7 @@ async function writeOrRemove(file: string, contents: string | undefined) {
  * A small, stable summary for CI to read instead of parsing output that also carries whatever
  * an agent printed. `complete` and `blockedReason` keep the shape earlier workflows read.
  */
-function resultFor(state: RunState, status: string, metrics: MetricsSummary) {
+function resultFor(state: RunState, status: string, metrics: MetricsSummary): RunResult {
   return {
     runId: state.runId,
     status,
@@ -66,7 +75,7 @@ function resultFor(state: RunState, status: string, metrics: MetricsSummary) {
   };
 }
 
-function stuckSliceReason(state: RunState) {
+function stuckSliceReason(state: RunState): string | undefined {
   const stuck = stuckSlice(state);
   return stuck ? `slice "${stuck.id}" is stuck — needs human intervention` : undefined;
 }
@@ -82,7 +91,7 @@ function documentContents(
   };
 }
 
-function pullRequestDescription(state: RunState, metrics: MetricsSummary) {
+function pullRequestDescription(state: RunState, metrics: MetricsSummary): string | undefined {
   if (state.prDescription === undefined) return undefined;
   const footer = `<sub>jig run ${state.runId}: ${formatSummary(metrics)}</sub>`;
   return `${state.prDescription}\n\n---\n${footer}\n`;

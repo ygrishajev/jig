@@ -77,7 +77,10 @@ class Engine {
     }
   }
 
-  private async settle(initial: RunState, onSaved: (state: RunState) => void) {
+  private async settle(
+    initial: RunState,
+    onSaved: (state: RunState) => void,
+  ): Promise<EngineResult> {
     let state = await this.leaveHaltOrBlock(initial);
     onSaved(state);
 
@@ -91,7 +94,7 @@ class Engine {
     throw new FlowDoesNotSettle(state.runId);
   }
 
-  private async leaveHaltOrBlock(state: RunState) {
+  private async leaveHaltOrBlock(state: RunState): Promise<RunState> {
     const node = this.flow[state.phase];
     const resumed: RunState = { ...state, blockedReason: undefined };
     if (!('halt' in node)) return resumed;
@@ -202,9 +205,13 @@ class Engine {
     }
   }
 
-  private async timed(at: StepLocation, runId: RunId, step: () => Promise<Outcome>) {
+  private async timed(
+    at: StepLocation,
+    runId: RunId,
+    step: () => Promise<Outcome>,
+  ): Promise<Outcome> {
     const startedAt = this.d.clock.now();
-    const elapsed = () => this.d.clock.now() - startedAt;
+    const elapsed = (): number => this.d.clock.now() - startedAt;
     this.d.events.publish({ type: 'stepStarted', runId, at });
     let outcome: Outcome;
     try {

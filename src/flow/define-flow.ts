@@ -71,16 +71,16 @@ export interface SliceStepContext extends RunStepContext {
   slice: Slice;
 }
 
-export function defineSliceFlow(flow: SliceFlow) {
+export function defineSliceFlow(flow: SliceFlow): SliceFlow {
   return flow;
 }
 
-export function defineRunFlow(flow: RunFlow) {
+export function defineRunFlow(flow: RunFlow): RunFlow {
   return flow;
 }
 
 /** How the run ended, when its phase is one it never leaves; undefined while it can still move. */
-export function finalStatus(flow: RunFlow, state: RunState) {
+export function finalStatus(flow: RunFlow, state: RunState): 'stuck' | 'done' | undefined {
   const node = flow[state.phase];
   return 'final' in node ? node.final : undefined;
 }

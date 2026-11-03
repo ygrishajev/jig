@@ -9,7 +9,7 @@ export async function latestAgentVersions(
   npmPackages: string[],
   lookup: RegistryLookup = latestVersion,
   timeoutMs = LOOKUP_TIMEOUT_MS,
-) {
+): Promise<Record<string, string | undefined>> {
   const versions = await Promise.all(
     npmPackages.map((npmPackage) =>
       pTimeout(lookup(npmPackage), { milliseconds: timeoutMs }).catch(() => undefined),

@@ -141,4 +141,14 @@ export default tseslint.config(
       'jig/declarations-in-call-order': 'error',
     },
   },
+  {
+    files: ['src/**/*.ts', 'scripts/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': [
+        'error',
+        { allowExpressions: true, allowTypedFunctionExpressions: true },
+      ],
+    },
+  },
 );

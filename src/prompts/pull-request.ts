@@ -9,7 +9,7 @@ export interface PullRequestPromptInput {
   verifyCommand?: string;
 }
 
-export function pullRequestPrompt(input: PullRequestPromptInput) {
+export function pullRequestPrompt(input: PullRequestPromptInput): string {
   const { template, plan, slices, design, verifyCommand } = input;
   return [
     'You are the pull-request-description step of an automated SDLC pipeline.',
@@ -47,7 +47,7 @@ export function pullRequestPrompt(input: PullRequestPromptInput) {
   ].join('\n');
 }
 
-function sliceLines(slices: Slice[]) {
+function sliceLines(slices: Slice[]): string[] {
   if (slices.length === 0) return ['(none)'];
   return slicesInOrder(slices).map((slice) => {
     const line = `- [${slice.status}] ${slice.id}: ${slice.description.split('\n')[0]}`;

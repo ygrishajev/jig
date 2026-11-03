@@ -110,7 +110,7 @@ export type RunState = z.infer<typeof runStateSchema>;
 export class PhaseOutOfOrder extends Error {}
 
 /** Every slice commits onto this one branch, so the whole feature lands as one merge. */
-export function runBranchFor(runId: RunId) {
+export function runBranchFor(runId: RunId): string {
   return `jig/run/${runId}`;
 }
 

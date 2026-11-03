@@ -47,7 +47,7 @@ export class MetricsObserver {
     private readonly clock: Clock,
   ) {}
 
-  handle(event: RunEvent) {
+  handle(event: RunEvent): void {
     const at = new Date(this.clock.now()).toISOString();
     switch (event.type) {
       case 'stepStarted':
@@ -116,12 +116,12 @@ export function summarizeMetrics(records: MetricRecord[]): MetricsSummary {
   };
 }
 
-function sum(values: number[]) {
+function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
 /** One line for a PR footer or a status line, e.g. "2 slices · 1 review round · 412k tokens · $1.84 · 18m 3s". */
-export function formatSummary(summary: MetricsSummary) {
+export function formatSummary(summary: MetricsSummary): string {
   const tokens =
     summary.tokens.input +
     summary.tokens.output +
@@ -137,17 +137,17 @@ export function formatSummary(summary: MetricsSummary) {
   ].join(' · ');
 }
 
-function plural(count: number, singular: string, pluralForm = `${singular}s`) {
+function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
-function compact(count: number) {
+function compact(count: number): string {
   return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
     .format(count)
     .toLowerCase();
 }
 
-function duration(ms: number) {
+function duration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;

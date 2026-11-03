@@ -30,27 +30,27 @@ export const DEFAULT_PR_TEMPLATE = [
 export function renderPullRequest(
   state: RunStateIn<'describing'>,
   input: { filled?: string; template?: string },
-) {
+): string {
   const lead = input.filled ?? input.template ?? plainSummary(state);
   return [lead, '', collapsed('Agent run', agentRun(state)), '', ...planningDocs(state)]
     .join('\n')
     .trimEnd();
 }
 
-function plainSummary({ plan }: RunStateIn<'describing'>) {
+function plainSummary({ plan }: RunStateIn<'describing'>): string {
   return ['## Summary', '', plan.summary, '', '## Approach', '', plan.approach].join('\n');
 }
 
-function collapsed(title: string, body: string) {
+function collapsed(title: string, body: string): string {
   return ['<details>', `<summary>${title}</summary>`, '', body, '', '</details>'].join('\n');
 }
 
-function agentRun({ plan, slices }: RunStateIn<'describing'>) {
+function agentRun({ plan, slices }: RunStateIn<'describing'>): string {
   return [`**${plan.summary}**`, '', plan.approach, '', sliceChecklist(slices)].join('\n');
 }
 
 /** A blocked run is read from here alone, so a stuck slice keeps its reviewer feedback under it. */
-function sliceChecklist(slices: Slice[]) {
+function sliceChecklist(slices: Slice[]): string {
   const lines = slicesInOrder(slices).flatMap((slice) => {
     const line = `- [${slice.status === 'approved' ? 'x' : ' '}] ${slice.id} — ${slice.description.split('\n')[0]}`;
     if (!slice.lastFeedback) return [line];
@@ -63,6 +63,6 @@ function sliceChecklist(slices: Slice[]) {
   return ['### Slices', '', ...lines].join('\n');
 }
 
-function planningDocs({ docs }: RunStateIn<'describing'>) {
+function planningDocs({ docs }: RunStateIn<'describing'>): string[] {
   return [collapsed('Design', docs.design.trim()), '', collapsed('Plan', docs.plan.trim())];
 }

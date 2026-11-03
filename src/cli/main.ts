@@ -10,7 +10,7 @@ import { registerStatusCommand } from './commands/status.js';
 
 const packageManifestSchema = z.object({ version: z.string() });
 
-export function buildCli() {
+export function buildCli(): Command {
   const program = new Command();
   program.name('jig').description('Agentic SDLC pipeline orchestrator').version(packageVersion());
   registerSandboxCommands(program);
@@ -19,7 +19,7 @@ export function buildCli() {
   return program;
 }
 
-function packageVersion() {
+function packageVersion(): string {
   const manifest = new URL('../../package.json', import.meta.url);
   return packageManifestSchema.parse(JSON.parse(readFileSync(manifest, 'utf-8'))).version;
 }

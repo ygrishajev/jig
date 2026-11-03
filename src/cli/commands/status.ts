@@ -11,7 +11,7 @@ import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
 
-export function registerStatusCommand(program: Command) {
+export function registerStatusCommand(program: Command): void {
   program
     .command('status')
     .description('Show where a run is, without changing anything')
@@ -27,7 +27,7 @@ export function registerStatusCommand(program: Command) {
     );
 }
 
-export function describeRun({ state, documents, metrics }: RunStatus) {
+export function describeRun({ state, documents, metrics }: RunStatus): string {
   const slices = slicesInOrder(state.slices).map((slice) => {
     const line = `  [${slice.status}] ${slice.id} — ${slice.title}`;
     return slice.lastFeedback ? `${line}\n      feedback: ${slice.lastFeedback}` : line;

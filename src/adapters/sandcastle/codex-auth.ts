@@ -35,7 +35,7 @@ export async function openCodexAuthCache(sourceDirectory: string): Promise<Codex
   }
 }
 
-function validateSubscription(text: string) {
+function validateSubscription(text: string): void {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -64,7 +64,7 @@ async function persistAndRelease(
   original: string,
   directory: string,
   release: () => Promise<void>,
-) {
+): Promise<void> {
   try {
     const refreshed = await readFile(path.join(directory, 'auth.json'), 'utf8');
     validateSubscription(refreshed);
@@ -80,7 +80,7 @@ async function persistRefresh(
   original: string,
   refreshed: string,
   directory: string,
-) {
+): Promise<void> {
   if ((await readFile(source, 'utf8')) !== original) {
     throw new ConfigInvalid(
       `The Codex login changed during the run. Refreshed credentials are retained at ${directory}.`,

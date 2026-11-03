@@ -9,7 +9,7 @@ import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
 
-export function registerRunCommand(program: Command) {
+export function registerRunCommand(program: Command): void {
   program
     .command('run')
     .description('Start a run from a request file, or resume one with --id')
@@ -54,7 +54,7 @@ function runToDo(request: string | undefined, id: RunId | undefined): RunJigInpu
 }
 
 /** What the operator does next, for where the run stopped. */
-export function nextStep(report: RunReport) {
+export function nextStep(report: RunReport): string {
   const { state } = report;
   switch (report.status) {
     case 'done':
@@ -70,7 +70,7 @@ export function nextStep(report: RunReport) {
   }
 }
 
-function stuckMessage(state: RunState) {
+function stuckMessage(state: RunState): string {
   return (
     `Stuck: slice "${stuckSlice(state)?.id}" hit the review cap, so jig has ended this run and will not resume it. ` +
     `Finish that slice and the rest by hand on "${runBranchFor(state.runId)}" (its pull request description is in .jig/${state.runId}/state/PR_DESCRIPTION.md), ` +

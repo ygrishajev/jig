@@ -23,7 +23,7 @@ export class DockerImages implements SandboxImages {
     return imageLabelsSchema.parse(JSON.parse(result.stdout)) ?? {};
   }
 
-  async build(spec: ImageBuildSpec) {
+  async build(spec: ImageBuildSpec): Promise<void> {
     const build = execa('docker', dockerBuildArguments(spec, this.options.cache), {
       input: spec.dockerfile,
       all: true,
@@ -41,7 +41,7 @@ export class DockerImages implements SandboxImages {
 /** `docker image inspect` prints `null` for an image built without labels. */
 const imageLabelsSchema = z.record(z.string()).nullable();
 
-export function dockerBuildArguments(spec: ImageBuildSpec, cache?: BuildCache) {
+export function dockerBuildArguments(spec: ImageBuildSpec, cache?: BuildCache): string[] {
   return [
     ...builderArguments(spec.tag, cache),
     '-t',
@@ -53,7 +53,7 @@ export function dockerBuildArguments(spec: ImageBuildSpec, cache?: BuildCache) {
 }
 
 /** `gha` shares layers between CI jobs through GitHub Actions' cache, which needs buildx. */
-function builderArguments(tag: string, cache: BuildCache | undefined) {
+function builderArguments(tag: string, cache: BuildCache | undefined): string[] {
   if (cache !== 'gha') return ['build'];
   const scope = tag.replace(/[^a-zA-Z0-9-]/g, '-');
   return [
@@ -67,7 +67,7 @@ function builderArguments(tag: string, cache: BuildCache | undefined) {
   ];
 }
 
-function flags(flag: string, values: Record<string, string | number>) {
+function flags(flag: string, values: Record<string, string | number>): string[] {
   return Object.entries(values).flatMap(([name, value]) => [flag, `${name}=${value}`]);
 }
 

@@ -59,7 +59,7 @@ export async function initSandbox(
   return { status: 'failed', attempts: TOOLCHAIN_ATTEMPTS, failure: previousFailure ?? '' };
 }
 
-async function writeStarterFiles(repoRoot: string) {
+async function writeStarterFiles(repoRoot: string): Promise<void> {
   const directory = path.join(repoRoot, SANDBOX_DIRECTORY);
   await mkdir(directory, { recursive: true });
   await writeIfMissing(path.join(directory, DOCKERFILE), BASE_DOCKERFILE);
@@ -67,7 +67,7 @@ async function writeStarterFiles(repoRoot: string) {
   await writeIfMissing(path.join(repoRoot, CONFIG_FILE), '{}\n');
 }
 
-async function writeIfMissing(file: string, contents: string) {
+async function writeIfMissing(file: string, contents: string): Promise<void> {
   if (!existsSync(file)) await writeFile(file, contents);
 }
 
@@ -80,7 +80,7 @@ async function checkInSandbox(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | undefined,
   verifyCommand: string,
-) {
+): Promise<string | undefined> {
   try {
     return await withSandbox(app, setupCommand ?? null, async (session) => {
       const verify = await session.exec(verifyCommand);
@@ -98,7 +98,7 @@ async function withSandbox<T>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<T>,
-) {
+): Promise<T> {
   await ensureSandboxImage(app.cradle);
   return withThrowawaySandbox(app, setupCommand, use);
 }
@@ -106,7 +106,10 @@ async function withSandbox<T>(
 /** How many times the planner gets to fix a toolchain that failed setup or verify. */
 const TOOLCHAIN_ATTEMPTS = 3;
 
-async function proposeToolchain(app: AwilixContainer<AppCradle>, previousFailure?: string) {
+async function proposeToolchain(
+  app: AwilixContainer<AppCradle>,
+  previousFailure?: string,
+): Promise<z.infer<typeof toolchainSchema>> {
   const { repoRoot } = app.cradle;
   const config = loadConfig(repoRoot);
   const dockerfile = await readFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), 'utf-8');
@@ -130,7 +133,7 @@ const toolchainSchema = z.object({
   verifyCommand: z.string(),
 });
 
-async function writeToolchain(repoRoot: string, toolchain: string) {
+async function writeToolchain(repoRoot: string, toolchain: string): Promise<void> {
   const file = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
   await writeFile(file, withToolchain(await readFile(file, 'utf-8'), toolchain));
 }

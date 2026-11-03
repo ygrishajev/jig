@@ -30,7 +30,7 @@ export class MetricsLog {
     this.file = path.join(stateDirectory(repoRoot, runId), 'metrics.jsonl');
   }
 
-  append(record: MetricRecord) {
+  append(record: MetricRecord): void {
     mkdirSync(path.dirname(this.file), { recursive: true });
     if (!this.tornTailRemoved) {
       this.removeTornTail();
@@ -39,7 +39,7 @@ export class MetricsLog {
     appendFileSync(this.file, `${JSON.stringify(record)}\n`);
   }
 
-  private removeTornTail() {
+  private removeTornTail(): void {
     if (!existsSync(this.file)) return;
     const contents = readFileSync(this.file);
     const completeLength = contents.lastIndexOf('\n') + 1;
@@ -58,7 +58,7 @@ export class MetricsLog {
     );
   }
 
-  private parseLine(line: string, lineNumber: number) {
+  private parseLine(line: string, lineNumber: number): MetricRecord {
     const parsed = metricRecordSchema.safeParse(parseJson(line));
     if (!parsed.success) {
       throw new MetricsLogCorrupt(
@@ -69,7 +69,7 @@ export class MetricsLog {
   }
 }
 
-function completeLines(contents: string) {
+function completeLines(contents: string): string[] {
   return contents
     .slice(0, contents.lastIndexOf('\n') + 1)
     .split('\n')

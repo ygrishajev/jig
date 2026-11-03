@@ -13,23 +13,25 @@ export class CompositeRunStore implements RunStore {
 
   constructor(private readonly stores: RunStore[]) {}
 
-  async load(runId: RunId) {
+  async load(runId: RunId): Promise<RunState | undefined> {
     const freshest = freshestOf(await this.readEach((store) => store.load(runId)));
     if (freshest) this.latestRevisions.set(runId, freshest.revision);
     return freshest;
   }
 
-  private async readEach(read: (store: RunStore) => Promise<RunState | undefined>) {
+  private async readEach(
+    read: (store: RunStore) => Promise<RunState | undefined>,
+  ): Promise<(RunState | undefined)[]> {
     const copies: (RunState | undefined)[] = [];
     for (const store of this.stores) copies.push(await read(store));
     return copies;
   }
 
-  async peek(runId: RunId) {
+  async peek(runId: RunId): Promise<RunState | undefined> {
     return freshestOf(await this.readEach((store) => store.peek(runId)));
   }
 
-  async save(state: RunState) {
+  async save(state: RunState): Promise<void> {
     const revision = Math.max(state.revision, this.latestRevisions.get(state.runId) ?? 0) + 1;
     this.latestRevisions.set(state.runId, revision);
     const stamped = { ...state, revision };
@@ -38,7 +40,7 @@ export class CompositeRunStore implements RunStore {
 }
 
 /** The copy with the highest revision; on a tie, the one listed first. */
-function freshestOf(copies: (RunState | undefined)[]) {
+function freshestOf(copies: (RunState | undefined)[]): RunState | undefined {
   let freshest: RunState | undefined;
   for (const copy of copies) {
     if (copy && (!freshest || copy.revision > freshest.revision)) freshest = copy;

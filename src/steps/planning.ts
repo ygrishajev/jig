@@ -53,7 +53,7 @@ const plannedSlicesSchema = z
   .min(1, 'the plan must produce at least one slice');
 
 /** Duplicate ids would make two slices share one status, so the run could never finish them both. */
-function assertUniqueIds(ids: string[]) {
+function assertUniqueIds(ids: string[]): void {
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
   if (duplicates.length > 0) {
     throw new AgentOutputInvalid(

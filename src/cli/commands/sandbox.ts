@@ -8,7 +8,7 @@ import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
 
-export function registerSandboxCommands(program: Command) {
+export function registerSandboxCommands(program: Command): void {
   program
     .command('init')
     .description("Set up this repository's sandbox and check its setup and verify commands in it")
@@ -45,7 +45,7 @@ export function registerSandboxCommands(program: Command) {
 
 const initInputSchema = logFormatInputSchema.extend({ agent: z.boolean() });
 
-export function initSummary(result: InitResult) {
+export function initSummary(result: InitResult): string {
   return INIT_SUMMARY[result.status](result);
 }
 

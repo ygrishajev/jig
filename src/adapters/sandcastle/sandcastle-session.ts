@@ -68,7 +68,10 @@ export class SandcastleSession implements AgentSession {
    * The repository path is resolved first: git records a worktree's real path, so a repository
    * opened through a symlink would leave git unusable inside the container.
    */
-  static async open(options: SandcastleSessionOptions, start: SandboxFactory = createSandbox) {
+  static async open(
+    options: SandcastleSessionOptions,
+    start: SandboxFactory = createSandbox,
+  ): Promise<SandcastleSession> {
     const repoRoot = await realpath(options.repoRoot);
     await ignoreSandcastleDirectory(repoRoot);
     const codexAuth = options.codexAuthDirectory
@@ -96,15 +99,15 @@ export class SandcastleSession implements AgentSession {
     }
   }
 
-  get worktreePath() {
+  get worktreePath(): string {
     return this.sandbox.worktreePath;
   }
 
-  async run({ role, prompt }: AgentRunInput) {
+  async run({ role, prompt }: AgentRunInput): Promise<void> {
     await this.reply(role, this.options.agents[role], prompt);
   }
 
-  private async reply(role: AgentRole, agent: AgentProvider, prompt: string) {
+  private async reply(role: AgentRole, agent: AgentProvider, prompt: string): Promise<string> {
     try {
       const result = await this.sandbox.run({
         agent,
@@ -122,7 +125,7 @@ export class SandcastleSession implements AgentSession {
     }
   }
 
-  private publishAgentEvent(role: AgentRole, event: AgentStreamEvent) {
+  private publishAgentEvent(role: AgentRole, event: AgentStreamEvent): void {
     const { runId, events } = this.options;
     if (event.type === 'text')
       events.publish({ type: 'agentMessage', runId, role, text: event.message });
@@ -141,7 +144,11 @@ export class SandcastleSession implements AgentSession {
     }
   }
 
-  async runForOutput<T>({ role, prompt, schema }: AgentRunInput & { schema: ZodType<T> }) {
+  async runForOutput<T>({
+    role,
+    prompt,
+    schema,
+  }: AgentRunInput & { schema: ZodType<T> }): Promise<T> {
     const reply = await this.reply(
       role,
       this.options.agents[role],
@@ -150,7 +157,11 @@ export class SandcastleSession implements AgentSession {
     return this.parseWithCorrections(role, reply, schema);
   }
 
-  private async parseWithCorrections<T>(role: AgentRole, firstReply: string, schema: ZodType<T>) {
+  private async parseWithCorrections<T>(
+    role: AgentRole,
+    firstReply: string,
+    schema: ZodType<T>,
+  ): Promise<T> {
     let reply = firstReply;
     for (let correction = 0; ; correction++) {
       try {
@@ -171,7 +182,7 @@ export class SandcastleSession implements AgentSession {
     return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() };
   }
 
-  async close() {
+  async close(): Promise<void> {
     try {
       await this.sandbox.close();
     } finally {
@@ -181,7 +192,7 @@ export class SandcastleSession implements AgentSession {
 }
 
 /** Also replaces a catch-all `*`, which would hide the Dockerfile from the repository. */
-export async function ignoreSandcastleDirectory(repoRoot: string) {
+export async function ignoreSandcastleDirectory(repoRoot: string): Promise<void> {
   const directory = path.join(repoRoot, '.sandcastle');
   const gitignore = path.join(directory, '.gitignore');
   if (existsSync(gitignore) && !ignoresEverything(await readFile(gitignore, 'utf-8'))) return;
@@ -189,7 +200,7 @@ export async function ignoreSandcastleDirectory(repoRoot: string) {
   await writeFile(gitignore, SANDCASTLE_GITIGNORE);
 }
 
-function ignoresEverything(gitignore: string) {
+function ignoresEverything(gitignore: string): boolean {
   return gitignore.split('\n').some((line) => line.trim() === '*');
 }
 
@@ -203,11 +214,11 @@ export const SANDCASTLE_GITIGNORE = 'worktrees/\nlogs/\n.env\n';
  * Sandcastle's own `onSandboxReady` hooks ignore a command's exit code and timeout in
  * `createSandbox`, so the setup command is run here, where both are checked.
  */
-function sandboxHooks(options: SandcastleSessionOptions) {
+function sandboxHooks(options: SandcastleSessionOptions): CreateSandboxOptions['hooks'] {
   return { host: options.skipCommitSigning ? { onWorktreeReady: [disableSigning()] } : undefined };
 }
 
-function disableSigning() {
+function disableSigning(): { command: string } {
   return {
     command:
       'git config extensions.worktreeConfig true && git config --worktree commit.gpgsign false',
@@ -222,7 +233,7 @@ function sandboxStartFailure(error: unknown): JigError {
     : new SandboxUnavailable(message);
 }
 
-function sandcastleFailureTag(error: unknown) {
+function sandcastleFailureTag(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;
   const cause = sandcastleFailureSchema.safeParse(Reflect.get(error, FIBER_FAILURE_CAUSE));
   return cause.success ? cause.data.error._tag : undefined;
@@ -250,7 +261,7 @@ async function runSetupCommand(
   sandbox: Sandbox,
   command: string,
   { setupTimeoutSeconds }: SandcastleSessionOptions,
-) {
+): Promise<void> {
   const failure = await setupFailure(sandbox, command, setupTimeoutSeconds).catch(
     (error: unknown) =>
       new SandboxUnavailable(`Could not run the setup command: ${messageOf(error)}`),
@@ -260,7 +271,11 @@ async function runSetupCommand(
   throw failure;
 }
 
-async function setupFailure(sandbox: Sandbox, command: string, timeoutSeconds: number) {
+async function setupFailure(
+  sandbox: Sandbox,
+  command: string,
+  timeoutSeconds: number,
+): Promise<SetupCommandFailed | undefined> {
   const timer = new AbortController();
   const finished = await Promise.race([
     sandbox.exec(command),
@@ -303,7 +318,7 @@ function continuing(agent: AgentProvider): AgentProvider {
   };
 }
 
-function correctionPrompt(problem: string) {
+function correctionPrompt(problem: string): string {
   return [
     `Your result could not be used: ${problem}`,
     `Reply again with only the corrected result inside <${OUTPUT_TAG}></${OUTPUT_TAG}> tags.`,

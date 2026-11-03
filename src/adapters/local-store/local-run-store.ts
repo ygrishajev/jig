@@ -15,17 +15,17 @@ import { makeRunDirectory, stateDirectory } from './run-paths.js';
 export class LocalRunStore implements RunStore {
   constructor(private readonly repoRoot: string) {}
 
-  async load(runId: RunId) {
+  async load(runId: RunId): Promise<RunState | undefined> {
     const file = path.join(stateDirectory(this.repoRoot, runId), STATE_FILE);
     if (!existsSync(file)) return undefined;
     return runStateSchema.parse(JSON.parse(await readFile(file, 'utf-8')));
   }
 
-  peek(runId: RunId) {
+  peek(runId: RunId): Promise<RunState | undefined> {
     return this.load(runId);
   }
 
-  async save(state: RunState) {
+  async save(state: RunState): Promise<void> {
     await makeRunDirectory(this.repoRoot, state.runId);
     const directory = stateDirectory(this.repoRoot, state.runId);
     await mkdir(directory, { recursive: true });

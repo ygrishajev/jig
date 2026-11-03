@@ -21,7 +21,7 @@ export const implementSlice: SliceStep = async ({ state, slice, ports }) => {
  * for the first. Derived from approved work rather than read from HEAD, so an attempt resumed
  * after a crash still counts the commits the interrupted attempt left behind.
  */
-async function sliceStart(state: RunState, slice: Slice, ports: StepPorts) {
+async function sliceStart(state: RunState, slice: Slice, ports: StepPorts): Promise<string> {
   const previousEnd = slicesInOrder(state.slices)
     .filter((candidate) => candidate.order < slice.order && candidate.commit)
     .at(-1)?.commit;
@@ -53,7 +53,7 @@ export const verifySlice: SliceStep = async ({ settings, ports }) => {
   };
 };
 
-function truncate(text: string, limit: number) {
+function truncate(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 

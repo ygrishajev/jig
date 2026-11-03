@@ -33,7 +33,9 @@ export async function startTelemetry(
  * The `OTEL_*` variables passed into the sandbox, plus the switch that makes Claude Code export
  * its own telemetry to the same collector.
  */
-export function sandboxTelemetryEnvironment(telemetry: TelemetrySettings | undefined) {
+export function sandboxTelemetryEnvironment(
+  telemetry: TelemetrySettings | undefined,
+): Record<string, string> {
   if (!telemetry) return {};
   return { ...telemetry.forwarded, CLAUDE_CODE_ENABLE_TELEMETRY: '1' };
 }

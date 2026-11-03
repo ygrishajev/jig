@@ -25,7 +25,7 @@ export async function isWorkingTreeClean(cwd: string): Promise<boolean> {
  * miss the config and hand the sandbox no git directory, so that is refused; a directory that is
  * not a repository yet is left for `init` and git itself to judge.
  */
-export async function ensureRepositoryRoot(cwd: string) {
+export async function ensureRepositoryRoot(cwd: string): Promise<void> {
   const root = await openRepo(cwd)
     .revparse(['--show-toplevel'])
     .catch(() => undefined);
