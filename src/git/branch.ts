@@ -6,7 +6,9 @@ import { gitCommand, openRepo } from './repository.js';
 export async function getCurrentBranch(cwd: string): Promise<Result<string, ConfigInvalid>> {
   const status = await gitCommand('status', () => openRepo(cwd).status());
   if (status.isErr()) {
-    return Result.err(new ConfigInvalid({ message: `${cwd} is not a git repository: ${status.error.stderr}` }));
+    return Result.err(
+      new ConfigInvalid({ message: `${cwd} is not a git repository: ${status.error.stderr}` }),
+    );
   }
   if (!status.value.current || status.value.detached) {
     return Result.err(

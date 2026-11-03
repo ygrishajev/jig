@@ -112,12 +112,13 @@ export async function mergeBranchInto(
     yield* Result.await(
       Result.tryPromise({
         try: () => git.merge([branchName, '--no-edit']),
-        catch: (error) =>
-          new MergeFailed({ message: messageOf(error) }),
+        catch: (error) => new MergeFailed({ message: messageOf(error) }),
       }),
     );
     return Result.ok(
-      yield* Result.await(gitCommand('rev-parse', async () => (await git.revparse(['HEAD'])).trim())),
+      yield* Result.await(
+        gitCommand('rev-parse', async () => (await git.revparse(['HEAD'])).trim()),
+      ),
     );
   });
 }
