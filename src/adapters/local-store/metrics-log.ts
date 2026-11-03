@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, truncateSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -19,7 +20,7 @@ import { stateDirectory } from './run-paths.js';
  * across every invocation of the run. Appends are synchronous so records keep event order.
  * A record counts once its line is complete: a process killed mid-append can only leave the
  * last line without its newline, so that tail is ignored on read and cut off before the next
- * append. A complete line that is not a record cannot come from a crash, so it fails loudly.
+ * append. A complete line that is not a record cannot come from a crash, so it is reported as `MetricsLogCorrupt`.
  */
 export class MetricsLog {
   private readonly file: string;
@@ -47,25 +48,29 @@ export class MetricsLog {
   }
 
   /** The run's totals so far, across every invocation this machine ran. */
-  summary(): MetricsSummary {
-    return summarizeMetrics(this.readAll());
+  summary(): Result<MetricsSummary, MetricsLogCorrupt> {
+    return this.readAll().map(summarizeMetrics);
   }
 
-  readAll(): MetricRecord[] {
-    if (!existsSync(this.file)) return [];
-    return completeLines(readFileSync(this.file, 'utf-8')).map((line, index) =>
-      this.parseLine(line, index + 1),
-    );
-  }
-
-  private parseLine(line: string, lineNumber: number): MetricRecord {
-    const parsed = metricRecordSchema.safeParse(parseJson(line));
-    if (!parsed.success) {
-      throw new MetricsLogCorrupt({
-        message: `Line ${lineNumber} of ${this.file} is not a metric record: ${parsed.error.message}`,
-      });
+  readAll(): Result<MetricRecord[], MetricsLogCorrupt> {
+    if (!existsSync(this.file)) return Result.ok([]);
+    const records: MetricRecord[] = [];
+    for (const [index, line] of completeLines(readFileSync(this.file, 'utf-8')).entries()) {
+      const record = this.parseLine(line, index + 1);
+      if (record.isErr()) return Result.err(record.error);
+      records.push(record.value);
     }
-    return parsed.data;
+    return Result.ok(records);
+  }
+
+  private parseLine(line: string, lineNumber: number): Result<MetricRecord, MetricsLogCorrupt> {
+    const parsed = metricRecordSchema.safeParse(parseJson(line));
+    if (parsed.success) return Result.ok(parsed.data);
+    return Result.err(
+      new MetricsLogCorrupt({
+        message: `Line ${lineNumber} of ${this.file} is not a metric record: ${parsed.error.message}`,
+      }),
+    );
   }
 }
 

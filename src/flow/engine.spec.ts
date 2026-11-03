@@ -341,7 +341,7 @@ describe('runEngine', () => {
 
     expect(status).toBe('blocked');
     expect(state).toMatchObject({ phase: 'context', blockedReason: reason });
-    expect(await store.load(state.runId)).toMatchObject({ blockedReason: reason });
+    expect((await store.load(state.runId)).unwrap()).toMatchObject({ blockedReason: reason });
   });
 
   it('clears the blocked reason when a blocked run is resumed', async () => {

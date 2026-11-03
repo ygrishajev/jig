@@ -1,31 +1,41 @@
+import { Result } from 'better-result';
 import path from 'node:path';
 import lockfile from 'proper-lockfile';
 
-import { RunInProgress } from '../../domain/errors.js';
+import { LocalStateUnwritable, messageOf, RunInProgress } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
-import { makeRunDirectory } from './run-paths.js';
+import { makeRunDirectory, runDirectory } from './run-paths.js';
 
 /**
  * Makes this process the run's only writer until the returned release is called. A second
  * process fails at once with `RunInProgress` rather than waiting for the first to finish.
  */
-export async function lockRun(repoRoot: string, runId: RunId): Promise<() => Promise<void>> {
-  const directory = await makeRunDirectory(repoRoot, runId);
-  try {
-    return await lockfile.lock(directory, {
-      lockfilePath: path.join(directory, 'run.lock'),
-      realpath: false,
-      stale: STALE_LOCK_MS,
-      retries: 0,
-    });
-  } catch (error) {
-    if (isHeldElsewhere(error)) {
-      throw new RunInProgress({
-        message: `Run "${runId}" is already running in another jig process.`,
+export async function lockRun(
+  repoRoot: string,
+  runId: RunId,
+): Promise<Result<() => Promise<void>, RunInProgress | LocalStateUnwritable>> {
+  const directory = runDirectory(repoRoot, runId);
+  const lockfilePath = path.join(directory, 'run.lock');
+  return Result.tryPromise({
+    try: async () => {
+      await makeRunDirectory(repoRoot, runId);
+      return lockfile.lock(directory, {
+        lockfilePath,
+        realpath: false,
+        stale: STALE_LOCK_MS,
+        retries: 0,
       });
-    }
-    throw error;
-  }
+    },
+    catch: (cause) =>
+      isHeldElsewhere(cause)
+        ? new RunInProgress({
+            message: `Run "${runId}" is already running in another jig process.`,
+          })
+        : new LocalStateUnwritable({
+            message: `Cannot lock run "${runId}" at ${lockfilePath}: ${messageOf(cause)}`,
+            path: lockfilePath,
+          }),
+  });
 }
 
 /**

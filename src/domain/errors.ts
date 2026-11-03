@@ -18,7 +18,8 @@ export type JigError =
   | ConfigInvalid
   | RunRequestInvalid
   | RunInProgress
-  | MetricsLogCorrupt;
+  | MetricsLogCorrupt
+  | LocalStateUnwritable;
 
 /** JavaScript can throw anything, not only an `Error`. */
 export function messageOf(error: unknown): string {
@@ -104,6 +105,14 @@ export class MetricsLogCorrupt extends TaggedError('MetricsLogCorrupt')<{ messag
   readonly kind = 'fatal' as const;
 }
 
+/** Reading or writing under `.jig/` failed: a full disk, a permission, a file that is not there. */
+export class LocalStateUnwritable extends TaggedError('LocalStateUnwritable')<{
+  message: string;
+  path: string;
+}> {
+  readonly kind = 'fatal' as const;
+}
+
 const jigErrorClasses = [
   AgentRunFailed,
   AgentOutputInvalid,
@@ -117,6 +126,7 @@ const jigErrorClasses = [
   RunRequestInvalid,
   RunInProgress,
   MetricsLogCorrupt,
+  LocalStateUnwritable,
 ];
 
 /** Transitional: returns the value or throws the error; Task 11 deletes it. */

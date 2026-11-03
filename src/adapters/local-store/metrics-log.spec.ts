@@ -18,13 +18,13 @@ describe('MetricsLog', () => {
 
     for (const record of records) log.append(record);
 
-    expect(log.readAll()).toEqual(records);
+    expect(log.readAll().unwrap()).toEqual(records);
   });
 
   it('reads no records for a run that has none yet', async () => {
     const { log } = await setup();
 
-    expect(log.readAll()).toEqual([]);
+    expect(log.readAll().unwrap()).toEqual([]);
   });
 
   it('sums up every step, agent call and retry it holds', async () => {
@@ -32,7 +32,7 @@ describe('MetricsLog', () => {
     const steps = [stepRecord(id), stepRecord(id)];
     for (const record of [...steps, agentCallRecord(id), retryRecord(id)]) log.append(record);
 
-    expect(log.summary()).toMatchObject({
+    expect(log.summary().unwrap()).toMatchObject({
       steps: steps.length,
       agentCalls: 1,
       retries: 1,
@@ -46,7 +46,7 @@ describe('MetricsLog', () => {
 
     appendRaw(tornLine(stepRecord(id)));
 
-    expect(log.readAll()).toEqual(complete);
+    expect(log.readAll().unwrap()).toEqual(complete);
   });
 
   it('appends after a torn last line without gluing onto it', async () => {
@@ -58,7 +58,7 @@ describe('MetricsLog', () => {
 
     reopen().append(next);
 
-    expect(reopen().readAll()).toEqual([first, next]);
+    expect(reopen().readAll().unwrap()).toEqual([first, next]);
   });
 
   it.each([
@@ -81,7 +81,9 @@ describe('MetricsLog', () => {
     appendRaw(`${corruptLine()}\n`);
     log.append(retryRecord(id));
 
-    expect(() => log.readAll()).toThrow(MetricsLogCorrupt);
+    const read = log.readAll();
+
+    expect(read.isErr() && read.error).toBeInstanceOf(MetricsLogCorrupt);
   });
 
   async function setup() {

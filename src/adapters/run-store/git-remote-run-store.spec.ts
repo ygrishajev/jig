@@ -26,7 +26,7 @@ describe('GitRemoteRunStore', () => {
     await new GitRemoteRunStore(here).save(state);
 
     const elsewhere = await cloneOf();
-    expect(await new GitRemoteRunStore(elsewhere).load(state.runId)).toEqual(state);
+    expect((await new GitRemoteRunStore(elsewhere).load(state.runId)).unwrap()).toEqual(state);
     expect(await simpleGit({ baseDir: elsewhere }).revparse([runBranchFor(state.runId)])).toBe(
       branchHead,
     );
@@ -44,7 +44,9 @@ describe('GitRemoteRunStore', () => {
     await store.save(first);
     await store.save(latest);
 
-    expect(await new GitRemoteRunStore(await cloneOf()).load(first.runId)).toEqual(latest);
+    expect((await new GitRemoteRunStore(await cloneOf()).load(first.runId)).unwrap()).toEqual(
+      latest,
+    );
     const history = await simpleGit({ baseDir: here }).raw([
       'log',
       '--format=%s',
@@ -71,7 +73,7 @@ describe('GitRemoteRunStore', () => {
     await elsewhereStore.save(advanced);
 
     const store = new GitRemoteRunStore(here);
-    expect(await store.load(state.runId)).toEqual(advanced);
+    expect((await store.load(state.runId)).unwrap()).toEqual(advanced);
     await store.save(aRunState({ ...advanced, phase: 'describing' }));
 
     expect(await simpleGit({ baseDir: worktree }).revparse(['HEAD'])).toBe(advancedHead);
@@ -127,22 +129,22 @@ describe('GitRemoteRunStore', () => {
     await elsewhereStore.save(state);
     await commitOnRunBranch(here, state.runId);
 
-    await expect(new GitRemoteRunStore(here).load(state.runId)).rejects.toBeInstanceOf(
-      RunStateConflict,
-    );
+    const loaded = await new GitRemoteRunStore(here).load(state.runId);
+
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(RunStateConflict);
   });
 
-  it('reports a remote it cannot reach as unavailable, after retrying', async () => {
+  it('retries an unreachable remote, then reports it unavailable', async () => {
     const { cloneOf, origin } = await setup();
     const here = await cloneOf();
     await rm(origin, { recursive: true, force: true });
 
-    await expect(new GitRemoteRunStore(here).load(aRunState().runId)).rejects.toBeInstanceOf(
-      RemoteUnavailable,
-    );
+    const loaded = await new GitRemoteRunStore(here).load(aRunState().runId);
+
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(RemoteUnavailable);
   });
 
-  it('refuses to save over a run that another clone pushed since this one loaded it', async () => {
+  it('blocks rather than retries when the remote copy moved', async () => {
     const { cloneOf } = await setup();
     const here = await cloneOf();
     const store = new GitRemoteRunStore(here);
@@ -153,16 +155,20 @@ describe('GitRemoteRunStore', () => {
     const theirs = aRunState({ ...state, phase: 'designing', plan: aFeaturePlan() });
     await elsewhere.save(theirs);
 
-    await expect(store.save(aRunState({ ...state, phase: 'designing' }))).rejects.toBeInstanceOf(
-      RunStateConflict,
-    );
-    expect(await new GitRemoteRunStore(await cloneOf()).load(state.runId)).toEqual(theirs);
+    const saved = await store.save(aRunState({ ...state, phase: 'designing' }));
+
+    expect(saved.isErr() && saved.error).toBeInstanceOf(RunStateConflict);
+    expect(
+      (await new GitRemoteRunStore(await cloneOf()).load(state.runId)).unwrapOr(undefined),
+    ).toEqual(theirs);
   });
 
   it('knows nothing about a run that was never pushed', async () => {
     const { cloneOf } = await setup();
 
-    expect(await new GitRemoteRunStore(await cloneOf()).load(aRunState().runId)).toBeUndefined();
+    const loaded = await new GitRemoteRunStore(await cloneOf()).load(aRunState().runId);
+
+    expect(loaded.unwrap()).toBeUndefined();
   });
 
   async function setup() {

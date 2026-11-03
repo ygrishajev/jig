@@ -2,7 +2,7 @@ import { panic } from 'better-result';
 import pRetry from 'p-retry';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { isJigError, isTransient, messageOf } from '../domain/errors.js';
+import { isJigError, isTransient, messageOf, orThrow } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
@@ -89,7 +89,7 @@ class Engine {
       const passed = await this.pass(state.phase, state);
       if ('result' in passed) return passed.result;
       state = passed.state;
-      await this.d.store.save(state);
+      orThrow(await this.d.store.save(state));
       onSaved(state);
     }
     panic(`Run ${state.runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`);
@@ -100,7 +100,7 @@ class Engine {
     const resumed: RunState = { ...state, blockedReason: undefined };
     if (!('halt' in node)) return resumed;
     const next = this.changePhase(resumed, node.resumeAt);
-    await this.d.store.save(next);
+    orThrow(await this.d.store.save(next));
     return next;
   }
 
@@ -259,7 +259,7 @@ class Engine {
 
   private async block(state: RunState, reason: string): Promise<EngineResult> {
     const blocked = { ...state, blockedReason: reason };
-    await this.d.store.save(blocked);
+    orThrow(await this.d.store.save(blocked));
     this.d.events.publish({ type: 'runBlocked', runId: state.runId, phase: state.phase, reason });
     return { state: blocked, status: 'blocked', reason };
   }

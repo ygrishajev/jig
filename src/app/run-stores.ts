@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
@@ -5,7 +6,7 @@ import { z } from 'zod';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { CompositeRunStore } from '../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { type RunState, runStateSchema } from '../domain/run-state.js';
 import type { RunStore } from '../ports/run-store.js';
@@ -34,30 +35,54 @@ interface ModuleStore {
 export async function openRunStore({
   repoRoot,
   config,
-}: Pick<AppCradle, 'repoRoot' | 'config'>): Promise<RunStore> {
-  const stores = await Promise.all(config.runStores.map((name) => storeNamed(name, repoRoot)));
-  return new CompositeRunStore(stores);
+}: Pick<AppCradle, 'repoRoot' | 'config'>): Promise<Result<RunStore, ConfigInvalid>> {
+  const stores: RunStore[] = [];
+  for (const name of config.runStores) {
+    const store = await storeNamed(name, repoRoot);
+    if (store.isErr()) return Result.err(store.error);
+    stores.push(store.value);
+  }
+  return Result.ok(new CompositeRunStore(stores));
 }
 
-async function storeNamed(name: string, repoRoot: string): Promise<RunStore> {
-  if (name === 'local') return new LocalRunStore(repoRoot);
-  if (name === 'git-remote') return new GitRemoteRunStore(repoRoot);
-  const imported: { default?: unknown } = await import(
-    pathToFileURL(path.resolve(repoRoot, name)).href
-  );
-  const factory = imported.default;
+async function storeNamed(
+  name: string,
+  repoRoot: string,
+): Promise<Result<RunStore, ConfigInvalid>> {
+  if (name === 'local') return Result.ok(new LocalRunStore(repoRoot));
+  if (name === 'git-remote') return Result.ok(new GitRemoteRunStore(repoRoot));
+  const imported = await Result.tryPromise({
+    try: (): Promise<{ default?: unknown }> =>
+      import(pathToFileURL(path.resolve(repoRoot, name)).href),
+    catch: (cause) => moduleFailure(name, cause),
+  });
+  if (imported.isErr()) return Result.err(imported.error);
+  const factory = imported.value.default;
   if (typeof factory !== 'function') {
-    throw new ConfigInvalid({
-      message: `Run store "${name}" must default-export a function that returns a store.`,
-    });
+    return Result.err(
+      new ConfigInvalid({
+        message: `Run store "${name}" must default-export a function that returns a store.`,
+      }),
+    );
   }
-  const store: unknown = await factory({ repoRoot });
-  if (!isModuleStore(store)) {
-    throw new ConfigInvalid({
-      message: `Run store "${name}" must return an object with load and save methods.`,
-    });
+  const store = await Result.tryPromise({
+    try: async (): Promise<unknown> => factory({ repoRoot }),
+    catch: (cause) => moduleFailure(name, cause),
+  });
+  if (store.isErr()) return Result.err(store.error);
+  if (!isModuleStore(store.value)) {
+    return Result.err(
+      new ConfigInvalid({
+        message: `Run store "${name}" must return an object with load and save methods.`,
+      }),
+    );
   }
-  return new ModuleRunStore(name, store);
+  return Result.ok(new ModuleRunStore(name, store.value));
+}
+
+/** A custom store is the operator's code: when it throws, the operator's config is what to fix. */
+function moduleFailure(name: string, cause: unknown): ConfigInvalid {
+  return new ConfigInvalid({ message: `Run store "${name}" failed: ${messageOf(cause)}` });
 }
 
 /** Checks the shape only; the store itself is kept, so its methods still see their own `this`. */
@@ -78,26 +103,40 @@ class ModuleRunStore implements RunStore {
     private readonly store: ModuleStore,
   ) {}
 
-  async load(runId: RunId): Promise<RunState | undefined> {
-    return this.parsed(await this.store.load(runId));
+  async load(runId: RunId): Promise<Result<RunState | undefined, ConfigInvalid>> {
+    return this.parsed(await this.call(() => this.store.load(runId)));
   }
 
-  private parsed(loaded: unknown): RunState | undefined {
-    if (loaded === undefined || loaded === null) return undefined;
-    const parsed = runStateSchema.safeParse(loaded);
-    if (!parsed.success) {
-      throw new ConfigInvalid({
+  private parsed(
+    loaded: Result<unknown, ConfigInvalid>,
+  ): Result<RunState | undefined, ConfigInvalid> {
+    if (loaded.isErr()) return Result.err(loaded.error);
+    if (loaded.value === undefined || loaded.value === null) return Result.ok(undefined);
+    const parsed = runStateSchema.safeParse(loaded.value);
+    if (parsed.success) return Result.ok(parsed.data);
+    return Result.err(
+      new ConfigInvalid({
         message: `Run store "${this.name}" returned a malformed run: ${parsed.error.message}`,
-      });
-    }
-    return parsed.data;
+      }),
+    );
   }
 
-  async peek(runId: RunId): Promise<RunState | undefined> {
-    return this.parsed(await (this.store.peek ? this.store.peek(runId) : this.store.load(runId)));
+  private call(operation: () => unknown): Promise<Result<unknown, ConfigInvalid>> {
+    return Result.tryPromise({
+      try: async () => operation(),
+      catch: (cause) => moduleFailure(this.name, cause),
+    });
   }
 
-  async save(state: RunState): Promise<void> {
-    await this.store.save(state);
+  async peek(runId: RunId): Promise<Result<RunState | undefined, ConfigInvalid>> {
+    const peeked = await this.call(() =>
+      this.store.peek ? this.store.peek(runId) : this.store.load(runId),
+    );
+    return this.parsed(peeked);
+  }
+
+  async save(state: RunState): Promise<Result<void, ConfigInvalid>> {
+    const saved = await this.call(() => this.store.save(state));
+    return saved.map(() => undefined);
   }
 }

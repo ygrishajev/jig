@@ -153,7 +153,7 @@ describe('runFlow', () => {
     interrupted.agent.script('reviewer', approval(), { crash });
 
     await expect(interrupted.run(interrupted.start)).rejects.toBe(crash);
-    const saved = await interrupted.store.load(interrupted.start.runId);
+    const saved = (await interrupted.store.load(interrupted.start.runId)).unwrap();
     expect(saved?.slices.map((slice) => slice.status)).toEqual(['approved', 'in_review']);
     interrupted.agent.script('reviewer', approval());
     interrupted.agent.script('describer', aDescription());

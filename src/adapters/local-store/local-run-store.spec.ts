@@ -2,7 +2,6 @@ import { faker } from '@faker-js/faker';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ZodError } from 'zod';
 
 import {
   aContext,
@@ -12,6 +11,7 @@ import {
   designDocs,
 } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { ConfigInvalid } from '../../domain/errors.js';
 import { LocalRunStore } from './local-run-store.js';
 import { stateDirectory } from './run-paths.js';
 
@@ -34,7 +34,7 @@ describe('LocalRunStore', () => {
 
     await store.save(state);
 
-    expect(await store.load(state.runId)).toEqual(state);
+    expect((await store.load(state.runId)).unwrap()).toEqual(state);
   });
 
   it('peeks at the run it saved', async () => {
@@ -42,13 +42,13 @@ describe('LocalRunStore', () => {
     const state = aRunState();
     await store.save(state);
 
-    expect(await store.peek(state.runId)).toEqual(state);
+    expect((await store.peek(state.runId)).unwrap()).toEqual(state);
   });
 
   it('knows nothing about a run it never saved', async () => {
     const { store } = await setup();
 
-    expect(await store.load(aRunState().runId)).toBeUndefined();
+    expect((await store.load(aRunState().runId)).unwrap()).toBeUndefined();
   });
 
   it('keeps its own directory out of the operator repository', async () => {
@@ -68,7 +68,9 @@ describe('LocalRunStore', () => {
       JSON.stringify({ ...state, phase: faker.word.noun() }),
     );
 
-    await expect(store.load(state.runId)).rejects.toBeInstanceOf(ZodError);
+    const loaded = await store.load(state.runId);
+
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
   });
 
   async function setup() {

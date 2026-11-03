@@ -86,7 +86,7 @@ describe('runJig', () => {
     expect(second.state.runId).toBe(id);
     expect(second.state.plan).toEqual(first.state.plan);
     expect(second.state.slices).toEqual(first.state.slices);
-    const saved = await new LocalRunStore(repo.dir).load(id);
+    const saved = (await new LocalRunStore(repo.dir).load(id)).unwrap();
     expect(saved?.phase).toBe('awaitingMerge');
     expect(saved?.slices).toEqual(first.state.slices);
     expect(await runBranchCommits(repo.dir, id)).toEqual(commitsAfterFirst);

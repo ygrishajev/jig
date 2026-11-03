@@ -108,7 +108,7 @@ export class InMemoryRunStore implements RunStore {
   readonly saved: RunState[] = [];
 
   async load(runId: RunId) {
-    return [...this.saved].reverse().find((state) => state.runId === runId);
+    return Result.ok([...this.saved].reverse().find((state) => state.runId === runId));
   }
 
   peek(runId: RunId) {
@@ -117,6 +117,7 @@ export class InMemoryRunStore implements RunStore {
 
   async save(state: RunState) {
     this.saved.push(structuredClone(state));
+    return Result.ok();
   }
 }
 

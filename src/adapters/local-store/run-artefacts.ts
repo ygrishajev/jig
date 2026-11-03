@@ -1,11 +1,14 @@
+import type { Result } from 'better-result';
 import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
+import type { LocalStateUnwritable } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { type RunPhase, type RunState, stuckSlice } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
+import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 
 export interface RunDocumentFile {
@@ -30,20 +33,25 @@ interface RunResult {
 export class RunArtefacts {
   constructor(private readonly repoRoot: string) {}
 
-  async write(state: RunState, status: string, metrics: MetricsSummary): Promise<void> {
-    const directory = await this.makeStateDirectory(state.runId);
-    const write = (name: string, contents: string | undefined): Promise<void> =>
-      writeOrRemove(path.join(directory, name), contents);
-    await write('result.json', `${JSON.stringify(resultFor(state, status, metrics), null, 2)}\n`);
-    const contents = documentContents(state, metrics);
-    for (const name of DOCUMENTS) await write(name, contents[name]);
+  async write(
+    state: RunState,
+    status: string,
+    metrics: MetricsSummary,
+  ): Promise<Result<void, LocalStateUnwritable>> {
+    const directory = stateDirectory(this.repoRoot, state.runId);
+    return onLocalState(directory, async () => {
+      await this.makeStateDirectory(state.runId);
+      const write = (name: string, contents: string | undefined): Promise<void> =>
+        writeOrRemove(path.join(directory, name), contents);
+      await write('result.json', `${JSON.stringify(resultFor(state, status, metrics), null, 2)}\n`);
+      const contents = documentContents(state, metrics);
+      for (const name of DOCUMENTS) await write(name, contents[name]);
+    });
   }
 
-  private async makeStateDirectory(runId: RunId): Promise<string> {
+  private async makeStateDirectory(runId: RunId): Promise<void> {
     await makeRunDirectory(this.repoRoot, runId);
-    const directory = stateDirectory(this.repoRoot, runId);
-    await mkdir(directory, { recursive: true });
-    return directory;
+    await mkdir(stateDirectory(this.repoRoot, runId), { recursive: true });
   }
 
   /** The documents this machine holds for the run; a run that has not produced one has no file. */

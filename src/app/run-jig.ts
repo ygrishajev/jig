@@ -36,9 +36,9 @@ export async function runJig(
   input: RunJigInput,
 ): Promise<RunReport> {
   const runId = 'resume' in input ? input.resume : (input.runId ?? newRunId());
-  const releaseLock = await lockRun(app.cradle.repoRoot, runId);
+  const releaseLock = orThrow(await lockRun(app.cradle.repoRoot, runId));
   try {
-    const store = await openRunStore(app.cradle);
+    const store = orThrow(await openRunStore(app.cradle));
     const state = await startOrResume(app.cradle, store, input, runId);
     const finished = finalStatus(runFlow, state);
     const report = finished ? { state, status: finished } : await advance(app, store, state);
@@ -59,7 +59,7 @@ async function startOrResume(
   input: RunJigInput,
   runId: RunId,
 ): Promise<RunState> {
-  const existing = await store.load(runId);
+  const existing = orThrow(await store.load(runId));
   if ('resume' in input) {
     if (!existing) throw new RunRequestInvalid({ message: `No run found with id "${runId}".` });
     return existing;
@@ -82,7 +82,7 @@ async function startNewRun(
 ): Promise<RunState> {
   const baseBranch = orThrow(await getCurrentBranch(cradle.repoRoot));
   const started = startRun({ runId, baseBranch, request });
-  await store.save(started);
+  orThrow(await store.save(started));
   return started;
 }
 
@@ -109,6 +109,6 @@ async function recordInvocation(
   { repoRoot, artefacts }: AppCradle,
   report: RunReport,
 ): Promise<void> {
-  const metrics = new MetricsLog(repoRoot, report.state.runId).summary();
-  await artefacts.write(report.state, report.status, metrics);
+  const metrics = orThrow(new MetricsLog(repoRoot, report.state.runId).summary());
+  orThrow(await artefacts.write(report.state, report.status, metrics));
 }
