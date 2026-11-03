@@ -5,13 +5,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../tests/support/temp-directory.js';
-import { ConfigInvalid, orThrow } from '../domain/errors.js';
+import { unwrap } from '../../tests/support/unwrap.js';
+import { ConfigInvalid } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS } from '../domain/settings.js';
 import { CONFIG_FILE, type JigConfig, loadConfig, runSettingsFrom } from './load-config.js';
 
 describe('loadConfig', () => {
   it('runs every step on claude, merging by hand, when the repository has no config', async () => {
-    const config = orThrow(loadConfig(await setup()));
+    const config = unwrap(loadConfig(await setup()));
 
     expect(config).toMatchObject({
       mergeMode: 'manual',
@@ -28,7 +29,7 @@ describe('loadConfig', () => {
     const model = `openrouter/${faker.word.noun()}`;
     const verifyCommand = `npm run ${faker.word.verb()}`;
 
-    const config = orThrow(
+    const config = unwrap(
       loadConfig(
         await setup({
           implementer: { provider: 'opencode', model },
@@ -48,7 +49,7 @@ describe('loadConfig', () => {
   it('takes the commands that prepare and check the sandbox', async () => {
     const setupCommand = `npm ${faker.word.verb()}`;
 
-    const config = orThrow(loadConfig(await setup({ setupCommand, setupTimeoutSeconds: 120 })));
+    const config = unwrap(loadConfig(await setup({ setupCommand, setupTimeoutSeconds: 120 })));
 
     expect(config).toMatchObject({ setupCommand, setupTimeoutSeconds: 120 });
   });
@@ -81,7 +82,7 @@ describe('loadConfig', () => {
   it('takes a version pin for a known agent and rejects one for an agent it does not know', async () => {
     const version = faker.system.semver();
 
-    expect(orThrow(loadConfig(await setup({ agents: { opencode: version } }))).agents).toEqual({
+    expect(unwrap(loadConfig(await setup({ agents: { opencode: version } }))).agents).toEqual({
       opencode: version,
     });
     const repoRoot = await setup({ agents: { [faker.word.noun()]: version } });
@@ -106,7 +107,7 @@ describe('runSettingsFrom', () => {
     const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const config = {
-      ...orThrow(loadConfig(await tempDirectory('jig-config-'))),
+      ...unwrap(loadConfig(await tempDirectory('jig-config-'))),
       reviewCycleCap,
       verifyCommand,
       designGate: 'checkpoint' as const,

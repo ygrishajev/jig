@@ -1,14 +1,15 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { ConfigInvalid, orThrow } from '../domain/errors.js';
+import { unwrap } from '../../tests/support/unwrap.js';
+import { ConfigInvalid } from '../domain/errors.js';
 import { parseEnvironment } from './environment.js';
 
 describe('parseEnvironment', () => {
   it('reads the image cache and the Codex auth directory', () => {
     const directory = faker.system.directoryPath();
 
-    const environment = orThrow(
+    const environment = unwrap(
       parseEnvironment({ JIG_IMAGE_CACHE: 'gha', JIG_CODEX_AUTH_DIR: directory }),
     );
 
@@ -21,7 +22,7 @@ describe('parseEnvironment', () => {
       const endpoint = faker.internet.url();
       const serviceName = faker.word.noun();
 
-      const { telemetry } = orThrow(
+      const { telemetry } = unwrap(
         parseEnvironment({
           [endpointVariable]: endpoint,
           OTEL_SERVICE_NAME: serviceName,
@@ -39,8 +40,8 @@ describe('parseEnvironment', () => {
   it('leaves telemetry off without an endpoint, and names the service jig by default', () => {
     const endpoint = faker.internet.url();
 
-    const withoutEndpoint = orThrow(parseEnvironment({ OTEL_SERVICE_NAME: faker.word.noun() }));
-    const withEndpoint = orThrow(parseEnvironment({ OTEL_EXPORTER_OTLP_ENDPOINT: endpoint }));
+    const withoutEndpoint = unwrap(parseEnvironment({ OTEL_SERVICE_NAME: faker.word.noun() }));
+    const withEndpoint = unwrap(parseEnvironment({ OTEL_EXPORTER_OTLP_ENDPOINT: endpoint }));
 
     expect(withoutEndpoint.telemetry).toBeUndefined();
     expect(withEndpoint.telemetry?.serviceName).toBe('jig');
@@ -49,13 +50,13 @@ describe('parseEnvironment', () => {
   it('looks up a credential by name and treats an empty variable as unset', () => {
     const key = faker.string.alphanumeric(40);
 
-    const environment = orThrow(
+    const environment = unwrap(
       parseEnvironment({ OPENROUTER_API_KEY: key, ANTHROPIC_API_KEY: '' }),
     );
 
     expect(environment.credential('OPENROUTER_API_KEY')).toBe(key);
     expect(environment.credential('ANTHROPIC_API_KEY')).toBeUndefined();
-    expect(orThrow(parseEnvironment({ JIG_IMAGE_CACHE: '' })).imageCache).toBeUndefined();
+    expect(unwrap(parseEnvironment({ JIG_IMAGE_CACHE: '' })).imageCache).toBeUndefined();
   });
 
   it.each([

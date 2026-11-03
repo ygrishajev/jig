@@ -13,6 +13,17 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-03-errors-as-values-design.md`. Read it before any task.
 
+## Completion status
+
+Tasks 1–10 were implemented in the existing branch commits. Task 11 completes enforcement,
+removes the transitional bridge from production code and specs, and adds the house rules.
+The final validation command excludes mutation testing at the user's request.
+
+Validation also found duplicate issue formatting and phase-step handling from earlier slices.
+Issue formatting now shares one helper while retaining each caller's separator; phase steps
+propagate failures with `Result.gen`. Regression tests cover issue paths and separators, and
+lint tests cover synchronous, promised, awaited, `Ok`, and `Err` results.
+
 ## Global Constraints
 
 - **Library and result types:**
@@ -495,7 +506,7 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
     - `jig/no-ignored-result: 'error'`
     - a `{ selector: 'ThrowStatement', message: 'jig does not throw: return an Err, or panic() for a bug.' }` entry appended to every `no-restricted-syntax` list that applies to non-spec `src/` files. A later block replaces the rule's whole list, so the CLI block needs it too.
 
-- [ ] **Step 1: Write the failing tests** in `no-ignored-result.spec.ts`, using `RuleTester` with `projectService.allowDefaultProject`:
+- [x] **Step 1: Write the failing tests** in `no-ignored-result.spec.ts`, using `RuleTester` with `projectService.allowDefaultProject`:
   - **valid:**
     - `return parse(x);`
     - `const r = parse(x);`
@@ -504,10 +515,10 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
   - **invalid:**
     - `parse(x);`, where it returns `Result<number, E>`
     - `await load(x);`, where it returns `Promise<Result<…>>`
-- [ ] **Step 2: Run `npx vitest run scripts/eslint-rules/no-ignored-result.spec.ts`.** Expected: FAIL.
-- [ ] **Step 3: Implement the rule and wire up all four lint changes.** Delete `orThrow`.
-- [ ] **Step 4: Run `npm run lint`.** Expected: PASS. Fix any violation it finds in the code: the fix is never a disable comment.
-- [ ] **Step 5: Write the house rule** in `.claude/instructions/errors-as-values.md`, in the style of the existing instructions. It covers the spec's rules:
+- [x] **Step 2: Verify the inherited lint-rule tests.** The rule and initial tests were already in flight; the completed suite passes, including the added regression cases.
+- [x] **Step 3: Implement the rule and wire up all four lint changes.** Delete `orThrow`.
+- [x] **Step 4: Run `npm run lint`.** Expected: PASS. Fix any violation it finds in the code: the fix is never a disable comment.
+- [x] **Step 5: Write the house rule** in `.claude/instructions/errors-as-values.md`, in the style of the existing instructions. It covers the spec's rules:
   - an expected failure is an `Err`, a bug is a `panic`, an operator-fixable failure is never a bug
   - wrap a third-party call in the adapter that makes it
   - a `catch` may handle a third-party throw locally but never swallows a `Panic`
@@ -518,5 +529,5 @@ Stage 1 of the rollout. It is mechanical and changes no behaviour.
   - Link it from `CLAUDE.md`'s list, with the trigger "writing or changing any code that can fail".
   - In `testing-conventions.md`, add: assert an expected failure on the returned `Err` (its class or `_tag` and the fields the code decided), never with `toThrow`, and keep `toThrow(Panic)` for bugs.
 
-- [ ] **Step 6: Verify.** Run `npm run validate && npm run test:mutation`. Expected: both pass, and the mutation score is not below the score on `main`.
-- [ ] **Step 7: Commit.** `refactor(dx): lint that jig never throws or drops a Result`. It is `refactor`, not `chore`, because deleting `orThrow` touches `src/`.
+- [x] **Step 6: Verify.** Run `npm run validate -- --skip test:mutation`. Mutation testing and the comparison with `main` are deferred at the user's request on 2026-11-03.
+- [x] **Step 7: Commit.** `refactor(dx): lint that jig never throws or drops a Result`. It is `refactor`, not `chore`, because deleting `orThrow` touches `src/`.

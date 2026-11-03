@@ -7,11 +7,12 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
+import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
-import { orThrow, RunRequestInvalid } from '../domain/errors.js';
+import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer } from './container.js';
@@ -71,11 +72,11 @@ describe('readRunStatus', () => {
         repoRoot,
         logFormat: 'json',
         logLevel: 'silent',
-        environment: orThrow(parseEnvironment({})),
-        config: orThrow(loadConfig(repoRoot)),
+        environment: unwrap(parseEnvironment({})),
+        config: unwrap(loadConfig(repoRoot)),
       });
       onTestFinished(() => app.dispose());
-      app.register({ config: asValue({ ...orThrow(loadConfig(repoRoot)), runStores }) });
+      app.register({ config: asValue({ ...unwrap(loadConfig(repoRoot)), runStores }) });
       return readRunStatus(app, id);
     };
     return { cloneOf, statusIn };

@@ -7,9 +7,9 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { sandboxImageName } from '../../src/app/sandbox-image.js';
 import { loadConfig } from '../../src/config/load-config.js';
-import { orThrow } from '../../src/domain/errors.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import { runBranchFor } from '../../src/domain/run-state.js';
+import { unwrap } from '../support/unwrap.js';
 import {
   createFeatureRepository,
   FEATURE_FIXTURE,
@@ -72,7 +72,7 @@ describe('live feature pipeline', () => {
       }
       console.error(`E2E artifacts retained at ${repo}`);
     });
-    const image = sandboxImageName(repo, orThrow(loadConfig(repo)));
+    const image = sandboxImageName(repo, unwrap(loadConfig(repo)));
     return {
       repo,
       jig: async (...args: string[]) => {

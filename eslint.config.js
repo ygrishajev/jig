@@ -5,11 +5,18 @@ import sonarjs from 'eslint-plugin-sonarjs';
 import tseslint from 'typescript-eslint';
 
 import { declarationsInCallOrder } from './scripts/eslint-rules/declarations-in-call-order.ts';
+import { noIgnoredResult } from './scripts/eslint-rules/no-ignored-result.ts';
 
 /** `.claude/instructions/use-mock-instead-of-as-unknown-as-in-tests.md` */
 const noDoubleCast = {
   selector: 'TSAsExpression > TSAsExpression[typeAnnotation.type="TSUnknownKeyword"]',
   message: 'Build the double with mock<T>(), not `as unknown as T`.',
+};
+
+/** `.claude/instructions/errors-as-values.md` */
+const noThrow = {
+  selector: 'ThrowStatement',
+  message: 'jig does not throw: return an Err, or panic() for a bug.',
 };
 
 /** `.claude/instructions/testing-conventions.md` and the `setup` instruction. */
@@ -100,9 +107,14 @@ export default tseslint.config(
     rules: { 'no-restricted-syntax': ['error', noDoubleCast, ...specRules] },
   },
   {
+    files: ['src/**/*.ts'],
+    ignores: ['src/**/*.spec.ts'],
+    rules: { 'no-restricted-syntax': ['error', noDoubleCast, noThrow] },
+  },
+  {
     files: ['src/cli/**/*.ts'],
     ignores: ['src/**/*.spec.ts'],
-    rules: { 'no-restricted-syntax': ['error', noDoubleCast, noCommanderParsing] },
+    rules: { 'no-restricted-syntax': ['error', noDoubleCast, noThrow, noCommanderParsing] },
   },
   {
     files: ['src/**/*.ts'],
@@ -133,9 +145,17 @@ export default tseslint.config(
     ignores: ['src/**/*.spec.ts'],
     plugins: {
       sonarjs,
-      jig: { rules: { 'declarations-in-call-order': declarationsInCallOrder } },
+      jig: {
+        rules: {
+          'declarations-in-call-order': declarationsInCallOrder,
+          'no-ignored-result': noIgnoredResult,
+        },
+      },
     },
+    languageOptions: { parserOptions: { projectService: true } },
     rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+      'jig/no-ignored-result': 'error',
       complexity: ['error', { max: 10 }],
       'sonarjs/cognitive-complexity': ['error', 15],
       'jig/declarations-in-call-order': 'error',

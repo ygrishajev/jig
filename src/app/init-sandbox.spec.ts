@@ -8,17 +8,13 @@ import { mock } from 'vitest-mock-extended';
 
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { unwrap } from '../../tests/support/unwrap.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
-import {
-  ConfigInvalid,
-  orThrow,
-  SandboxUnavailable,
-  SetupCommandFailed,
-} from '../domain/errors.js';
+import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import type { ExecResult } from '../ports/agent-session.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import { createAppContainer } from './container.js';
@@ -148,8 +144,8 @@ describe('initSandbox', () => {
       repoRoot: repo.dir,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: orThrow(parseEnvironment({})),
-      config: orThrow(loadConfig(repo.dir)),
+      environment: unwrap(parseEnvironment({})),
+      config: unwrap(loadConfig(repo.dir)),
     });
     app.register({
       images: asValue(

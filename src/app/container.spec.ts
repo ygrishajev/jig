@@ -9,11 +9,12 @@ import { runId } from '../../tests/support/builders.js';
 import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { unwrap } from '../../tests/support/unwrap.js';
 import { runLogFile } from '../adapters/local-store/run-paths.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
-import { MergeFailed, orThrow, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
+import { MergeFailed, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, withRunScope, withThrowawaySandbox } from './container.js';
@@ -26,7 +27,7 @@ describe('withRunScope', () => {
       Result.ok(dependencies.ports.agent),
     );
 
-    expect(orThrow(used)).toBe(session);
+    expect(unwrap(used)).toBe(session);
     expect(session.closed).toBe(true);
   });
 
@@ -70,12 +71,12 @@ describe('withRunScope', () => {
   async function setup(input: { failWith?: SandboxUnavailable } = {}) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
-    const config = orThrow(loadConfig(repoRoot));
+    const config = unwrap(loadConfig(repoRoot));
     const app = createAppContainer({
       repoRoot,
       logFormat: 'json',
       logLevel: 'warn',
-      environment: orThrow(parseEnvironment({})),
+      environment: unwrap(parseEnvironment({})),
       config,
     });
     let attempts = 0;
@@ -139,8 +140,8 @@ describe('withThrowawaySandbox', () => {
       repoRoot,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: orThrow(parseEnvironment({})),
-      config: orThrow(loadConfig(repoRoot)),
+      environment: unwrap(parseEnvironment({})),
+      config: unwrap(loadConfig(repoRoot)),
     });
     app.register({
       openSession: asValue(async ({ run }: OpenSessionInput) => {

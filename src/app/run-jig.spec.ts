@@ -12,6 +12,7 @@ import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree } from '../../tests/support/open-run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
@@ -21,7 +22,6 @@ import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import {
   ConfigInvalid,
-  orThrow,
   RunInProgress,
   RunRequestInvalid,
   SandboxUnavailable,
@@ -203,8 +203,8 @@ describe('runJig', () => {
       repoRoot: repo.dir,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: orThrow(parseEnvironment({})),
-      config: orThrow(loadConfig(repo.dir)),
+      environment: unwrap(parseEnvironment({})),
+      config: unwrap(loadConfig(repo.dir)),
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
@@ -228,7 +228,7 @@ describe('runJig', () => {
       return () => sessionsOpened;
     };
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
-    app.register({ config: asValue({ ...orThrow(loadConfig(repo.dir)), sandboxImage }) });
+    app.register({ config: asValue({ ...unwrap(loadConfig(repo.dir)), sandboxImage }) });
     app.register({
       settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),
       openSession: asValue(async ({ run }: OpenSessionInput) => {

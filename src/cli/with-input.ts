@@ -2,6 +2,7 @@ import { panic, Result } from 'better-result';
 import { Command } from 'commander';
 import type { z } from 'zod';
 
+import { describeIssues } from '../config/describe-issues.js';
 import { CommandInputInvalid, type JigError } from '../domain/errors.js';
 
 /**
@@ -17,7 +18,7 @@ export function withInput<Schema extends z.ZodTypeAny>(
     if (!(command instanceof Command)) panic('withInput must wrap a commander action');
     const parsed = schema.safeParse(inputOf(command));
     if (!parsed.success) {
-      return Result.err(new CommandInputInvalid({ message: describeIssues(parsed.error) }));
+      return Result.err(new CommandInputInvalid({ message: describeIssues(parsed.error, '\n') }));
     }
     return run(parsed.data);
   };
@@ -29,12 +30,4 @@ function inputOf(command: Command): Record<string, unknown> {
     command.processedArgs[index],
   ]);
   return { ...Object.fromEntries(named), ...command.opts() };
-}
-
-function describeIssues(error: z.ZodError): string {
-  return error.issues
-    .map((issue) =>
-      issue.path.length > 0 ? `${issue.path.join('.')}: ${issue.message}` : issue.message,
-    )
-    .join('\n');
 }

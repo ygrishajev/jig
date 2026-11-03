@@ -254,17 +254,20 @@ class Engine {
     node: StepNode<RunPhase, RunStep<P>>,
     state: RunStateIn<P>,
   ): Promise<Result<Advance, JigError>> {
-    const at: StepLocation = { phase: state.phase };
-    const attempted = await this.attempt(at, state.runId, () =>
-      node.step({ state, ports: this.d.ports, settings: this.d.settings }),
-    );
-    if (attempted.isErr()) return attempted;
-    if ('blockedReason' in attempted.value) return Result.ok(attempted.value);
+    return Result.gen(async function* (this: Engine) {
+      const at: StepLocation = { phase: state.phase };
+      const attempted = yield* Result.await(
+        this.attempt(at, state.runId, () =>
+          node.step({ state, ports: this.d.ports, settings: this.d.settings }),
+        ),
+      );
+      if ('blockedReason' in attempted) return Result.ok(attempted);
 
-    const { outcome } = attempted.value;
-    const applied = applyOutcome(state, outcome);
-    const next = this.resolve(node.on, outcome, { state: applied, settings: this.d.settings });
-    return Result.ok({ state: this.changePhase(applied, next) });
+      const { outcome } = attempted;
+      const applied = applyOutcome(state, outcome);
+      const next = this.resolve(node.on, outcome, { state: applied, settings: this.d.settings });
+      return Result.ok({ state: this.changePhase(applied, next) });
+    }, this);
   }
 
   private async block(state: RunState, reason: string): Promise<Result<EngineResult, JigError>> {

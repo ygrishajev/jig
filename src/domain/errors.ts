@@ -1,4 +1,4 @@
-import { Panic, type Result, TaggedError } from 'better-result';
+import { Panic, TaggedError } from 'better-result';
 
 /**
  * How the engine reacts to a failure: try the step again, stop and wait for a person, or abort
@@ -152,9 +152,3 @@ const jigErrorClasses = [
   ImageBuildFailed,
   CommandInputInvalid,
 ];
-
-/** Transitional: returns the value or throws the error; Task 11 deletes it. */
-export function orThrow<T, E>(result: Result<T, E>): T {
-  if (result.isErr()) throw result.error;
-  return result.value;
-}
