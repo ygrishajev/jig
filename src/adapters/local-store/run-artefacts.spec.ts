@@ -13,8 +13,8 @@ import { RunArtefacts } from './run-artefacts.js';
 import { stateDirectory } from './run-paths.js';
 
 describe('RunArtefacts', () => {
-  it('writes the design and plan for a person to read, and says where they are', async () => {
-    const { artefacts, read } = await setup();
+  it('writes the design and plan for a person to read, and lists only the documents it wrote', async () => {
+    const { artefacts, read, repoRoot } = await setup();
     const docs = designDocs();
     const state = aRunState({ docs });
 
@@ -22,8 +22,11 @@ describe('RunArtefacts', () => {
 
     expect(await read(state.runId, 'design.md')).toBe(docs.design);
     expect(await read(state.runId, 'plan.md')).toBe(docs.plan);
-    expect(artefacts.documentPath(state.runId, 'plan.md')).toBeDefined();
-    expect(artefacts.documentPath(state.runId, 'PR_DESCRIPTION.md')).toBeUndefined();
+    const directory = stateDirectory(repoRoot, state.runId);
+    expect(artefacts.documents(state.runId)).toEqual([
+      { name: 'design.md', path: path.join(directory, 'design.md') },
+      { name: 'plan.md', path: path.join(directory, 'plan.md') },
+    ]);
   });
 
   it('closes the pull request description with the run so far', async () => {

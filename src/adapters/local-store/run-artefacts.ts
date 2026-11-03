@@ -8,7 +8,15 @@ import { type RunState, stuckSlice } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 
-export type RunDocument = 'design.md' | 'plan.md' | 'PR_DESCRIPTION.md';
+/** The markdown a run leaves for a person to read, in the order `jig status` lists them. */
+const DOCUMENTS = ['design.md', 'plan.md', 'PR_DESCRIPTION.md'] as const;
+
+export type RunDocument = (typeof DOCUMENTS)[number];
+
+export interface RunDocumentFile {
+  name: RunDocument;
+  path: string;
+}
 
 /**
  * This machine's record of how an invocation of a run ended, written once at its end and only
@@ -23,14 +31,16 @@ export class RunArtefacts {
     const write = (name: string, contents: string | undefined) =>
       writeOrRemove(path.join(directory, name), contents);
     await write('result.json', `${JSON.stringify(resultFor(state, status, metrics), null, 2)}\n`);
-    await write('design.md', state.docs?.design);
-    await write('plan.md', state.docs?.plan);
-    await write('PR_DESCRIPTION.md', pullRequestDescription(state, metrics));
+    const contents = documentContents(state, metrics);
+    for (const name of DOCUMENTS) await write(name, contents[name]);
   }
 
-  documentPath(runId: RunId, name: RunDocument) {
-    const file = path.join(stateDirectory(this.repoRoot, runId), name);
-    return existsSync(file) ? file : undefined;
+  /** The documents this machine holds for the run; a run that has not produced one has no file. */
+  documents(runId: RunId): RunDocumentFile[] {
+    const directory = stateDirectory(this.repoRoot, runId);
+    return DOCUMENTS.map((name) => ({ name, path: path.join(directory, name) })).filter(
+      (document) => existsSync(document.path),
+    );
   }
 
   private async makeStateDirectory(runId: RunId) {
@@ -53,6 +63,17 @@ function resultFor(state: RunState, status: string, metrics: MetricsSummary) {
     complete: status === 'done',
     blockedReason: state.blockedReason ?? stuckSliceReason(state),
     metrics,
+  };
+}
+
+function documentContents(
+  state: RunState,
+  metrics: MetricsSummary,
+): Record<RunDocument, string | undefined> {
+  return {
+    'design.md': state.docs?.design,
+    'plan.md': state.docs?.plan,
+    'PR_DESCRIPTION.md': pullRequestDescription(state, metrics),
   };
 }
 
