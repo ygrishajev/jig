@@ -9,6 +9,7 @@ import { type MetricsSummary, summarizeMetrics } from '../observers/metrics.js';
 import type { AppCradle } from './container.js';
 import { openRunStore } from './run-stores.js';
 
+// TODO(cohesion-2): repeats what RunArtefacts.write produces; give RunArtefacts a documents(runId) and drop this list.
 const DOCUMENTS: RunDocument[] = ['design.md', 'plan.md', 'PR_DESCRIPTION.md'];
 
 export interface RunStatus {
@@ -32,6 +33,7 @@ export async function readRunStatus(
     const found = artefacts.documentPath(runId, name);
     return found ? [{ name, path: found }] : [];
   });
+  // TODO(cohesion-3): same summarizeMetrics(new MetricsLog(...).readAll()) as recordInvocation in run-jig.ts; let MetricsLog.summary() own it.
   const metrics = summarizeMetrics(new MetricsLog(repoRoot, runId).readAll());
   return { state, documents, metrics };
 }

@@ -22,6 +22,7 @@ export function registerStatusCommand(program: Command) {
           await withApp(defaultLogFormat(), async (app) => {
             const status = await readRunStatus(app, id);
             console.log(describeRun(status));
+            // TODO(cohesion-8): describeRun already gets status.metrics; render this line there, not in the action.
             if (status.metrics.steps > 0) console.log(`So far: ${formatSummary(status.metrics)}`);
           });
         }),

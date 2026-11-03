@@ -85,8 +85,10 @@ async function startNewRun(cradle: AppCradle, store: RunStore, runId: RunId, req
 async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: RunState) {
   await ensureSandboxImage(app.cradle);
   const { environment } = app.cradle;
+  // TODO(cohesion-5): the caller knows the on/off guard; startTelemetry should return undefined when disabled and keep telemetryEnabled private.
   const telemetry = telemetryEnabled(environment) ? await startTelemetry(environment) : undefined;
   try {
+    // TODO(cohesion-4): the caller knows the scope protocol (build identity, open, reach into cradle, close session before dispose); a withRunScope in container.ts would own it.
     const run = { runId: state.runId, baseBranch: state.baseBranch };
     const scope = await openRunScope(app, run, store, { tracer: telemetry?.tracer });
     try {
@@ -101,6 +103,7 @@ async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: 
 
 /** Leaves this machine's record of where the invocation stopped; see `RunArtefacts`. */
 async function recordInvocation({ repoRoot, artefacts }: AppCradle, report: RunReport) {
+  // TODO(cohesion-3): computed only to hand back to artefacts.write; let RunArtefacts (or MetricsLog.summary()) produce it. Same in run-status.ts.
   const metrics = summarizeMetrics(new MetricsLog(repoRoot, report.state.runId).readAll());
   await artefacts.write(report.state, report.status, metrics);
 }

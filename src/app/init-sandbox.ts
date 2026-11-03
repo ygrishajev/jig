@@ -133,6 +133,7 @@ async function checkInSandbox(
   }
 }
 
+// TODO(cohesion-6): assembles its own RunEvents + LoggingObserver (part of what openRunScope does) and deletes the branch with raw git; revisit once withRunScope exists.
 /** A throwaway sandbox on its own branch, removed again afterwards. */
 async function withSandbox<T>(
   app: AwilixContainer<AppCradle>,
