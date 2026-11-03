@@ -12,6 +12,15 @@ export interface DockerImagesOptions {
 
 type BuildCache = 'gha';
 
+/** What `docker` left behind; `exitCode` is undefined when the process never started, e.g. docker is not installed. */
+export interface DockerOutcome {
+  exitCode?: number;
+  stdout?: string;
+  stderr?: string;
+  all?: string;
+  shortMessage?: string;
+}
+
 export class DockerImages implements SandboxImages {
   constructor(private readonly options: DockerImagesOptions = {}) {}
 
@@ -25,12 +34,7 @@ export class DockerImages implements SandboxImages {
       `Could not ask docker about ${image}`,
     );
     if (inspected.isErr()) return Result.err(inspected.error);
-    const { exitCode, stdout, stderr } = inspected.value;
-    if (exitCode === 0) return Result.ok(imageLabelsSchema.parse(JSON.parse(stdout)) ?? {});
-    if (NO_SUCH_IMAGE.test(stderr)) return Result.ok(undefined);
-    return Result.err(
-      new ImageBuildFailed({ message: `Could not ask docker about ${image}`, output: stderr }),
-    );
+    return classifyInspect(image, inspected.value);
   }
 
   async build(spec: ImageBuildSpec): Promise<Result<void, ImageBuildFailed>> {
@@ -43,14 +47,16 @@ export class DockerImages implements SandboxImages {
     const built = await runDocker(build, `Building ${spec.tag} failed`);
     if (built.isErr()) return Result.err(built.error);
     if (built.value.exitCode === 0) return Result.ok();
-    const output = (built.value.all ?? '').split('\n').slice(-FAILED_BUILD_OUTPUT_LINES).join('\n');
+    const output = didNotStart(built.value)
+      ? dockerFailure(built.value)
+      : (built.value.all ?? '').split('\n').slice(-FAILED_BUILD_OUTPUT_LINES).join('\n');
     return Result.err(
       new ImageBuildFailed({ message: `Building ${spec.tag} failed:\n${output}`, output }),
     );
   }
 }
 
-/** The process only fails to start when docker is not installed; anything else is an exit code. */
+/** Awaiting the process should not reject with `reject: false`; if it does, the cause still reaches the operator. */
 function runDocker<T>(
   process: PromiseLike<T>,
   message: string,
@@ -62,11 +68,36 @@ function runDocker<T>(
   });
 }
 
+/** An image's labels, `undefined` when docker says the image is not there, or why docker could not say. */
+export function classifyInspect(
+  image: string,
+  outcome: DockerOutcome,
+): Result<Record<string, string> | undefined, ImageBuildFailed> {
+  if (outcome.exitCode === 0) {
+    return Result.ok(imageLabelsSchema.parse(JSON.parse(outcome.stdout ?? '')) ?? {});
+  }
+  if (!didNotStart(outcome) && NO_SUCH_IMAGE.test(outcome.stderr ?? ''))
+    return Result.ok(undefined);
+  const output = dockerFailure(outcome);
+  return Result.err(
+    new ImageBuildFailed({ message: `Could not ask docker about ${image}: ${output}`, output }),
+  );
+}
+
 /** `docker image inspect` prints `null` for an image built without labels. */
 const imageLabelsSchema = z.record(z.string()).nullable();
 
+function didNotStart(outcome: DockerOutcome): boolean {
+  return outcome.exitCode === undefined;
+}
+
 /** `docker image inspect` of an image that is not there; any other failure is docker's. */
 const NO_SUCH_IMAGE = /no such (image|object)/i;
+
+/** Docker's own words, or execa's account of why docker did not run at all. */
+function dockerFailure(outcome: DockerOutcome): string {
+  return (didNotStart(outcome) ? outcome.shortMessage : outcome.stderr)?.trim() ?? '';
+}
 
 export function dockerBuildArguments(spec: ImageBuildSpec, cache?: BuildCache): string[] {
   return [

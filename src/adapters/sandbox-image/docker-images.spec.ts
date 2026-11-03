@@ -2,7 +2,55 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import type { ImageBuildSpec } from '../../ports/sandbox-images.js';
-import { dockerBuildArguments } from './docker-images.js';
+import { classifyInspect, dockerBuildArguments } from './docker-images.js';
+
+describe('classifyInspect', () => {
+  it("reads the image's labels from a successful inspect", () => {
+    const labels = { [faker.word.noun()]: faker.string.alphanumeric(8) };
+
+    const result = classifyInspect(faker.word.noun(), {
+      exitCode: 0,
+      stdout: JSON.stringify(labels),
+    });
+
+    expect(result.unwrap()).toEqual(labels);
+  });
+
+  it('reads an image built without labels as having none', () => {
+    expect(classifyInspect(faker.word.noun(), { exitCode: 0, stdout: 'null' }).unwrap()).toEqual(
+      {},
+    );
+  });
+
+  it('reports an image that is not there as absent, not as a failure', () => {
+    const image = faker.word.noun();
+
+    const result = classifyInspect(image, {
+      exitCode: 1,
+      stderr: `Error: No such image: ${image}`,
+    });
+
+    expect(result.unwrap()).toBeUndefined();
+  });
+
+  it("carries docker's own words when docker could not be queried", () => {
+    const stderr = `Cannot connect to the Docker daemon ${faker.lorem.sentence()}`;
+
+    const result = classifyInspect(faker.word.noun(), { exitCode: 1, stderr: `${stderr}\n` });
+
+    expect(result.isErr() && result.error.message).toContain(stderr);
+    expect(result.isErr() && result.error.output).toBe(stderr);
+  });
+
+  it('carries why docker did not run when the process never started', () => {
+    const shortMessage = `Command failed with ENOENT: docker ${faker.lorem.words(3)}`;
+
+    const result = classifyInspect(faker.word.noun(), { shortMessage, stderr: 'No such image' });
+
+    expect(result.isErr() && result.error.message).toContain(shortMessage);
+    expect(result.isErr() && result.error.output).toBe(shortMessage);
+  });
+});
 
 describe('dockerBuildArguments', () => {
   it('passes every build arg and label as its own flag', () => {
