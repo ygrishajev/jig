@@ -2,6 +2,7 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { ConfigInvalid } from '../domain/errors.js';
+import { describeIssues } from './describe-issues.js';
 
 /**
  * The process environment as jig reads it, parsed once by the CLI. Nothing else reads a variable
@@ -58,11 +59,6 @@ const knownVariablesSchema = z.object({
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z.string().url().optional(),
   OTEL_SERVICE_NAME: z.string().optional(),
 });
-
-/** `path: message` for each issue, the one format every config failure uses. */
-export function describeIssues(error: z.ZodError): string {
-  return error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
-}
 
 function otelVariables(variables: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(variables).filter(([name]) => name.startsWith('OTEL_')));

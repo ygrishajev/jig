@@ -7,7 +7,7 @@ import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
-import { describeIssues } from './environment.js';
+import { describeIssues } from './describe-issues.js';
 
 export function loadConfig(repoRoot: string): Result<JigConfig, ConfigInvalid> {
   const configPath = path.join(repoRoot, CONFIG_FILE);
