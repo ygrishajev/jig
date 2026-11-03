@@ -5,7 +5,7 @@ import type { RunDocumentFile } from '../adapters/local-store/run-artefacts.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import type { RunState } from '../domain/run-state.js';
-import { type MetricsSummary, summarizeMetrics } from '../observers/metrics.js';
+import type { MetricsSummary } from '../observers/metrics.js';
 import type { AppCradle } from './container.js';
 import { openRunStore } from './run-stores.js';
 
@@ -27,7 +27,6 @@ export async function readRunStatus(
   if (!state) throw new RunRequestInvalid(`No run found with id "${runId}".`);
   const { repoRoot, artefacts } = app.cradle;
   const documents = artefacts.documents(runId);
-  // TODO(cohesion-3): same summarizeMetrics(new MetricsLog(...).readAll()) as recordInvocation in run-jig.ts; let MetricsLog.summary() own it.
-  const metrics = summarizeMetrics(new MetricsLog(repoRoot, runId).readAll());
+  const metrics = new MetricsLog(repoRoot, runId).summary();
   return { state, documents, metrics };
 }

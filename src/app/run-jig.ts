@@ -12,7 +12,6 @@ import { finalStatus } from '../flow/define-flow.js';
 import { type EngineResult, runEngine } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
 import { getCurrentBranch } from '../git/branch.js';
-import { summarizeMetrics } from '../observers/metrics.js';
 import type { RunStore } from '../ports/run-store.js';
 import { type AppCradle, closeRunScope, openRunScope } from './container.js';
 import { openRunStore } from './run-stores.js';
@@ -103,7 +102,6 @@ async function advance(app: AwilixContainer<AppCradle>, store: RunStore, state: 
 
 /** Leaves this machine's record of where the invocation stopped; see `RunArtefacts`. */
 async function recordInvocation({ repoRoot, artefacts }: AppCradle, report: RunReport) {
-  // TODO(cohesion-3): computed only to hand back to artefacts.write; let RunArtefacts (or MetricsLog.summary()) produce it. Same in run-status.ts.
-  const metrics = summarizeMetrics(new MetricsLog(repoRoot, report.state.runId).readAll());
+  const metrics = new MetricsLog(repoRoot, report.state.runId).summary();
   await artefacts.write(report.state, report.status, metrics);
 }

@@ -7,7 +7,11 @@ import { MetricsLogCorrupt } from '../../domain/errors.js';
 import { stepLocationSchema } from '../../domain/events.js';
 import { outcomeTypeSchema } from '../../domain/outcome.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
-import type { MetricRecord } from '../../observers/metrics.js';
+import {
+  type MetricRecord,
+  type MetricsSummary,
+  summarizeMetrics,
+} from '../../observers/metrics.js';
 import { stateDirectory } from './run-paths.js';
 
 const metricRecordSchema: z.ZodType<MetricRecord, z.ZodTypeDef, unknown> = z.discriminatedUnion(
@@ -76,6 +80,11 @@ export class MetricsLog {
       this.tornTailRemoved = true;
     }
     appendFileSync(this.file, `${JSON.stringify(record)}\n`);
+  }
+
+  /** The run's totals so far, across every invocation this machine ran. */
+  summary(): MetricsSummary {
+    return summarizeMetrics(this.readAll());
   }
 
   readAll(): MetricRecord[] {

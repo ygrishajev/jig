@@ -27,6 +27,18 @@ describe('MetricsLog', () => {
     expect(log.readAll()).toEqual([]);
   });
 
+  it('sums up every step, agent call and retry it holds', async () => {
+    const { log, id } = await setup();
+    const steps = [stepRecord(id), stepRecord(id)];
+    for (const record of [...steps, agentCallRecord(id), retryRecord(id)]) log.append(record);
+
+    expect(log.summary()).toMatchObject({
+      steps: steps.length,
+      agentCalls: 1,
+      retries: 1,
+    });
+  });
+
   it('leaves out a last line cut short by a process killed mid-append', async () => {
     const { log, id, appendRaw } = await setup();
     const complete = [stepRecord(id), agentCallRecord(id)];
