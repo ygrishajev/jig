@@ -5,11 +5,6 @@ import { type Slice, slicesInOrder } from '../domain/slice.js';
 import type { SliceStep, StepPorts } from '../flow/define-flow.js';
 import { implementPrompt, nothingChangedFeedback, reviewPrompt } from '../prompts/slice.js';
 
-const reviewVerdictSchema = z.object({ approved: z.boolean(), feedback: z.string() });
-
-/** Enough of a failing verify command's output to act on, without flooding the next prompt. */
-const VERIFY_OUTPUT_LIMIT = 400;
-
 export const implementSlice: SliceStep = async ({ state, slice, ports }) => {
   const { workspace } = ports;
   const attemptStart = await workspace.headCommit();
@@ -19,29 +14,6 @@ export const implementSlice: SliceStep = async ({ state, slice, ports }) => {
     return { type: 'changesRequested', feedback: nothingChangedFeedback(slice) };
   }
   return { type: 'implemented', commit: await workspace.summariseCommitsSince(attemptStart) };
-};
-
-export const reviewSlice: SliceStep = async ({ state, slice, ports }) => {
-  const verdict = await ports.agent.runForOutput({
-    role: 'reviewer',
-    prompt: reviewPrompt(slice, `${await sliceStart(state, slice, ports)}..HEAD`),
-    schema: reviewVerdictSchema,
-  });
-  return verdict.approved
-    ? { type: 'approved' }
-    : { type: 'changesRequested', feedback: verdict.feedback };
-};
-
-export const verifySlice: SliceStep = async ({ settings, ports }) => {
-  const command = settings.verifyCommand;
-  if (!command) return { type: 'verified' };
-
-  const result = await ports.agent.exec(command);
-  if (result.exitCode === 0) return { type: 'verified' };
-  return {
-    type: 'changesRequested',
-    feedback: `The reviewer approved this slice, but the verify command ("${command}") failed:\n${truncate(result.output.trim(), VERIFY_OUTPUT_LIMIT)}`,
-  };
 };
 
 /**
@@ -56,6 +28,34 @@ async function sliceStart(state: RunState, slice: Slice, ports: StepPorts) {
   return previousEnd ?? ports.workspace.forkPoint();
 }
 
+export const reviewSlice: SliceStep = async ({ state, slice, ports }) => {
+  const verdict = await ports.agent.runForOutput({
+    role: 'reviewer',
+    prompt: reviewPrompt(slice, `${await sliceStart(state, slice, ports)}..HEAD`),
+    schema: reviewVerdictSchema,
+  });
+  return verdict.approved
+    ? { type: 'approved' }
+    : { type: 'changesRequested', feedback: verdict.feedback };
+};
+
+const reviewVerdictSchema = z.object({ approved: z.boolean(), feedback: z.string() });
+
+export const verifySlice: SliceStep = async ({ settings, ports }) => {
+  const command = settings.verifyCommand;
+  if (!command) return { type: 'verified' };
+
+  const result = await ports.agent.exec(command);
+  if (result.exitCode === 0) return { type: 'verified' };
+  return {
+    type: 'changesRequested',
+    feedback: `The reviewer approved this slice, but the verify command ("${command}") failed:\n${truncate(result.output.trim(), VERIFY_OUTPUT_LIMIT)}`,
+  };
+};
+
 function truncate(text: string, limit: number) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
+
+/** Enough of a failing verify command's output to act on, without flooding the next prompt. */
+const VERIFY_OUTPUT_LIMIT = 400;

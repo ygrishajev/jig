@@ -39,10 +39,16 @@ import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { sandboxImageName } from './sandbox-image.js';
 
-/** The run's sandbox: where agents and commands run, and the worktree they share with the host. */
-export interface RunSession extends AgentSession {
-  readonly worktreePath: string;
-  close(): Promise<void>;
+/** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
+export interface RunCradle extends AppCradle {
+  run: RunIdentity;
+  runStore: RunStore;
+  runLogger: Logger;
+  metricsLog: MetricsLog;
+  events: RunEvents;
+  session: RunSession;
+  workspace: Workspace;
+  engineDependencies: EngineDependencies;
 }
 
 /** Lives for the whole process: configuration and everything shared by every run. */
@@ -61,16 +67,10 @@ export interface AppCradle {
   openSession: (input: OpenSessionInput) => Promise<RunSession>;
 }
 
-/** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
-export interface RunCradle extends AppCradle {
-  run: RunIdentity;
-  runStore: RunStore;
-  runLogger: Logger;
-  metricsLog: MetricsLog;
-  events: RunEvents;
-  session: RunSession;
-  workspace: Workspace;
-  engineDependencies: EngineDependencies;
+/** The run's sandbox: where agents and commands run, and the worktree they share with the host. */
+export interface RunSession extends AgentSession {
+  readonly worktreePath: string;
+  close(): Promise<void>;
 }
 
 export function createAppContainer(input: {
@@ -185,6 +185,16 @@ async function openRunScope(
   return scope;
 }
 
+/** Events the given observers hear; one that fails is logged, and the others still hear the event. */
+function observedEvents(logger: Logger, observers: { handle(event: RunEvent): void }[]) {
+  const events = new RunEvents();
+  const onObserverError = (error: unknown) => logger.warn({ err: error }, 'an observer failed');
+  for (const observer of observers) {
+    observe(events, (event) => observer.handle(event), onObserverError);
+  }
+  return events;
+}
+
 /**
  * A sandbox that failed to start for a reason that may pass — Docker, the network under the
  * setup command — gets the same bounded retries as a step; a configuration problem does not.
@@ -199,14 +209,13 @@ function openSessionRetrying({ openSession, run, events, settings, runLogger }: 
   });
 }
 
-/** Events the given observers hear; one that fails is logged, and the others still hear the event. */
-function observedEvents(logger: Logger, observers: { handle(event: RunEvent): void }[]) {
-  const events = new RunEvents();
-  const onObserverError = (error: unknown) => logger.warn({ err: error }, 'an observer failed');
-  for (const observer of observers) {
-    observe(events, (event) => observer.handle(event), onObserverError);
+/** Awilix's `dispose` alone would leave the sandbox running, so the session is closed first. */
+async function closeRunScope(scope: AwilixContainer<RunCradle>) {
+  try {
+    await scope.cradle.session.close();
+  } finally {
+    await scope.dispose();
   }
-  return events;
 }
 
 /**
@@ -231,14 +240,5 @@ export async function withThrowawaySandbox<T>(
   } finally {
     await session.close();
     await deleteBranch(repoRoot, runBranchFor(run.runId));
-  }
-}
-
-/** Awilix's `dispose` alone would leave the sandbox running, so the session is closed first. */
-async function closeRunScope(scope: AwilixContainer<RunCradle>) {
-  try {
-    await scope.cradle.session.close();
-  } finally {
-    await scope.dispose();
   }
 }

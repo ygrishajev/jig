@@ -19,6 +19,14 @@ import { configuredSteps, type JigConfig } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 
+export interface EnsureImageDependencies {
+  repoRoot: string;
+  config: JigConfig;
+  images: SandboxImages;
+  latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
+  logger: Logger;
+}
+
 export type AgentUpdatePolicy = 'auto' | 'warn' | 'off';
 
 export interface AgentNeeded {
@@ -35,6 +43,60 @@ export interface ImageBuildPlan {
   /** The labels the rebuilt image carries; the next plan compares an image's labels with these. */
   labels: Record<string, string>;
   warnings: string[];
+}
+
+/**
+ * Makes sure the sandbox image matches the repository's Dockerfile and the agents the config
+ * uses, building only what changed. An image named in `sandboxImage` is managed elsewhere and
+ * used as it is.
+ */
+export async function ensureSandboxImage(
+  d: EnsureImageDependencies,
+  options: { pullAgents?: boolean } = {},
+) {
+  const image = sandboxImageName(d.repoRoot, d.config);
+  if (d.config.sandboxImage) return image;
+
+  const recipe = await readRecipe(d.repoRoot);
+  const policy = options.pullAgents ? 'auto' : d.config.agentUpdates;
+  const plan = planImageBuild({
+    labels: await d.images.labels(image),
+    dockerfileHash: recipe.dockerfileHash,
+    agentsNeeded: await agentsNeeded(d, policy),
+    policy,
+  });
+  for (const warning of plan.warnings) d.logger.warn(warning);
+  if (plan.action !== 'none') await buildImage(d, image, plan, recipe.buildArgs);
+  return image;
+}
+
+export function sandboxImageName(repoRoot: string, config: JigConfig) {
+  return config.sandboxImage ?? defaultImageName(repoRoot);
+}
+
+/** The image is built for the host user, so files the agent writes in the worktree stay the operator's. */
+async function readRecipe(repoRoot: string) {
+  const dockerfile = await readSandboxDockerfile(repoRoot);
+  const uid = process.getuid?.() ?? 1000;
+  const gid = process.getgid?.() ?? 1000;
+  return {
+    dockerfileHash: recipeHash(dockerfile, uid, gid),
+    buildArgs: { AGENT_UID: uid, AGENT_GID: gid },
+  };
+}
+
+async function readSandboxDockerfile(repoRoot: string) {
+  const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
+  if (!existsSync(file)) {
+    throw new ConfigInvalid(
+      `No sandbox Dockerfile at ${path.join(SANDBOX_DIRECTORY, DOCKERFILE)} — run jig init first.`,
+    );
+  }
+  return readFile(file, 'utf-8');
+}
+
+function sandboxDirectory(repoRoot: string) {
+  return path.join(repoRoot, SANDBOX_DIRECTORY);
 }
 
 /**
@@ -110,46 +172,16 @@ function versionChanges(installed: Record<string, string>, agents: AgentInstall[
     .join(', ');
 }
 
-export function sandboxImageName(repoRoot: string, config: JigConfig) {
-  return config.sandboxImage ?? defaultImageName(repoRoot);
-}
-
-export function baseImageName(image: string) {
-  const lastSlash = image.lastIndexOf('/');
-  return image.lastIndexOf(':') > lastSlash ? `${image}-base` : `${image}:base`;
-}
-
-export interface EnsureImageDependencies {
-  repoRoot: string;
-  config: JigConfig;
-  images: SandboxImages;
-  latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
-  logger: Logger;
-}
-
-/**
- * Makes sure the sandbox image matches the repository's Dockerfile and the agents the config
- * uses, building only what changed. An image named in `sandboxImage` is managed elsewhere and
- * used as it is.
- */
-export async function ensureSandboxImage(
-  d: EnsureImageDependencies,
-  options: { pullAgents?: boolean } = {},
-) {
-  const image = sandboxImageName(d.repoRoot, d.config);
-  if (d.config.sandboxImage) return image;
-
-  const recipe = await readRecipe(d.repoRoot);
-  const policy = options.pullAgents ? 'auto' : d.config.agentUpdates;
-  const plan = planImageBuild({
-    labels: await d.images.labels(image),
-    dockerfileHash: recipe.dockerfileHash,
-    agentsNeeded: await agentsNeeded(d, policy),
-    policy,
-  });
-  for (const warning of plan.warnings) d.logger.warn(warning);
-  if (plan.action !== 'none') await buildImage(d, image, plan, recipe.buildArgs);
-  return image;
+async function agentsNeeded(d: EnsureImageDependencies, policy: AgentUpdatePolicy) {
+  const names = [...new Set(Object.values(configuredSteps(d.config)).map((step) => step.provider))];
+  const packages = names.map((name) => AGENTS[name].npmPackage);
+  const latest = policy === 'off' ? {} : await d.latestVersions(packages);
+  return names.map((name) => ({
+    name,
+    npmPackage: AGENTS[name].npmPackage,
+    pinned: d.config.agents[name],
+    latest: latest[AGENTS[name].npmPackage],
+  }));
 }
 
 async function buildImage(
@@ -171,39 +203,7 @@ async function buildImage(
   });
 }
 
-/** The image is built for the host user, so files the agent writes in the worktree stay the operator's. */
-async function readRecipe(repoRoot: string) {
-  const dockerfile = await readSandboxDockerfile(repoRoot);
-  const uid = process.getuid?.() ?? 1000;
-  const gid = process.getgid?.() ?? 1000;
-  return {
-    dockerfileHash: recipeHash(dockerfile, uid, gid),
-    buildArgs: { AGENT_UID: uid, AGENT_GID: gid },
-  };
-}
-
-async function agentsNeeded(d: EnsureImageDependencies, policy: AgentUpdatePolicy) {
-  const names = [...new Set(Object.values(configuredSteps(d.config)).map((step) => step.provider))];
-  const packages = names.map((name) => AGENTS[name].npmPackage);
-  const latest = policy === 'off' ? {} : await d.latestVersions(packages);
-  return names.map((name) => ({
-    name,
-    npmPackage: AGENTS[name].npmPackage,
-    pinned: d.config.agents[name],
-    latest: latest[AGENTS[name].npmPackage],
-  }));
-}
-
-function sandboxDirectory(repoRoot: string) {
-  return path.join(repoRoot, SANDBOX_DIRECTORY);
-}
-
-async function readSandboxDockerfile(repoRoot: string) {
-  const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
-  if (!existsSync(file)) {
-    throw new ConfigInvalid(
-      `No sandbox Dockerfile at ${path.join(SANDBOX_DIRECTORY, DOCKERFILE)} — run jig init first.`,
-    );
-  }
-  return readFile(file, 'utf-8');
+export function baseImageName(image: string) {
+  const lastSlash = image.lastIndexOf('/');
+  return image.lastIndexOf(':') > lastSlash ? `${image}-base` : `${image}:base`;
 }

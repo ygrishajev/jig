@@ -3,15 +3,17 @@ import { z } from 'zod';
 /** Slice ids become lookup keys in state and log lines, so they are restricted to safe characters. */
 export const SLICE_ID_PATTERN = /^[a-z0-9-]+$/;
 
-export const sliceStatusSchema = z.enum(['pending', 'in_review', 'verifying', 'approved', 'stuck']);
-export type SliceStatus = z.infer<typeof sliceStatusSchema>;
-
 export const plannedSliceSchema = z.object({
   id: z.string().regex(SLICE_ID_PATTERN, 'slice id must be lowercase letters, digits and hyphens'),
   title: z.string().min(1),
   description: z.string().min(1),
 });
+
 export type PlannedSlice = z.infer<typeof plannedSliceSchema>;
+
+export const sliceStatusSchema = z.enum(['pending', 'in_review', 'verifying', 'approved', 'stuck']);
+
+export type SliceStatus = z.infer<typeof sliceStatusSchema>;
 
 export const sliceSchema = plannedSliceSchema.extend({
   order: z.number().int().nonnegative(),
@@ -20,6 +22,7 @@ export const sliceSchema = plannedSliceSchema.extend({
   lastFeedback: z.string().optional(),
   commit: z.string().optional(),
 });
+
 export type Slice = z.infer<typeof sliceSchema>;
 
 export function sliceFromPlan(planned: PlannedSlice, order: number): Slice {

@@ -19,6 +19,12 @@ export class CompositeRunStore implements RunStore {
     return freshest;
   }
 
+  private async readEach(read: (store: RunStore) => Promise<RunState | undefined>) {
+    const copies: (RunState | undefined)[] = [];
+    for (const store of this.stores) copies.push(await read(store));
+    return copies;
+  }
+
   async peek(runId: RunId) {
     return freshestOf(await this.readEach((store) => store.peek(runId)));
   }
@@ -28,12 +34,6 @@ export class CompositeRunStore implements RunStore {
     this.latestRevisions.set(state.runId, revision);
     const stamped = { ...state, revision };
     for (const store of this.stores) await store.save(stamped);
-  }
-
-  private async readEach(read: (store: RunStore) => Promise<RunState | undefined>) {
-    const copies: (RunState | undefined)[] = [];
-    for (const store of this.stores) copies.push(await read(store));
-    return copies;
   }
 }
 

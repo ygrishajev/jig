@@ -3,18 +3,12 @@ import { z } from 'zod';
 
 import type { ImageBuildSpec, SandboxImages } from '../../ports/sandbox-images.js';
 
-/** `docker image inspect` prints `null` for an image built without labels. */
-const imageLabelsSchema = z.record(z.string()).nullable();
-
-type BuildCache = 'gha';
-
 export interface DockerImagesOptions {
   cache?: BuildCache;
   onOutput?: (line: string) => void;
 }
 
-/** How many lines of a failed build's output the error carries. */
-const FAILED_BUILD_OUTPUT_LINES = 30;
+type BuildCache = 'gha';
 
 export class DockerImages implements SandboxImages {
   constructor(private readonly options: DockerImagesOptions = {}) {}
@@ -43,6 +37,9 @@ export class DockerImages implements SandboxImages {
     }
   }
 }
+
+/** `docker image inspect` prints `null` for an image built without labels. */
+const imageLabelsSchema = z.record(z.string()).nullable();
 
 export function dockerBuildArguments(spec: ImageBuildSpec, cache?: BuildCache) {
   return [
@@ -73,3 +70,6 @@ function builderArguments(tag: string, cache: BuildCache | undefined) {
 function flags(flag: string, values: Record<string, string | number>) {
   return Object.entries(values).flatMap(([name, value]) => [flag, `${name}=${value}`]);
 }
+
+/** How many lines of a failed build's output the error carries. */
+const FAILED_BUILD_OUTPUT_LINES = 30;

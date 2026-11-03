@@ -8,23 +8,6 @@ import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
 
-const INIT_SUMMARY: Record<InitResult['status'], (result: InitResult) => string> = {
-  written: () =>
-    'Wrote .sandcastle/Dockerfile and jig.config.json — add your toolchain and a verifyCommand, then run jig init --no-agent to check them.',
-  verified: (result) =>
-    `Sandbox ready: setup and verify pass inside it${'attempts' in result && result.attempts > 1 ? ` (after ${result.attempts} attempts)` : ''}. Review and commit .sandcastle/Dockerfile and jig.config.json.`,
-  failed: (result) =>
-    `Setup or verify did not pass in the sandbox${'attempts' in result && result.attempts > 1 ? ` after ${result.attempts} attempts` : ''} — fix what this shows, then run jig init --no-agent:\n${'failure' in result ? result.failure : ''}`,
-};
-
-const initInputSchema = logFormatInputSchema.extend({ agent: z.boolean() });
-
-const buildInputSchema = logFormatInputSchema.extend({ pullAgents: z.boolean().optional() });
-
-export function initSummary(result: InitResult) {
-  return INIT_SUMMARY[result.status](result);
-}
-
 export function registerSandboxCommands(program: Command) {
   program
     .command('init')
@@ -59,3 +42,20 @@ export function registerSandboxCommands(program: Command) {
       ),
     );
 }
+
+const initInputSchema = logFormatInputSchema.extend({ agent: z.boolean() });
+
+export function initSummary(result: InitResult) {
+  return INIT_SUMMARY[result.status](result);
+}
+
+const INIT_SUMMARY: Record<InitResult['status'], (result: InitResult) => string> = {
+  written: () =>
+    'Wrote .sandcastle/Dockerfile and jig.config.json — add your toolchain and a verifyCommand, then run jig init --no-agent to check them.',
+  verified: (result) =>
+    `Sandbox ready: setup and verify pass inside it${'attempts' in result && result.attempts > 1 ? ` (after ${result.attempts} attempts)` : ''}. Review and commit .sandcastle/Dockerfile and jig.config.json.`,
+  failed: (result) =>
+    `Setup or verify did not pass in the sandbox${'attempts' in result && result.attempts > 1 ? ` after ${result.attempts} attempts` : ''} — fix what this shows, then run jig init --no-agent:\n${'failure' in result ? result.failure : ''}`,
+};
+
+const buildInputSchema = logFormatInputSchema.extend({ pullAgents: z.boolean().optional() });

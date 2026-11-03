@@ -6,6 +6,12 @@ import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
 
+export function loadConfig(repoRoot: string): JigConfig {
+  const configPath = path.join(repoRoot, CONFIG_FILE);
+  if (!existsSync(configPath)) return configSchema.parse({});
+  return configSchema.parse(JSON.parse(readFileSync(configPath, 'utf-8')));
+}
+
 export const CONFIG_FILE = 'jig.config.json';
 
 const agentNameSchema = z
@@ -17,6 +23,7 @@ const stepConfigSchema = z.object({
   /** Passed to the agent CLI; claude falls back to a default, opencode requires one ("provider/model"). */
   model: z.string().optional(),
 });
+
 export type StepConfig = z.infer<typeof stepConfigSchema>;
 
 /** Strict, so a misspelled key fails at load instead of silently falling back to a default. */
@@ -46,13 +53,8 @@ const configSchema = z
     ...byRole(() => stepConfigSchema.default({ provider: 'claude' })),
   })
   .strict();
-export type JigConfig = z.infer<typeof configSchema>;
 
-export function loadConfig(repoRoot: string): JigConfig {
-  const configPath = path.join(repoRoot, CONFIG_FILE);
-  if (!existsSync(configPath)) return configSchema.parse({});
-  return configSchema.parse(JSON.parse(readFileSync(configPath, 'utf-8')));
-}
+export type JigConfig = z.infer<typeof configSchema>;
 
 export function configuredSteps(config: JigConfig): Record<AgentRole, StepConfig> {
   return byRole((role) => config[role]);

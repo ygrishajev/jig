@@ -2,12 +2,6 @@ import { z } from 'zod';
 
 import { ConfigInvalid } from '../domain/errors.js';
 
-/** Where traces go, and the `OTEL_*` variables passed on into the sandbox with them. */
-export interface TelemetrySettings {
-  serviceName: string;
-  forwarded: Record<string, string>;
-}
-
 /**
  * The process environment as jig reads it, parsed once by the CLI. Nothing else reads a variable
  * by name. The OpenTelemetry exporter still reads its own `OTEL_*` settings from the process;
@@ -21,13 +15,11 @@ export interface JigEnvironment {
   credential(name: string): string | undefined;
 }
 
-const knownVariablesSchema = z.object({
-  JIG_IMAGE_CACHE: z.enum(['gha']).optional(),
-  JIG_CODEX_AUTH_DIR: z.string().optional(),
-  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
-  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z.string().url().optional(),
-  OTEL_SERVICE_NAME: z.string().optional(),
-});
+/** Where traces go, and the `OTEL_*` variables passed on into the sandbox with them. */
+export interface TelemetrySettings {
+  serviceName: string;
+  forwarded: Record<string, string>;
+}
 
 /** An empty variable counts as unset, as it does for a shell's `${VAR:-default}`. */
 export function parseEnvironment(raw: NodeJS.ProcessEnv): JigEnvironment {
@@ -56,6 +48,14 @@ function setVariables(raw: NodeJS.ProcessEnv): Record<string, string> {
     Object.entries(raw).filter((entry): entry is [string, string] => Boolean(entry[1])),
   );
 }
+
+const knownVariablesSchema = z.object({
+  JIG_IMAGE_CACHE: z.enum(['gha']).optional(),
+  JIG_CODEX_AUTH_DIR: z.string().optional(),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z.string().url().optional(),
+  OTEL_SERVICE_NAME: z.string().optional(),
+});
 
 function otelVariables(variables: Record<string, string>) {
   return Object.fromEntries(Object.entries(variables).filter(([name]) => name.startsWith('OTEL_')));

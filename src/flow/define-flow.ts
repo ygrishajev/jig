@@ -5,10 +5,33 @@ import type { Slice, SliceStatus } from '../domain/slice.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Workspace } from '../ports/workspace.js';
 
-export interface StepPorts {
-  agent: AgentSession;
-  workspace: Workspace;
+/** Each phase's node; a phase's step is typed by what that phase guarantees. */
+export type RunFlow = { [P in RunPhase]: RunFlowNode<P> };
+
+export type RunFlowNode<P extends RunPhase = RunPhase> =
+  StepNode<RunPhase, RunStep<P>> | FinalNode | HaltNode<RunPhase> | ForEachSliceNode<RunPhase>;
+
+export interface StepNode<S extends string, Step> {
+  step: Step;
+  on: Transitions<S>;
 }
+
+export type Transitions<S extends string> = Partial<Record<OutcomeType, Target<S>>>;
+
+/** Either a fixed next state, or the first entry whose `when` holds (an entry without `when` always does). */
+export type Target<S extends string> = S | ReadonlyArray<{ to: S; when?: Guard }>;
+
+export type Guard = (context: GuardContext) => boolean;
+
+export interface GuardContext {
+  state: RunState;
+  slice?: Slice;
+  settings: RunSettings;
+}
+
+export type RunStep<P extends RunPhase = RunPhase> = (
+  context: RunStepContext<P>,
+) => Promise<Outcome>;
 
 /** What a step in phase `P` sees: the run with everything `P` guarantees. */
 export interface RunStepContext<P extends RunPhase = RunPhase> {
@@ -17,31 +40,9 @@ export interface RunStepContext<P extends RunPhase = RunPhase> {
   settings: RunSettings;
 }
 
-export interface SliceStepContext extends RunStepContext {
-  slice: Slice;
-}
-
-export type RunStep<P extends RunPhase = RunPhase> = (
-  context: RunStepContext<P>,
-) => Promise<Outcome>;
-export type SliceStep = (context: SliceStepContext) => Promise<Outcome>;
-
-export interface GuardContext {
-  state: RunState;
-  slice?: Slice;
-  settings: RunSettings;
-}
-
-export type Guard = (context: GuardContext) => boolean;
-
-/** Either a fixed next state, or the first entry whose `when` holds (an entry without `when` always does). */
-export type Target<S extends string> = S | ReadonlyArray<{ to: S; when?: Guard }>;
-
-export type Transitions<S extends string> = Partial<Record<OutcomeType, Target<S>>>;
-
-export interface StepNode<S extends string, Step> {
-  step: Step;
-  on: Transitions<S>;
+export interface StepPorts {
+  agent: AgentSession;
+  workspace: Workspace;
 }
 
 /** The run ends here: `done` when it succeeded, `stuck` when a person has to step in. */
@@ -60,15 +61,15 @@ export interface ForEachSliceNode<S extends string> {
   on: { allApproved: S; sliceStuck: S };
 }
 
-export type SliceFlowNode = StepNode<SliceStatus, SliceStep> | FinalNode;
-
-export type RunFlowNode<P extends RunPhase = RunPhase> =
-  StepNode<RunPhase, RunStep<P>> | FinalNode | HaltNode<RunPhase> | ForEachSliceNode<RunPhase>;
-
 export type SliceFlow = Record<SliceStatus, SliceFlowNode>;
 
-/** Each phase's node; a phase's step is typed by what that phase guarantees. */
-export type RunFlow = { [P in RunPhase]: RunFlowNode<P> };
+export type SliceFlowNode = StepNode<SliceStatus, SliceStep> | FinalNode;
+
+export type SliceStep = (context: SliceStepContext) => Promise<Outcome>;
+
+export interface SliceStepContext extends RunStepContext {
+  slice: Slice;
+}
 
 export function defineSliceFlow(flow: SliceFlow) {
   return flow;

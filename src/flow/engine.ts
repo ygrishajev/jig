@@ -35,35 +35,14 @@ export interface EngineDependencies {
   settings: RunSettings;
 }
 
-export type EngineStatus = 'done' | 'stuck' | 'halted' | 'blocked';
-
 /** Where an invocation stopped; a blocked run says why. */
 export type EngineResult =
   | { state: RunState; status: Exclude<EngineStatus, 'blocked'> }
   | { state: RunState; status: 'blocked'; reason: string };
 
-/** A guard against a flow that never settles; every healthy pass moves a phase or a slice forward. */
-const MAX_PASSES = 1000;
+export type EngineStatus = 'done' | 'stuck' | 'halted' | 'blocked';
 
 type Attempt = { outcome: Outcome } | { blockedReason: string };
-
-/** The flow cycles without ever finishing, halting or blocking: a bug in the flow, not the run. */
-export class FlowDoesNotSettle extends JigError {
-  readonly kind = 'fatal';
-
-  constructor(readonly runId: RunId) {
-    super(`Run ${runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`);
-  }
-}
-
-/** The flow leaves an outcome a step can return with nowhere to go: a bug in the flow, not the run. */
-export class FlowHasNoTransition extends JigError {
-  readonly kind = 'fatal';
-
-  constructor(readonly outcome: OutcomeType) {
-    super(`The flow has no transition for outcome "${outcome}"`);
-  }
-}
 
 /** Drives a run through `flow` from its saved phase until it finishes, halts, or blocks. */
 export async function runEngine(
@@ -112,6 +91,22 @@ class Engine {
     throw new FlowDoesNotSettle(state.runId);
   }
 
+  private async leaveHaltOrBlock(state: RunState) {
+    const node = this.flow[state.phase];
+    const resumed: RunState = { ...state, blockedReason: undefined };
+    if (!('halt' in node)) return resumed;
+    const next = this.changePhase(resumed, node.resumeAt);
+    await this.d.store.save(next);
+    return next;
+  }
+
+  private changePhase(state: RunState, to: RunPhase): RunState {
+    if (to !== state.phase) {
+      this.d.events.publish({ type: 'phaseChanged', runId: state.runId, from: state.phase, to });
+    }
+    return enterPhase(state, to);
+  }
+
   /** One step of the run from `phase`; generic so the phase's step sees what `phase` guarantees. */
   private async pass<P extends RunPhase>(
     phase: P,
@@ -131,31 +126,14 @@ class Engine {
     return attempt;
   }
 
-  private async leaveHaltOrBlock(state: RunState) {
-    const node = this.flow[state.phase];
-    const resumed: RunState = { ...state, blockedReason: undefined };
-    if (!('halt' in node)) return resumed;
-    const next = this.changePhase(resumed, node.resumeAt);
-    await this.d.store.save(next);
-    return next;
+  private finish(state: RunState, final: 'done' | 'stuck'): EngineResult {
+    this.d.events.publish({ type: 'runFinished', runId: state.runId, phase: state.phase });
+    return { state, status: final };
   }
 
-  private async advancePhase<P extends RunPhase>(
-    node: StepNode<RunPhase, RunStep<P>>,
-    state: RunStateIn<P>,
-  ): Promise<{ state: RunState } | { blockedReason: string }> {
-    const at: StepLocation = { phase: state.phase };
-    const attempt = await this.attempt(at, state.runId, () =>
-      node.step({ state, ports: this.d.ports, settings: this.d.settings }),
-    );
-    if ('blockedReason' in attempt) return attempt;
-
-    const applied = applyOutcome(state, attempt.outcome);
-    const next = this.resolve(node.on, attempt.outcome, {
-      state: applied,
-      settings: this.d.settings,
-    });
-    return { state: this.changePhase(applied, next) };
+  private halt(state: RunState): EngineResult {
+    this.d.events.publish({ type: 'runHalted', runId: state.runId, phase: state.phase });
+    return { state, status: 'halted' };
   }
 
   private async advanceSlices(
@@ -253,21 +231,22 @@ class Engine {
     return match.to;
   }
 
-  private changePhase(state: RunState, to: RunPhase): RunState {
-    if (to !== state.phase) {
-      this.d.events.publish({ type: 'phaseChanged', runId: state.runId, from: state.phase, to });
-    }
-    return enterPhase(state, to);
-  }
+  private async advancePhase<P extends RunPhase>(
+    node: StepNode<RunPhase, RunStep<P>>,
+    state: RunStateIn<P>,
+  ): Promise<{ state: RunState } | { blockedReason: string }> {
+    const at: StepLocation = { phase: state.phase };
+    const attempt = await this.attempt(at, state.runId, () =>
+      node.step({ state, ports: this.d.ports, settings: this.d.settings }),
+    );
+    if ('blockedReason' in attempt) return attempt;
 
-  private finish(state: RunState, final: 'done' | 'stuck'): EngineResult {
-    this.d.events.publish({ type: 'runFinished', runId: state.runId, phase: state.phase });
-    return { state, status: final };
-  }
-
-  private halt(state: RunState): EngineResult {
-    this.d.events.publish({ type: 'runHalted', runId: state.runId, phase: state.phase });
-    return { state, status: 'halted' };
+    const applied = applyOutcome(state, attempt.outcome);
+    const next = this.resolve(node.on, attempt.outcome, {
+      state: applied,
+      settings: this.d.settings,
+    });
+    return { state: this.changePhase(applied, next) };
   }
 
   private async block(state: RunState, reason: string): Promise<EngineResult> {
@@ -275,5 +254,26 @@ class Engine {
     await this.d.store.save(blocked);
     this.d.events.publish({ type: 'runBlocked', runId: state.runId, phase: state.phase, reason });
     return { state: blocked, status: 'blocked', reason };
+  }
+}
+
+/** A guard against a flow that never settles; every healthy pass moves a phase or a slice forward. */
+const MAX_PASSES = 1000;
+
+/** The flow cycles without ever finishing, halting or blocking: a bug in the flow, not the run. */
+export class FlowDoesNotSettle extends JigError {
+  readonly kind = 'fatal';
+
+  constructor(readonly runId: RunId) {
+    super(`Run ${runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`);
+  }
+}
+
+/** The flow leaves an outcome a step can return with nowhere to go: a bug in the flow, not the run. */
+export class FlowHasNoTransition extends JigError {
+  readonly kind = 'fatal';
+
+  constructor(readonly outcome: OutcomeType) {
+    super(`The flow has no transition for outcome "${outcome}"`);
   }
 }

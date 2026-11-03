@@ -4,6 +4,9 @@ import { RemoteUnavailable } from '../domain/errors.js';
 import { getCurrentBranch } from './branch.js';
 import { isWorkingTreeClean, openRepo } from './repository.js';
 
+/** Why a merge was refused before git was asked to do it, leaving the operator's tree untouched. */
+export type MergeRefusal = 'baseNotCheckedOut' | 'uncommittedChanges';
+
 /**
  * The branch's changes are in `intoBranch` when merging it there would leave the tree as it is,
  * which holds after a plain, a squash or a rebase merge alike. A branch with no commits of its own
@@ -28,6 +31,32 @@ async function mergeLeavesTreeAsIs(repoRoot: string, branchName: string, intoRef
   return mergedTree === baseTree;
 }
 
+function git(cwd: string, args: string[]) {
+  return execa('git', args, { cwd, reject: false });
+}
+
+type GitResult = Awaited<ReturnType<typeof git>>;
+
+/** `git merge-tree` exits with 1 both on conflicts and on errors; only a conflict still writes a tree. */
+function wouldConflict(merged: GitResult) {
+  return merged.exitCode === 1 && merged.stdout !== '';
+}
+
+function succeeded(result: GitResult) {
+  if (result.exitCode !== 0) throw new GitCommandFailed(result.command, result.stderr);
+  return result.stdout.trim();
+}
+
+/** A git command exited non-zero for a reason other than the one its caller expects. */
+export class GitCommandFailed extends Error {
+  constructor(
+    readonly command: string,
+    readonly stderr: string,
+  ) {
+    super(`git ${command} failed: ${stderr}`);
+  }
+}
+
 /** The ref of the branch's upstream after fetching it, or undefined when it tracks nothing. */
 async function fetchUpstreamOf(repoRoot: string, branch: string) {
   const remote = await git(repoRoot, ['config', '--get', `branch.${branch}.remote`]);
@@ -42,44 +71,6 @@ async function fetchUpstreamOf(repoRoot: string, branch: string) {
 
 /** `git config --get` exits with this when the key is not set. */
 const CONFIG_KEY_MISSING = 1;
-
-/** `git merge-tree` exits with 1 both on conflicts and on errors; only a conflict still writes a tree. */
-function wouldConflict(merged: GitResult) {
-  return merged.exitCode === 1 && merged.stdout !== '';
-}
-
-type GitResult = Awaited<ReturnType<typeof git>>;
-
-function git(cwd: string, args: string[]) {
-  return execa('git', args, { cwd, reject: false });
-}
-
-/** A git command exited non-zero for a reason other than the one its caller expects. */
-export class GitCommandFailed extends Error {
-  constructor(
-    readonly command: string,
-    readonly stderr: string,
-  ) {
-    super(`git ${command} failed: ${stderr}`);
-  }
-}
-
-function succeeded(result: GitResult) {
-  if (result.exitCode !== 0) throw new GitCommandFailed(result.command, result.stderr);
-  return result.stdout.trim();
-}
-
-/** Why a merge was refused before git was asked to do it, leaving the operator's tree untouched. */
-export type MergeRefusal = 'baseNotCheckedOut' | 'uncommittedChanges';
-
-export class MergeRefused extends Error {
-  constructor(
-    readonly reason: MergeRefusal,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 export async function mergeBranchInto(
   repoRoot: string,
@@ -102,4 +93,13 @@ export async function mergeBranchInto(
   const git = openRepo(repoRoot);
   await git.merge([branchName, '--no-edit']);
   return (await git.revparse(['HEAD'])).trim();
+}
+
+export class MergeRefused extends Error {
+  constructor(
+    readonly reason: MergeRefusal,
+    message: string,
+  ) {
+    super(message);
+  }
 }

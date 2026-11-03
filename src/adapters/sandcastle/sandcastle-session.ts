@@ -34,30 +34,6 @@ import { type CodexAuthCache, openCodexAuthCache } from './codex-auth.js';
 import { extractOutput, OUTPUT_TAG, outputInstruction } from './structured-output.js';
 import { usageFromStreamLine } from './usage.js';
 
-/** How many times an agent is asked, in its own session, to correct output that did not parse. */
-const OUTPUT_CORRECTIONS = 1;
-
-/** How much of a failed setup command's output is kept; the end is where the error is. */
-const SETUP_OUTPUT_TAIL = 3000;
-
-/**
- * Sandcastle runs on Effect, whose `runPromise` rejects with a FiberFailure carrying the cause
- * under this symbol; a plain failure's cause names sandcastle's tagged error.
- */
-const FIBER_FAILURE_CAUSE = Symbol.for('effect/Runtime/FiberFailure/Cause');
-
-const sandcastleFailureSchema = z.object({
-  _tag: z.literal('Fail'),
-  error: z.object({ _tag: z.string() }),
-});
-
-/**
- * The sandcastle failures a retry cannot fix. Sandcastle reports a Docker daemon that is down, an
- * image it cannot use and a git worktree it could not create all as `WorktreeError`, so only a
- * repository path it cannot use is told apart; the rest is retried a bounded number of times.
- */
-const CONFIGURATION_FAILURES = new Set(['CwdError']);
-
 export type SandboxFactory = (options: CreateSandboxOptions) => Promise<Sandbox>;
 
 export interface SandcastleSessionOptions {
@@ -128,44 +104,6 @@ export class SandcastleSession implements AgentSession {
     await this.reply(role, this.options.agents[role], prompt);
   }
 
-  async runForOutput<T>({ role, prompt, schema }: AgentRunInput & { schema: ZodType<T> }) {
-    const reply = await this.reply(
-      role,
-      this.options.agents[role],
-      `${prompt}\n\n${outputInstruction()}`,
-    );
-    return this.parseWithCorrections(role, reply, schema);
-  }
-
-  async exec(command: string): Promise<ExecResult> {
-    const result = await this.sandbox.exec(command);
-    return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() };
-  }
-
-  async close() {
-    try {
-      await this.sandbox.close();
-    } finally {
-      await this.codexAuth?.close();
-    }
-  }
-
-  private async parseWithCorrections<T>(role: AgentRole, firstReply: string, schema: ZodType<T>) {
-    let reply = firstReply;
-    for (let correction = 0; ; correction++) {
-      try {
-        return extractOutput(reply, schema);
-      } catch (error) {
-        if (!(error instanceof AgentOutputInvalid) || correction >= OUTPUT_CORRECTIONS) throw error;
-        reply = await this.reply(
-          role,
-          continuing(this.options.agents[role]),
-          correctionPrompt(error.message),
-        );
-      }
-    }
-  }
-
   private async reply(role: AgentRole, agent: AgentProvider, prompt: string) {
     try {
       const result = await this.sandbox.run({
@@ -202,31 +140,64 @@ export class SandcastleSession implements AgentSession {
       });
     }
   }
-}
 
-/** The same agent, resuming its last conversation in this sandbox instead of starting a new one. */
-function continuing(agent: AgentProvider): AgentProvider {
-  return {
-    ...agent,
-    buildPrintCommand: (options) => {
-      const built = agent.buildPrintCommand(options);
-      if (agent.name === 'codex') {
-        return {
-          ...built,
-          command: `${built.command.replace(/^codex exec\b/, 'codex exec resume --last')} -`,
-        };
+  async runForOutput<T>({ role, prompt, schema }: AgentRunInput & { schema: ZodType<T> }) {
+    const reply = await this.reply(
+      role,
+      this.options.agents[role],
+      `${prompt}\n\n${outputInstruction()}`,
+    );
+    return this.parseWithCorrections(role, reply, schema);
+  }
+
+  private async parseWithCorrections<T>(role: AgentRole, firstReply: string, schema: ZodType<T>) {
+    let reply = firstReply;
+    for (let correction = 0; ; correction++) {
+      try {
+        return extractOutput(reply, schema);
+      } catch (error) {
+        if (!(error instanceof AgentOutputInvalid) || correction >= OUTPUT_CORRECTIONS) throw error;
+        reply = await this.reply(
+          role,
+          continuing(this.options.agents[role]),
+          correctionPrompt(error.message),
+        );
       }
-      return { ...built, command: `${built.command} --continue` };
-    },
-  };
+    }
+  }
+
+  async exec(command: string): Promise<ExecResult> {
+    const result = await this.sandbox.exec(command);
+    return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() };
+  }
+
+  async close() {
+    try {
+      await this.sandbox.close();
+    } finally {
+      await this.codexAuth?.close();
+    }
+  }
 }
 
-function correctionPrompt(problem: string) {
-  return [
-    `Your result could not be used: ${problem}`,
-    `Reply again with only the corrected result inside <${OUTPUT_TAG}></${OUTPUT_TAG}> tags.`,
-  ].join('\n');
+/** Also replaces a catch-all `*`, which would hide the Dockerfile from the repository. */
+export async function ignoreSandcastleDirectory(repoRoot: string) {
+  const directory = path.join(repoRoot, '.sandcastle');
+  const gitignore = path.join(directory, '.gitignore');
+  if (existsSync(gitignore) && !ignoresEverything(await readFile(gitignore, 'utf-8'))) return;
+  await mkdir(directory, { recursive: true });
+  await writeFile(gitignore, SANDCASTLE_GITIGNORE);
 }
+
+function ignoresEverything(gitignore: string) {
+  return gitignore.split('\n').some((line) => line.trim() === '*');
+}
+
+/**
+ * What sandcastle writes under `.sandcastle/` is scratch; the Dockerfile there is the
+ * repository's own and gets committed. Untracked scratch would block the final merge.
+ */
+export const SANDCASTLE_GITIGNORE = 'worktrees/\nlogs/\n.env\n';
 
 /**
  * Sandcastle's own `onSandboxReady` hooks ignore a command's exit code and timeout in
@@ -235,6 +206,45 @@ function correctionPrompt(problem: string) {
 function sandboxHooks(options: SandcastleSessionOptions) {
   return { host: options.skipCommitSigning ? { onWorktreeReady: [disableSigning()] } : undefined };
 }
+
+function disableSigning() {
+  return {
+    command:
+      'git config extensions.worktreeConfig true && git config --worktree commit.gpgsign false',
+  };
+}
+
+function sandboxStartFailure(error: unknown): JigError {
+  const message = `Could not start the sandbox: ${messageOf(error)}`;
+  const tag = sandcastleFailureTag(error);
+  return tag && CONFIGURATION_FAILURES.has(tag)
+    ? new ConfigInvalid(message)
+    : new SandboxUnavailable(message);
+}
+
+function sandcastleFailureTag(error: unknown) {
+  if (!(error instanceof Error)) return undefined;
+  const cause = sandcastleFailureSchema.safeParse(Reflect.get(error, FIBER_FAILURE_CAUSE));
+  return cause.success ? cause.data.error._tag : undefined;
+}
+
+const sandcastleFailureSchema = z.object({
+  _tag: z.literal('Fail'),
+  error: z.object({ _tag: z.string() }),
+});
+
+/**
+ * Sandcastle runs on Effect, whose `runPromise` rejects with a FiberFailure carrying the cause
+ * under this symbol; a plain failure's cause names sandcastle's tagged error.
+ */
+const FIBER_FAILURE_CAUSE = Symbol.for('effect/Runtime/FiberFailure/Cause');
+
+/**
+ * The sandcastle failures a retry cannot fix. Sandcastle reports a Docker daemon that is down, an
+ * image it cannot use and a git worktree it could not create all as `WorktreeError`, so only a
+ * repository path it cannot use is told apart; the rest is retried a bounded number of times.
+ */
+const CONFIGURATION_FAILURES = new Set(['CwdError']);
 
 async function runSetupCommand(
   sandbox: Sandbox,
@@ -270,42 +280,32 @@ async function setupFailure(sandbox: Sandbox, command: string, timeoutSeconds: n
   );
 }
 
-function sandboxStartFailure(error: unknown): JigError {
-  const message = `Could not start the sandbox: ${messageOf(error)}`;
-  const tag = sandcastleFailureTag(error);
-  return tag && CONFIGURATION_FAILURES.has(tag)
-    ? new ConfigInvalid(message)
-    : new SandboxUnavailable(message);
-}
+/** How much of a failed setup command's output is kept; the end is where the error is. */
+const SETUP_OUTPUT_TAIL = 3000;
 
-function sandcastleFailureTag(error: unknown) {
-  if (!(error instanceof Error)) return undefined;
-  const cause = sandcastleFailureSchema.safeParse(Reflect.get(error, FIBER_FAILURE_CAUSE));
-  return cause.success ? cause.data.error._tag : undefined;
-}
+/** How many times an agent is asked, in its own session, to correct output that did not parse. */
+const OUTPUT_CORRECTIONS = 1;
 
-function disableSigning() {
+/** The same agent, resuming its last conversation in this sandbox instead of starting a new one. */
+function continuing(agent: AgentProvider): AgentProvider {
   return {
-    command:
-      'git config extensions.worktreeConfig true && git config --worktree commit.gpgsign false',
+    ...agent,
+    buildPrintCommand: (options) => {
+      const built = agent.buildPrintCommand(options);
+      if (agent.name === 'codex') {
+        return {
+          ...built,
+          command: `${built.command.replace(/^codex exec\b/, 'codex exec resume --last')} -`,
+        };
+      }
+      return { ...built, command: `${built.command} --continue` };
+    },
   };
 }
 
-/**
- * What sandcastle writes under `.sandcastle/` is scratch; the Dockerfile there is the
- * repository's own and gets committed. Untracked scratch would block the final merge.
- */
-export const SANDCASTLE_GITIGNORE = 'worktrees/\nlogs/\n.env\n';
-
-/** Also replaces a catch-all `*`, which would hide the Dockerfile from the repository. */
-export async function ignoreSandcastleDirectory(repoRoot: string) {
-  const directory = path.join(repoRoot, '.sandcastle');
-  const gitignore = path.join(directory, '.gitignore');
-  if (existsSync(gitignore) && !ignoresEverything(await readFile(gitignore, 'utf-8'))) return;
-  await mkdir(directory, { recursive: true });
-  await writeFile(gitignore, SANDCASTLE_GITIGNORE);
-}
-
-function ignoresEverything(gitignore: string) {
-  return gitignore.split('\n').some((line) => line.trim() === '*');
+function correctionPrompt(problem: string) {
+  return [
+    `Your result could not be used: ${problem}`,
+    `Reply again with only the corrected result inside <${OUTPUT_TAG}></${OUTPUT_TAG}> tags.`,
+  ].join('\n');
 }

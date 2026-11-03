@@ -6,12 +6,6 @@ import type { RunId } from '../../domain/run-id.js';
 import { makeRunDirectory } from './run-paths.js';
 
 /**
- * A live holder refreshes its lock every half of this; a lock left this long without a refresh
- * belongs to a process that died, and the next run takes it over.
- */
-const STALE_LOCK_MS = 30_000;
-
-/**
  * Makes this process the run's only writer until the returned release is called. A second
  * process fails at once with `RunInProgress` rather than waiting for the first to finish.
  */
@@ -31,6 +25,12 @@ export async function lockRun(repoRoot: string, runId: RunId): Promise<() => Pro
     throw error;
   }
 }
+
+/**
+ * A live holder refreshes its lock every half of this; a lock left this long without a refresh
+ * belongs to a process that died, and the next run takes it over.
+ */
+const STALE_LOCK_MS = 30_000;
 
 function isHeldElsewhere(error: unknown) {
   return error instanceof Error && 'code' in error && error.code === 'ELOCKED';

@@ -7,13 +7,6 @@ import { type RunPhase, runPhaseSchema } from './run-state.js';
 import { type SliceStatus, sliceStatusSchema } from './slice.js';
 import type { TokenUsage } from './usage.js';
 
-/** Where a step ran: a run phase, or one slice's step inside it. The slice form comes first so it is not read as the bare phase. */
-export const stepLocationSchema = z.union([
-  z.object({ phase: runPhaseSchema, sliceId: z.string(), sliceStatus: sliceStatusSchema }),
-  z.object({ phase: runPhaseSchema, sliceId: z.undefined(), sliceStatus: z.undefined() }),
-]);
-export type StepLocation = z.infer<typeof stepLocationSchema>;
-
 /** Everything observable about a run. Logging, metrics and tracing subscribe to these. */
 export type RunEvent =
   | { type: 'runResumed'; runId: RunId; phase: RunPhase }
@@ -42,3 +35,11 @@ export type RunEvent =
   | { type: 'agentMessage'; runId: RunId; role: AgentRole; text: string }
   | { type: 'agentToolCall'; runId: RunId; role: AgentRole; tool: string; args: string }
   | { type: 'agentUsage'; runId: RunId; role: AgentRole; costUsd?: number; tokens: TokenUsage };
+
+/** Where a step ran: a run phase, or one slice's step inside it. The slice form comes first so it is not read as the bare phase. */
+export const stepLocationSchema = z.union([
+  z.object({ phase: runPhaseSchema, sliceId: z.string(), sliceStatus: sliceStatusSchema }),
+  z.object({ phase: runPhaseSchema, sliceId: z.undefined(), sliceStatus: z.undefined() }),
+]);
+
+export type StepLocation = z.infer<typeof stepLocationSchema>;

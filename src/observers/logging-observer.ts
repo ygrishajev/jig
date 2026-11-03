@@ -41,6 +41,14 @@ export class LoggingObserver {
   }
 }
 
+function describe(at: StepLocation) {
+  return at.sliceId !== undefined ? `${at.sliceStatus} slice ${at.sliceId}` : at.phase;
+}
+
+function seconds(durationMs: number) {
+  return `${(durationMs / 1000).toFixed(1)}s`;
+}
+
 function logRunLifecycle(log: Logger, event: RunEvent, fields: object) {
   switch (event.type) {
     case 'runResumed':
@@ -54,12 +62,4 @@ function logRunLifecycle(log: Logger, event: RunEvent, fields: object) {
     case 'runFailed':
       return log.error(fields, `run ${event.runId} failed at ${event.phase}: ${event.reason}`);
   }
-}
-
-function describe(at: StepLocation) {
-  return at.sliceId !== undefined ? `${at.sliceStatus} slice ${at.sliceId}` : at.phase;
-}
-
-function seconds(durationMs: number) {
-  return `${(durationMs / 1000).toFixed(1)}s`;
 }

@@ -2,9 +2,6 @@ import { type AgentProvider, claudeCode, codex, opencode } from '@ai-hero/sandca
 
 import { ConfigInvalid } from '../../domain/errors.js';
 
-/** Used when a step names claude without a model; the CLI accepts the alias. */
-export const DEFAULT_CLAUDE_MODEL = 'opus';
-
 export interface AgentDefinition {
   /** The npm package that installs the agent's CLI into the sandbox image. */
   npmPackage: string;
@@ -12,6 +9,19 @@ export interface AgentDefinition {
   credentialKeys(model?: string): string[];
   create(model?: string): AgentProvider;
 }
+
+/** Which agent serves a role, and with which model. */
+export interface AgentChoice {
+  provider: AgentName;
+  model?: string;
+}
+
+export function isAgentName(name: string): name is AgentName {
+  return Object.hasOwn(AGENTS, name);
+}
+
+/** Used when a step names claude without a model; the CLI accepts the alias. */
+export const DEFAULT_CLAUDE_MODEL = 'opus';
 
 /** Every agent jig can run; adding one here is all the config and the sandbox image need. */
 export const AGENTS = {
@@ -38,14 +48,17 @@ export const AGENTS = {
 
 export type AgentName = keyof typeof AGENTS;
 
-/** Which agent serves a role, and with which model. */
-export interface AgentChoice {
-  provider: AgentName;
-  model?: string;
+function modelProvider(model: string) {
+  return model.split('/')[0] ?? model;
 }
 
-export function isAgentName(name: string): name is AgentName {
-  return Object.hasOwn(AGENTS, name);
+function requireModel(model: string | undefined) {
+  if (!model) {
+    throw new ConfigInvalid(
+      'opencode needs a model as "provider/model" (e.g. "openrouter/<model>") — set "model" on the step.',
+    );
+  }
+  return model;
 }
 
 /**
@@ -71,17 +84,4 @@ export function collectCredentials(
     for (const [key, value] of present) credentials[key] = value;
   }
   return credentials;
-}
-
-function requireModel(model: string | undefined) {
-  if (!model) {
-    throw new ConfigInvalid(
-      'opencode needs a model as "provider/model" (e.g. "openrouter/<model>") — set "model" on the step.',
-    );
-  }
-  return model;
-}
-
-function modelProvider(model: string) {
-  return model.split('/')[0] ?? model;
 }

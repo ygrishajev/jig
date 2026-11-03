@@ -41,16 +41,12 @@ function plainSummary({ plan }: RunStateIn<'describing'>) {
   return ['## Summary', '', plan.summary, '', '## Approach', '', plan.approach].join('\n');
 }
 
-function agentRun({ plan, slices }: RunStateIn<'describing'>) {
-  return [`**${plan.summary}**`, '', plan.approach, '', sliceChecklist(slices)].join('\n');
-}
-
-function planningDocs({ docs }: RunStateIn<'describing'>) {
-  return [collapsed('Design', docs.design.trim()), '', collapsed('Plan', docs.plan.trim())];
-}
-
 function collapsed(title: string, body: string) {
   return ['<details>', `<summary>${title}</summary>`, '', body, '', '</details>'].join('\n');
+}
+
+function agentRun({ plan, slices }: RunStateIn<'describing'>) {
+  return [`**${plan.summary}**`, '', plan.approach, '', sliceChecklist(slices)].join('\n');
 }
 
 /** A blocked run is read from here alone, so a stuck slice keeps its reviewer feedback under it. */
@@ -65,4 +61,8 @@ function sliceChecklist(slices: Slice[]) {
     return [line, `  **[${slice.status}]** reviewer feedback:`, quoted];
   });
   return ['### Slices', '', ...lines].join('\n');
+}
+
+function planningDocs({ docs }: RunStateIn<'describing'>) {
+  return [collapsed('Design', docs.design.trim()), '', collapsed('Plan', docs.plan.trim())];
 }

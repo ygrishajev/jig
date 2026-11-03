@@ -17,6 +17,11 @@ export function createConsoleLogger(format: LogFormat, level = 'info'): Logger {
   return pino({ level }, consoleStream(format));
 }
 
+function consoleStream(format: LogFormat): DestinationStream {
+  if (format === 'json') return pino.destination({ dest: 1, sync: true });
+  return pretty({ sync: true, ignore: 'pid,hostname,event,runId,at', translateTime: 'HH:MM:ss' });
+}
+
 /**
  * The console logger plus a JSON log file for the run, so a run can be inspected afterwards
  * whatever the console showed.
@@ -30,9 +35,4 @@ export function createRunLogger(format: LogFormat, logFile: string, level = 'inf
       { level, stream: pino.destination({ dest: logFile, sync: true }) },
     ]),
   );
-}
-
-function consoleStream(format: LogFormat): DestinationStream {
-  if (format === 'json') return pino.destination({ dest: 1, sync: true });
-  return pretty({ sync: true, ignore: 'pid,hostname,event,runId,at', translateTime: 'HH:MM:ss' });
 }

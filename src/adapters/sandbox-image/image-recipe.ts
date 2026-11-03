@@ -2,18 +2,20 @@ import { createHash } from 'node:crypto';
 
 import { ConfigInvalid } from '../../domain/errors.js';
 
+export interface AgentInstall {
+  name: string;
+  npmPackage: string;
+  version: string;
+}
+
 export const SANDBOX_DIRECTORY = '.sandcastle';
+
 export const DOCKERFILE = 'Dockerfile';
 
 export const TOOLCHAIN_START =
   '# --- project toolchain (yours: what setupCommand and verifyCommand need) ---';
-export const TOOLCHAIN_END = '# --- end project toolchain ---';
 
-export const LABELS = {
-  dockerfileHash: 'jig.dockerfile-hash',
-  agents: 'jig.agents',
-  agentVersions: 'jig.agent-versions',
-} as const;
+export const TOOLCHAIN_END = '# --- end project toolchain ---';
 
 /**
  * The repository's sandbox image without agents: base tools, then the project's toolchain, then
@@ -36,12 +38,6 @@ export const BASE_DOCKERFILE = [
   'WORKDIR /home/agent',
   '',
 ].join('\n');
-
-export interface AgentInstall {
-  name: string;
-  npmPackage: string;
-  version: string;
-}
 
 /** The layer jig owns: the agent CLIs the config uses, at exact versions, on top of the base image. */
 export function agentLayerDockerfile(baseImage: string, agents: AgentInstall[]) {
@@ -78,13 +74,6 @@ export function recipeHash(dockerfile: string, uid: number, gid: number) {
   return createHash('sha256').update(`${uid}:${gid}\n${dockerfile}`).digest('hex').slice(0, 16);
 }
 
-export function formatAgentVersions(agents: AgentInstall[]) {
-  return [...agents]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((agent) => `${agent.name}=${agent.version}`)
-    .join(',');
-}
-
 /** What the sandbox image is labelled with, and what a later run compares against to decide what to rebuild. */
 export function imageLabels(
   dockerfileHash: string,
@@ -98,6 +87,19 @@ export function imageLabels(
       .join(','),
     [LABELS.agentVersions]: formatAgentVersions(agents),
   };
+}
+
+export const LABELS = {
+  dockerfileHash: 'jig.dockerfile-hash',
+  agents: 'jig.agents',
+  agentVersions: 'jig.agent-versions',
+} as const;
+
+export function formatAgentVersions(agents: AgentInstall[]) {
+  return [...agents]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((agent) => `${agent.name}=${agent.version}`)
+    .join(',');
 }
 
 /** Reads the label `formatAgentVersions` wrote; an entry without a version counts as not installed. */

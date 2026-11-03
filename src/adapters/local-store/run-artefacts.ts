@@ -8,11 +8,6 @@ import { type RunState, stuckSlice } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 
-/** The markdown a run leaves for a person to read, in the order `jig status` lists them. */
-const DOCUMENTS = ['design.md', 'plan.md', 'PR_DESCRIPTION.md'] as const;
-
-export type RunDocument = (typeof DOCUMENTS)[number];
-
 export interface RunDocumentFile {
   name: RunDocument;
   path: string;
@@ -35,6 +30,13 @@ export class RunArtefacts {
     for (const name of DOCUMENTS) await write(name, contents[name]);
   }
 
+  private async makeStateDirectory(runId: RunId) {
+    await makeRunDirectory(this.repoRoot, runId);
+    const directory = stateDirectory(this.repoRoot, runId);
+    await mkdir(directory, { recursive: true });
+    return directory;
+  }
+
   /** The documents this machine holds for the run; a run that has not produced one has no file. */
   documents(runId: RunId): RunDocumentFile[] {
     const directory = stateDirectory(this.repoRoot, runId);
@@ -42,13 +44,11 @@ export class RunArtefacts {
       (document) => existsSync(document.path),
     );
   }
+}
 
-  private async makeStateDirectory(runId: RunId) {
-    await makeRunDirectory(this.repoRoot, runId);
-    const directory = stateDirectory(this.repoRoot, runId);
-    await mkdir(directory, { recursive: true });
-    return directory;
-  }
+async function writeOrRemove(file: string, contents: string | undefined) {
+  if (contents === undefined) await rm(file, { force: true });
+  else await writeFileAtomic(file, contents);
 }
 
 /**
@@ -64,6 +64,11 @@ function resultFor(state: RunState, status: string, metrics: MetricsSummary) {
     blockedReason: state.blockedReason ?? stuckSliceReason(state),
     metrics,
   };
+}
+
+function stuckSliceReason(state: RunState) {
+  const stuck = stuckSlice(state);
+  return stuck ? `slice "${stuck.id}" is stuck — needs human intervention` : undefined;
 }
 
 function documentContents(
@@ -83,12 +88,7 @@ function pullRequestDescription(state: RunState, metrics: MetricsSummary) {
   return `${state.prDescription}\n\n---\n${footer}\n`;
 }
 
-async function writeOrRemove(file: string, contents: string | undefined) {
-  if (contents === undefined) await rm(file, { force: true });
-  else await writeFileAtomic(file, contents);
-}
+/** The markdown a run leaves for a person to read, in the order `jig status` lists them. */
+const DOCUMENTS = ['design.md', 'plan.md', 'PR_DESCRIPTION.md'] as const;
 
-function stuckSliceReason(state: RunState) {
-  const stuck = stuckSlice(state);
-  return stuck ? `slice "${stuck.id}" is stuck — needs human intervention` : undefined;
-}
+export type RunDocument = (typeof DOCUMENTS)[number];

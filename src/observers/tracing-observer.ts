@@ -9,6 +9,7 @@ import type { RunEvent, StepLocation } from '../domain/events.js';
  */
 export class TracingObserver {
   private runSpan?: Span;
+
   private stepSpan?: Span;
 
   constructor(private readonly tracer: Tracer) {}
@@ -36,23 +37,6 @@ export class TracingObserver {
     }
   }
 
-  private handleRunLifecycle(event: RunEvent) {
-    switch (event.type) {
-      case 'runResumed':
-        this.runSpan = this.tracer.startSpan('jig.run', {
-          attributes: { 'jig.run_id': event.runId, 'jig.phase.start': event.phase },
-        });
-        return;
-      case 'runBlocked':
-      case 'runFailed':
-        this.runSpan?.setStatus({ code: SpanStatusCode.ERROR, message: event.reason });
-        return this.endRun(event.phase);
-      case 'runHalted':
-      case 'runFinished':
-        return this.endRun(event.phase);
-    }
-  }
-
   private startStep(at: StepLocation) {
     this.stepSpan = this.tracer.startSpan(
       stepName(at),
@@ -76,6 +60,23 @@ export class TracingObserver {
   private endStep() {
     this.stepSpan?.end();
     this.stepSpan = undefined;
+  }
+
+  private handleRunLifecycle(event: RunEvent) {
+    switch (event.type) {
+      case 'runResumed':
+        this.runSpan = this.tracer.startSpan('jig.run', {
+          attributes: { 'jig.run_id': event.runId, 'jig.phase.start': event.phase },
+        });
+        return;
+      case 'runBlocked':
+      case 'runFailed':
+        this.runSpan?.setStatus({ code: SpanStatusCode.ERROR, message: event.reason });
+        return this.endRun(event.phase);
+      case 'runHalted':
+      case 'runFinished':
+        return this.endRun(event.phase);
+    }
   }
 
   private endRun(phase: string) {

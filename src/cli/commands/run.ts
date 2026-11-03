@@ -9,6 +9,28 @@ import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
 
+export function registerRunCommand(program: Command) {
+  program
+    .command('run')
+    .description('Start a run from a request file, or resume one with --id')
+    .argument('[request]', 'markdown file describing what to build')
+    .option('--id <id>', 'run id: resumes that run if it exists, otherwise names the new one')
+    .addOption(logFormatOption())
+    .action(
+      withErrorHandling(
+        withInput(runInputSchema, async ({ run, logFormat }) => {
+          await withApp(logFormat, async (app) => {
+            const report = await runJig(app, run);
+            app.cradle.logger.info(
+              { runId: report.state.runId, branch: runBranchFor(report.state.runId) },
+              nextStep(report),
+            );
+          });
+        }),
+      ),
+    );
+}
+
 /**
  * `jig run [request] [--id <id>]`: a request starts a run, named by `--id` when given; an id
  * alone resumes that run.
@@ -54,26 +76,4 @@ function stuckMessage(state: RunState) {
     `Finish that slice and the rest by hand on "${runBranchFor(state.runId)}" (its pull request description is in .jig/${state.runId}/state/PR_DESCRIPTION.md), ` +
     `or start a new run with a sharper request. The reviewer's feedback: jig status ${state.runId}`
   );
-}
-
-export function registerRunCommand(program: Command) {
-  program
-    .command('run')
-    .description('Start a run from a request file, or resume one with --id')
-    .argument('[request]', 'markdown file describing what to build')
-    .option('--id <id>', 'run id: resumes that run if it exists, otherwise names the new one')
-    .addOption(logFormatOption())
-    .action(
-      withErrorHandling(
-        withInput(runInputSchema, async ({ run, logFormat }) => {
-          await withApp(logFormat, async (app) => {
-            const report = await runJig(app, run);
-            app.cradle.logger.info(
-              { runId: report.state.runId, branch: runBranchFor(report.state.runId) },
-              nextStep(report),
-            );
-          });
-        }),
-      ),
-    );
 }

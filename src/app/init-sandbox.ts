@@ -18,15 +18,6 @@ import { toolchainPrompt } from '../prompts/toolchain.js';
 import { type AppCradle, type RunSession, withThrowawaySandbox } from './container.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 
-/** How many times the planner gets to fix a toolchain that failed setup or verify. */
-const TOOLCHAIN_ATTEMPTS = 3;
-
-const toolchainSchema = z.object({
-  toolchain: z.string(),
-  setupCommand: z.string(),
-  verifyCommand: z.string(),
-});
-
 export type InitResult =
   | { status: 'verified'; attempts: number }
   | { status: 'failed'; attempts: number; failure: string }
@@ -80,29 +71,6 @@ async function writeIfMissing(file: string, contents: string) {
   if (!existsSync(file)) await writeFile(file, contents);
 }
 
-async function writeToolchain(repoRoot: string, toolchain: string) {
-  const file = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
-  await writeFile(file, withToolchain(await readFile(file, 'utf-8'), toolchain));
-}
-
-async function proposeToolchain(app: AwilixContainer<AppCradle>, previousFailure?: string) {
-  const { repoRoot } = app.cradle;
-  const config = loadConfig(repoRoot);
-  const dockerfile = await readFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), 'utf-8');
-  return withSandbox(app, null, (session) =>
-    session.runForOutput({
-      role: 'planner',
-      prompt: toolchainPrompt({
-        dockerfile,
-        setupCommand: config.setupCommand,
-        verifyCommand: config.verifyCommand,
-        previousFailure,
-      }),
-      schema: toolchainSchema,
-    }),
-  );
-}
-
 /**
  * Rebuilds the image and runs both commands in a fresh sandbox; returns how either command
  * failed, if one did. Anything else — Docker, credentials — is not the toolchain's fault and is
@@ -133,4 +101,36 @@ async function withSandbox<T>(
 ) {
   await ensureSandboxImage(app.cradle);
   return withThrowawaySandbox(app, setupCommand, use);
+}
+
+/** How many times the planner gets to fix a toolchain that failed setup or verify. */
+const TOOLCHAIN_ATTEMPTS = 3;
+
+async function proposeToolchain(app: AwilixContainer<AppCradle>, previousFailure?: string) {
+  const { repoRoot } = app.cradle;
+  const config = loadConfig(repoRoot);
+  const dockerfile = await readFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), 'utf-8');
+  return withSandbox(app, null, (session) =>
+    session.runForOutput({
+      role: 'planner',
+      prompt: toolchainPrompt({
+        dockerfile,
+        setupCommand: config.setupCommand,
+        verifyCommand: config.verifyCommand,
+        previousFailure,
+      }),
+      schema: toolchainSchema,
+    }),
+  );
+}
+
+const toolchainSchema = z.object({
+  toolchain: z.string(),
+  setupCommand: z.string(),
+  verifyCommand: z.string(),
+});
+
+async function writeToolchain(repoRoot: string, toolchain: string) {
+  const file = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
+  await writeFile(file, withToolchain(await readFile(file, 'utf-8'), toolchain));
 }

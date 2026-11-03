@@ -18,13 +18,6 @@ export function implementPrompt(slice: Slice) {
   ].join('\n');
 }
 
-export function nothingChangedFeedback(slice: Slice) {
-  return [
-    'The previous attempt at this slice left the working tree unchanged, so there was nothing to review.',
-    ...(slice.lastFeedback ? ['It was meant to address this feedback:', slice.lastFeedback] : []),
-  ].join('\n');
-}
-
 function previousFeedback(slice: Slice) {
   if (!slice.lastFeedback) return [];
   return [
@@ -33,6 +26,13 @@ function previousFeedback(slice: Slice) {
     'Address this feedback specifically:',
     slice.lastFeedback,
   ];
+}
+
+export function nothingChangedFeedback(slice: Slice) {
+  return [
+    'The previous attempt at this slice left the working tree unchanged, so there was nothing to review.',
+    ...(slice.lastFeedback ? ['It was meant to address this feedback:', slice.lastFeedback] : []),
+  ].join('\n');
 }
 
 /** `range` is a git revision range holding exactly this slice's commits, e.g. `<start>..HEAD`. */

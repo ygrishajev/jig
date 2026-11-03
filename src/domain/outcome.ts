@@ -4,8 +4,7 @@ import type { DesignDocs, FeaturePlan, RunContext } from './run-state.js';
 import type { PlannedSlice } from './slice.js';
 import type { CommitSummary } from './usage.js';
 
-/** Every outcome's type must be one `outcomeTypeSchema` knows, so the two cannot drift apart. */
-type OfKnownType<T extends { type: z.infer<typeof outcomeTypeSchema> }> = T;
+export type OutcomeType = Outcome['type'];
 
 /** What a step reports back. Steps never change state; the engine applies their outcome. */
 export type Outcome = OfKnownType<
@@ -24,8 +23,6 @@ export type Outcome = OfKnownType<
   | { type: 'awaitingManualMerge' }
 >;
 
-export type OutcomeType = Outcome['type'];
-
 export const outcomeTypeSchema = z.enum([
   'contextBuilt',
   'featurePlanned',
@@ -41,3 +38,6 @@ export const outcomeTypeSchema = z.enum([
   'merged',
   'awaitingManualMerge',
 ]) satisfies z.ZodType<Outcome['type']>;
+
+/** Every outcome's type must be one `outcomeTypeSchema` knows, so the two cannot drift apart. */
+type OfKnownType<T extends { type: z.infer<typeof outcomeTypeSchema> }> = T;

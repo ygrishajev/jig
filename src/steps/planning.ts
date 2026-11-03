@@ -11,10 +11,6 @@ import {
   slicePlanPrompt,
 } from '../prompts/planning.js';
 
-const plannedSlicesSchema = z
-  .array(plannedSliceSchema)
-  .min(1, 'the plan must produce at least one slice');
-
 export const buildContext: RunStep = async ({ state, ports }) => {
   const context = await ports.agent.runForOutput({
     role: 'planner',
@@ -52,8 +48,9 @@ export const sliceThePlan: RunStep<'slicing'> = async ({ state, ports }) => {
   return { type: 'sliced', slices };
 };
 
-export const applyDesignGate: RunStep = async ({ settings }) =>
-  settings.designGate === 'checkpoint' ? { type: 'pause' } : { type: 'continue' };
+const plannedSlicesSchema = z
+  .array(plannedSliceSchema)
+  .min(1, 'the plan must produce at least one slice');
 
 /** Duplicate ids would make two slices share one status, so the run could never finish them both. */
 function assertUniqueIds(ids: string[]) {
@@ -64,3 +61,6 @@ function assertUniqueIds(ids: string[]) {
     );
   }
 }
+
+export const applyDesignGate: RunStep = async ({ settings }) =>
+  settings.designGate === 'checkpoint' ? { type: 'pause' } : { type: 'continue' };

@@ -1,14 +1,6 @@
 import { Command } from 'commander';
 import type { z } from 'zod';
 
-/** What the operator typed does not fit the command; reported like any other failed command. */
-export class CommandInputInvalid extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CommandInputInvalid';
-  }
-}
-
 /**
  * A commander action that receives the command's arguments and options as one object, parsed
  * by `schema`: named arguments by their declared names, options by their camel-cased ones.
@@ -32,6 +24,14 @@ function inputOf(command: Command) {
     command.processedArgs[index],
   ]);
   return { ...Object.fromEntries(named), ...command.opts() };
+}
+
+/** What the operator typed does not fit the command; reported like any other failed command. */
+export class CommandInputInvalid extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CommandInputInvalid';
+  }
 }
 
 function describeIssues(error: z.ZodError) {

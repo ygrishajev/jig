@@ -8,8 +8,6 @@ import { type RunState, runStateSchema } from '../../domain/run-state.js';
 import type { RunStore } from '../../ports/run-store.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 
-const STATE_FILE = 'run.json';
-
 /**
  * Keeps each run in `.jig/<runId>/state/run.json`. The file is replaced atomically, so a crash
  * mid-save leaves the previous checkpoint intact.
@@ -34,3 +32,5 @@ export class LocalRunStore implements RunStore {
     await writeFileAtomic(path.join(directory, STATE_FILE), `${JSON.stringify(state, null, 2)}\n`);
   }
 }
+
+const STATE_FILE = 'run.json';

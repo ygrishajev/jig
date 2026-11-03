@@ -6,14 +6,6 @@ export interface FailureOutput {
   setExitCode(code: number): void;
 }
 
-/** Sets `exitCode` rather than calling `process.exit()`, so pending output still flushes. */
-const processFailureOutput: FailureOutput = {
-  printError: (message) => console.error(message),
-  setExitCode: (code) => {
-    process.exitCode = code;
-  },
-};
-
 export function withErrorHandling<Args extends unknown[]>(
   fn: (...args: Args) => Promise<void>,
   output: FailureOutput = processFailureOutput,
@@ -27,3 +19,11 @@ export function withErrorHandling<Args extends unknown[]>(
     }
   };
 }
+
+/** Sets `exitCode` rather than calling `process.exit()`, so pending output still flushes. */
+const processFailureOutput: FailureOutput = {
+  printError: (message) => console.error(message),
+  setExitCode: (code) => {
+    process.exitCode = code;
+  },
+};

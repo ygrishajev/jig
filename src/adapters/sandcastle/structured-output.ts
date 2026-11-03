@@ -2,9 +2,6 @@ import type { ZodType } from 'zod';
 
 import { AgentOutputInvalid, messageOf } from '../../domain/errors.js';
 
-/** The agent ends its reply with this tag around a JSON object; the last one wins. */
-export const OUTPUT_TAG = 'jig-output';
-
 export function outputInstruction() {
   return [
     `When you are completely done, end your reply with your result as a single JSON object`,
@@ -12,6 +9,9 @@ export function outputInstruction() {
     'Do not write the result to a file.',
   ].join(' ');
 }
+
+/** The agent ends its reply with this tag around a JSON object; the last one wins. */
+export const OUTPUT_TAG = 'jig-output';
 
 /** Reads the last tag in the agent's reply, tolerating a code fence around the JSON and nothing else. */
 export function extractOutput<T>(reply: string, schema: ZodType<T>): T {

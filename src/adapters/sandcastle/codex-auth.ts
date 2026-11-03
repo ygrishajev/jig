@@ -7,16 +7,6 @@ import { z } from 'zod';
 
 import { ConfigInvalid } from '../../domain/errors.js';
 
-const subscriptionSchema = z.object({
-  auth_mode: z.literal('chatgpt').optional(),
-  tokens: z.object({
-    access_token: z.string().min(1),
-    id_token: z.string().min(1),
-    refresh_token: z.string().min(1),
-    account_id: z.string().min(1),
-  }),
-});
-
 export interface CodexAuthCache {
   directory: string;
   close(): Promise<void>;
@@ -44,6 +34,30 @@ export async function openCodexAuthCache(sourceDirectory: string): Promise<Codex
     throw error;
   }
 }
+
+function validateSubscription(text: string) {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new ConfigInvalid('Invalid Codex subscription login JSON.');
+  }
+  if (!subscriptionSchema.safeParse(value).success) {
+    throw new ConfigInvalid(
+      'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
+    );
+  }
+}
+
+const subscriptionSchema = z.object({
+  auth_mode: z.literal('chatgpt').optional(),
+  tokens: z.object({
+    access_token: z.string().min(1),
+    id_token: z.string().min(1),
+    refresh_token: z.string().min(1),
+    account_id: z.string().min(1),
+  }),
+});
 
 async function persistAndRelease(
   source: string,
@@ -73,18 +87,4 @@ async function persistRefresh(
     );
   }
   await writeFileAtomic(source, refreshed, { mode: 0o600 });
-}
-
-function validateSubscription(text: string) {
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new ConfigInvalid('Invalid Codex subscription login JSON.');
-  }
-  if (!subscriptionSchema.safeParse(value).success) {
-    throw new ConfigInvalid(
-      'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
-    );
-  }
 }

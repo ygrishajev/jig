@@ -26,6 +26,18 @@ export type MetricRecord =
     }
   | { kind: 'retry'; at: string; runId: RunId; location: StepLocation; reason: string };
 
+export interface MetricsSummary {
+  durationMs: number;
+  steps: number;
+  agentCalls: number;
+  retries: number;
+  reviewRounds: number;
+  slicesCommitted: number;
+  linesChanged: number;
+  costUsd: number;
+  tokens: TokenUsage;
+}
+
 /** Records one line per step, agent call and retry, attributing agent calls to the step they ran in. */
 export class MetricsObserver {
   private location?: StepLocation;
@@ -77,18 +89,6 @@ export class MetricsObserver {
   }
 }
 
-export interface MetricsSummary {
-  durationMs: number;
-  steps: number;
-  agentCalls: number;
-  retries: number;
-  reviewRounds: number;
-  slicesCommitted: number;
-  linesChanged: number;
-  costUsd: number;
-  tokens: TokenUsage;
-}
-
 export function summarizeMetrics(records: MetricRecord[]): MetricsSummary {
   const steps = records.filter((record) => record.kind === 'step');
   const calls = records.filter((record) => record.kind === 'agentCall');
@@ -116,6 +116,10 @@ export function summarizeMetrics(records: MetricRecord[]): MetricsSummary {
   };
 }
 
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + value, 0);
+}
+
 /** One line for a PR footer or a status line, e.g. "2 slices · 1 review round · 412k tokens · $1.84 · 18m 3s". */
 export function formatSummary(summary: MetricsSummary) {
   const tokens =
@@ -131,10 +135,6 @@ export function formatSummary(summary: MetricsSummary) {
     duration(summary.durationMs),
     ...(summary.retries > 0 ? [plural(summary.retries, 'retry', 'retries')] : []),
   ].join(' · ');
-}
-
-function sum(values: number[]) {
-  return values.reduce((total, value) => total + value, 0);
 }
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`) {

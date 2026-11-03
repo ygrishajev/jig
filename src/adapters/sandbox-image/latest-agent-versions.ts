@@ -1,9 +1,6 @@
 import latestVersion from 'latest-version';
 import pTimeout from 'p-timeout';
 
-/** A slow or unreachable registry must never hold up a run. */
-const LOOKUP_TIMEOUT_MS = 3000;
-
 /** Asks the registry for a package's latest published version. */
 export type RegistryLookup = (npmPackage: string) => Promise<string>;
 
@@ -20,3 +17,6 @@ export async function latestAgentVersions(
   );
   return Object.fromEntries(npmPackages.map((npmPackage, index) => [npmPackage, versions[index]]));
 }
+
+/** A slow or unreachable registry must never hold up a run. */
+const LOOKUP_TIMEOUT_MS = 3000;

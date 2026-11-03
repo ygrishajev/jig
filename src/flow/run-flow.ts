@@ -14,8 +14,6 @@ import { defineRunFlow, defineSliceFlow, type Guard } from './define-flow.js';
 const sliceReachedReviewCap: Guard = ({ slice, settings }) =>
   slice !== undefined && reviewCapReached(slice, settings);
 
-const someSliceStuck: Guard = ({ state }) => stuckSlice(state) !== undefined;
-
 const backToImplementUnlessCapped = [
   { to: 'stuck', when: sliceReachedReviewCap },
   { to: 'pending' },
@@ -38,6 +36,8 @@ export const sliceFlow = defineSliceFlow({
   approved: { final: 'done' },
   stuck: { final: 'stuck' },
 });
+
+const someSliceStuck: Guard = ({ state }) => stuckSlice(state) !== undefined;
 
 /**
  * A whole run: plan the work, deliver it slice by slice, describe it, merge it. A run with a
