@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { ConfigInvalid } from '../domain/errors.js';
@@ -22,17 +23,18 @@ export interface TelemetrySettings {
 }
 
 /** An empty variable counts as unset, as it does for a shell's `${VAR:-default}`. */
-export function parseEnvironment(raw: NodeJS.ProcessEnv): JigEnvironment {
+export function parseEnvironment(raw: NodeJS.ProcessEnv): Result<JigEnvironment, ConfigInvalid> {
   const variables = setVariables(raw);
   const parsed = knownVariablesSchema.safeParse(variables);
   if (!parsed.success) {
-    const problems = parsed.error.issues.map(
-      (issue) => `${issue.path.join('.')}: ${issue.message}`,
+    return Result.err(
+      new ConfigInvalid({
+        message: `The environment is not valid — ${describeIssues(parsed.error)}`,
+      }),
     );
-    throw new ConfigInvalid({ message: `The environment is not valid — ${problems.join('; ')}` });
   }
   const known = parsed.data;
-  return {
+  return Result.ok({
     imageCache: known.JIG_IMAGE_CACHE,
     codexAuthDirectory: known.JIG_CODEX_AUTH_DIR,
     telemetry:
@@ -40,7 +42,7 @@ export function parseEnvironment(raw: NodeJS.ProcessEnv): JigEnvironment {
         ? { serviceName: known.OTEL_SERVICE_NAME ?? 'jig', forwarded: otelVariables(variables) }
         : undefined,
     credential: (name) => variables[name],
-  };
+  });
 }
 
 function setVariables(raw: NodeJS.ProcessEnv): Record<string, string> {
@@ -56,6 +58,11 @@ const knownVariablesSchema = z.object({
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z.string().url().optional(),
   OTEL_SERVICE_NAME: z.string().optional(),
 });
+
+/** `path: message` for each issue, the one format every config failure uses. */
+export function describeIssues(error: z.ZodError): string {
+  return error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
+}
 
 function otelVariables(variables: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(variables).filter(([name]) => name.startsWith('OTEL_')));

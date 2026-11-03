@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import { loadConfig } from '../config/load-config.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid, orThrow } from '../domain/errors.js';
 import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
 import {
   type AgentNeeded,
@@ -143,7 +143,7 @@ describe('ensureSandboxImage', () => {
     };
     await writeDockerfile(faker.lorem.lines(3));
     const removeDockerfile = () => rm(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE));
-    const loaded = loadConfig(repoRoot);
+    const loaded = orThrow(loadConfig(repoRoot));
     const config = {
       ...loaded,
       sandboxImage: input.sandboxImage,

@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import { realpath } from 'node:fs/promises';
 import { type SimpleGit, simpleGit } from 'simple-git';
 
@@ -25,12 +26,14 @@ export async function isWorkingTreeClean(cwd: string): Promise<boolean> {
  * miss the config and hand the sandbox no git directory, so that is refused; a directory that is
  * not a repository yet is left for `init` and git itself to judge.
  */
-export async function ensureRepositoryRoot(cwd: string): Promise<void> {
+export async function ensureRepositoryRoot(cwd: string): Promise<Result<void, ConfigInvalid>> {
   const root = await openRepo(cwd)
     .revparse(['--show-toplevel'])
     .catch(() => undefined);
-  if (root === undefined || root === (await realpath(cwd))) return;
-  throw new ConfigInvalid({
-    message: `Run jig from the repository's root, ${root} — not from ${cwd}.`,
-  });
+  if (root === undefined || root === (await realpath(cwd))) return Result.ok();
+  return Result.err(
+    new ConfigInvalid({
+      message: `Run jig from the repository's root, ${root} — not from ${cwd}.`,
+    }),
+  );
 }

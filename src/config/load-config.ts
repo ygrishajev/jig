@@ -1,15 +1,33 @@
+import { Result } from 'better-result';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
 import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
+import { ConfigInvalid } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
+import { describeIssues } from './environment.js';
 
-export function loadConfig(repoRoot: string): JigConfig {
+export function loadConfig(repoRoot: string): Result<JigConfig, ConfigInvalid> {
   const configPath = path.join(repoRoot, CONFIG_FILE);
-  if (!existsSync(configPath)) return configSchema.parse({});
-  return configSchema.parse(JSON.parse(readFileSync(configPath, 'utf-8')));
+  const contents = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : '{}';
+  return Result.try({
+    try: (): unknown => JSON.parse(contents),
+    catch: (cause) =>
+      new ConfigInvalid({
+        message: `${CONFIG_FILE} is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
+      }),
+  }).andThen((json) => {
+    const parsed = configSchema.safeParse(json);
+    return parsed.success
+      ? Result.ok(parsed.data)
+      : Result.err(
+          new ConfigInvalid({
+            message: `${CONFIG_FILE} is not valid — ${describeIssues(parsed.error)}`,
+          }),
+        );
+  });
 }
 
 export const CONFIG_FILE = 'jig.config.json';

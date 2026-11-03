@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { asFunction, type AwilixContainer } from 'awilix';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -44,6 +44,15 @@ describe('withApp', () => {
 
   it('refuses an environment it cannot parse, before the command runs', async () => {
     const { run } = await setup({ environment: { JIG_IMAGE_CACHE: faker.word.noun() } });
+    const command = vi.fn();
+
+    await expect(run(command)).rejects.toBeInstanceOf(ConfigInvalid);
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it('refuses a config it cannot parse, before the command runs', async () => {
+    const { run, cwd } = await setup();
+    await writeFile(path.join(cwd, 'jig.config.json'), '{"mergeMode":');
     const command = vi.fn();
 
     await expect(run(command)).rejects.toBeInstanceOf(ConfigInvalid);

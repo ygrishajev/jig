@@ -20,7 +20,7 @@ import {
   type OpenSessionInput,
 } from '../adapters/sandcastle/open-session.js';
 import type { JigEnvironment } from '../config/environment.js';
-import { type JigConfig, loadConfig, runSettingsFrom } from '../config/load-config.js';
+import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import { isTransient } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
 import { runIdSchema } from '../domain/run-id.js';
@@ -78,6 +78,7 @@ export function createAppContainer(input: {
   logFormat: LogFormat;
   logLevel?: string;
   environment: JigEnvironment;
+  config: JigConfig;
 }): AwilixContainer<AppCradle> {
   const container = createContainer<AppCradle>({
     injectionMode: InjectionMode.PROXY,
@@ -88,7 +89,7 @@ export function createAppContainer(input: {
     environment: asValue(input.environment),
     logFormat: asValue(input.logFormat),
     logLevel: asValue(input.logLevel ?? 'info'),
-    config: asFunction(({ repoRoot }: AppCradle) => loadConfig(repoRoot)).singleton(),
+    config: asValue(input.config),
     settings: asFunction(({ config }: AppCradle) => runSettingsFrom(config)).singleton(),
     logger: asFunction(({ logFormat, logLevel }: AppCradle) =>
       createConsoleLogger(logFormat, logLevel),

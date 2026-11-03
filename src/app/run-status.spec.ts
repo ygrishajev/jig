@@ -11,7 +11,7 @@ import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
-import { RunRequestInvalid } from '../domain/errors.js';
+import { orThrow, RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer } from './container.js';
@@ -71,10 +71,11 @@ describe('readRunStatus', () => {
         repoRoot,
         logFormat: 'json',
         logLevel: 'silent',
-        environment: parseEnvironment({}),
+        environment: orThrow(parseEnvironment({})),
+        config: orThrow(loadConfig(repoRoot)),
       });
       onTestFinished(() => app.dispose());
-      app.register({ config: asValue({ ...loadConfig(repoRoot), runStores }) });
+      app.register({ config: asValue({ ...orThrow(loadConfig(repoRoot)), runStores }) });
       return readRunStatus(app, id);
     };
     return { cloneOf, statusIn };

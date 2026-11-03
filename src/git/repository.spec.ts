@@ -49,7 +49,7 @@ describe('git repository helpers', () => {
   it('accepts the root of a repository', async () => {
     const { repo } = await setup();
 
-    await expect(ensureRepositoryRoot(repo)).resolves.toBeUndefined();
+    expect((await ensureRepositoryRoot(repo)).isOk()).toBe(true);
   });
 
   it('refuses a directory inside a repository, naming its root', async () => {
@@ -57,16 +57,16 @@ describe('git repository helpers', () => {
     const subdirectory = path.join(repo, faker.word.noun());
     await mkdir(subdirectory);
 
-    const refusal = await ensureRepositoryRoot(subdirectory).catch((error: unknown) => error);
+    const refusal = await ensureRepositoryRoot(subdirectory);
 
-    expect(refusal).toBeInstanceOf(ConfigInvalid);
-    expect((refusal as ConfigInvalid).message).toMatch(wholePath(await realpath(repo)));
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+    expect(refusal.isErr() && refusal.error.message).toMatch(wholePath(await realpath(repo)));
   });
 
   it('accepts a directory that is not a repository yet', async () => {
     const directory = await tempDirectory('jig-not-a-repo-');
 
-    await expect(ensureRepositoryRoot(directory)).resolves.toBeUndefined();
+    expect((await ensureRepositoryRoot(directory)).isOk()).toBe(true);
   });
 
   async function setup() {

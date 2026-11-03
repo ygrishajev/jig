@@ -9,7 +9,8 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import { SetupCommandFailed } from '../domain/errors.js';
+import { loadConfig } from '../config/load-config.js';
+import { orThrow, SetupCommandFailed } from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, withRunScope, withThrowawaySandbox } from './container.js';
 
@@ -48,7 +49,8 @@ describe('withRunScope', () => {
       repoRoot,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: parseEnvironment({}),
+      environment: orThrow(parseEnvironment({})),
+      config: orThrow(loadConfig(repoRoot)),
     });
     app.register({ openSession: asValue(async () => session) });
     onTestFinished(() => app.dispose());
@@ -94,7 +96,8 @@ describe('withThrowawaySandbox', () => {
       repoRoot,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: parseEnvironment({}),
+      environment: orThrow(parseEnvironment({})),
+      config: orThrow(loadConfig(repoRoot)),
     });
     app.register({
       openSession: asValue(async ({ run }: OpenSessionInput) => {

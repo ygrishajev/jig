@@ -13,7 +13,7 @@ import {
 import { ignoreSandcastleDirectory } from '../adapters/sandcastle/sandcastle-session.js';
 import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
-import { SetupCommandFailed } from '../domain/errors.js';
+import { orThrow, SetupCommandFailed } from '../domain/errors.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
 import { type AppCradle, type RunSession, withThrowawaySandbox } from './container.js';
 import { ensureSandboxImage } from './sandbox-image.js';
@@ -36,7 +36,7 @@ export async function initSandbox(
   const { repoRoot } = app.cradle;
   await writeStarterFiles(repoRoot);
   if (!options.useAgent) {
-    const config = loadConfig(repoRoot);
+    const config = orThrow(loadConfig(repoRoot));
     if (!config.verifyCommand) return { status: 'written' };
     const failure = await checkInSandbox(app, config.setupCommand, config.verifyCommand);
     return failure
@@ -48,10 +48,12 @@ export async function initSandbox(
   for (let attempt = 1; attempt <= TOOLCHAIN_ATTEMPTS; attempt++) {
     const proposal = await proposeToolchain(app, previousFailure);
     await writeToolchain(repoRoot, proposal.toolchain);
-    await updateConfigFile(repoRoot, {
-      setupCommand: proposal.setupCommand,
-      verifyCommand: proposal.verifyCommand,
-    });
+    orThrow(
+      await updateConfigFile(repoRoot, {
+        setupCommand: proposal.setupCommand,
+        verifyCommand: proposal.verifyCommand,
+      }),
+    );
     previousFailure = await checkInSandbox(app, proposal.setupCommand, proposal.verifyCommand);
     if (!previousFailure) return { status: 'verified', attempts: attempt };
     app.cradle.logger.warn(`attempt ${attempt} did not pass in the sandbox`);
@@ -111,7 +113,7 @@ async function proposeToolchain(
   previousFailure?: string,
 ): Promise<z.infer<typeof toolchainSchema>> {
   const { repoRoot } = app.cradle;
-  const config = loadConfig(repoRoot);
+  const config = orThrow(loadConfig(repoRoot));
   const dockerfile = await readFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), 'utf-8');
   return withSandbox(app, null, (session) =>
     session.runForOutput({

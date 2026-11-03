@@ -14,7 +14,9 @@ describe('updateConfigFile', () => {
     const setupCommand = `npm ${faker.word.verb()}`;
     const { repoRoot, read } = await setup(JSON.stringify(kept));
 
-    await updateConfigFile(repoRoot, { setupCommand });
+    const result = await updateConfigFile(repoRoot, { setupCommand });
+
+    expect(result.isOk()).toBe(true);
 
     expect(await read()).toEqual({ ...kept, setupCommand });
   });
@@ -25,9 +27,10 @@ describe('updateConfigFile', () => {
   ])('refuses a config file that is %s instead of overwriting it', async (_case, contents) => {
     const { repoRoot } = await setup(contents);
 
-    await expect(
-      updateConfigFile(repoRoot, { setupCommand: faker.word.verb() }),
-    ).rejects.toBeInstanceOf(ConfigInvalid);
+    const result = await updateConfigFile(repoRoot, { setupCommand: faker.word.verb() });
+
+    expect(result.isErr()).toBe(true);
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
   });
 
   async function setup(contents: string) {

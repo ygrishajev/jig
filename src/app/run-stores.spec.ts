@@ -6,13 +6,13 @@ import { aRunState } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { loadConfig } from '../config/load-config.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid, orThrow } from '../domain/errors.js';
 import { openRunStore } from './run-stores.js';
 
 describe('openRunStore', () => {
   it('saves to the local store by default', async () => {
     const repoRoot = await tempDirectory('jig-stores-');
-    const store = await openRunStore({ repoRoot, config: loadConfig(repoRoot) });
+    const store = await openRunStore({ repoRoot, config: orThrow(loadConfig(repoRoot)) });
     const state = aRunState();
 
     await store.save(state);
@@ -34,7 +34,10 @@ describe('openRunStore', () => {
        });`,
     );
     const runStores = ['memory-store.mjs', 'local'];
-    const store = await openRunStore({ repoRoot, config: { ...loadConfig(repoRoot), runStores } });
+    const store = await openRunStore({
+      repoRoot,
+      config: { ...orThrow(loadConfig(repoRoot)), runStores },
+    });
     const state = aRunState();
 
     await store.save(state);
@@ -43,7 +46,7 @@ describe('openRunStore', () => {
     expect(await new LocalRunStore(repoRoot).load(state.runId)).toEqual(saved);
     const reopened = await openRunStore({
       repoRoot,
-      config: { ...loadConfig(repoRoot), runStores },
+      config: { ...orThrow(loadConfig(repoRoot)), runStores },
     });
     expect(await reopened.load(state.runId)).toEqual(saved);
   });
@@ -58,7 +61,7 @@ describe('openRunStore', () => {
          save: async () => {},
        });`,
     );
-    const config = { ...loadConfig(repoRoot), runStores: ['load-only-store.mjs'] };
+    const config = { ...orThrow(loadConfig(repoRoot)), runStores: ['load-only-store.mjs'] };
 
     const store = await openRunStore({ repoRoot, config });
 
@@ -76,7 +79,7 @@ describe('openRunStore', () => {
          save: async (state) => writeFileSync(path.join(repoRoot, 'saved.json'), JSON.stringify(state)),
        });`,
     );
-    const config = { ...loadConfig(repoRoot), runStores: ['file-store.mjs'] };
+    const config = { ...orThrow(loadConfig(repoRoot)), runStores: ['file-store.mjs'] };
     const state = aRunState();
 
     await (await openRunStore({ repoRoot, config })).save(state);
@@ -94,7 +97,7 @@ describe('openRunStore', () => {
         path.join(repoRoot, 'empty-store.mjs'),
         `export default () => ({ load: async () => ${answer}, save: async () => {} });`,
       );
-      const config = { ...loadConfig(repoRoot), runStores: ['empty-store.mjs'] };
+      const config = { ...orThrow(loadConfig(repoRoot)), runStores: ['empty-store.mjs'] };
 
       const store = await openRunStore({ repoRoot, config });
 
@@ -108,7 +111,7 @@ describe('openRunStore', () => {
       path.join(repoRoot, 'broken-store.mjs'),
       `export default () => ({ load: async () => ({ phase: 'nowhere' }), save: async () => {} });`,
     );
-    const config = { ...loadConfig(repoRoot), runStores: ['broken-store.mjs'] };
+    const config = { ...orThrow(loadConfig(repoRoot)), runStores: ['broken-store.mjs'] };
     const store = await openRunStore({ repoRoot, config });
 
     await expect(store.load(aRunState().runId)).rejects.toBeInstanceOf(ConfigInvalid);
@@ -120,7 +123,7 @@ describe('openRunStore', () => {
       path.join(repoRoot, 'half-a-store.mjs'),
       'export default () => ({ load: async () => undefined });',
     );
-    const config = { ...loadConfig(repoRoot), runStores: ['half-a-store.mjs'] };
+    const config = { ...orThrow(loadConfig(repoRoot)), runStores: ['half-a-store.mjs'] };
 
     await expect(openRunStore({ repoRoot, config })).rejects.toBeInstanceOf(ConfigInvalid);
   });
@@ -128,7 +131,7 @@ describe('openRunStore', () => {
   it('refuses a module that does not export a store factory', async () => {
     const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(path.join(repoRoot, 'not-a-store.mjs'), 'export const store = {};');
-    const config = { ...loadConfig(repoRoot), runStores: ['not-a-store.mjs'] };
+    const config = { ...orThrow(loadConfig(repoRoot)), runStores: ['not-a-store.mjs'] };
 
     await expect(openRunStore({ repoRoot, config })).rejects.toBeInstanceOf(ConfigInvalid);
   });

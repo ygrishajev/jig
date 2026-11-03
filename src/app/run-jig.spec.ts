@@ -18,6 +18,7 @@ import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import {
   ConfigInvalid,
+  orThrow,
   RunInProgress,
   RunRequestInvalid,
   SandboxUnavailable,
@@ -176,7 +177,8 @@ describe('runJig', () => {
       repoRoot: repo.dir,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: parseEnvironment({}),
+      environment: orThrow(parseEnvironment({})),
+      config: orThrow(loadConfig(repo.dir)),
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
@@ -200,7 +202,7 @@ describe('runJig', () => {
       return () => sessionsOpened;
     };
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
-    app.register({ config: asValue({ ...loadConfig(repo.dir), sandboxImage }) });
+    app.register({ config: asValue({ ...orThrow(loadConfig(repo.dir)), sandboxImage }) });
     app.register({
       settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),
       openSession: asValue(async ({ run }: OpenSessionInput) => {
