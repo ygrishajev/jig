@@ -26,8 +26,8 @@ describe('image recipe', () => {
   });
 
   it('replaces an earlier toolchain instead of appending to it', () => {
-    const first = `RUN echo ${faker.word.noun()}`;
-    const second = `RUN echo ${faker.word.noun()}`;
+    const first = `RUN echo ${faker.string.uuid()}`;
+    const second = `RUN echo ${faker.string.uuid()}`;
 
     const filled = withToolchain(withToolchain(BASE_DOCKERFILE, first).unwrap(), second).unwrap();
 
