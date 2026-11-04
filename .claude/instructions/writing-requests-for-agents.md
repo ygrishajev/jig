@@ -43,7 +43,7 @@ as arguments; specs pass fakes, never `vi.mock`.
 
 ## Target
 
-`src/domain/transitions.ts` — score 71.2, **14 surviving mutants**, 0 no-coverage.
+`src/flow/engine.ts` — score 71.2, **14 surviving mutants**, 0 no-coverage.
 
 ## What survived here, and what the tests must pin
 
@@ -54,7 +54,7 @@ as arguments; specs pass fakes, never `vi.mock`.
 ## How to work
 
 ```sh
-npx stryker run --mutate "src/domain/transitions.ts"
+npx stryker run --mutate "src/flow/engine.ts"
 ```
 
 A survivor can legitimately mean dead code: prefer deleting it over a vacuous test, and say

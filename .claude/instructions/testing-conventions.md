@@ -2,7 +2,7 @@
 
 ## Description
 
-- **Vitest, node environment.** A spec is `*.spec.ts` beside the code it covers: `src/flow/engine.ts` → `src/flow/engine.spec.ts`. The existing `tests/**/*.test.ts` predate this; move a module's tests beside it when you rewrite the module, and never add new files under `tests/` except shared helpers in `tests/support/`.
+- **Vitest, node environment.** A spec is `*.spec.ts` beside the code it covers: `src/flow/engine.ts` → `src/flow/engine.spec.ts`. Never add new files under `tests/` except shared helpers in `tests/support/` and the live end-to-end run in `tests/e2e/`.
 - **Coverage is the floor, not the goal.** `npm run test:mutation` (Stryker) is the real measure here — a spec that raises coverage without killing mutants is worse than no spec.
 - **`setup` function, not `beforeEach`.** It sits at the bottom of the root `describe`, takes a single parameter with an inline type, builds the thing under test and returns it (plus whatever the tests need to read back). No shared state between tests, and no declared return type.
 - **Assert an expected failure on the returned `Err`, never with `toThrow`.** Check `result.isErr()`, then its class or `_tag` and the fields the code decided, on `result.error`. Never `expect(result).toEqual(Result.err(x))`: better-result's `Err` is iterable, so that panics. `toThrow(Panic)` is kept for bugs. To read a value you do not assert on, use `unwrap` from `tests/support/unwrap.ts`.
@@ -21,7 +21,7 @@
 
 - **Fake the boundary, not the layer above it.** The agent is faked at `AgentSession` — the prompt building, output parsing and state transitions under test are the ones production runs. Git is never faked: specs that touch git run against a real temporary repository (`tests/support/temp-repo.ts`).
 - **A fake agent does what a real one would.** When a step expects the agent to change files or emit structured output, the fake writes those files into the worktree or returns that output — it doesn't just return `{ success: true }`.
-- **Real sandcastle and real agents stay out of the unit suite.** They belong in `spike/` checks or an explicitly opt-in integration run, never in `npm test`.
+- **Real sandcastle and real agents stay out of the unit suite.** They belong in an explicitly opt-in integration run, never in `npm test`.
 
 ## Test data
 
