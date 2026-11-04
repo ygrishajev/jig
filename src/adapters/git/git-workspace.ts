@@ -78,11 +78,6 @@ export class GitWorkspace implements Workspace {
   ): Promise<Result<void, GitCommandFailed | CommitImportRefused>> {
     return Result.gen(async function* (this: GitWorkspace) {
       const head = yield* Result.await(this.sandboxGit(['rev-parse', 'HEAD']));
-      if (!FULL_SHA.test(head)) {
-        return Result.err(
-          new CommitImportRefused({ message: 'The sandbox did not report a commit as its head.' }),
-        );
-      }
       if (head === (yield* Result.await(this.headCommit()))) return Result.ok();
       if (head === approved) return this.moveRunBranchTo(approved);
       const fetched = yield* Result.await(this.fetchFromSandbox(approved));
@@ -93,7 +88,7 @@ export class GitWorkspace implements Workspace {
           }),
         );
       }
-      if (!(yield* Result.await(this.descendsFrom(fetched, approved)))) {
+      if (!(await this.descendsFrom(fetched, approved))) {
         return Result.err(
           new CommitImportRefused({
             message: `The sandbox rewrote approved commit ${approved}, so its work was not taken.`,
@@ -144,23 +139,12 @@ export class GitWorkspace implements Workspace {
     }, this);
   }
 
-  private async descendsFrom(
-    commit: string,
-    ancestor: string,
-  ): Promise<Result<boolean, GitCommandFailed>> {
-    const { exitCode, stderr } = await execa(
-      'git',
-      ['merge-base', '--is-ancestor', ancestor, commit],
-      { cwd: this.options.repoRoot, reject: false },
-    );
-    if (exitCode === 0 || exitCode === 1) return Result.ok(exitCode === 0);
-    return Result.err(
-      new GitCommandFailed({
-        message: `git merge-base failed: ${stderr}`,
-        command: 'merge-base',
-        stderr,
-      }),
-    );
+  private async descendsFrom(commit: string, ancestor: string): Promise<boolean> {
+    const { exitCode } = await execa('git', ['merge-base', '--is-ancestor', ancestor, commit], {
+      cwd: this.options.repoRoot,
+      reject: false,
+    });
+    return exitCode === 0;
   }
 
   headCommit(): Promise<Result<string, GitCommandFailed>> {
@@ -267,8 +251,6 @@ export class GitWorkspace implements Workspace {
     return isBranchMergedInto(this.options.repoRoot, this.runBranch, this.options.baseBranch);
   }
 }
-
-const FULL_SHA = /^[0-9a-f]{40}$/;
 
 /** Inside the clone's `.git`, so a bundle can never be committed by `git add -A`. */
 const OUTGOING_BUNDLE = '.git/jig-out.bundle';

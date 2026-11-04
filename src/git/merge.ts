@@ -112,7 +112,7 @@ export async function mergeBranchInto(
     const git = openRepoWithoutHooks(repoRoot, sign ? [] : ['commit.gpgsign=false']);
     yield* Result.await(
       Result.tryPromise({
-        try: () => git.merge([branchName, '--no-edit']),
+        try: () => git.merge([branchName, '--no-edit', ...(sign ? ['--gpg-sign'] : [])]),
         catch: (error) => new MergeFailed({ message: messageOf(error) }),
       }),
     );

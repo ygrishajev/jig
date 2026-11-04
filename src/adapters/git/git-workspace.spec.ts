@@ -3,12 +3,12 @@ import { execa } from 'execa';
 import { existsSync } from 'node:fs';
 import { chmod, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { runId } from '../../../tests/support/builders.js';
 import { createRunWorktree } from '../../../tests/support/run-worktree.js';
-import { CommitImportRefused, MergeFailed } from '../../domain/errors.js';
+import { CommitImportRefused, GitCommandFailed, MergeFailed } from '../../domain/errors.js';
 import { isWorkingTreeClean } from '../../git/repository.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { type CommitSigning, GitWorkspace } from './git-workspace.js';
@@ -226,6 +226,111 @@ describe('GitWorkspace', () => {
 
     expect(merge.isErr() && merge.error).toBeInstanceOf(MergeFailed);
     expect(await git.revparse([runBranch])).toBe(approved);
+  });
+
+  it.each(['status', 'add', 'commit', 'rev-parse', 'bundle'])(
+    'reports git %s failing in the sandbox without moving the host branch',
+    async (command) => {
+      const { workspaceOn, writeInSandbox, git, runBranch, forkPoint, agent } = await setup();
+      await writeInSandbox('feature.txt', faker.lorem.sentence());
+      const failing = mock<SandboxGit>({
+        execGit: async (args) =>
+          args[0] === command
+            ? { exitCode: 1, output: faker.lorem.sentence() }
+            : agent.execGit(args),
+        copyOut: (from, to) => agent.copyOut(from, to),
+      });
+
+      const saved = await workspaceOn(failing).saveWork(faker.git.commitMessage(), {
+        approved: forkPoint,
+      });
+
+      expect(saved.isErr() && saved.error).toBeInstanceOf(GitCommandFailed);
+      expect(await git.revparse([runBranch])).toBe(forkPoint);
+    },
+  );
+
+  it('copies nothing out when the sandbox has nothing new', async () => {
+    const { workspaceOn, writeInSandbox, forkPoint, agent, save } = await setup();
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    const copyOut = vi.fn<SandboxGit['copyOut']>((from, to) => agent.copyOut(from, to));
+
+    const saved = await workspaceOn(
+      mock<SandboxGit>({ execGit: (args) => agent.execGit(args), copyOut }),
+    ).saveWork(faker.git.commitMessage(), { approved: forkPoint });
+
+    saved.unwrap();
+    expect(copyOut).not.toHaveBeenCalled();
+  });
+
+  it('removes its copy of the bundle after importing', async () => {
+    const { workspaceOn, inSandbox, writeInSandbox, forkPoint, agent } = await setup();
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    await inSandbox.add('-A').commit(faker.git.commitMessage());
+    const copied: string[] = [];
+    const copyOut = vi.fn<SandboxGit['copyOut']>((from, to) => {
+      copied.push(to);
+      return agent.copyOut(from, to);
+    });
+
+    const saved = await workspaceOn(
+      mock<SandboxGit>({ execGit: (args) => agent.execGit(args), copyOut }),
+    ).saveWork(faker.git.commitMessage(), { approved: forkPoint });
+
+    saved.unwrap();
+    expect(copied).toHaveLength(1);
+    expect(existsSync(path.dirname(copied[0]))).toBe(false);
+  });
+
+  it('refuses to merge with no approved commit, or one the repository does not have', async () => {
+    const { workspace, writeInSandbox, save, git, runBranch } = await setup();
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    const main = await git.revparse(['main']);
+
+    for (const approved of [
+      undefined,
+      faker.string.hexadecimal({ length: 40, prefix: '', casing: 'lower' }),
+    ]) {
+      const merge = await workspace.mergeRunBranch({ approved });
+
+      expect(merge.isErr() && merge.error).toBeInstanceOf(MergeFailed);
+    }
+    expect(await git.revparse(['main'])).toBe(main);
+    expect(await git.revparse([runBranch])).not.toBe(main);
+  });
+
+  it('signs the merge commit too when asked to', async () => {
+    const { workspaceOn, agent, repo, git, writeInSandbox, save, runBranch } = await setup();
+    await writeFakeSigner(repo);
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    await writeFile(path.join(repo, 'other.txt'), faker.lorem.sentence());
+    await git.add('other.txt').commit(faker.git.commitMessage());
+    const approved = await git.revparse([runBranch]);
+
+    (await workspaceOn(agent, 'repo').mergeRunBranch({ approved })).unwrap();
+
+    expect((await git.raw(['rev-list', '--parents', '-1', 'HEAD'])).trim().split(' ')).toHaveLength(
+      3,
+    );
+    expect(await git.raw(['cat-file', 'commit', 'HEAD'])).toContain('gpgsig');
+  });
+
+  it('can sign and merge after an earlier signing attempt failed', async () => {
+    const { workspaceOn, agent, repo, git, writeInSandbox, save, runBranch } = await setup();
+    await setSigner(repo, 'false');
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    const approved = await git.revparse([runBranch]);
+    const workspace = workspaceOn(agent, 'repo');
+    expect((await workspace.mergeRunBranch({ approved })).isErr()).toBe(true);
+    await writeFakeSigner(repo);
+
+    (await workspace.mergeRunBranch({ approved })).unwrap();
+
+    expect(await git.raw(['cat-file', 'commit', 'main'])).toContain('gpgsig');
   });
 
   it('names the run and base branch when the merge is refused', async () => {

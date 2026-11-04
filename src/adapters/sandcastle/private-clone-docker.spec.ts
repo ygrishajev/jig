@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { execa } from 'execa';
 import { existsSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -9,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { GitCommandFailed } from '../../domain/errors.js';
-import { type DockerCli, privateCloneDocker } from './private-clone-docker.js';
+import { type DockerCli, privateCloneDocker, shellQuote } from './private-clone-docker.js';
 
 describe('privateCloneDocker', () => {
   it('starts the container with nothing from the repository mounted', async () => {
@@ -111,6 +112,97 @@ describe('privateCloneDocker', () => {
     expect(call?.[1]).toMatchObject({ stdin, onLine });
   });
 
+  it('starts a detached, named container as the host user, from the image', async () => {
+    const { create, runArguments, imageName, containerName } = await setup();
+
+    await create();
+
+    const args = await runArguments();
+    expect(args.slice(0, 5)).toEqual(['run', '-d', '--name', containerName(), '--user']);
+    expect(args[5]).toBe(`${process.getuid?.()}:${process.getgid?.()}`);
+    expect(args.at(-1)).toBe(imageName);
+  });
+
+  it('does everything else in that container', async () => {
+    const { create, docker, containerName } = await setup();
+
+    const handle = await create();
+    await handle.exec('true');
+
+    for (const [args] of vi.mocked(docker.run).mock.calls.slice(1)) {
+      expect(args[0]).toBe('exec');
+      expect(args).toContain(containerName());
+    }
+    expect(vi.mocked(docker.copyIn).mock.calls[0][1]).toBe(`${containerName()}:/tmp/in.bundle`);
+  });
+
+  it('clones from the filesystem root, since the workspace does not exist yet', async () => {
+    const { create, docker } = await setup();
+
+    await create();
+
+    const cloneCall = vi
+      .mocked(docker.run)
+      .mock.calls.find(([args]) => args.at(-1)?.includes('git clone'));
+    expect(cloneCall?.[0].slice(1, 3)).toEqual(['-w', '/']);
+  });
+
+  it('leaves no copy of the bundle on the host', async () => {
+    const { create, docker } = await setup();
+
+    await create();
+
+    expect(existsSync(path.dirname(vi.mocked(docker.copyIn).mock.calls[0][0]))).toBe(false);
+  });
+
+  it('keeps stdin open only for a command that has some', async () => {
+    const { create, docker } = await setup();
+    const handle = await create();
+
+    await handle.exec('true');
+
+    expect(vi.mocked(docker.run).mock.lastCall?.[0]).not.toContain('-i');
+  });
+
+  it('runs a command with sudo when sandcastle asks for it', async () => {
+    const { create, docker } = await setup();
+    const handle = await create();
+    const command = faker.word.verb();
+
+    await handle.exec(command, { sudo: true });
+
+    expect(vi.mocked(docker.run).mock.lastCall?.[0].at(-1)).toBe(`sudo ${command}`);
+  });
+
+  it('copies files for sandcastle the same way, rejecting when a copy fails', async () => {
+    const bytes = Buffer.from(faker.string.alphanumeric(16));
+    const directory = await tempDirectory();
+    const { create, docker, containerName } = await setup({ streamed: [bytes] });
+    const handle = await create();
+    const hostFile = path.join(directory, faker.string.uuid());
+    const sandboxFile = faker.system.filePath();
+
+    await handle.copyFileOut(sandboxFile, hostFile);
+    await expect(handle.copyFileOut(sandboxFile, hostFile)).rejects.toBeInstanceOf(
+      GitCommandFailed,
+    );
+    await handle.copyFileIn(hostFile, sandboxFile);
+
+    expect(await readFile(hostFile)).toEqual(bytes);
+    expect(vi.mocked(docker.copyIn).mock.lastCall).toEqual([
+      hostFile,
+      `${containerName()}:${sandboxFile}`,
+    ]);
+  });
+
+  it('quotes arguments so a shell passes them through unchanged', async () => {
+    const argument = `it's "$HOME" \\ ; ${faker.lorem.word()}`;
+
+    const { stdout } = await execa('sh', ['-c', `printf %s ${shellQuote(argument)}`]);
+
+    expect(stdout).toBe(argument);
+  });
+
   it('copies bytes into a new private file', async () => {
     const bytes = Buffer.from(faker.string.alphanumeric(64));
     const target = path.join(await tempDirectory(), 'out.bundle');
@@ -181,6 +273,7 @@ describe('privateCloneDocker', () => {
         return { exitCode: failed ? 1 : 0, stdout: '', stderr: failed ? 'failed' : '' };
       }),
       copyIn: vi.fn<DockerCli['copyIn']>(async (hostPath) => {
+        if (!hostPath.endsWith('.bundle')) return;
         const listed = await git.raw(['bundle', 'list-heads', hostPath]);
         refs = listed
           .trim()
@@ -196,8 +289,9 @@ describe('privateCloneDocker', () => {
       remove: vi.fn<DockerCli['remove']>(async () => undefined),
       removeOnExit: vi.fn<DockerCli['removeOnExit']>(() => () => undefined),
     };
+    const imageName = `sandcastle:${faker.word.noun()}`;
     const clone = privateCloneDocker({
-      imageName: `sandcastle:${faker.word.noun()}`,
+      imageName,
       branch,
       baseBranch: 'main',
       loginDirectory: input.loginDirectory,
@@ -210,9 +304,12 @@ describe('privateCloneDocker', () => {
     ) =>
       clone.create({ worktreePath: faker.system.directoryPath(), hostRepoPath: repo, mounts, env });
     const runArguments = async () => vi.mocked(docker.run).mock.calls[0][0];
+    const containerName = () => vi.mocked(docker.run).mock.calls[0][0][3];
     const stdinFor = (fragment: string) =>
       stdins.find((entry) => entry.command.includes(fragment))?.stdin ?? '';
     return {
+      imageName,
+      containerName,
       clone,
       create,
       docker,

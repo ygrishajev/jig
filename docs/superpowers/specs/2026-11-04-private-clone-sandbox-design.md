@@ -63,7 +63,7 @@ longer reach that worktree.
 One function, `importCommits`, moves commits to the host. It treats everything from the sandbox as
 untrusted data:
 
-1. Reads the sandbox's head and accepts it only if it is a full hex SHA.
+1. Reads the sandbox's head, believing it only once step 5 bears it out.
 2. Has the sandbox bundle the run branch, excluding the last approved commit.
 3. Copies the bundle's bytes with `docker exec cat` into a new file in a private host directory, up
    to a size limit. Using `docker cp` could bring a symlink across; streaming bytes cannot.
