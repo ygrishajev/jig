@@ -1,5 +1,6 @@
 import { Result } from 'better-result';
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { mkdtemp, open, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import lockfile from 'proper-lockfile';
@@ -103,13 +104,16 @@ async function persistAndRelease(
 ): Promise<Result<void, ConfigInvalid>> {
   try {
     const refreshed = await Result.tryPromise({
-      try: () => readFile(path.join(directory, 'auth.json'), 'utf8'),
+      try: () => readRefreshedLogin(path.join(directory, 'auth.json')),
       catch: (cause) =>
         new ConfigInvalid({
           message: `Could not read the refreshed Codex login: ${messageOf(cause)}`,
         }),
     });
-    if (refreshed.isErr()) return refreshed.map(() => undefined);
+    if (refreshed.isErr()) {
+      await rm(directory, { recursive: true, force: true });
+      return refreshed.map(() => undefined);
+    }
     const valid = validateSubscription(refreshed.value);
     const persisted =
       valid.isOk() && refreshed.value !== original
@@ -120,6 +124,19 @@ async function persistAndRelease(
     return persisted;
   } finally {
     await release();
+  }
+}
+
+/**
+ * The sandbox can write this directory, so the entry may be a link to any file on this machine.
+ * Refusing the link while opening leaves no gap between checking the file and reading it.
+ */
+async function readRefreshedLogin(file: string): Promise<string> {
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    return await handle.readFile('utf8');
+  } finally {
+    await handle.close();
   }
 }
 

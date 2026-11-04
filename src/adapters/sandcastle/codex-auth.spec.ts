@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -57,6 +57,22 @@ describe('Codex auth cache', () => {
 
     const closed = await cache.close();
 
+    expect(closed.isErr() && closed.error).toBeInstanceOf(ConfigInvalid);
+    await expect(readdir(cache.directory)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await openCodexAuthCache(source)).isOk()).toBe(true);
+  });
+
+  it('keeps the selected login when the refreshed copy is a link to another login', async () => {
+    const { source, original } = await setup();
+    const otherLogin = path.join(await tempDirectory(), 'auth.json');
+    await writeFile(otherLogin, login());
+    const cache = unwrap(await openCodexAuthCache(source));
+    await rm(path.join(cache.directory, 'auth.json'));
+    await symlink(otherLogin, path.join(cache.directory, 'auth.json'));
+
+    const closed = await cache.close();
+
+    expect(await readFile(path.join(source, 'auth.json'), 'utf8')).toBe(original);
     expect(closed.isErr() && closed.error).toBeInstanceOf(ConfigInvalid);
     await expect(readdir(cache.directory)).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await openCodexAuthCache(source)).isOk()).toBe(true);
