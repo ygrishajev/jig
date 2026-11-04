@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
 import { execa } from 'execa';
 import { existsSync } from 'node:fs';
 import { chmod, rm, writeFile } from 'node:fs/promises';
@@ -8,7 +9,12 @@ import { mock } from 'vitest-mock-extended';
 
 import { runId } from '../../../tests/support/builders.js';
 import { createRunWorktree } from '../../../tests/support/run-worktree.js';
-import { CommitImportRefused, GitCommandFailed, MergeFailed } from '../../domain/errors.js';
+import {
+  CommitImportRefused,
+  GitCommandFailed,
+  MergeFailed,
+  SandboxUnavailable,
+} from '../../domain/errors.js';
 import { isWorkingTreeClean } from '../../git/repository.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { type CommitSigning, GitWorkspace } from './git-workspace.js';
@@ -113,7 +119,9 @@ describe('GitWorkspace', () => {
       await inSandbox.add('-A').commit(faker.git.commitMessage());
       const lying = mock<SandboxGit>({
         execGit: async (args) =>
-          args[0] === 'rev-parse' ? { exitCode: 0, output: reported } : agent.execGit(args),
+          args[0] === 'rev-parse'
+            ? Result.ok({ exitCode: 0, output: reported })
+            : agent.execGit(args),
         copyOut: (from, to) => agent.copyOut(from, to),
       });
 
@@ -236,7 +244,7 @@ describe('GitWorkspace', () => {
       const failing = mock<SandboxGit>({
         execGit: async (args) =>
           args[0] === command
-            ? { exitCode: 1, output: faker.lorem.sentence() }
+            ? Result.ok({ exitCode: 1, output: faker.lorem.sentence() })
             : agent.execGit(args),
         copyOut: (from, to) => agent.copyOut(from, to),
       });
@@ -249,6 +257,23 @@ describe('GitWorkspace', () => {
       expect(await git.revparse([runBranch])).toBe(forkPoint);
     },
   );
+
+  it('passes on a sandbox that cannot run git at all', async () => {
+    const { workspaceOn, writeInSandbox, git, runBranch, forkPoint, agent } = await setup();
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    const failure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    const dead = mock<SandboxGit>({
+      execGit: async () => Result.err(failure),
+      copyOut: (from, to) => agent.copyOut(from, to),
+    });
+
+    const saved = await workspaceOn(dead).saveWork(faker.git.commitMessage(), {
+      approved: forkPoint,
+    });
+
+    expect(saved.isErr() && saved.error).toBe(failure);
+    expect(await git.revparse([runBranch])).toBe(forkPoint);
+  });
 
   it('copies nothing out when the sandbox has nothing new', async () => {
     const { workspaceOn, writeInSandbox, forkPoint, agent, save } = await setup();

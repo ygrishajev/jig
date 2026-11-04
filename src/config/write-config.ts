@@ -5,7 +5,7 @@ import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { CONFIG_FILE } from './load-config.js';
 
 /** Sets the given keys in `jig.config.json`, keeping every other key as the operator wrote it. */
@@ -15,11 +15,22 @@ export async function updateConfigFile(
 ): Promise<Result<void, ConfigInvalid>> {
   const file = path.join(repoRoot, CONFIG_FILE);
   const current = existsSync(file)
-    ? parseConfigObject(await readFile(file, 'utf-8'))
+    ? (await onConfigFile(file, () => readFile(file, 'utf-8'))).andThen(parseConfigObject)
     : Result.ok({});
   if (current.isErr()) return Result.err(current.error);
-  await writeFileAtomic(file, `${JSON.stringify({ ...current.value, ...values }, null, 2)}\n`);
-  return Result.ok();
+  const contents = `${JSON.stringify({ ...current.value, ...values }, null, 2)}\n`;
+  return onConfigFile(file, () => writeFileAtomic(file, contents));
+}
+
+function onConfigFile<T>(
+  file: string,
+  operation: () => Promise<T>,
+): Promise<Result<T, ConfigInvalid>> {
+  return Result.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Cannot read or write ${file}: ${messageOf(cause)}` }),
+  });
 }
 
 /** Only an object can take more keys; anything else is left for the operator to fix, not overwritten. */

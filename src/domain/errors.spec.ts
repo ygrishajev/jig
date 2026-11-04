@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AgentOutputInvalid,
   AgentRunFailed,
+  CodexLoginNotSaved,
   ConfigInvalid,
   isJigError,
   isTransient,
@@ -84,6 +85,7 @@ describe('failure kinds', () => {
     ['an invalid request', () => new RunRequestInvalid({ message: message() }), 'fatal'],
     ['a run already in progress', () => new RunInProgress({ message: message() }), 'fatal'],
     ['a corrupt metrics log', () => new MetricsLogCorrupt({ message: message() }), 'fatal'],
+    ['a Codex login not saved', () => new CodexLoginNotSaved({ message: message() }), 'fatal'],
   ])('treats %s as %s', (_case, create, kind) => {
     const error = create();
 

@@ -31,8 +31,8 @@ export function gitCommand<T>(
     catch: (error) =>
       new GitCommandFailed({
         message: `git ${command} failed: ${messageOf(error)}`,
-        command,
-        stderr: messageOf(error),
+        command: `git ${command}`,
+        output: messageOf(error),
       }),
   });
 }

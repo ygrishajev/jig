@@ -291,8 +291,8 @@ async function copyBytesOut(
   const failed = (reason: string): GitCommandFailed =>
     new GitCommandFailed({
       message: `Could not copy ${sandboxPath} out of the sandbox: ${reason}`,
-      command: 'copy out',
-      stderr: reason,
+      command: `docker exec ${container} cat -- ${sandboxPath}`,
+      output: reason,
     });
   const { stdout, finished } = docker.stream([
     'exec',
@@ -326,5 +326,5 @@ function limitedTo(limit: number): Transform {
 }
 
 function isAlreadyThere(copied: Result<void, GitCommandFailed>): boolean {
-  return copied.isErr() && copied.error.stderr.includes('EEXIST');
+  return copied.isErr() && copied.error.output.includes('EEXIST');
 }

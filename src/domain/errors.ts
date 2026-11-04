@@ -21,6 +21,7 @@ export type JigError =
   | RunInProgress
   | MetricsLogCorrupt
   | LocalStateUnwritable
+  | CodexLoginNotSaved
   | ImageBuildFailed
   | CommandInputInvalid;
 
@@ -88,11 +89,14 @@ export class MergeFailed extends TaggedError('MergeFailed')<{ message: string }>
   readonly kind = 'block' as const;
 }
 
-/** A git command failed for a reason the operator has to look at: a missing ref, a broken repository. */
+/**
+ * A git command failed for a reason the operator has to look at: a missing ref, a broken
+ * repository. `command` is what was run; `output` is what it printed, or why it could not run.
+ */
 export class GitCommandFailed extends TaggedError('GitCommandFailed')<{
   message: string;
   command: string;
-  stderr: string;
+  output: string;
 }> {
   readonly kind = 'block' as const;
 }
@@ -120,11 +124,22 @@ export class MetricsLogCorrupt extends TaggedError('MetricsLogCorrupt')<{ messag
   readonly kind = 'fatal' as const;
 }
 
-/** Reading or writing under `.jig/` failed: a full disk, a permission, a file that is not there. */
+/**
+ * Reading or writing jig's own files on this machine failed, under `.jig/` or in a temporary
+ * directory: a full disk, a permission, a file that is not there.
+ */
 export class LocalStateUnwritable extends TaggedError('LocalStateUnwritable')<{
   message: string;
   path: string;
 }> {
+  readonly kind = 'fatal' as const;
+}
+
+/**
+ * The Codex login a run refreshed could not be handed back to the operator's own login, or its
+ * lock could not be let go; the run's work is unaffected.
+ */
+export class CodexLoginNotSaved extends TaggedError('CodexLoginNotSaved')<{ message: string }> {
   readonly kind = 'fatal' as const;
 }
 
@@ -156,6 +171,7 @@ const jigErrorClasses = [
   RunInProgress,
   MetricsLogCorrupt,
   LocalStateUnwritable,
+  CodexLoginNotSaved,
   ImageBuildFailed,
   CommandInputInvalid,
 ];

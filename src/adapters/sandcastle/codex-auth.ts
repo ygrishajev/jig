@@ -7,11 +7,11 @@ import lockfile from 'proper-lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
-import { ConfigInvalid, messageOf } from '../../domain/errors.js';
+import { CodexLoginNotSaved, ConfigInvalid, messageOf } from '../../domain/errors.js';
 
 export interface CodexAuthCache {
   directory: string;
-  close(): Promise<Result<void, ConfigInvalid>>;
+  close(): Promise<Result<void, CodexLoginNotSaved>>;
 }
 
 /** Mounts only a private login copy; Codex can atomically refresh it without exposing host config. */
@@ -35,7 +35,7 @@ export async function openCodexAuthCache(
   });
   if (release.isErr()) return release;
   const cache = await copyLogin(source.value, release.value);
-  if (cache.isErr()) await release.value();
+  if (cache.isErr()) await releaseAfterFailedCopy(release.value);
   return cache;
 }
 
@@ -101,30 +101,46 @@ async function persistAndRelease(
   original: string,
   directory: string,
   release: () => Promise<void>,
-): Promise<Result<void, ConfigInvalid>> {
+): Promise<Result<void, CodexLoginNotSaved>> {
+  let persisted: Result<void, CodexLoginNotSaved>;
+  let released: Result<void, CodexLoginNotSaved>;
   try {
-    const refreshed = await Result.tryPromise({
-      try: () => readRefreshedLogin(path.join(directory, 'auth.json')),
+    persisted = await persistOrDiscard(source, original, directory);
+  } finally {
+    released = await Result.tryPromise({
+      try: () => release(),
       catch: (cause) =>
-        new ConfigInvalid({
-          message: `Could not read the refreshed Codex login: ${messageOf(cause)}`,
+        new CodexLoginNotSaved({
+          message: `Could not unlock the Codex login: ${messageOf(cause)}`,
         }),
     });
-    if (refreshed.isErr()) {
-      await rm(directory, { recursive: true, force: true });
-      return refreshed.map(() => undefined);
-    }
-    const valid = validateSubscription(refreshed.value);
-    const persisted =
-      valid.isOk() && refreshed.value !== original
-        ? await persistRefresh(source, original, refreshed.value, directory)
-        : valid;
-    const retained = persisted.isErr() && valid.isOk();
-    if (!retained) await rm(directory, { recursive: true, force: true });
-    return persisted;
-  } finally {
-    await release();
   }
+  return persisted.isErr() ? persisted : released;
+}
+
+/** Hands a valid refresh back to the operator's login; the copy is kept only when that fails. */
+async function persistOrDiscard(
+  source: string,
+  original: string,
+  directory: string,
+): Promise<Result<void, CodexLoginNotSaved>> {
+  const refreshed = await Result.tryPromise({
+    try: () => readRefreshedLogin(path.join(directory, 'auth.json')),
+    catch: (cause) =>
+      new CodexLoginNotSaved({
+        message: `Could not read the refreshed Codex login: ${messageOf(cause)}`,
+      }),
+  });
+  if (refreshed.isErr()) return keepFirstFailure(refreshed, await removeCopy(directory));
+  const valid = validateSubscription(refreshed.value).mapError(
+    (error) => new CodexLoginNotSaved({ message: error.message }),
+  );
+  const persisted =
+    valid.isOk() && refreshed.value !== original
+      ? await persistRefresh(source, original, refreshed.value, directory)
+      : valid;
+  const retained = persisted.isErr() && valid.isOk();
+  return retained ? persisted : keepFirstFailure(persisted, await removeCopy(directory));
 }
 
 /**
@@ -140,21 +156,40 @@ async function readRefreshedLogin(file: string): Promise<string> {
   }
 }
 
+function keepFirstFailure<T>(
+  first: Result<T, CodexLoginNotSaved>,
+  then: Result<void, CodexLoginNotSaved>,
+): Result<void, CodexLoginNotSaved> {
+  if (first.isErr()) return Result.err(first.error);
+  return then;
+}
+
+/** The copy holds credentials, so one that cannot be removed is reported, not left behind quietly. */
+function removeCopy(directory: string): Promise<Result<void, CodexLoginNotSaved>> {
+  return Result.tryPromise({
+    try: () => rm(directory, { recursive: true, force: true }),
+    catch: (cause) =>
+      new CodexLoginNotSaved({
+        message: `Could not remove the copy of the Codex login at ${directory}: ${messageOf(cause)}`,
+      }),
+  });
+}
+
 async function persistRefresh(
   source: string,
   original: string,
   refreshed: string,
   directory: string,
-): Promise<Result<void, ConfigInvalid>> {
+): Promise<Result<void, CodexLoginNotSaved>> {
   const current = await Result.tryPromise({
     try: () => readFile(source, 'utf8'),
     catch: (cause) =>
-      new ConfigInvalid({ message: `Could not read the Codex login: ${messageOf(cause)}` }),
+      new CodexLoginNotSaved({ message: `Could not read the Codex login: ${messageOf(cause)}` }),
   });
   if (current.isErr()) return current.map(() => undefined);
   if (current.value !== original) {
     return Result.err(
-      new ConfigInvalid({
+      new CodexLoginNotSaved({
         message: `The Codex login changed during the run. Refreshed credentials are retained at ${directory}.`,
       }),
     );
@@ -162,8 +197,13 @@ async function persistRefresh(
   return Result.tryPromise({
     try: () => writeFileAtomic(source, refreshed, { mode: 0o600 }),
     catch: (cause) =>
-      new ConfigInvalid({
+      new CodexLoginNotSaved({
         message: `Could not save the refreshed Codex login: ${messageOf(cause)}`,
       }),
   });
+}
+
+/** The copy already failed and is what the caller needs; proper-lockfile drops the lock at exit anyway. */
+async function releaseAfterFailedCopy(release: () => Promise<void>): Promise<void> {
+  await release().catch(() => undefined);
 }

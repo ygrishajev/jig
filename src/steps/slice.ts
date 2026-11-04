@@ -67,11 +67,13 @@ export const verifySlice: SliceStep = async ({ settings, ports }) => {
   const command = settings.verifyCommand;
   if (!command) return Result.ok<Outcome>({ type: 'verified' });
 
-  const result = await ports.agent.exec(command);
-  if (result.exitCode === 0) return Result.ok<Outcome>({ type: 'verified' });
+  const ran = await ports.agent.exec(command);
+  if (ran.isErr()) return Result.err(ran.error);
+  const { exitCode, output } = ran.value;
+  if (exitCode === 0) return Result.ok<Outcome>({ type: 'verified' });
   return Result.ok({
     type: 'changesRequested',
-    feedback: `The reviewer approved this slice, but the verify command ("${command}") failed:\n${truncate(result.output.trim(), VERIFY_OUTPUT_LIMIT)}`,
+    feedback: `The reviewer approved this slice, but the verify command ("${command}") failed:\n${truncate(output.trim(), VERIFY_OUTPUT_LIMIT)}`,
   });
 };
 

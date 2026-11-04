@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { ConfigInvalid } from '../../domain/errors.js';
+import { CodexLoginNotSaved, ConfigInvalid } from '../../domain/errors.js';
 import { openCodexAuthCache } from './codex-auth.js';
 
 describe('Codex auth cache', () => {
@@ -44,7 +44,7 @@ describe('Codex auth cache', () => {
     await writeFile(path.join(source, 'auth.json'), newer);
     await writeFile(path.join(cache.directory, 'auth.json'), login());
     const closed = await cache.close();
-    expect(closed.isErr() && closed.error).toBeInstanceOf(ConfigInvalid);
+    expect(closed.isErr() && closed.error).toBeInstanceOf(CodexLoginNotSaved);
     expect(closed.isErr() && closed.error.message).toContain('changed during the run');
     expect(await readFile(path.join(source, 'auth.json'), 'utf8')).toBe(newer);
     await rm(cache.directory, { recursive: true, force: true });
@@ -57,7 +57,7 @@ describe('Codex auth cache', () => {
 
     const closed = await cache.close();
 
-    expect(closed.isErr() && closed.error).toBeInstanceOf(ConfigInvalid);
+    expect(closed.isErr() && closed.error).toBeInstanceOf(CodexLoginNotSaved);
     await expect(readdir(cache.directory)).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await openCodexAuthCache(source)).isOk()).toBe(true);
   });
@@ -73,7 +73,7 @@ describe('Codex auth cache', () => {
     const closed = await cache.close();
 
     expect(await readFile(path.join(source, 'auth.json'), 'utf8')).toBe(original);
-    expect(closed.isErr() && closed.error).toBeInstanceOf(ConfigInvalid);
+    expect(closed.isErr() && closed.error).toBeInstanceOf(CodexLoginNotSaved);
     await expect(readdir(cache.directory)).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await openCodexAuthCache(source)).isOk()).toBe(true);
   });

@@ -96,7 +96,9 @@ async function readRecipe(repoRoot: string): Promise<Result<ImageRecipe, ConfigI
   });
 }
 
-async function readSandboxDockerfile(repoRoot: string): Promise<Result<string, ConfigInvalid>> {
+export async function readSandboxDockerfile(
+  repoRoot: string,
+): Promise<Result<string, ConfigInvalid>> {
   const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
   const shown = path.join(SANDBOX_DIRECTORY, DOCKERFILE);
   if (!existsSync(file)) {

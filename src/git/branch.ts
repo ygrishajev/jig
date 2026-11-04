@@ -7,7 +7,9 @@ export async function getCurrentBranch(cwd: string): Promise<Result<string, Conf
   const status = await gitCommand('status', () => openRepo(cwd).status());
   if (status.isErr()) {
     return Result.err(
-      new ConfigInvalid({ message: `${cwd} is not a git repository: ${status.error.stderr}` }),
+      new ConfigInvalid({
+        message: `Cannot tell which branch is checked out in ${cwd}: ${status.error.output}`,
+      }),
     );
   }
   if (!status.value.current || status.value.detached) {

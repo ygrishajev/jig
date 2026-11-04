@@ -1,7 +1,6 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import type { JigError } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunStateIn } from '../domain/run-state.js';
 import { slicesInOrder } from '../domain/slice.js';
@@ -10,17 +9,19 @@ import { pullRequestPrompt } from '../prompts/pull-request.js';
 import { DEFAULT_PR_TEMPLATE, renderPullRequest } from './pull-request-description.js';
 
 /** Best effort: if the describer fails, the run still gets a description built from its own state. */
-export const describePullRequest: RunStep<'describing'> = ({ state, ports, settings }) =>
-  Result.gen(async function* () {
-    const template = await findTemplate(ports);
-    const filled = yield* Result.await(
-      fillTemplate(state, ports, template ?? DEFAULT_PR_TEMPLATE, settings.verifyCommand),
-    );
-    return Result.ok<Outcome>({
-      type: 'described',
-      body: renderPullRequest(state, { filled, template }),
-    });
+export const describePullRequest: RunStep<'describing'> = async ({ state, ports, settings }) => {
+  const template = await findTemplate(ports);
+  const filled = await fillTemplate(
+    state,
+    ports,
+    template ?? DEFAULT_PR_TEMPLATE,
+    settings.verifyCommand,
+  );
+  return Result.ok<Outcome>({
+    type: 'described',
+    body: renderPullRequest(state, { filled, template }),
   });
+};
 
 async function findTemplate(ports: StepPorts): Promise<string | undefined> {
   for (const relativePath of TEMPLATE_PATHS) {
@@ -41,7 +42,7 @@ async function fillTemplate(
   ports: StepPorts,
   template: string,
   verifyCommand?: string,
-): Promise<Result<string | undefined, JigError>> {
+): Promise<string | undefined> {
   const described = await ports.agent.runForOutput({
     role: 'describer',
     prompt: pullRequestPrompt({
@@ -53,15 +54,10 @@ async function fillTemplate(
     }),
     schema: descriptionSchema,
   });
-  return described.isOk() ? Result.ok(described.value.body.trim()) : passOnFatal(described.error);
+  return described.isOk() ? described.value.body.trim() : undefined;
 }
 
 const descriptionSchema = z.object({ body: z.string().min(1) });
-
-/** The describer is best effort: only a failure that must end the invocation is passed on. */
-function passOnFatal(error: JigError): Result<undefined, JigError> {
-  return error.kind === 'fatal' ? Result.err(error) : Result.ok(undefined);
-}
 
 export const mergeRunBranch: RunStep = ({ state, ports, settings }) =>
   Result.gen(async function* () {

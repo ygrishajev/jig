@@ -157,10 +157,30 @@ describe('SandcastleSession', () => {
     const exitCode = faker.number.int({ min: 0, max: 255 });
     const { open } = await setup({ exitCode, stdout: `  ${stdout}`, stderr: `${stderr}\n` });
 
-    expect(await (await open()).exec(faker.lorem.word())).toEqual({
+    expect(unwrap(await (await open()).exec(faker.lorem.word()))).toEqual({
       exitCode,
       output: `${stdout}${stderr}`,
     });
+  });
+
+  it('reports a command the sandbox could not run as an unavailable sandbox', async () => {
+    const { open } = await setup({ execFails: new Error(faker.lorem.sentence()) });
+
+    const result = await (await open()).exec(faker.lorem.word());
+
+    expect(result.isErr() && result.error).toBeInstanceOf(SandboxUnavailable);
+  });
+
+  it('reports a sandbox that will not stop, and still lets go of the Codex login', async () => {
+    const { open, codexLoginIsFree } = await setup({
+      closeFails: new Error(faker.lorem.sentence()),
+      withCodexLogin: true,
+    });
+
+    const closed = await (await open()).close();
+
+    expect(closed.isErr() && closed.error).toBeInstanceOf(SandboxUnavailable);
+    expect(await codexLoginIsFree()).toBe(true);
   });
 
   it('starts no sandbox when the sandcastle gitignore links out of the repository', async () => {
@@ -259,8 +279,19 @@ describe('SandcastleSession', () => {
     expect(sandbox.close).toHaveBeenCalled();
   });
 
+  it('keeps the setup failure when the sandbox will not stop after it', async () => {
+    const { failure } = await setup({
+      setupCommand: `npm ${faker.word.verb()}`,
+      exitCode: 1,
+      closeFails: new Error(faker.lorem.sentence()),
+    });
+
+    expect(await failure()).toBeInstanceOf(SetupCommandFailed);
+  });
+
   async function setup(input: {
     start?: SandboxFactory;
+    closeFails?: Error;
     setupCommand?: string;
     setupTimeoutSeconds?: number;
     exitCode?: number;
@@ -298,7 +329,9 @@ describe('SandcastleSession', () => {
         }
         return { iterations: [], stdout: reply.stdout, commits: [] };
       }),
-      close: vi.fn<Sandbox['close']>().mockResolvedValue({}),
+      close: input.closeFails
+        ? vi.fn<Sandbox['close']>().mockRejectedValue(input.closeFails)
+        : vi.fn<Sandbox['close']>().mockResolvedValue({}),
     });
     const start: SandboxFactory = input.start ?? (async () => sandbox);
     const printCommand = `${faker.word.noun()} -p`;

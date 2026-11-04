@@ -3,8 +3,10 @@ import type { Result } from 'better-result';
 import type {
   CommitImportRefused,
   GitCommandFailed,
+  LocalStateUnwritable,
   MergeFailed,
   RemoteUnavailable,
+  SandboxUnavailable,
 } from '../domain/errors.js';
 import type { CommitSummary } from '../domain/usage.js';
 
@@ -14,10 +16,7 @@ export interface Workspace {
    * Commits whatever is uncommitted in the sandbox, then brings its commits onto the run branch.
    * Work after `approved` may be replaced; `approved` itself must stay in the history.
    */
-  saveWork(
-    message: string,
-    options: { approved: string },
-  ): Promise<Result<void, GitCommandFailed | CommitImportRefused>>;
+  saveWork(message: string, options: { approved: string }): Promise<Result<void, SaveWorkFailure>>;
   /** The commit at the tip of the run branch. */
   headCommit(): Promise<Result<string, GitCommandFailed>>;
   /** The base branch commit the run branch was cut from. */
@@ -34,3 +33,7 @@ export interface Workspace {
   /** Whether the run's changes are in the base, locally or on its remote, by any kind of merge. */
   isRunBranchMerged(): Promise<Result<boolean, GitCommandFailed | RemoteUnavailable>>;
 }
+
+/** Why the sandbox's work did not reach the run branch. */
+export type SaveWorkFailure =
+  GitCommandFailed | CommitImportRefused | SandboxUnavailable | LocalStateUnwritable;

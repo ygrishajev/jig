@@ -5,18 +5,31 @@ import { z } from 'zod';
 
 import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
 import { describeIssues } from './describe-issues.js';
 
 export function loadConfig(repoRoot: string): Result<JigConfig, ConfigInvalid> {
-  const configPath = path.join(repoRoot, CONFIG_FILE);
-  const contents = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : '{}';
+  return readConfigFile(path.join(repoRoot, CONFIG_FILE)).andThen(parseConfig);
+}
+
+function readConfigFile(configPath: string): Result<string, ConfigInvalid> {
+  if (!existsSync(configPath)) return Result.ok('{}');
+  return Result.try({
+    try: () => readFileSync(configPath, 'utf-8'),
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Cannot read ${CONFIG_FILE}: ${messageOf(cause)}` }),
+  });
+}
+
+export const CONFIG_FILE = 'jig.config.json';
+
+function parseConfig(contents: string): Result<JigConfig, ConfigInvalid> {
   return Result.try({
     try: (): unknown => JSON.parse(contents),
     catch: (cause) =>
       new ConfigInvalid({
-        message: `${CONFIG_FILE} is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
+        message: `${CONFIG_FILE} is not valid JSON: ${messageOf(cause)}`,
       }),
   }).andThen((json) => {
     const parsed = configSchema.safeParse(json);
@@ -29,8 +42,6 @@ export function loadConfig(repoRoot: string): Result<JigConfig, ConfigInvalid> {
         );
   });
 }
-
-export const CONFIG_FILE = 'jig.config.json';
 
 const agentNameSchema = z
   .string()

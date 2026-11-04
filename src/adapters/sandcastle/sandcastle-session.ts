@@ -3,6 +3,7 @@ import {
   type AgentStreamEvent,
   createSandbox,
   type CreateSandboxOptions,
+  type ExecResult as SandboxExecResult,
   type Sandbox,
 } from '@ai-hero/sandcastle';
 import { Result } from 'better-result';
@@ -16,6 +17,7 @@ import { z, type ZodType } from 'zod';
 import {
   AgentOutputInvalid,
   AgentRunFailed,
+  type CodexLoginNotSaved,
   ConfigInvalid,
   type GitCommandFailed,
   messageOf,
@@ -40,6 +42,9 @@ import { usageFromStreamLine } from './usage.js';
 
 /** Why a sandbox did not open; `ConfigInvalid` is the operator's to fix, the others may pass. */
 export type SessionOpenFailure = ConfigInvalid | SandboxUnavailable | SetupCommandFailed;
+
+/** Why a sandbox did not close cleanly: the container would not stop, or the login was not handed back. */
+export type SessionCloseFailure = SandboxUnavailable | CodexLoginNotSaved;
 
 export type SandboxFactory = (options: CreateSandboxOptions) => Promise<Sandbox>;
 
@@ -211,30 +216,37 @@ export class SandcastleSession implements AgentSession, SandboxGit {
     }
   }
 
-  async exec(command: string): Promise<ExecResult> {
-    const result = await this.sandbox.exec(command);
-    return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() };
+  async exec(command: string): Promise<Result<ExecResult, SandboxUnavailable>> {
+    const result = await execInSandbox(this.sandbox, command);
+    return result.map(({ exitCode, stdout, stderr }) => ({
+      exitCode,
+      output: `${stdout}${stderr}`.trim(),
+    }));
   }
 
-  async execGit(args: string[]): Promise<ExecResult> {
-    const { exitCode, stdout, stderr } = await this.sandbox.exec(
-      ['git', ...args].map(shellQuote).join(' '),
-    );
-    return { exitCode, output: exitCode === 0 ? stdout : `${stdout}${stderr}`.trim() };
+  async execGit(args: string[]): Promise<Result<ExecResult, SandboxUnavailable>> {
+    const result = await execInSandbox(this.sandbox, ['git', ...args].map(shellQuote).join(' '));
+    return result.map(({ exitCode, stdout, stderr }) => ({
+      exitCode,
+      output: exitCode === 0 ? stdout : `${stdout}${stderr}`.trim(),
+    }));
   }
 
   copyOut(sandboxPath: string, hostPath: string): Promise<Result<void, GitCommandFailed>> {
     return this.clone.copyOut(sandboxPath, hostPath);
   }
 
-  async close(): Promise<Result<void, ConfigInvalid>> {
-    let authClosed: Result<void, ConfigInvalid> = Result.ok();
-    try {
-      await this.sandbox.close();
-    } finally {
-      authClosed = (await this.codexAuth?.close()) ?? authClosed;
+  async close(): Promise<Result<void, SessionCloseFailure>> {
+    const stopped = await stopSandbox(this.sandbox);
+    const released = (await this.codexAuth?.close()) ?? Result.ok();
+    if (stopped.isOk()) return released;
+    if (released.isErr()) {
+      this.options.logger.warn(
+        { err: released.error },
+        'cleanup failed after the sandbox did not stop',
+      );
     }
-    return authClosed;
+    return stopped;
   }
 }
 
@@ -324,7 +336,7 @@ async function releaseAfterFailedOpen(
 async function runSetupCommand(
   sandbox: Sandbox,
   command: string,
-  { setupTimeoutSeconds }: SandcastleSessionOptions,
+  { setupTimeoutSeconds, logger }: SandcastleSessionOptions,
 ): Promise<Result<void, SandboxUnavailable | SetupCommandFailed>> {
   const attempt = await Result.tryPromise({
     try: () => setupFailure(sandbox, command, setupTimeoutSeconds),
@@ -333,7 +345,8 @@ async function runSetupCommand(
   });
   const failure = attempt.isErr() ? attempt.error : attempt.value;
   if (!failure) return Result.ok();
-  await sandbox.close();
+  const stopped = await stopSandbox(sandbox);
+  if (stopped.isErr()) logger.warn({ err: stopped.error }, 'cleanup failed after the setup failed');
   return Result.err(failure);
 }
 
@@ -364,6 +377,16 @@ async function setupFailure(
 /** How much of a failed setup command's output is kept; the end is where the error is. */
 const SETUP_OUTPUT_TAIL = 3000;
 
+function stopSandbox(sandbox: Sandbox): Promise<Result<void, SandboxUnavailable>> {
+  return Result.tryPromise({
+    try: async () => {
+      await sandbox.close();
+    },
+    catch: (cause) =>
+      new SandboxUnavailable({ message: `Could not stop the sandbox: ${messageOf(cause)}` }),
+  });
+}
+
 /** How many times an agent is asked, in its own session, to correct output that did not parse. */
 const OUTPUT_CORRECTIONS = 1;
 
@@ -389,4 +412,18 @@ function correctionPrompt(problem: string): string {
     `Your result could not be used: ${problem}`,
     `Reply again with only the corrected result inside <${OUTPUT_TAG}></${OUTPUT_TAG}> tags.`,
   ].join('\n');
+}
+
+/** A container that died under a command is Docker's trouble, not the command's answer. */
+function execInSandbox(
+  sandbox: Sandbox,
+  command: string,
+): Promise<Result<SandboxExecResult, SandboxUnavailable>> {
+  return Result.tryPromise({
+    try: () => sandbox.exec(command),
+    catch: (cause) =>
+      new SandboxUnavailable({
+        message: `Could not run a command in the sandbox: ${messageOf(cause)}`,
+      }),
+  });
 }

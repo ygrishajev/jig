@@ -2,7 +2,7 @@ import type { Result } from 'better-result';
 import type { ZodType } from 'zod';
 
 import type { AgentRole } from '../domain/agent-role.js';
-import type { AgentOutputInvalid, AgentRunFailed } from '../domain/errors.js';
+import type { AgentOutputInvalid, AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
 
 /**
  * One run's sandbox: agents work in the run's worktree and commands execute there.
@@ -13,7 +13,8 @@ export interface AgentSession {
   runForOutput<T>(
     input: AgentRunInput & { schema: ZodType<T> },
   ): Promise<Result<T, AgentRunFailed | AgentOutputInvalid>>;
-  exec(command: string): Promise<ExecResult>;
+  /** A command's exit code is its answer; an `Err` means the sandbox could not run it at all. */
+  exec(command: string): Promise<Result<ExecResult, SandboxUnavailable>>;
 }
 
 export interface AgentRunInput {

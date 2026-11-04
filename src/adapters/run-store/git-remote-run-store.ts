@@ -172,7 +172,7 @@ export class GitRemoteRunStore implements RunStore {
       new GitCommandFailed({
         message: `git ${args[0]} failed on the run's state: ${result.stderr}`,
         command: `git ${args.join(' ')}`,
-        stderr: result.stderr,
+        output: result.stderr,
       }),
     );
   }

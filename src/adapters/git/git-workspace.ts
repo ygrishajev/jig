@@ -7,8 +7,11 @@ import path from 'node:path';
 import {
   CommitImportRefused,
   GitCommandFailed,
+  LocalStateUnwritable,
   MergeFailed,
+  messageOf,
   type RemoteUnavailable,
+  type SandboxUnavailable,
 } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
@@ -16,7 +19,7 @@ import type { CommitSummary } from '../../domain/usage.js';
 import { isBranchMergedInto, mergeBranchInto } from '../../git/merge.js';
 import { gitCommand, openRepo, openRepoWithoutHooks } from '../../git/repository.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
-import type { Workspace } from '../../ports/workspace.js';
+import type { SaveWorkFailure, Workspace } from '../../ports/workspace.js';
 
 export interface GitWorkspaceOptions {
   repoRoot: string;
@@ -40,7 +43,7 @@ export class GitWorkspace implements Workspace {
   saveWork(
     message: string,
     { approved }: { approved: string },
-  ): Promise<Result<void, GitCommandFailed | CommitImportRefused>> {
+  ): Promise<Result<void, SaveWorkFailure>> {
     return Result.gen(async function* (this: GitWorkspace) {
       yield* Result.await(this.commitInSandbox(message));
       yield* Result.await(this.importCommits(approved));
@@ -48,7 +51,9 @@ export class GitWorkspace implements Workspace {
     }, this);
   }
 
-  private async commitInSandbox(message: string): Promise<Result<void, GitCommandFailed>> {
+  private async commitInSandbox(
+    message: string,
+  ): Promise<Result<void, GitCommandFailed | SandboxUnavailable>> {
     const status = await this.sandboxGit(['status', '--porcelain']);
     if (status.isErr() || status.value === '') return status.map(() => undefined);
     const added = await this.sandboxGit(['add', '-A']);
@@ -56,15 +61,19 @@ export class GitWorkspace implements Workspace {
     return (await this.sandboxGit(['commit', '-q', '-m', message])).map(() => undefined);
   }
 
-  private async sandboxGit(args: string[]): Promise<Result<string, GitCommandFailed>> {
-    const { exitCode, output } = await this.options.sandbox.execGit(args);
+  private async sandboxGit(
+    args: string[],
+  ): Promise<Result<string, GitCommandFailed | SandboxUnavailable>> {
+    const ran = await this.options.sandbox.execGit(args);
+    if (ran.isErr()) return Result.err(ran.error);
+    const { exitCode, output } = ran.value;
     return exitCode === 0
       ? Result.ok(output.trim())
       : Result.err(
           new GitCommandFailed({
             message: `git ${args[0]} failed in the sandbox: ${output.trim()}`,
-            command: args[0],
-            stderr: output,
+            command: `git ${args.join(' ')}`,
+            output,
           }),
         );
   }
@@ -73,9 +82,7 @@ export class GitWorkspace implements Workspace {
    * Commits cross as a bundle, read as data: the host never opens the sandbox's repository, and
    * believes nothing it reports until the fetched commits bear it out.
    */
-  private importCommits(
-    approved: string,
-  ): Promise<Result<void, GitCommandFailed | CommitImportRefused>> {
+  private importCommits(approved: string): Promise<Result<void, SaveWorkFailure>> {
     return Result.gen(async function* (this: GitWorkspace) {
       const head = yield* Result.await(this.sandboxGit(['rev-parse', 'HEAD']));
       if (head === (yield* Result.await(this.headCommit()))) return Result.ok();
@@ -105,9 +112,11 @@ export class GitWorkspace implements Workspace {
     });
   }
 
-  private fetchFromSandbox(approved: string): Promise<Result<string, GitCommandFailed>> {
+  private fetchFromSandbox(
+    approved: string,
+  ): Promise<Result<string, GitCommandFailed | SandboxUnavailable | LocalStateUnwritable>> {
     return Result.gen(async function* (this: GitWorkspace) {
-      const directory = await mkdtemp(path.join(tmpdir(), 'jig-import-'));
+      const directory = yield* Result.await(makeImportDirectory());
       try {
         const hostBundle = path.join(directory, 'out.bundle');
         yield* Result.await(
@@ -134,7 +143,7 @@ export class GitWorkspace implements Workspace {
           return (await git.revparse(['FETCH_HEAD'])).trim();
         });
       } finally {
-        await rm(directory, { recursive: true, force: true });
+        await removeImportDirectory(directory);
       }
     }, this);
   }
@@ -252,8 +261,25 @@ export class GitWorkspace implements Workspace {
   }
 }
 
+function makeImportDirectory(): Promise<Result<string, LocalStateUnwritable>> {
+  const prefix = path.join(tmpdir(), 'jig-import-');
+  return Result.tryPromise({
+    try: () => mkdtemp(prefix),
+    catch: (cause) =>
+      new LocalStateUnwritable({
+        message: `Cannot make a directory for the sandbox's commits: ${messageOf(cause)}`,
+        path: prefix,
+      }),
+  });
+}
+
 /** Inside the clone's `.git`, so a bundle can never be committed by `git add -A`. */
 const OUTGOING_BUNDLE = '.git/jig-out.bundle';
+
+/** The bundle in it is already fetched; a leftover in the temp directory harms nothing. */
+async function removeImportDirectory(directory: string): Promise<void> {
+  await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+}
 
 /** Leaves the operator's repository as it was; there is nothing to abort when git never started merging. */
 async function abortMergeInProgress(repoRoot: string): Promise<void> {
@@ -261,5 +287,3 @@ async function abortMergeInProgress(repoRoot: string): Promise<void> {
     .raw(['merge', '--abort'])
     .catch(() => undefined);
 }
-
-//END

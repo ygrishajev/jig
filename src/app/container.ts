@@ -19,15 +19,13 @@ import {
   openSandcastleSession,
   type OpenSessionInput,
 } from '../adapters/sandcastle/open-session.js';
-import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
+import type {
+  SessionCloseFailure,
+  SessionOpenFailure,
+} from '../adapters/sandcastle/sandcastle-session.js';
 import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
-import {
-  type ConfigInvalid,
-  type GitCommandFailed,
-  isTransient,
-  type JigError,
-} from '../domain/errors.js';
+import { type GitCommandFailed, isTransient, type JigError } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
 import { retryResult } from '../domain/retry.js';
 import { runIdSchema } from '../domain/run-id.js';
@@ -78,7 +76,7 @@ export interface AppCradle {
 /** The run's sandbox: where agents and commands run, and the host worktree of the run branch. */
 export interface RunSession extends AgentSession, SandboxGit {
   readonly worktreePath: string;
-  close(): Promise<Result<void, ConfigInvalid>>;
+  close(): Promise<Result<void, SessionCloseFailure>>;
 }
 
 export function createAppContainer(input: {
@@ -140,11 +138,11 @@ export async function withRunScope<T, E>(
   runStore: RunStore,
   options: { tracer?: Tracer },
   use: (dependencies: EngineDependencies) => Promise<Result<T, E>>,
-): Promise<Result<T, SessionOpenFailure | E>> {
+): Promise<Result<T, SessionOpenFailure | SessionCloseFailure | E>> {
   const scope = await openRunScope(app, { runId, baseBranch }, runStore, options);
   if (scope.isErr()) return Result.err(scope.error);
   let used: Result<T, E>;
-  let closed: Result<void, ConfigInvalid>;
+  let closed: Result<void, SessionCloseFailure>;
   try {
     used = await use(scope.value.cradle.engineDependencies);
   } finally {
@@ -244,7 +242,7 @@ function openSessionRetrying({
 /** Awilix's `dispose` alone would leave the sandbox running, so the session is closed first. */
 async function closeRunScope(
   scope: AwilixContainer<RunCradle>,
-): Promise<Result<void, ConfigInvalid>> {
+): Promise<Result<void, SessionCloseFailure>> {
   try {
     return await scope.cradle.session.close();
   } finally {
@@ -269,11 +267,11 @@ function reportCleanup<T, E, C extends JigError>(
  * logged to the console. It is never retried: a setup command that fails is the answer the
  * caller is waiting for, not a hiccup.
  */
-export async function withThrowawaySandbox<T>(
+export async function withThrowawaySandbox<T, E>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
-  use: (session: RunSession) => Promise<T>,
-): Promise<Result<T, SessionOpenFailure | GitCommandFailed | ConfigInvalid>> {
+  use: (session: RunSession) => Promise<Result<T, E>>,
+): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
   const { repoRoot, logger, openSession } = app.cradle;
   const baseBranch = await getCurrentBranch(repoRoot);
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
@@ -284,15 +282,20 @@ export async function withThrowawaySandbox<T>(
   const events = observedEvents(logger, [new LoggingObserver(logger)]);
   const session = await openSession({ run, events, setupCommand });
   if (session.isErr()) return Result.err(session.error);
-  let used: Result<T, SessionOpenFailure>;
-  let closed: Result<void, ConfigInvalid>;
+  let used: Result<T, E>;
+  let closed: Result<void, SessionCloseFailure>;
   let deleted: Result<void, GitCommandFailed>;
   try {
-    used = Result.ok(await use(session.value));
+    used = await use(session.value);
   } finally {
     closed = await session.value.close();
     deleted = await deleteBranch(repoRoot, runBranchFor(run.runId));
   }
-  const cleaned: Result<void, ConfigInvalid | GitCommandFailed> = closed.isErr() ? closed : deleted;
+  if (closed.isErr() && deleted.isErr()) {
+    logger.warn({ err: deleted.error }, 'removing the throwaway branch failed as well');
+  }
+  const cleaned: Result<void, SessionCloseFailure | GitCommandFailed> = closed.isErr()
+    ? closed
+    : deleted;
   return reportCleanup(used, cleaned, logger);
 }

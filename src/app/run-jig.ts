@@ -6,14 +6,20 @@ import { readFile } from 'node:fs/promises';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { startTelemetry } from '../adapters/telemetry/open-telemetry.js';
-import { type JigError, messageOf, RunRequestInvalid } from '../domain/errors.js';
+import {
+  type JigError,
+  type LocalStateUnwritable,
+  messageOf,
+  type MetricsLogCorrupt,
+  RunRequestInvalid,
+} from '../domain/errors.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
 import { type EngineResult, runEngine } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
 import { getCurrentBranch } from '../git/branch.js';
-import type { RunStore } from '../ports/run-store.js';
+import type { RunStore, RunStoreFailure } from '../ports/run-store.js';
 import { type AppCradle, withRunScope } from './container.js';
 import { openRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
@@ -72,7 +78,7 @@ async function startOrResume(
   store: RunStore,
   input: RunJigInput,
   runId: RunId,
-): Promise<Result<RunState, JigError>> {
+): Promise<Result<RunState, RunStoreFailure | RunRequestInvalid>> {
   const existing = await store.load(runId);
   if (existing.isErr()) return Result.err(existing.error);
   if ('resume' in input) {
@@ -108,7 +114,7 @@ async function startNewRun(
   store: RunStore,
   runId: RunId,
   request: string,
-): Promise<Result<RunState, JigError>> {
+): Promise<Result<RunState, RunStoreFailure>> {
   const baseBranch = await getCurrentBranch(cradle.repoRoot);
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
   const started = startRun({ runId, baseBranch: baseBranch.value, request });
@@ -137,7 +143,7 @@ async function advance(
 async function recordInvocation(
   { repoRoot, artefacts }: AppCradle,
   report: RunReport,
-): Promise<Result<void, JigError>> {
+): Promise<Result<void, MetricsLogCorrupt | LocalStateUnwritable>> {
   const metrics = new MetricsLog(repoRoot, report.state.runId).summary();
   if (metrics.isErr()) return Result.err(metrics.error);
   return artefacts.write(report.state, report.status, metrics.value);

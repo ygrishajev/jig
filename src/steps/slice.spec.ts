@@ -7,6 +7,7 @@ import { approval } from '../../tests/support/agent-scripts.js';
 import { aRunState, aSlice, runId, runSettings } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { SandboxUnavailable } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
 import type { SliceStep } from '../flow/define-flow.js';
@@ -165,11 +166,23 @@ describe('slice steps', () => {
     expect(outcome.type === 'changesRequested' && outcome.feedback.length).toBeLessThan(600);
   });
 
+  it('passes on a sandbox that cannot run the verify command at all', async () => {
+    const failure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    const { attempt } = await setup({
+      settings: runSettings({ verifyCommand: 'npm test' }),
+      exec: () => failure,
+    });
+
+    const result = await attempt(verifySlice, aSlice());
+
+    expect(result.isErr() && result.error).toBe(failure);
+  });
+
   async function setup(input: {
     implementer?: AgentScript[];
     reviewer?: AgentScript[];
     settings?: RunSettings;
-    exec?: (command: string) => ExecResult;
+    exec?: (command: string) => ExecResult | SandboxUnavailable;
   }) {
     const id = runId();
     const created = await createRunWorktree(id);
@@ -178,17 +191,18 @@ describe('slice steps', () => {
     agent.script('implementer', ...(input.implementer ?? []));
     agent.script('reviewer', ...(input.reviewer ?? []));
     const state = aRunState({ runId: id });
+    const attempt = (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>
+      step({
+        state: { ...state, slices: [...earlierSlices, slice] },
+        slice,
+        ports: { agent, workspace },
+        settings: input.settings ?? runSettings(),
+      });
     const run = async (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>
-      (
-        await step({
-          state: { ...state, slices: [...earlierSlices, slice] },
-          slice,
-          ports: { agent, workspace },
-          settings: input.settings ?? runSettings(),
-        })
-      ).unwrap();
+      (await attempt(step, slice, earlierSlices)).unwrap();
     return {
       run,
+      attempt,
       agent,
       workspace,
       sandboxPath: created.sandboxPath,

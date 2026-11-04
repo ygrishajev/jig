@@ -1,7 +1,7 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -12,18 +12,36 @@ import {
   SANDBOX_DIRECTORY,
   withToolchain,
 } from '../adapters/sandbox-image/image-recipe.js';
-import { ignoreSandcastleDirectory } from '../adapters/sandcastle/sandcastle-session.js';
+import {
+  ignoreSandcastleDirectory,
+  type SessionCloseFailure,
+  type SessionOpenFailure,
+} from '../adapters/sandcastle/sandcastle-session.js';
 import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
-import { type ConfigInvalid, type JigError, SetupCommandFailed } from '../domain/errors.js';
+import {
+  type AgentOutputInvalid,
+  type AgentRunFailed,
+  ConfigInvalid,
+  type GitCommandFailed,
+  type ImageBuildFailed,
+  messageOf,
+  SetupCommandFailed,
+} from '../domain/errors.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
 import { type AppCradle, type RunSession, withThrowawaySandbox } from './container.js';
-import { ensureSandboxImage } from './sandbox-image.js';
+import { ensureSandboxImage, readSandboxDockerfile } from './sandbox-image.js';
 
 export type InitResult =
   | { status: 'verified'; attempts: number }
   | { status: 'failed'; attempts: number; failure: string }
   | { status: 'written' };
+
+export type InitFailure = SandboxCheckFailure | AgentRunFailed | AgentOutputInvalid;
+
+/** Why a throwaway sandbox gave no answer: the image, Docker, git, or the sandbox's own cleanup. */
+export type SandboxCheckFailure =
+  ConfigInvalid | ImageBuildFailed | SessionOpenFailure | SessionCloseFailure | GitCommandFailed;
 
 /**
  * Writes the sandbox Dockerfile and a starter config if the repository has none. With an agent,
@@ -34,17 +52,17 @@ export type InitResult =
 export function initSandbox(
   app: AwilixContainer<AppCradle>,
   options: { useAgent: boolean },
-): Promise<Result<InitResult, JigError>> {
+): Promise<Result<InitResult, InitFailure>> {
   return Result.gen(async function* () {
     const { repoRoot } = app.cradle;
     yield* Result.await(writeStarterFiles(repoRoot));
     if (!options.useAgent) {
       const config = yield* loadConfig(repoRoot);
-      if (!config.verifyCommand) return Result.ok<InitResult, JigError>({ status: 'written' });
+      if (!config.verifyCommand) return Result.ok<InitResult, InitFailure>({ status: 'written' });
       const failure = yield* Result.await(
         checkInSandbox(app, config.setupCommand, config.verifyCommand),
       );
-      return Result.ok<InitResult, JigError>(
+      return Result.ok<InitResult, InitFailure>(
         failure ? { status: 'failed', attempts: 1, failure } : { status: 'verified', attempts: 1 },
       );
     }
@@ -63,10 +81,10 @@ export function initSandbox(
         checkInSandbox(app, proposal.setupCommand, proposal.verifyCommand),
       );
       if (!previousFailure)
-        return Result.ok<InitResult, JigError>({ status: 'verified', attempts: attempt });
+        return Result.ok<InitResult, InitFailure>({ status: 'verified', attempts: attempt });
       app.cradle.logger.warn(`attempt ${attempt} did not pass in the sandbox`);
     }
-    return Result.ok<InitResult, JigError>({
+    return Result.ok<InitResult, InitFailure>({
       status: 'failed',
       attempts: TOOLCHAIN_ATTEMPTS,
       failure: previousFailure ?? '',
@@ -81,13 +99,21 @@ async function writeStarterFiles(repoRoot: string): Promise<Result<void, ConfigI
   const config = path.join(repoRoot, CONFIG_FILE);
   const refused = refuseSymlinks([dockerfile, config]);
   if (refused.isErr()) return refused;
-  await writeIfMissing(dockerfile, BASE_DOCKERFILE);
-  await writeIfMissing(config, '{}\n');
-  return Result.ok();
+  const written = await writeIfMissing(dockerfile, BASE_DOCKERFILE);
+  if (written.isErr()) return written;
+  return writeIfMissing(config, '{}\n');
 }
 
-async function writeIfMissing(file: string, contents: string): Promise<void> {
-  if (!existsSync(file)) await writeFile(file, contents);
+function writeIfMissing(file: string, contents: string): Promise<Result<void, ConfigInvalid>> {
+  return existsSync(file) ? Promise.resolve(Result.ok()) : writeRepoFile(file, contents);
+}
+
+function writeRepoFile(file: string, contents: string): Promise<Result<void, ConfigInvalid>> {
+  return Result.tryPromise({
+    try: () => writeFile(file, contents),
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Could not write ${file}: ${messageOf(cause)}` }),
+  });
 }
 
 /**
@@ -99,12 +125,14 @@ async function checkInSandbox(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | undefined,
   verifyCommand: string,
-): Promise<Result<string | undefined, JigError>> {
+): Promise<Result<string | undefined, SandboxCheckFailure>> {
   const checked = await withSandbox(app, setupCommand ?? null, async (session) => {
     const verify = await session.exec(verifyCommand);
-    return verify.exitCode === 0
-      ? undefined
-      : `verifyCommand "${verifyCommand}" exited with ${verify.exitCode}:\n${verify.output.slice(-3000)}`;
+    return verify.map(({ exitCode, output }) =>
+      exitCode === 0
+        ? undefined
+        : `verifyCommand "${verifyCommand}" exited with ${exitCode}:\n${output.slice(-3000)}`,
+    );
   });
   if (checked.isErr() && checked.error instanceof SetupCommandFailed) {
     return Result.ok(checked.error.message);
@@ -112,11 +140,11 @@ async function checkInSandbox(
   return checked;
 }
 
-async function withSandbox<T>(
+async function withSandbox<T, E>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
-  use: (session: RunSession) => Promise<T>,
-): Promise<Result<T, JigError>> {
+  use: (session: RunSession) => Promise<Result<T, E>>,
+): Promise<Result<T, E | SandboxCheckFailure>> {
   const image = await ensureSandboxImage(app.cradle);
   if (image.isErr()) return Result.err(image.error);
   return withThrowawaySandbox(app, setupCommand, use);
@@ -128,11 +156,11 @@ const TOOLCHAIN_ATTEMPTS = 3;
 async function proposeToolchain(
   app: AwilixContainer<AppCradle>,
   previousFailure?: string,
-): Promise<Result<z.infer<typeof toolchainSchema>, JigError>> {
+): Promise<Result<z.infer<typeof toolchainSchema>, InitFailure>> {
   return Result.gen(async function* () {
     const { repoRoot } = app.cradle;
     const config = yield* loadConfig(repoRoot);
-    const dockerfile = await readFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), 'utf-8');
+    const dockerfile = yield* Result.await(readSandboxDockerfile(repoRoot));
     const proposed = yield* Result.await(
       withSandbox(app, null, (session) =>
         session.runForOutput({
@@ -147,7 +175,7 @@ async function proposeToolchain(
         }),
       ),
     );
-    return proposed;
+    return Result.ok(proposed);
   });
 }
 
@@ -161,9 +189,8 @@ async function writeToolchain(
   repoRoot: string,
   toolchain: string,
 ): Promise<Result<void, ConfigInvalid>> {
-  const file = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
-  const filled = withToolchain(await readFile(file, 'utf-8'), toolchain);
+  const dockerfile = await readSandboxDockerfile(repoRoot);
+  const filled = dockerfile.andThen((contents) => withToolchain(contents, toolchain));
   if (filled.isErr()) return Result.err(filled.error);
-  await writeFile(file, filled.value);
-  return Result.ok();
+  return writeRepoFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), filled.value);
 }

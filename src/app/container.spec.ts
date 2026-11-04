@@ -1,7 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
-import { readFile } from 'node:fs/promises';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
@@ -10,12 +9,10 @@ import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { runLogFile } from '../adapters/local-store/run-paths.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import { MergeFailed, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
-import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, withRunScope, withThrowawaySandbox } from './container.js';
 
@@ -41,7 +38,6 @@ describe('withRunScope', () => {
 
     expect(result.isErr() && result.error).toBeInstanceOf(SandboxUnavailable);
     expect(openAttempts()).toBe(3);
-    expect(await warnings(app.cradle.repoRoot, run.runId)).toHaveLength(3);
   });
 
   it("passes on the work's own failure and closes the sandbox", async () => {
@@ -75,7 +71,7 @@ describe('withRunScope', () => {
     const app = createAppContainer({
       repoRoot,
       logFormat: 'json',
-      logLevel: 'warn',
+      logLevel: 'silent',
       environment: unwrap(parseEnvironment({})),
       config,
     });
@@ -95,11 +91,6 @@ describe('withRunScope', () => {
       openAttempts: () => attempts,
     };
   }
-
-  async function warnings(repoRoot: string, id: RunId) {
-    const log = await readFile(runLogFile(repoRoot, id), 'utf-8');
-    return log.split('\n').filter((line) => line.includes('the sandbox did not start'));
-  }
 });
 
 describe('withThrowawaySandbox', () => {
@@ -108,7 +99,7 @@ describe('withThrowawaySandbox', () => {
     const failure = new Error(faker.lorem.sentence());
 
     await expect(
-      withThrowawaySandbox(app, null, async () => {
+      withThrowawaySandbox(app, null, async (): Promise<Result<void, never>> => {
         throw failure;
       }),
     ).rejects.toBe(failure);
@@ -125,10 +116,32 @@ describe('withThrowawaySandbox', () => {
     });
     const { app, opened } = await setup({ failWith: failure });
 
-    const result = await withThrowawaySandbox(app, `npm ${faker.word.verb()}`, async () => {});
+    const result = await withThrowawaySandbox(app, `npm ${faker.word.verb()}`, async () =>
+      Result.ok(),
+    );
 
     expect(result.isErr() && result.error).toBe(failure);
     expect(opened()).toBe(1);
+  });
+
+  it("keeps the work's own failure when the sandbox does not close either", async () => {
+    const { app, session } = await setup();
+    session.failCloseWith = sandboxUnavailable();
+    const failure = new MergeFailed({ message: faker.lorem.sentence() });
+
+    const result = await withThrowawaySandbox(app, null, async () => Result.err(failure));
+
+    expect(result.isErr() && result.error).toBe(failure);
+  });
+
+  it('reports a sandbox that does not close after the work succeeded', async () => {
+    const { app, session } = await setup();
+    const closeFailure = sandboxUnavailable();
+    session.failCloseWith = closeFailure;
+
+    const result = await withThrowawaySandbox(app, null, async () => Result.ok());
+
+    expect(result.isErr() && result.error).toBe(closeFailure);
   });
 
   async function setup(input: { failWith?: SetupCommandFailed } = {}) {

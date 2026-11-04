@@ -9,6 +9,7 @@ import {
   AgentOutputInvalid,
   type AgentRunFailed,
   type GitCommandFailed,
+  SandboxUnavailable,
 } from '../../src/domain/errors.js';
 import type { RunEvent } from '../../src/domain/events.js';
 import type { RunId } from '../../src/domain/run-id.js';
@@ -44,7 +45,8 @@ export class FakeAgentSession implements AgentSession {
 
   constructor(
     private readonly sandboxPath: string,
-    private readonly execResult: (command: string) => ExecResult = () => ({
+    /** A `SandboxUnavailable` plays a sandbox that could not run the command at all. */
+    private readonly execResult: (command: string) => ExecResult | SandboxUnavailable = () => ({
       exitCode: 0,
       output: '',
     }),
@@ -83,18 +85,22 @@ export class FakeAgentSession implements AgentSession {
       : Result.err(new AgentOutputInvalid({ message: parsed.error.message }));
   }
 
-  async exec(command: string) {
+  async exec(command: string): Promise<Result<ExecResult, SandboxUnavailable>> {
     this.commands.push(command);
-    return this.execResult(command);
+    const result = this.execResult(command);
+    return result instanceof SandboxUnavailable ? Result.err(result) : Result.ok(result);
   }
 
   /** Git in the fake's clone is real, the way it is in the real sandbox; only the agent is fake. */
-  async execGit(args: string[]): Promise<ExecResult> {
+  async execGit(args: string[]): Promise<Result<ExecResult, SandboxUnavailable>> {
     const { exitCode, stdout, stderr } = await execa('git', args, {
       cwd: this.sandboxPath,
       reject: false,
     });
-    return { exitCode: exitCode ?? 1, output: exitCode === 0 ? stdout : `${stdout}${stderr}` };
+    return Result.ok({
+      exitCode: exitCode ?? 1,
+      output: exitCode === 0 ? stdout : `${stdout}${stderr}`,
+    });
   }
 
   async copyOut(sandboxPath: string, hostPath: string): Promise<Result<void, GitCommandFailed>> {
@@ -103,10 +109,11 @@ export class FakeAgentSession implements AgentSession {
   }
 
   closed = false;
+  failCloseWith?: SandboxUnavailable;
 
-  async close() {
+  async close(): Promise<Result<void, SandboxUnavailable>> {
     this.closed = true;
-    return Result.ok();
+    return this.failCloseWith ? Result.err(this.failCloseWith) : Result.ok();
   }
 
   private nextTurn(role: AgentRole) {

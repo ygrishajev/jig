@@ -55,9 +55,9 @@ function succeeded(result: GitResult): Result<string, GitCommandFailed> {
   if (result.exitCode === 0) return Result.ok(result.stdout.trim());
   return Result.err(
     new GitCommandFailed({
-      message: `git ${result.command} failed: ${result.stderr}`,
+      message: `${result.command} failed: ${result.stderr}`,
       command: result.command,
-      stderr: result.stderr,
+      output: result.stderr,
     }),
   );
 }
