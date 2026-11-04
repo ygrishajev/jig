@@ -64,14 +64,17 @@ One function, `importCommits`, moves commits to the host. It treats everything f
 untrusted data:
 
 1. Reads the sandbox's head and accepts it only if it is a full hex SHA.
-2. Has the sandbox bundle the run branch, excluding the last imported commit.
+2. Has the sandbox bundle the run branch, excluding the last approved commit.
 3. Copies the bundle's bytes with `docker exec cat` into a new file in a private host directory, up
    to a size limit. Using `docker cp` could bring a symlink across; streaming bytes cannot.
 4. Runs `git fetch` with `fetch.fsckObjects=true` from that file, in the host worktree.
-5. Refuses unless `FETCH_HEAD` descends from the last imported commit and matches the reported head.
-6. Runs `git merge --ff-only FETCH_HEAD` in the host worktree, with hooks off.
+5. Refuses unless `FETCH_HEAD` matches the reported head and descends from the last approved commit.
+6. Runs `git reset --hard FETCH_HEAD` in the host worktree, with hooks off.
 
-A rewritten history fails step 5, and the step fails with a `JigError` the engine can act on.
+Only approved commits are immutable. An agent may amend its own unapproved work, for example when a
+reviewer sends it back, and the next import replaces it. Rewriting an approved commit fails step 5,
+which leaves the host branch alone. The step then returns a `JigError`, and the sandbox can be reset
+to the last approved commit.
 
 ### Only the implement step imports
 
@@ -110,13 +113,16 @@ N+1. As a second check, `mergeRunBranch` refuses unless the branch tip is the la
 ### What goes into the container
 
 The bundle holds the run branch and the base branch only, where `.git` used to expose every branch.
+The operator's `.git/info/exclude` and `core.excludesFile` patterns are copied into the clone's
+`.git/info/exclude`; without them `git add -A` in the sandbox would commit files the host ignores.
 No remote URL or credentials come with it. Agents cannot push, which they had no reason to do.
 Credentials still arrive as env vars.
 
 ## Evidence
 
-`spike/check-private-clone.ts` ran on 2026-11-04 with sandcastle 0.12.0, a scripted agent and no
-network, and all 19 checks passed:
+Two checks ran on 2026-11-04 with sandcastle 0.12.0, a scripted agent and no network. All pass.
+
+`spike/check-private-clone.ts` (19 checks) covers the core flow:
 
 - the container has no mounts, and the host repository path does not exist inside it;
 - `sandbox.run` works with the provider, and host commits stay invisible until imported;
@@ -124,10 +130,25 @@ network, and all 19 checks passed:
 - commits are authored by `jig` and unsigned, even with `commit.gpgsign=true` on the host;
 - `.git/config` and the `.git/hooks` listing are unchanged, the run merges, and nothing is left over.
 
-It does not cover:
+`spike/check-private-clone-edges.ts` (29 checks) covers the edges:
 
-- real agents, including Claude session capture through `copyFileOut`;
-- the Codex login mount, `setupCommand`, or `init`'s throwaway sandbox;
+- idle timeouts, failing agents, live streaming and a 300 KB prompt over stdin;
+- amending unapproved work imports; rewriting an approved commit is refused and changes nothing;
+- a resumed run starts from the last imported commit, and unimported work is gone;
+- file modes and symbolic links survive, and a 20 MB commit imports in about a second;
+- the Codex login directory mounts and refreshes, and local excludes reach the clone;
+- a submodule stays an empty directory with its pointer intact, as in a new worktree today.
+
+Bundling this repository's `main` took 0.6 seconds and 883 KB.
+
+The first run of the edge checks found the lost excludes and showed that refusing every rewrite was
+too strict. Both are fixed above.
+
+They do not cover:
+
+- real agents: claude, opencode and codex have not run through this provider;
+- `init`'s throwaway sandbox, or a real image built by `jig build`;
+- Git LFS, because `git-lfs` is on neither this machine nor the test image;
 - a sandbox actively trying to break out. The audit's blocked candidate is still unverified, so
   this design rests on removing the shared state rather than on a test of the attack.
 
@@ -161,11 +182,15 @@ Each step lands green.
 - **Dependence on sandcastle internals.** The provider relies on two behaviours: `syncOut` runs only
   for isolated providers, and a bind-mount provider may ignore its mounts. Keep the spike as the
   check to re-run when upgrading sandcastle.
-- **Repository features a bundle misses.** Submodules and LFS objects are not in a bundle. Check how
-  they behave in today's mounts, then either populate them in `setupCommand` or document the gap.
+- **Git LFS.** Check it before calling the feature done, then either populate objects in
+  `setupCommand` or document the gap. Submodules behave as they do in a new worktree today.
+- **The default global ignore file.** The spike reads `core.excludesFile` only, so it misses git's
+  default of `~/.config/git/ignore` when that key is unset.
 - **Large repositories.** The clone carries the full history of both branches, because review ranges
-  need the fork point. Measure it before optimising.
+  need the fork point. Measure a large repository before optimising.
 - **Crash recovery.** Commits not yet imported die with the container, which at worst repeats one
   implement step. A resumed run clones from the host's run branch.
-- **Image compatibility.** Carry over what `docker()` does today: the UID check, `HOME`, the
-  SELinux label, and shutdown cleanup.
+- **Image compatibility.** Carry over `HOME`, the SELinux label and shutdown cleanup from `docker()`.
+  With no repository mounts, file ownership should only matter for the Codex login, so the UID check
+  may be able to shrink to that case. The spike ran as an image whose UID matches this host, so
+  check this on a different UID.

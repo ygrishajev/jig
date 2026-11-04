@@ -3,163 +3,23 @@
 //   2. a scripted agent commits in that clone through the normal sandbox.run
 //   3. the host imports those commits from a bundle, keeping their SHAs and signing nothing
 //   4. sandcastle's own host-side git, close included, still works on the host worktree
-import { createBindMountSandboxProvider, createSandbox } from '@ai-hero/sandcastle';
-import { execFileSync, spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { createWriteStream, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { createSandbox } from '@ai-hero/sandcastle';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
-import { pipeline } from 'node:stream/promises';
 
-const IMAGE = process.env.SPIKE_IMAGE ?? 'sandcastle:sdlc-sandcastle-base';
-const BRANCH = 'jig/run/spike';
-const WORKSPACE = '/home/agent/workspace';
-const AGENT_IDENTITY = {
-  GIT_AUTHOR_NAME: 'jig',
-  GIT_AUTHOR_EMAIL: 'jig@users.noreply.invalid',
-  GIT_COMMITTER_NAME: 'jig',
-  GIT_COMMITTER_EMAIL: 'jig@users.noreply.invalid',
-};
-
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
-    cwd,
-    encoding: 'utf-8',
-  }).trim();
-const docker = (...args: string[]) => execFileSync('docker', args, { encoding: 'utf-8' }).trim();
-
-const results: { name: string; passed: boolean; detail: string }[] = [];
-function check(name: string, passed: boolean, detail = '') {
-  results.push({ name, passed, detail });
-  console.log(`${passed ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`);
-}
-
-function runInContainer(
-  container: string,
-  command: string,
-  options: { onLine?: (line: string) => void; cwd?: string; stdin?: string } = {},
-) {
-  const args = ['exec', ...(options.stdin === undefined ? [] : ['-i'])];
-  args.push('-w', options.cwd ?? WORKSPACE, container, 'sh', '-c', command);
-  return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-    const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    const lines: string[] = [];
-    let stderr = '';
-    createInterface({ input: child.stdout }).on('line', (line) => {
-      lines.push(line);
-      options.onLine?.(line);
-    });
-    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-    child.on('error', reject);
-    child.on('close', (code) => resolve({ stdout: lines.join('\n'), stderr, exitCode: code ?? 1 }));
-    child.stdin.end(options.stdin ?? '');
-  });
-}
-
-async function copyBytesOut(container: string, from: string, to: string) {
-  const child = spawn('docker', ['exec', container, 'cat', from], {
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
-  await pipeline(child.stdout, createWriteStream(to, { flags: 'wx', mode: 0o600 }));
-}
-
-function privateCloneDocker(state: { container?: string; offeredMounts?: unknown[] }) {
-  return createBindMountSandboxProvider({
-    name: 'private-clone-docker',
-    sandboxHomedir: '/home/agent',
-    create: async ({ hostRepoPath, mounts, env }) => {
-      state.offeredMounts = mounts;
-      const container = `jig-spike-${randomUUID()}`;
-      state.container = container;
-      const environment = { ...env, ...AGENT_IDENTITY, HOME: '/home/agent' };
-      docker(
-        'run',
-        '-d',
-        '--name',
-        container,
-        '--network',
-        'none',
-        '--memory',
-        '1g',
-        '--pids-limit',
-        '256',
-        '--security-opt',
-        'no-new-privileges',
-        ...Object.entries(environment).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
-        IMAGE,
-        'sleep',
-        '600',
-      );
-      const bundle = path.join(mkdtempSync(path.join(tmpdir(), 'jig-bundle-')), 'in.bundle');
-      git(hostRepoPath, 'bundle', 'create', bundle, BRANCH, 'main');
-      execFileSync('docker', ['cp', bundle, `${container}:/tmp/in.bundle`]);
-      const cloned = await runInContainer(
-        container,
-        `git clone -q -b ${BRANCH} /tmp/in.bundle ${WORKSPACE} && git -C ${WORKSPACE} branch -q main origin/main && rm /tmp/in.bundle`,
-        { cwd: '/' },
-      );
-      if (cloned.exitCode !== 0) throw new Error(`clone failed: ${cloned.stderr}`);
-      return {
-        worktreePath: WORKSPACE,
-        exec: (command, options) => runInContainer(container, command, options),
-        copyFileIn: async (hostPath, sandboxPath) => {
-          execFileSync('docker', ['cp', hostPath, `${container}:${sandboxPath}`]);
-        },
-        copyFileOut: async (sandboxPath, hostPath) => {
-          await mkdir(path.dirname(hostPath), { recursive: true });
-          await copyBytesOut(container, sandboxPath, hostPath);
-        },
-        close: async () => {
-          docker('rm', '-f', container);
-        },
-      };
-    },
-  });
-}
-
-function scriptedAgent(script: string) {
-  return {
-    name: 'scripted',
-    env: {},
-    captureSessions: false,
-    buildPrintCommand: () => ({ command: script }),
-    parseStreamLine: (line: string) => [{ type: 'text' as const, text: line }],
-  };
-}
-
-async function importFromSandbox(input: {
-  container: string;
-  hostWorktree: string;
-  since: string;
-  scratch: string;
-}) {
-  const bundle = path.join(input.scratch, `${randomUUID()}.bundle`);
-  const created = await runInContainer(
-    input.container,
-    `git bundle create -q /tmp/out.bundle ${BRANCH} ^${input.since}`,
-  );
-  if (created.exitCode !== 0) throw new Error(`bundle failed: ${created.stderr}`);
-  await copyBytesOut(input.container, '/tmp/out.bundle', bundle);
-  git(input.hostWorktree, '-c', 'fetch.fsckObjects=true', 'fetch', '-q', bundle, BRANCH);
-  git(input.hostWorktree, 'merge', '-q', '--ff-only', 'FETCH_HEAD');
-  return git(input.hostWorktree, 'rev-parse', 'HEAD');
-}
-
-function makeRepo() {
-  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'jig-spike-')));
-  git(dir, 'init', '-q', '-b', 'main');
-  git(dir, 'config', 'user.email', 'operator@example.invalid');
-  git(dir, 'config', 'user.name', 'operator');
-  writeFileSync(path.join(dir, 'README.md'), '# spike\n');
-  writeFileSync(path.join(dir, '.gitignore'), '.sandcastle/\n');
-  git(dir, 'add', '-A');
-  git(dir, 'commit', '-qm', 'base');
-  git(dir, 'config', 'commit.gpgsign', 'true');
-  git(dir, 'config', 'gpg.program', 'false');
-  return dir;
-}
+import {
+  BRANCH,
+  check,
+  docker,
+  git,
+  importFromSandbox,
+  makeRepo,
+  privateCloneDocker,
+  results,
+  scriptedAgent,
+} from './private-clone.js';
 
 const repo = makeRepo();
 const scratch = mkdtempSync(path.join(tmpdir(), 'jig-import-'));
@@ -210,7 +70,12 @@ try {
     'the host did not see the commit before importing',
     git(repo, 'rev-parse', BRANCH) === fork,
   );
-  const importedFirst = await importFromSandbox({ container, hostWorktree, since: fork, scratch });
+  const importedFirst = await importFromSandbox({
+    container,
+    hostWorktree,
+    approved: fork,
+    scratch,
+  });
   check('import keeps the SHA', importedFirst === firstHead, importedFirst.slice(0, 10));
 
   await sandbox.run({
@@ -228,7 +93,7 @@ try {
   const importedSecond = await importFromSandbox({
     container,
     hostWorktree,
-    since: firstHead,
+    approved: firstHead,
     scratch,
   });
   check(
