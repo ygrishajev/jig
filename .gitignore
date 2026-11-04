@@ -9,3 +9,4 @@ coverage/
 tmp/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+.env
