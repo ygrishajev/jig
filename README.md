@@ -18,6 +18,7 @@ the whole run is defined in one place, [`src/flow/run-flow.ts`](src/flow/run-flo
 npm install
 npm run build
 npm link   # or: node dist/cli/main.js <command>
+npx husky  # git hooks for contributing; .npmrc turns off the install scripts that would set them up
 ```
 
 Requires Node >=20, Docker running locally, and git 2.38 or newer (jig checks merges with
