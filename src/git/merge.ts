@@ -3,7 +3,7 @@ import { execa, type ResultPromise } from 'execa';
 
 import { GitCommandFailed, MergeFailed, messageOf, RemoteUnavailable } from '../domain/errors.js';
 import { getCurrentBranch } from './branch.js';
-import { gitCommand, isWorkingTreeClean, openRepo } from './repository.js';
+import { gitCommand, isWorkingTreeClean, openRepoWithoutHooks } from './repository.js';
 
 /**
  * The branch's changes are in `intoBranch` when merging it there would leave the tree as it is,
@@ -108,7 +108,7 @@ export async function mergeBranchInto(
         new MergeFailed({ message: `Refusing to merge: ${repoRoot} has uncommitted changes` }),
       );
     }
-    const git = openRepo(repoRoot);
+    const git = openRepoWithoutHooks(repoRoot);
     yield* Result.await(
       Result.tryPromise({
         try: () => git.merge([branchName, '--no-edit']),

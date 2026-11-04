@@ -36,6 +36,19 @@ export function openRepo(cwd: string): SimpleGit {
   return simpleGit({ baseDir: cwd });
 }
 
+/**
+ * For a merge on the host: a hook can run what the branch just brought in, before anyone read it,
+ * whether a tracked `post-merge` script or an install that runs a new `postinstall`. simple-git
+ * guards this setting against untrusted values; this one is fixed and only turns hooks off.
+ */
+export function openRepoWithoutHooks(cwd: string): SimpleGit {
+  return simpleGit({
+    baseDir: cwd,
+    config: ['core.hooksPath=/dev/null'],
+    unsafe: { allowUnsafeHooksPath: true },
+  });
+}
+
 export function isWorkingTreeClean(cwd: string): Promise<Result<boolean, GitCommandFailed>> {
   return gitCommand('status', async () => (await openRepo(cwd).status()).isClean());
 }

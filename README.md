@@ -102,6 +102,8 @@ expires after 30 seconds.
 - **What the sandbox sees.** Besides the run's worktree, the repository's `.git` directory is
   mounted writable, because the agents use git. Anything in `.git/config` is visible to them —
   in GitHub Actions, check out with `persist-credentials: false` so the job token is not there.
+- **Automatic merges.** `mergeMode: "auto"` lands agent code nobody has read, so only use it where
+  you accept that. jig turns git hooks off for its own merge, so your `post-merge` hooks do not run.
 
 ## Configuration
 

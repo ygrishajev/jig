@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
-import { rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
@@ -55,6 +56,28 @@ describe('mergeBranchInto', () => {
     expect(failure.isErr() && failure.error).toBeInstanceOf(MergeFailed);
     expect((await isBranchMergedInto(repo, branch, 'main')).unwrap()).toBe(false);
     await git.merge(['--abort']);
+  });
+
+  it('runs no hook the merged branch brought with it', async () => {
+    const { repo, git } = await setup();
+    const marker = path.join(repo, `${faker.string.uuid()}.marker`);
+    await simpleGit({ baseDir: repo, unsafe: { allowUnsafeHooksPath: true } }).addConfig(
+      'core.hooksPath',
+      'tracked-hooks',
+    );
+    const branch = `feature/${faker.string.alphanumeric({ length: 8, casing: 'lower' })}`;
+    await git.checkoutLocalBranch(branch);
+    await mkdir(path.join(repo, 'tracked-hooks'));
+    const hook = path.join(repo, 'tracked-hooks', 'post-merge');
+    await writeFile(hook, `#!/bin/sh\ntouch "${marker}"\n`);
+    await chmod(hook, 0o755);
+    await commitAll(repo, faker.git.commitMessage());
+    await git.checkout('main');
+
+    (await mergeBranchInto(repo, branch, 'main')).unwrap();
+
+    expect(existsSync(hook)).toBe(true);
+    expect(existsSync(marker)).toBe(false);
   });
 
   async function setup(input: { touching?: string } = {}) {
