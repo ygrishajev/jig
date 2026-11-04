@@ -25,6 +25,8 @@ const declarations = `
   declare function f(n: number): void;
   declare function g(e: Error): void;
   declare const x: string;
+  declare function each(callback: (n: number) => void): void;
+  declare function mapEach<T>(callback: (n: number) => T): T[];
 `;
 
 ruleTester.run('no-ignored-result', noIgnoredResult, {
@@ -34,6 +36,12 @@ ruleTester.run('no-ignored-result', noIgnoredResult, {
     { code: `${declarations} parse(x).match({ ok: f, err: g });` },
     { code: `${declarations} export async function a() { await save(); }` },
     { code: `${declarations} let kept: Result<number, Error>; kept = parse(x); export { kept };` },
+    { code: `${declarations} void save();` },
+    { code: `${declarations} export const all = mapEach(() => parse(x));` },
+    { code: `${declarations} each((n) => f(n));` },
+    {
+      code: `${declarations} each(() => { const kept = parse(x); kept.match({ ok: f, err: g }); });`,
+    },
   ],
   invalid: [
     { code: `${declarations} parse(x);`, errors: [{ messageId: 'ignored' }] },
@@ -44,5 +52,9 @@ ruleTester.run('no-ignored-result', noIgnoredResult, {
       code: `${declarations} export async function a() { await load(x); }`,
       errors: [{ messageId: 'ignored' }],
     },
+    { code: `${declarations} void parse(x);`, errors: [{ messageId: 'ignored' }] },
+    { code: `${declarations} void load(x);`, errors: [{ messageId: 'ignored' }] },
+    { code: `${declarations} each(() => parse(x));`, errors: [{ messageId: 'ignored' }] },
+    { code: `${declarations} each(async () => load(x));`, errors: [{ messageId: 'ignored' }] },
   ],
 });
