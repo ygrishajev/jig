@@ -140,11 +140,11 @@ fixed above. Bundling this repository's `main` took 0.6 seconds and 883 KB.
 against real docker. Re-run it when upgrading sandcastle.
 
 The live E2E passed on this design with claude planning and describing, opencode implementing and
-codex reviewing.
+codex reviewing. `jig init --no-agent` ran setup and verify in a throwaway sandbox, reported a failing
+verify, and removed its branch both times.
 
 Not covered by any of this:
 
-- `init`'s throwaway sandbox;
 - Git LFS, because `git-lfs` is on neither this machine nor the test image;
 - a sandbox actively trying to break out. The audit's blocked candidate is still unverified, so
   this design rests on removing the shared state rather than on a test of the attack.
