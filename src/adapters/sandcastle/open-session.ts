@@ -78,7 +78,6 @@ export function sandcastleSessionOptions(
       ...sandboxTelemetryEnvironment(environment.telemetry),
     },
     agents: agents.value,
-    skipCommitSigning: config.commitSigning === 'skip',
     setupCommand: setupCommand === null ? undefined : (setupCommand ?? config.setupCommand),
     setupTimeoutSeconds: config.setupTimeoutSeconds,
     idleTimeoutSeconds: config.agentIdleTimeoutSeconds,

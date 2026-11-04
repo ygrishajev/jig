@@ -71,7 +71,6 @@ const opened = await SandcastleSession.open({
     reviewer: scriptedAgent,
     describer: scriptedAgent,
   },
-  skipCommitSigning: false,
   setupTimeoutSeconds: 60,
   idleTimeoutSeconds: 30,
   agentLogFile: path.join(logs, 'agents.log'),

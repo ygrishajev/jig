@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
+import { execa } from 'execa';
 import { existsSync } from 'node:fs';
-import { chmod, writeFile } from 'node:fs/promises';
+import { chmod, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
@@ -10,7 +11,7 @@ import { createRunWorktree } from '../../../tests/support/run-worktree.js';
 import { CommitImportRefused, MergeFailed } from '../../domain/errors.js';
 import { isWorkingTreeClean } from '../../git/repository.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
-import { GitWorkspace } from './git-workspace.js';
+import { type CommitSigning, GitWorkspace } from './git-workspace.js';
 
 describe('GitWorkspace', () => {
   it("measures the run branch's commits since a point, by files and lines", async () => {
@@ -155,7 +156,9 @@ describe('GitWorkspace', () => {
     await writeFile(path.join(repo, 'README.md'), faker.lorem.paragraph());
     await git.add('README.md').commit(faker.git.commitMessage());
 
-    const merge = await workspace.mergeRunBranch();
+    const merge = await workspace.mergeRunBranch({
+      approved: (await workspace.headCommit()).unwrap(),
+    });
 
     expect(merge.isErr() && merge.error).toBeInstanceOf(MergeFailed);
     expect(existsSync(path.join(repo, '.git', 'MERGE_HEAD'))).toBe(false);
@@ -164,13 +167,76 @@ describe('GitWorkspace', () => {
     expect((await workspace.isRunBranchMerged()).unwrap()).toBe(false);
   });
 
+  it("leaves agent commits and jig's merge commit unsigned by default", async () => {
+    const { workspace, repo, git, writeInSandbox, save, runBranch } = await setup();
+    await git.addConfig('commit.gpgsign', 'true');
+    await setSigner(repo, 'false');
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    await writeFile(path.join(repo, 'other.txt'), faker.lorem.sentence());
+    await git.add('other.txt').raw(['-c', 'commit.gpgsign=false', 'commit', '-m', 'moves main']);
+
+    const merge = await workspace.mergeRunBranch({ approved: await git.revparse([runBranch]) });
+
+    merge.unwrap();
+    expect(await git.raw(['cat-file', 'commit', 'HEAD'])).not.toContain('gpgsig');
+    expect((await git.raw(['rev-list', '--parents', '-1', 'HEAD'])).trim().split(' ')).toHaveLength(
+      3,
+    );
+  });
+
+  it('signs the run branch with the repository setup at the merge when asked to', async () => {
+    const { workspaceOn, agent, repo, git, writeInSandbox, save, runBranch } = await setup();
+    await writeFakeSigner(repo);
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    const approved = await git.revparse([runBranch]);
+
+    (await workspaceOn(agent, 'repo').mergeRunBranch({ approved })).unwrap();
+
+    expect(await git.raw(['cat-file', 'commit', 'main'])).toContain('gpgsig');
+    expect((await git.log(['main', '-1'])).latest?.author_name).toBe('jig');
+  });
+
+  it('merges a signed tip again after an earlier merge attempt stopped', async () => {
+    const { workspaceOn, agent, repo, git, writeInSandbox, save, runBranch } = await setup();
+    await writeFakeSigner(repo);
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    const approved = await git.revparse([runBranch]);
+    const stray = path.join(repo, `${faker.string.uuid()}.txt`);
+    await writeFile(stray, faker.lorem.sentence());
+    const workspace = workspaceOn(agent, 'repo');
+    expect((await workspace.mergeRunBranch({ approved })).isErr()).toBe(true);
+    await rm(stray);
+
+    (await workspace.mergeRunBranch({ approved })).unwrap();
+
+    expect(await git.raw(['cat-file', 'commit', 'main'])).toContain('gpgsig');
+  });
+
+  it('stops with a failed merge when signing fails, leaving the run branch as it was', async () => {
+    const { workspaceOn, agent, repo, git, writeInSandbox, save, runBranch } = await setup();
+    await setSigner(repo, 'false');
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    const approved = await git.revparse([runBranch]);
+
+    const merge = await workspaceOn(agent, 'repo').mergeRunBranch({ approved });
+
+    expect(merge.isErr() && merge.error).toBeInstanceOf(MergeFailed);
+    expect(await git.revparse([runBranch])).toBe(approved);
+  });
+
   it('names the run and base branch when the merge is refused', async () => {
     const { workspace, repo, writeInSandbox: writeInWorktree, save } = await setup();
     await writeInWorktree('feature.txt', faker.lorem.paragraph());
     await save();
     await writeFile(path.join(repo, `${faker.string.uuid()}.txt`), faker.lorem.paragraph());
 
-    const merge = await workspace.mergeRunBranch();
+    const merge = await workspace.mergeRunBranch({
+      approved: (await workspace.headCommit()).unwrap(),
+    });
 
     expect(merge.isErr() && merge.error.message).toMatch(
       /^Merging "jig\/run\/.+" into "main" failed: Refusing to merge: .* has uncommitted changes$/,
@@ -186,13 +252,14 @@ describe('GitWorkspace', () => {
       writeFile(path.join(created.sandboxPath, file), contents);
     const saveAfter = (approved: string) =>
       workspace.saveWork(faker.git.commitMessage(), { approved });
-    const workspaceOn = (sandbox: SandboxGit) =>
+    const workspaceOn = (sandbox: SandboxGit, signing: CommitSigning = 'skip') =>
       new GitWorkspace({
         repoRoot: repo.dir,
         worktreePath,
         runId: id,
         baseBranch: 'main',
         sandbox,
+        signing,
       });
     return {
       workspace,
@@ -209,3 +276,19 @@ describe('GitWorkspace', () => {
     };
   }
 });
+
+/** Satisfies git's signing protocol, so a spec can see a commit get signed without a real key. */
+async function writeFakeSigner(repo: string) {
+  const signer = path.join(repo, '.git', 'fake-signer');
+  await writeFile(
+    signer,
+    `#!/bin/sh\ncat > /dev/null\necho '[GNUPG:] SIG_CREATED ' >&2\necho '-----BEGIN PGP SIGNATURE-----'\necho fake\necho '-----END PGP SIGNATURE-----'\n`,
+  );
+  await chmod(signer, 0o755);
+  await setSigner(repo, signer);
+}
+
+/** Through git itself: simple-git refuses this setting, as it names a program to run. */
+async function setSigner(repo: string, program: string) {
+  await execa('git', ['config', 'gpg.program', program], { cwd: repo });
+}

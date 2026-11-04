@@ -193,6 +193,7 @@ async function openRunScope(
           repoRoot,
           worktreePath: session.worktreePath,
           sandbox: session,
+          signing: app.cradle.config.commitSigning,
           ...run,
         }),
     ).scoped(),

@@ -26,8 +26,11 @@ export interface Workspace {
   summariseCommitsSince(since: string): Promise<Result<CommitSummary, GitCommandFailed>>;
   /** Reads a file from the operator's repository, relative to its root; undefined when absent. */
   readRepoFile(relativePath: string): Promise<string | undefined>;
-  /** Fails with `MergeFailed` when the base branch is not checked out, is dirty, or conflicts. */
-  mergeRunBranch(): Promise<Result<void, MergeFailed>>;
+  /**
+   * Fails with `MergeFailed` when the branch's content is not what `approved` holds, the base
+   * branch is not checked out, is dirty, or conflicts.
+   */
+  mergeRunBranch(options: { approved: string | undefined }): Promise<Result<void, MergeFailed>>;
   /** Whether the run's changes are in the base, locally or on its remote, by any kind of merge. */
   isRunBranchMerged(): Promise<Result<boolean, GitCommandFailed | RemoteUnavailable>>;
 }

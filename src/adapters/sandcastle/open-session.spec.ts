@@ -66,17 +66,12 @@ describe('sandcastleSessionOptions', () => {
     expect(options({ setupCommand: null }).setupCommand).toBeUndefined();
   });
 
-  it("skips commit signing only when the config says so, and logs agents into the run's state", async () => {
-    const skipping = await setup({ config: { commitSigning: 'skip' } });
-    const signing = await setup({ config: { commitSigning: 'repo' } });
+  it("logs agents into the run's state", async () => {
+    const { options, repoRoot } = await setup({ config: {} });
 
-    const options = skipping.options();
+    const { agentLogFile, runId } = options();
 
-    expect(options.skipCommitSigning).toBe(true);
-    expect(signing.options().skipCommitSigning).toBe(false);
-    expect(options.agentLogFile.startsWith(stateDirectory(skipping.repoRoot, options.runId))).toBe(
-      true,
-    );
+    expect(agentLogFile.startsWith(stateDirectory(repoRoot, runId))).toBe(true);
   });
 
   async function setup(input: { config?: Partial<JigConfig>; environment?: NodeJS.ProcessEnv }) {

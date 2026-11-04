@@ -24,7 +24,11 @@ export interface GitWorkspaceOptions {
   runId: RunId;
   baseBranch: string;
   sandbox: SandboxGit;
+  signing: CommitSigning;
 }
+
+/** `repo` signs the run branch with the repository's setup when jig merges it; `skip` never does. */
+export type CommitSigning = 'repo' | 'skip';
 
 export class GitWorkspace implements Workspace {
   private readonly runBranch: string;
@@ -199,15 +203,63 @@ export class GitWorkspace implements Workspace {
     }
   }
 
-  async mergeRunBranch(): Promise<Result<void, MergeFailed>> {
-    const { repoRoot, baseBranch } = this.options;
-    const merged = await mergeBranchInto(repoRoot, this.runBranch, baseBranch);
+  async mergeRunBranch({
+    approved,
+  }: {
+    approved: string | undefined;
+  }): Promise<Result<void, MergeFailed>> {
+    const { repoRoot, baseBranch, signing } = this.options;
+    const tip = await this.refuseUnapprovedTip(approved);
+    if (tip.isErr()) return tip;
+    if (signing === 'repo') {
+      const signed = await this.signRunBranch();
+      if (signed.isErr()) return signed;
+    }
+    const merged = await mergeBranchInto(repoRoot, this.runBranch, baseBranch, {
+      sign: signing === 'repo',
+    });
     if (merged.isOk()) return Result.ok();
     await abortMergeInProgress(repoRoot);
     return Result.err(
       new MergeFailed({
         message: `Merging "${this.runBranch}" into "${baseBranch}" failed: ${merged.error.message}`,
       }),
+    );
+  }
+
+  /** By content, not SHA: signing rewrites the commits, and a merge may be tried again after it. */
+  private async refuseUnapprovedTip(
+    approved: string | undefined,
+  ): Promise<Result<void, MergeFailed>> {
+    const trees = await gitCommand('rev-parse', async () => {
+      const git = openRepo(this.options.repoRoot);
+      return [
+        await git.revparse([`${this.runBranch}^{tree}`]),
+        approved && (await git.revparse([`${approved}^{tree}`])),
+      ];
+    });
+    if (trees.isErr()) return Result.err(new MergeFailed({ message: trees.error.message }));
+    return trees.value[0] === trees.value[1]
+      ? Result.ok()
+      : Result.err(
+          new MergeFailed({
+            message: `Refusing to merge "${this.runBranch}": its tip is not the last approved commit.`,
+          }),
+        );
+  }
+
+  /** Runs only when the operator asked, and only now, so SHAs stay stable for the whole run. */
+  private async signRunBranch(): Promise<Result<void, MergeFailed>> {
+    const forkPoint = await this.forkPoint();
+    if (forkPoint.isErr()) return Result.err(new MergeFailed({ message: forkPoint.error.message }));
+    const git = openRepoWithoutHooks(this.options.worktreePath);
+    const signed = await gitCommand('rebase', () =>
+      git.raw(['rebase', '-q', '--force-rebase', '--gpg-sign', forkPoint.value]),
+    );
+    if (signed.isOk()) return Result.ok();
+    await git.raw(['rebase', '--abort']).catch(() => undefined);
+    return Result.err(
+      new MergeFailed({ message: `Could not sign "${this.runBranch}": ${signed.error.message}` }),
     );
   }
 

@@ -30,6 +30,20 @@ describe('finishing steps', () => {
       expect(await isMerged()).toBe(true);
     });
 
+    it('refuses to merge when the branch tip is not what was last approved', async () => {
+      const { run, commitOnRunBranch, approve, isMerged } = await setup({
+        settings: runSettings({ mergeMode: 'auto' }),
+      });
+      const approved = await commitOnRunBranch();
+      await commitOnRunBranch();
+      approve(approved);
+
+      const refusal = await run(mergeRunBranch);
+
+      expect(refusal.isErr() && refusal.error).toBeInstanceOf(MergeFailed);
+      expect(await isMerged()).toBe(false);
+    });
+
     it('waits for a person to merge in manual mode', async () => {
       const { run, commitOnRunBranch, isMerged } = await setup({
         settings: runSettings({ mergeMode: 'manual' }),
@@ -112,16 +126,29 @@ describe('finishing steps', () => {
     const agent = new FakeAgentSession(created.sandboxPath);
     if (input.describer) agent.script('describer', input.describer);
     const state = aRunStateIn('describing', { runId: id, ...input.state });
+    let approvedCommit: string | undefined;
+    const approve = (commit: string) => {
+      approvedCommit = commit;
+    };
     const run = (step: RunStep<'describing'>) =>
-      step({ state, ports: { agent, workspace }, settings: input.settings ?? runSettings() });
+      step({
+        state: approvedCommit
+          ? { ...state, slices: [aSlice({ status: 'approved', commit: approvedCommit })] }
+          : state,
+        ports: { agent, workspace },
+        settings: input.settings ?? runSettings(),
+      });
 
     const commitOnRunBranch = async () => {
       await writeFile(
         path.join(created.sandboxPath, `${faker.string.uuid()}.txt`),
         faker.lorem.sentence(),
       );
-      const approved = (await workspace.forkPoint()).unwrap();
+      const approved = approvedCommit ?? (await workspace.forkPoint()).unwrap();
       (await workspace.saveWork(faker.lorem.sentence(), { approved })).unwrap();
+      const head = (await workspace.headCommit()).unwrap();
+      approve(head);
+      return head;
     };
     const isMerged = async () => (await workspace.isRunBranchMerged()).unwrap();
     const mergeByHand = () => created.git.merge([created.runBranch, '--no-edit']);
@@ -133,6 +160,7 @@ describe('finishing steps', () => {
     const dirtyOperatorTree = () =>
       writeFile(path.join(created.repo.dir, 'README.md'), faker.lorem.paragraph());
     return {
+      approve,
       run,
       agent,
       commitOnRunBranch,

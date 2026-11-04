@@ -320,7 +320,6 @@ describe('SandcastleSession', () => {
           imageName: `sandcastle:${faker.word.noun()}`,
           credentials: {},
           agents,
-          skipCommitSigning: false,
           setupCommand: input.setupCommand,
           setupTimeoutSeconds: input.setupTimeoutSeconds ?? 60,
           idleTimeoutSeconds: 60,

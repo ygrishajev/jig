@@ -91,6 +91,7 @@ export async function mergeBranchInto(
   repoRoot: string,
   branchName: string,
   intoBranch: string,
+  { sign = false }: { sign?: boolean } = {},
 ): Promise<Result<string, MergeFailed | GitCommandFailed>> {
   return Result.gen(async function* () {
     const currentBranch = yield* Result.await(
@@ -108,7 +109,7 @@ export async function mergeBranchInto(
         new MergeFailed({ message: `Refusing to merge: ${repoRoot} has uncommitted changes` }),
       );
     }
-    const git = openRepoWithoutHooks(repoRoot);
+    const git = openRepoWithoutHooks(repoRoot, sign ? [] : ['commit.gpgsign=false']);
     yield* Result.await(
       Result.tryPromise({
         try: () => git.merge([branchName, '--no-edit']),

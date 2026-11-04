@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { JigError } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunStateIn } from '../domain/run-state.js';
+import { slicesInOrder } from '../domain/slice.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
 import { pullRequestPrompt } from '../prompts/pull-request.js';
 import { DEFAULT_PR_TEMPLATE, renderPullRequest } from './pull-request-description.js';
@@ -62,12 +63,13 @@ function passOnFatal(error: JigError): Result<undefined, JigError> {
   return error.kind === 'fatal' ? Result.err(error) : Result.ok(undefined);
 }
 
-export const mergeRunBranch: RunStep = ({ ports, settings }) =>
+export const mergeRunBranch: RunStep = ({ state, ports, settings }) =>
   Result.gen(async function* () {
     if (yield* Result.await(ports.workspace.isRunBranchMerged())) {
       return Result.ok<Outcome>({ type: 'merged' });
     }
     if (settings.mergeMode === 'manual') return Result.ok<Outcome>({ type: 'awaitingManualMerge' });
-    yield* Result.await(ports.workspace.mergeRunBranch());
+    const approved = slicesInOrder(state.slices).at(-1)?.commit;
+    yield* Result.await(ports.workspace.mergeRunBranch({ approved }));
     return Result.ok<Outcome>({ type: 'merged' });
   });

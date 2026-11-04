@@ -84,7 +84,9 @@ inside the sandbox, with `session.exec`, then imports.
 This closes the commit-after-approval lead by construction: a commit made during review or
 description is never imported, so it cannot reach the base branch. A stray commit made during
 review of slice N would be carried in by slice N+1's import, inside the range reviewed for slice
-N+1. As a second check, `mergeRunBranch` refuses unless the branch tip is the last approved commit.
+N+1. As a second check, `mergeRunBranch` refuses unless the branch tip's content matches the last
+approved commit. It compares trees, not SHAs, because signing rewrites commits and a merge may be
+tried again afterwards.
 
 ### Git moves behind the session or to the repository root
 
@@ -107,8 +109,9 @@ N+1. As a second check, `mergeRunBranch` refuses unless the branch tip is the la
 - **jig's automatic merge commit is unsigned**: `commit.gpgsign=false` joins hooks off for that
   merge. Nobody has reviewed that code, and the operator's key should not say otherwise.
 - **`commitSigning` defaults to `"skip"`.** With `"repo"`, jig re-signs the whole run branch with the
-  operator's setup, once, at the merge step. Signing only at the end means SHAs stay stable for the
-  whole run. This is a breaking change to the default and gets a README note.
+  operator's setup, once, when it merges. Signing only at the end means SHAs stay stable for the
+  whole run. A manual merge is not re-signed: the person merging signs what they choose. This is a
+  breaking change to the default, and the README says so.
 
 ### What goes into the container
 
@@ -135,6 +138,9 @@ fixed above. Bundling this repository's `main` took 0.6 seconds and 883 KB.
 
 `spike/check-private-clone.ts` is what remains of it: 19 checks of jig's real session and workspace
 against real docker. Re-run it when upgrading sandcastle.
+
+The live E2E passed on this design with claude planning and describing, opencode implementing and
+codex reviewing.
 
 Not covered by any of this:
 

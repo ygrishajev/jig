@@ -27,6 +27,7 @@ export async function createRunWorktree(runId: RunId) {
     runId,
     baseBranch: 'main',
     sandbox: agent,
+    signing: 'skip',
   });
   const inSandbox = simpleGit({ baseDir: sandboxPath });
   return { repo, worktreePath, sandboxPath, runBranch, git, inSandbox, agent, workspace };

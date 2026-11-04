@@ -51,7 +51,6 @@ export interface SandcastleSessionOptions {
   credentials: Record<string, string>;
   codexAuthDirectory?: string;
   agents: Record<AgentRole, AgentProvider>;
-  skipCommitSigning: boolean;
   /** Runs once inside the sandbox before any agent, e.g. `npm ci`. */
   setupCommand?: string;
   setupTimeoutSeconds: number;
@@ -108,7 +107,6 @@ export class SandcastleSession implements AgentSession, SandboxGit {
           baseBranch: options.baseBranch,
           cwd: repoRoot.value,
           sandbox: clone.provider,
-          hooks: sandboxHooks(options),
         }),
       catch: sandboxStartFailure,
     });
@@ -281,17 +279,6 @@ async function openCodexAuth(
  * Sandcastle's own `onSandboxReady` hooks ignore a command's exit code and timeout in
  * `createSandbox`, so the setup command is run here, where both are checked.
  */
-function sandboxHooks(options: SandcastleSessionOptions): CreateSandboxOptions['hooks'] {
-  return { host: options.skipCommitSigning ? { onWorktreeReady: [disableSigning()] } : undefined };
-}
-
-function disableSigning(): { command: string } {
-  return {
-    command:
-      'git config extensions.worktreeConfig true && git config --worktree commit.gpgsign false',
-  };
-}
-
 function sandboxStartFailure(error: unknown): ConfigInvalid | SandboxUnavailable {
   const message = `Could not start the sandbox: ${messageOf(error)}`;
   const tag = sandcastleFailureTag(error);

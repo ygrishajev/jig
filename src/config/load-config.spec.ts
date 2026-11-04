@@ -17,7 +17,7 @@ describe('loadConfig', () => {
     expect(config).toMatchObject({
       mergeMode: 'manual',
       designGate: 'auto',
-      commitSigning: 'repo',
+      commitSigning: 'skip',
       planner: { provider: 'claude' },
       implementer: { provider: 'claude' },
       reviewer: { provider: 'claude' },

@@ -55,7 +55,7 @@ const configSchema = z
     /** Must pass inside the sandbox before a reviewed slice counts as approved. */
     verifyCommand: z.string().optional(),
     /** `skip` disables signing in the run's worktree, for repos that sign through an agent the sandbox cannot reach. */
-    commitSigning: z.enum(['repo', 'skip']).default('repo'),
+    commitSigning: z.enum(['repo', 'skip']).default('skip'),
     /** `checkpoint` stops after planning so a person can read the design and plan before any code is written. */
     designGate: z.enum(['auto', 'checkpoint']).default('auto'),
     /** An image managed elsewhere: jig starts it as it is and never builds it. */

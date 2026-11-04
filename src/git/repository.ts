@@ -9,10 +9,10 @@ import { ConfigInvalid, GitCommandFailed, messageOf } from '../domain/errors.js'
  * whether a tracked `post-merge` script or an install that runs a new `postinstall`. simple-git
  * guards this setting against untrusted values; this one is fixed and only turns hooks off.
  */
-export function openRepoWithoutHooks(cwd: string): SimpleGit {
+export function openRepoWithoutHooks(cwd: string, config: string[] = []): SimpleGit {
   return simpleGit({
     baseDir: cwd,
-    config: ['core.hooksPath=/dev/null'],
+    config: ['core.hooksPath=/dev/null', ...config],
     unsafe: { allowUnsafeHooksPath: true },
   });
 }

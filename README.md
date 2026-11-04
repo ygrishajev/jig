@@ -24,8 +24,8 @@ npx husky  # git hooks for contributing; .npmrc turns off the install scripts th
 Requires Node >=20, Docker running locally, and git 2.38 or newer (jig checks merges with
 `git merge-tree --write-tree`). Run jig from the repository's root. Agents commit inside the
 sandbox as `jig`; the final merge is made on the host with your git identity, so `user.name` and
-`user.email` must be set;
-with the default `commitSigning: "repo"`, your signing setup must work without a prompt.
+`user.email` must be set. Agent commits are unsigned unless you set `commitSigning: "repo"`, and
+then your signing setup must work without a prompt.
 
 ### Installing from another repo
 
@@ -119,7 +119,7 @@ expires after 30 seconds.
 | `mergeMode`                                       | `"manual"`                 | `auto` merges the run branch at the end.                                                                                                                                  |
 | `designGate`                                      | `"auto"`                   | `checkpoint` pauses after planning.                                                                                                                                       |
 | `reviewCycleCap`                                  | `3`                        | Rejections before a slice is stuck.                                                                                                                                       |
-| `commitSigning`                                   | `"repo"`                   | `skip` disables signing in the run's worktree.                                                                                                                            |
+| `commitSigning`                                   | `"skip"`                   | `repo` signs the run branch when jig merges it (automatic merges only).                                                                                                   |
 | `sandboxImage`                                    | —                          | Use this image as-is instead of building one.                                                                                                                             |
 | `agents`                                          | `{}`                       | Pin agent CLI versions, e.g. `{ "claude": "2.1.312" }`.                                                                                                                   |
 | `agentUpdates`                                    | `"auto"`                   | `warn` or `off`; how unpinned agents follow new releases.                                                                                                                 |
