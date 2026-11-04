@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { scriptWholeRun } from '../../tests/support/agent-scripts.js';
 import { aRunState, runId } from '../../tests/support/builders.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
-import { openRunWorktree } from '../../tests/support/open-run-worktree.js';
+import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
@@ -28,7 +28,7 @@ import {
   SandboxUnavailable,
   SetupCommandFailed,
 } from '../domain/errors.js';
-import type { RunId } from '../domain/run-id.js';
+import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer } from './container.js';
 import { runJig } from './run-jig.js';
@@ -225,7 +225,11 @@ describe('runJig', () => {
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
-      const agent = new FakeAgentSession(path.join(repo.dir, '.jig', id, 'workspace'));
+      const agent = new FakeAgentSession(
+        sandboxCloneOf(repo.dir, runIdSchema.parse(id)),
+        undefined,
+        path.join(repo.dir, '.jig', id, 'workspace'),
+      );
       agents.set(id, agent);
       return agent;
     };

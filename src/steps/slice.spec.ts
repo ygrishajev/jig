@@ -63,19 +63,27 @@ describe('slice steps', () => {
   });
 
   it('starts a slice where the previous slice ended, so a commit left by an interrupted attempt is still reviewed', async () => {
-    const { run, agent, git, runBranch, workspace, worktreePath } = await setup({
+    const { run, agent, git, runBranch, workspace, sandboxPath } = await setup({
       implementer: [{ files: { 'resumed.txt': faker.lorem.sentence() } }],
       reviewer: [approval()],
     });
-    await writeFile(path.join(worktreePath, 'previous.txt'), faker.lorem.sentence());
-    (await workspace.commitAll(faker.lorem.sentence())).unwrap();
+    await writeFile(path.join(sandboxPath, 'previous.txt'), faker.lorem.sentence());
+    (
+      await workspace.saveWork(faker.lorem.sentence(), {
+        approved: (await workspace.forkPoint()).unwrap(),
+      })
+    ).unwrap();
     const previous = aSlice({
       order: 0,
       status: 'approved',
       commit: await git.revparse([runBranch]),
     });
-    await writeFile(path.join(worktreePath, 'interrupted.txt'), faker.lorem.sentence());
-    (await workspace.commitAll(faker.lorem.sentence())).unwrap();
+    await writeFile(path.join(sandboxPath, 'interrupted.txt'), faker.lorem.sentence());
+    (
+      await workspace.saveWork(faker.lorem.sentence(), {
+        approved: (await workspace.forkPoint()).unwrap(),
+      })
+    ).unwrap();
     const slice = aSlice({ order: 1 });
     await run(implementSlice, slice, [previous]);
 
@@ -166,7 +174,7 @@ describe('slice steps', () => {
     const id = runId();
     const created = await createRunWorktree(id);
     const { workspace } = created;
-    const agent = new FakeAgentSession(created.worktreePath, input.exec);
+    const agent = new FakeAgentSession(created.sandboxPath, input.exec);
     agent.script('implementer', ...(input.implementer ?? []));
     agent.script('reviewer', ...(input.reviewer ?? []));
     const state = aRunState({ runId: id });
@@ -183,7 +191,7 @@ describe('slice steps', () => {
       run,
       agent,
       workspace,
-      worktreePath: created.worktreePath,
+      sandboxPath: created.sandboxPath,
       git: created.git,
       runBranch: created.runBranch,
     };

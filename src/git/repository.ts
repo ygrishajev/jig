@@ -4,16 +4,21 @@ import { type SimpleGit, simpleGit } from 'simple-git';
 
 import { ConfigInvalid, GitCommandFailed, messageOf } from '../domain/errors.js';
 
-export async function commitAll(
-  cwd: string,
-  message: string,
-): Promise<Result<string | null, GitCommandFailed>> {
-  return gitCommand('commit', async () => {
-    const git = openRepo(cwd);
-    if ((await git.status()).isClean()) return null;
-    await git.add('-A');
-    return (await git.commit(message)).commit;
+/**
+ * For a merge on the host: a hook can run what the branch just brought in, before anyone read it,
+ * whether a tracked `post-merge` script or an install that runs a new `postinstall`. simple-git
+ * guards this setting against untrusted values; this one is fixed and only turns hooks off.
+ */
+export function openRepoWithoutHooks(cwd: string): SimpleGit {
+  return simpleGit({
+    baseDir: cwd,
+    config: ['core.hooksPath=/dev/null'],
+    unsafe: { allowUnsafeHooksPath: true },
   });
+}
+
+export function isWorkingTreeClean(cwd: string): Promise<Result<boolean, GitCommandFailed>> {
+  return gitCommand('status', async () => (await openRepo(cwd).status()).isClean());
 }
 
 /** Runs simple-git work, returning whatever it throws as a failed git command. */
@@ -34,23 +39,6 @@ export function gitCommand<T>(
 
 export function openRepo(cwd: string): SimpleGit {
   return simpleGit({ baseDir: cwd });
-}
-
-/**
- * For a merge on the host: a hook can run what the branch just brought in, before anyone read it,
- * whether a tracked `post-merge` script or an install that runs a new `postinstall`. simple-git
- * guards this setting against untrusted values; this one is fixed and only turns hooks off.
- */
-export function openRepoWithoutHooks(cwd: string): SimpleGit {
-  return simpleGit({
-    baseDir: cwd,
-    config: ['core.hooksPath=/dev/null'],
-    unsafe: { allowUnsafeHooksPath: true },
-  });
-}
-
-export function isWorkingTreeClean(cwd: string): Promise<Result<boolean, GitCommandFailed>> {
-  return gitCommand('status', async () => (await openRepo(cwd).status()).isClean());
 }
 
 /**

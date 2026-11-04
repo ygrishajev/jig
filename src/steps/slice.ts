@@ -13,9 +13,12 @@ export const implementSlice: SliceStep = ({ state, slice, ports }) =>
     const { workspace } = ports;
     const attemptStart = yield* Result.await(workspace.headCommit());
     yield* Result.await(ports.agent.run({ role: 'implementer', prompt: implementPrompt(slice) }));
-    yield* Result.await(workspace.commitAll(`jig: implement ${slice.id} — ${slice.title}`));
+    const approved = yield* Result.await(sliceStart(state, slice, ports));
+    yield* Result.await(
+      workspace.saveWork(`jig: implement ${slice.id} — ${slice.title}`, { approved }),
+    );
     const head = yield* Result.await(workspace.headCommit());
-    if (head === (yield* Result.await(sliceStart(state, slice, ports)))) {
+    if (head === approved) {
       return Result.ok<Outcome>({
         type: 'changesRequested',
         feedback: nothingChangedFeedback(slice),

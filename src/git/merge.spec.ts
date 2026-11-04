@@ -5,10 +5,10 @@ import path from 'node:path';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
+import { commitAll } from '../../tests/support/commit-all.js';
 import { createRemote, createTempRepo } from '../../tests/support/temp-repo.js';
 import { GitCommandFailed, MergeFailed, RemoteUnavailable } from '../domain/errors.js';
 import { isBranchMergedInto, mergeBranchInto } from './merge.js';
-import { commitAll } from './repository.js';
 
 describe('mergeBranchInto', () => {
   it('merges a branch into the checked-out base and returns the merge commit', async () => {

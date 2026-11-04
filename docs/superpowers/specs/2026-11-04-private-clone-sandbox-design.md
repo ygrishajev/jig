@@ -120,34 +120,25 @@ Credentials still arrive as env vars.
 
 ## Evidence
 
-Two checks ran on 2026-11-04 with sandcastle 0.12.0, a scripted agent and no network. All pass.
-
-`spike/check-private-clone.ts` (19 checks) covers the core flow:
-
-- the container has no mounts, and the host repository path does not exist inside it;
-- `sandbox.run` works with the provider, and host commits stay invisible until imported;
-- imports keep SHAs, a second import carries only new commits, and host SHAs resolve in the sandbox;
-- commits are authored by `jig` and unsigned, even with `commit.gpgsign=true` on the host;
-- `.git/config` and the `.git/hooks` listing are unchanged, the run merges, and nothing is left over.
-
-`spike/check-private-clone-edges.ts` (29 checks) covers the edges:
+A prototype ran 48 checks on 2026-11-04 with sandcastle 0.12.0, a scripted agent and no network. It
+covered the core flow and these edges:
 
 - idle timeouts, failing agents, live streaming and a 300 KB prompt over stdin;
-- amending unapproved work imports; rewriting an approved commit is refused and changes nothing;
-- a resumed run starts from the last imported commit, and unimported work is gone;
-- file modes and symbolic links survive, and a 20 MB commit imports in about a second;
-- the Codex login directory mounts and refreshes, and local excludes reach the clone;
-- a submodule stays an empty directory with its pointer intact, as in a new worktree today.
+- amending unapproved work, and refusing a rewrite of an approved commit;
+- resuming from the last imported commit, with unimported work gone;
+- file modes, symbolic links and a 20 MB commit, which imported in about a second;
+- the Codex login mount, and a submodule staying an empty directory with its pointer intact, as in
+  a new worktree today.
 
-Bundling this repository's `main` took 0.6 seconds and 883 KB.
+It found that local excludes were lost and that refusing every rewrite was too strict. Both are
+fixed above. Bundling this repository's `main` took 0.6 seconds and 883 KB.
 
-The first run of the edge checks found the lost excludes and showed that refusing every rewrite was
-too strict. Both are fixed above.
+`spike/check-private-clone.ts` is what remains of it: 19 checks of jig's real session and workspace
+against real docker. Re-run it when upgrading sandcastle.
 
-They do not cover:
+Not covered by any of this:
 
-- real agents: claude, opencode and codex have not run through this provider;
-- `init`'s throwaway sandbox, or a real image built by `jig build`;
+- `init`'s throwaway sandbox;
 - Git LFS, because `git-lfs` is on neither this machine nor the test image;
 - a sandbox actively trying to break out. The audit's blocked candidate is still unverified, so
   this design rests on removing the shared state rather than on a test of the attack.
@@ -184,8 +175,6 @@ Each step lands green.
   check to re-run when upgrading sandcastle.
 - **Git LFS.** Check it before calling the feature done, then either populate objects in
   `setupCommand` or document the gap. Submodules behave as they do in a new worktree today.
-- **The default global ignore file.** The spike reads `core.excludesFile` only, so it misses git's
-  default of `~/.config/git/ignore` when that key is unset.
 - **Large repositories.** The clone carries the full history of both branches, because review ranges
   need the fork point. Measure a large repository before optimising.
 - **Crash recovery.** Commits not yet imported die with the container, which at worst repeats one

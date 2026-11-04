@@ -1,10 +1,15 @@
 import { Result } from 'better-result';
-import { writeFile } from 'node:fs/promises';
+import { execa } from 'execa';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import type { ZodType } from 'zod';
 
-import { AgentOutputInvalid, type AgentRunFailed } from '../../src/domain/errors.js';
+import {
+  AgentOutputInvalid,
+  type AgentRunFailed,
+  type GitCommandFailed,
+} from '../../src/domain/errors.js';
 import type { RunEvent } from '../../src/domain/events.js';
 import type { RunId } from '../../src/domain/run-id.js';
 import type { RunState } from '../../src/domain/run-state.js';
@@ -38,11 +43,13 @@ export class FakeAgentSession implements AgentSession {
   private readonly queues = new Map<AgentRole, AgentScript[]>();
 
   constructor(
-    readonly worktreePath: string,
+    private readonly sandboxPath: string,
     private readonly execResult: (command: string) => ExecResult = () => ({
       exitCode: 0,
       output: '',
     }),
+    /** The run's worktree on the host, which the real session reports and agents never touch. */
+    readonly worktreePath: string = sandboxPath,
   ) {}
 
   script(role: AgentRole, ...turns: AgentScript[]) {
@@ -81,6 +88,20 @@ export class FakeAgentSession implements AgentSession {
     return this.execResult(command);
   }
 
+  /** Git in the fake's clone is real, the way it is in the real sandbox; only the agent is fake. */
+  async execGit(args: string[]): Promise<ExecResult> {
+    const { exitCode, stdout, stderr } = await execa('git', args, {
+      cwd: this.sandboxPath,
+      reject: false,
+    });
+    return { exitCode: exitCode ?? 1, output: exitCode === 0 ? stdout : `${stdout}${stderr}` };
+  }
+
+  async copyOut(sandboxPath: string, hostPath: string): Promise<Result<void, GitCommandFailed>> {
+    await copyFile(path.join(this.sandboxPath, sandboxPath), hostPath);
+    return Result.ok();
+  }
+
   closed = false;
 
   async close() {
@@ -95,12 +116,14 @@ export class FakeAgentSession implements AgentSession {
   }
 
   private async commit(message: string) {
-    await simpleGit({ baseDir: this.worktreePath }).add('-A').commit(message);
+    await simpleGit({ baseDir: this.sandboxPath }).add('-A').commit(message);
   }
 
   private async writeFiles(files: Record<string, string>) {
     for (const [relativePath, contents] of Object.entries(files)) {
-      await writeFile(path.join(this.worktreePath, relativePath), contents);
+      const file = path.join(this.sandboxPath, relativePath);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, contents);
     }
   }
 }

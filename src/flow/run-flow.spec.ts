@@ -186,8 +186,8 @@ describe('runFlow', () => {
 
   async function setup(input: { settings: RunSettings }) {
     const id = runId();
-    const { worktreePath, workspace, git, runBranch } = await createRunWorktree(id);
-    const agent = new FakeAgentSession(worktreePath);
+    const { sandboxPath, workspace, git, runBranch } = await createRunWorktree(id);
+    const agent = new FakeAgentSession(sandboxPath);
     const store = new InMemoryRunStore();
     const dependencies = {
       ports: { agent, workspace },

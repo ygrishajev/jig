@@ -109,7 +109,7 @@ describe('finishing steps', () => {
     const id = runId();
     const created = await createRunWorktree(id);
     const { workspace } = created;
-    const agent = new FakeAgentSession(created.worktreePath);
+    const agent = new FakeAgentSession(created.sandboxPath);
     if (input.describer) agent.script('describer', input.describer);
     const state = aRunStateIn('describing', { runId: id, ...input.state });
     const run = (step: RunStep<'describing'>) =>
@@ -117,10 +117,11 @@ describe('finishing steps', () => {
 
     const commitOnRunBranch = async () => {
       await writeFile(
-        path.join(created.worktreePath, `${faker.word.noun()}.txt`),
+        path.join(created.sandboxPath, `${faker.string.uuid()}.txt`),
         faker.lorem.sentence(),
       );
-      (await workspace.commitAll(faker.lorem.sentence())).unwrap();
+      const approved = (await workspace.forkPoint()).unwrap();
+      (await workspace.saveWork(faker.lorem.sentence(), { approved })).unwrap();
     };
     const isMerged = async () => (await workspace.isRunBranchMerged()).unwrap();
     const mergeByHand = () => created.git.merge([created.runBranch, '--no-edit']);

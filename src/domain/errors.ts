@@ -15,6 +15,7 @@ export type JigError =
   | RunStateConflict
   | MergeFailed
   | GitCommandFailed
+  | CommitImportRefused
   | ConfigInvalid
   | RunRequestInvalid
   | RunInProgress
@@ -96,6 +97,11 @@ export class GitCommandFailed extends TaggedError('GitCommandFailed')<{
   readonly kind = 'block' as const;
 }
 
+/** The sandbox's commits were not taken: its answers did not add up, or it rewrote approved work. */
+export class CommitImportRefused extends TaggedError('CommitImportRefused')<{ message: string }> {
+  readonly kind = 'block' as const;
+}
+
 export class ConfigInvalid extends TaggedError('ConfigInvalid')<{ message: string }> {
   readonly kind = 'fatal' as const;
 }
@@ -144,6 +150,7 @@ const jigErrorClasses = [
   RunStateConflict,
   MergeFailed,
   GitCommandFailed,
+  CommitImportRefused,
   ConfigInvalid,
   RunRequestInvalid,
   RunInProgress,

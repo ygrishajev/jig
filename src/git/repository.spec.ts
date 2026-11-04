@@ -1,13 +1,12 @@
 import { faker } from '@faker-js/faker';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { ConfigInvalid } from '../domain/errors.js';
-import { commitAll, ensureRepositoryRoot, isWorkingTreeClean } from './repository.js';
+import { ensureRepositoryRoot, isWorkingTreeClean } from './repository.js';
 
 describe('git repository helpers', () => {
   it('sees a tree as clean right after a commit', async () => {
@@ -21,29 +20,6 @@ describe('git repository helpers', () => {
     await writeUntrackedFile();
 
     expect((await isWorkingTreeClean(repo)).unwrap()).toBe(false);
-  });
-
-  it('commits every pending change under the message and returns the new commit', async () => {
-    const { repo, writeUntrackedFile } = await setup();
-    const file = await writeUntrackedFile();
-    const message = faker.git.commitMessage();
-
-    const sha = (await commitAll(repo, message)).unwrap();
-
-    const git = simpleGit({ baseDir: repo });
-    const head = await git.log(['-1']);
-    expect(head.latest?.message).toBe(message);
-    expect(head.latest?.hash.startsWith(sha ?? 'no commit')).toBe(true);
-    expect((await git.raw(['show', '--name-only', '--format='])).trim()).toBe(file);
-    expect((await isWorkingTreeClean(repo)).unwrap()).toBe(true);
-  });
-
-  it('commits nothing when nothing changed', async () => {
-    const { repo } = await setup();
-    const before = await simpleGit({ baseDir: repo }).revparse(['HEAD']);
-
-    expect((await commitAll(repo, faker.git.commitMessage())).unwrap()).toBeNull();
-    expect(await simpleGit({ baseDir: repo }).revparse(['HEAD'])).toBe(before);
   });
 
   it('accepts the root of a repository', async () => {

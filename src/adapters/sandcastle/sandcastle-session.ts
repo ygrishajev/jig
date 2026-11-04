@@ -5,7 +5,6 @@ import {
   type CreateSandboxOptions,
   type Sandbox,
 } from '@ai-hero/sandcastle';
-import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { Result } from 'better-result';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
@@ -18,6 +17,7 @@ import {
   AgentOutputInvalid,
   AgentRunFailed,
   ConfigInvalid,
+  type GitCommandFailed,
   messageOf,
   SandboxUnavailable,
   SetupCommandFailed,
@@ -31,8 +31,10 @@ import type {
   ExecResult,
 } from '../../ports/agent-session.js';
 import type { EventSink } from '../../ports/observability.js';
+import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { refuseSymlinks } from '../find-symlink.js';
 import { type CodexAuthCache, openCodexAuthCache } from './codex-auth.js';
+import { type PrivateClone, privateCloneDocker, shellQuote } from './private-clone-docker.js';
 import { extractOutput, OUTPUT_TAG, outputInstruction } from './structured-output.js';
 import { usageFromStreamLine } from './usage.js';
 
@@ -61,12 +63,13 @@ export interface SandcastleSessionOptions {
 
 /**
  * One sandcastle sandbox for the whole run: every agent call and command runs in the same warm
- * container, over the worktree sandcastle keeps for the run branch.
+ * container, over a private clone; sandcastle keeps a worktree of the run branch on the host.
  */
-export class SandcastleSession implements AgentSession {
+export class SandcastleSession implements AgentSession, SandboxGit {
   private constructor(
     private readonly sandbox: Sandbox,
     private readonly options: SandcastleSessionOptions,
+    private readonly clone: PrivateClone,
     private readonly codexAuth?: CodexAuthCache,
   ) {}
 
@@ -91,14 +94,20 @@ export class SandcastleSession implements AgentSession {
     const codexAuth = await openCodexAuth(options);
     if (codexAuth.isErr()) return Result.err(codexAuth.error);
     const cache = codexAuth.value;
-    const mounts = cache ? [{ hostPath: cache.directory, sandboxPath: '/home/agent/.codex' }] : [];
+    const clone = privateCloneDocker({
+      imageName: options.imageName,
+      branch: runBranchFor(options.runId),
+      baseBranch: options.baseBranch,
+      env: options.credentials,
+      loginDirectory: cache?.directory,
+    });
     const sandbox = await Result.tryPromise({
       try: () =>
         start({
           branch: runBranchFor(options.runId),
           baseBranch: options.baseBranch,
           cwd: repoRoot.value,
-          sandbox: docker({ imageName: options.imageName, env: options.credentials, mounts }),
+          sandbox: clone.provider,
           hooks: sandboxHooks(options),
         }),
       catch: sandboxStartFailure,
@@ -114,7 +123,7 @@ export class SandcastleSession implements AgentSession {
       await releaseAfterFailedOpen(cache, options.logger);
       return Result.err(ready.error);
     }
-    return Result.ok(new SandcastleSession(sandbox.value, options, cache));
+    return Result.ok(new SandcastleSession(sandbox.value, options, clone, cache));
   }
 
   get worktreePath(): string {
@@ -207,6 +216,17 @@ export class SandcastleSession implements AgentSession {
   async exec(command: string): Promise<ExecResult> {
     const result = await this.sandbox.exec(command);
     return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() };
+  }
+
+  async execGit(args: string[]): Promise<ExecResult> {
+    const { exitCode, stdout, stderr } = await this.sandbox.exec(
+      ['git', ...args].map(shellQuote).join(' '),
+    );
+    return { exitCode, output: exitCode === 0 ? stdout : `${stdout}${stderr}`.trim() };
+  }
+
+  copyOut(sandboxPath: string, hostPath: string): Promise<Result<void, GitCommandFailed>> {
+    return this.clone.copyOut(sandboxPath, hostPath);
   }
 
   async close(): Promise<Result<void, ConfigInvalid>> {

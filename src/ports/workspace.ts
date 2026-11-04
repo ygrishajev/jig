@@ -1,13 +1,24 @@
 import type { Result } from 'better-result';
 
-import type { GitCommandFailed, MergeFailed, RemoteUnavailable } from '../domain/errors.js';
+import type {
+  CommitImportRefused,
+  GitCommandFailed,
+  MergeFailed,
+  RemoteUnavailable,
+} from '../domain/errors.js';
 import type { CommitSummary } from '../domain/usage.js';
 
-/** The run's worktree and branch, seen from the host. */
+/** The run's branch, seen from the host, and how the sandbox's work reaches it. */
 export interface Workspace {
-  /** Commits every uncommitted change in the worktree; does nothing when there is none. */
-  commitAll(message: string): Promise<Result<void, GitCommandFailed>>;
-  /** The commit the run branch's worktree has checked out. */
+  /**
+   * Commits whatever is uncommitted in the sandbox, then brings its commits onto the run branch.
+   * Work after `approved` may be replaced; `approved` itself must stay in the history.
+   */
+  saveWork(
+    message: string,
+    options: { approved: string },
+  ): Promise<Result<void, GitCommandFailed | CommitImportRefused>>;
+  /** The commit at the tip of the run branch. */
   headCommit(): Promise<Result<string, GitCommandFailed>>;
   /** The base branch commit the run branch was cut from. */
   forkPoint(): Promise<Result<string, GitCommandFailed>>;

@@ -22,8 +22,9 @@ npx husky  # git hooks for contributing; .npmrc turns off the install scripts th
 ```
 
 Requires Node >=20, Docker running locally, and git 2.38 or newer (jig checks merges with
-`git merge-tree --write-tree`). Run jig from the repository's root. Its commits and the final
-merge are made on the host with your git identity, so `user.name` and `user.email` must be set;
+`git merge-tree --write-tree`). Run jig from the repository's root. Agents commit inside the
+sandbox as `jig`; the final merge is made on the host with your git identity, so `user.name` and
+`user.email` must be set;
 with the default `commitSigning: "repo"`, your signing setup must work without a prompt.
 
 ### Installing from another repo
@@ -99,9 +100,10 @@ expires after 30 seconds.
   a directory holding a saved ChatGPT login (`auth.json`) — the one exception to env-only
   credentials, described under [Live E2E](#live-e2e). Sandcastle also injects every
   key listed in `.sandcastle/.env`, if the repository has one; jig warns with their names.
-- **What the sandbox sees.** Besides the run's worktree, the repository's `.git` directory is
-  mounted writable, because the agents use git. Anything in `.git/config` is visible to them —
-  in GitHub Actions, check out with `persist-credentials: false` so the job token is not there.
+- **What the sandbox sees.** A private clone of the run and base branches, with no remote and
+  nothing from the repository mounted. Commits reach the host as a bundle after each implement step,
+  so work on other branches and `.git/config` stay out of the sandbox's reach. Only the Codex login
+  directory is mounted, when codex is configured.
 - **Automatic merges.** `mergeMode: "auto"` lands agent code nobody has read, so only use it where
   you accept that. jig turns git hooks off for its own merge, so your `post-merge` hooks do not run.
 

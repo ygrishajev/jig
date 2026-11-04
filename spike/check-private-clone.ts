@@ -1,150 +1,172 @@
-// Spike for the private-clone sandbox: no credentials, no model, no network.
-//   1. a bind-mount provider can ignore the mounts sandcastle offers and hand the container a clone
-//   2. a scripted agent commits in that clone through the normal sandbox.run
-//   3. the host imports those commits from a bundle, keeping their SHAs and signing nothing
-//   4. sandcastle's own host-side git, close included, still works on the host worktree
-import { createSandbox } from '@ai-hero/sandcastle';
+// Runs jig's real session and workspace against real docker, with a scripted agent, no model and
+// no credentials. Unit specs fake docker; re-run this when upgrading sandcastle, because the design
+// relies on two of its behaviours (see the private clone sandbox spec).
+//
+//   npx tsx spike/check-private-clone.ts
+//   SPIKE_IMAGE=<image> npx tsx spike/check-private-clone.ts
+import type { AgentProvider } from '@ai-hero/sandcastle';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import pino from 'pino';
 
-import {
-  BRANCH,
-  check,
-  docker,
-  git,
-  importFromSandbox,
-  makeRepo,
-  privateCloneDocker,
-  results,
-  scriptedAgent,
-} from './private-clone.js';
+import { GitWorkspace } from '../src/adapters/git/git-workspace.js';
+import { SandcastleSession } from '../src/adapters/sandcastle/sandcastle-session.js';
+import { runIdSchema } from '../src/domain/run-id.js';
+import { runBranchFor } from '../src/domain/run-state.js';
+
+const IMAGE = process.env.SPIKE_IMAGE ?? 'sandcastle:sdlc-sandcastle';
+const run = { runId: runIdSchema.parse('spike'), baseBranch: 'main' };
+const branch = runBranchFor(run.runId);
+
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
+const docker = (...args: string[]) => execFileSync('docker', args, { encoding: 'utf-8' }).trim();
+
+const results: boolean[] = [];
+function check(name: string, passed: boolean, detail = '') {
+  results.push(passed);
+  console.log(`${passed ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`);
+}
+
+function makeRepo() {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'jig-spike-')));
+  git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'config', 'user.email', 'operator@example.invalid');
+  git(dir, 'config', 'user.name', 'operator');
+  writeFileSync(path.join(dir, 'README.md'), '# spike\n');
+  writeFileSync(path.join(dir, '.gitignore'), '.sandcastle/\n.jig/\n');
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-qm', 'base');
+  git(dir, 'config', 'commit.gpgsign', 'true');
+  git(dir, 'config', 'gpg.program', 'false');
+  return dir;
+}
+
+let script = '';
+const scriptedAgent: AgentProvider = {
+  name: 'scripted',
+  env: {},
+  captureSessions: false,
+  buildPrintCommand: () => ({ command: script }),
+  parseStreamLine: (line) => [{ type: 'text', text: line }],
+};
 
 const repo = makeRepo();
-const scratch = mkdtempSync(path.join(tmpdir(), 'jig-import-'));
 const configBefore = readFileSync(path.join(repo, '.git/config'), 'utf-8');
 const hooksBefore = execFileSync('ls', [path.join(repo, '.git/hooks')], { encoding: 'utf-8' });
-const state: { container?: string; offeredMounts?: unknown[] } = {};
+writeFileSync(path.join(repo, '.git/info/exclude'), 'local-only.txt\n');
 const fork = git(repo, 'rev-parse', 'main');
+const logs = mkdtempSync(path.join(tmpdir(), 'jig-spike-logs-'));
 
-const sandbox = await createSandbox({
-  branch: BRANCH,
-  baseBranch: 'main',
-  cwd: repo,
-  sandbox: privateCloneDocker(state),
+const opened = await SandcastleSession.open({
+  repoRoot: repo,
+  ...run,
+  imageName: IMAGE,
+  credentials: {},
+  agents: {
+    planner: scriptedAgent,
+    implementer: scriptedAgent,
+    reviewer: scriptedAgent,
+    describer: scriptedAgent,
+  },
+  skipCommitSigning: false,
+  setupTimeoutSeconds: 60,
+  idleTimeoutSeconds: 30,
+  agentLogFile: path.join(logs, 'agents.log'),
+  events: { publish: () => undefined },
+  logger: pino({ level: 'silent' }),
 });
+const session = opened.unwrap();
+const workspace = new GitWorkspace({
+  repoRoot: repo,
+  worktreePath: session.worktreePath,
+  sandbox: session,
+  ...run,
+});
+const agentRun = async (commands: string) => {
+  script = commands;
+  (await session.run({ role: 'implementer', prompt: 'scripted' })).unwrap();
+};
+const sandboxHead = async () => (await session.execGit(['rev-parse', 'HEAD'])).output.trim();
+
+const container = (await session.exec('hostname')).output;
 try {
-  const container = state.container!;
-  const hostWorktree = sandbox.worktreePath;
-  check(
-    'sandcastle offered mounts the provider ignored',
-    (state.offeredMounts ?? []).length > 0,
-    JSON.stringify((state.offeredMounts ?? []).length),
-  );
   check(
     'the container has no mounts',
     docker('inspect', '-f', '{{len .Mounts}}', container) === '0',
   );
-  const seesHost = await sandbox.exec(`test -e "${repo}"`);
-  check('the host repository path does not exist in the container', seesHost.exitCode !== 0);
   check(
-    'sandbox starts at the fork point',
-    (await sandbox.exec('git rev-parse HEAD')).stdout.trim() === fork,
+    'the host repository is not in the container',
+    (await session.exec(`test -e "${repo}"`)).exitCode !== 0,
+  );
+  check('the sandbox starts at the fork point', (await sandboxHead()) === fork);
+  check('the clone has no remote', (await session.execGit(['remote'])).output.trim() === '');
+  await session.exec('echo x > local-only.txt');
+  check(
+    'local excludes reach the clone',
+    !(await session.execGit(['status', '--porcelain'])).output.includes('local-only'),
   );
 
-  const first = await sandbox.run({
-    agent: scriptedAgent(
-      `echo one > one.txt && git add -A && git commit -qm "slice one" && echo committed`,
-    ),
-    prompt: 'scripted',
-    idleTimeoutSeconds: 30,
-  });
+  await agentRun('echo one > one.txt && git add -A && git commit -qm "slice one"');
   check(
-    'sandbox.run works with the scripted agent',
-    first.stdout.includes('committed'),
-    first.stdout.trim().slice(0, 40),
+    'the host branch does not move until work is saved',
+    git(repo, 'rev-parse', branch) === fork,
   );
-  const firstHead = (await sandbox.exec('git rev-parse HEAD')).stdout.trim();
-  check(
-    'the host did not see the commit before importing',
-    git(repo, 'rev-parse', BRANCH) === fork,
-  );
-  const importedFirst = await importFromSandbox({
-    container,
-    hostWorktree,
-    approved: fork,
-    scratch,
-  });
-  check('import keeps the SHA', importedFirst === firstHead, importedFirst.slice(0, 10));
+  (await workspace.saveWork('unused', { approved: fork })).unwrap();
+  const first = await sandboxHead();
+  check('saving keeps the SHA', git(repo, 'rev-parse', branch) === first);
 
-  await sandbox.run({
-    agent: scriptedAgent('echo two > two.txt'),
-    prompt: 'scripted',
-    idleTimeoutSeconds: 30,
-  });
-  const committed = await sandbox.exec(`git add -A && git commit -qm "jig: implement slice two"`);
+  await agentRun('echo two > two.txt');
+  (await workspace.saveWork("jig: it's a slice — two", { approved: first })).unwrap();
+  const second = await sandboxHead();
+  check('uncommitted work is committed in the sandbox', git(repo, 'rev-parse', branch) === second);
   check(
-    "jig can commit an agent's uncommitted work inside the sandbox",
-    committed.exitCode === 0,
-    committed.stderr.trim(),
+    'the message survives quoting',
+    git(repo, 'log', '-1', '--format=%s', branch) === "jig: it's a slice — two",
   );
-  const secondHead = (await sandbox.exec('git rev-parse HEAD')).stdout.trim();
-  const importedSecond = await importFromSandbox({
-    container,
-    hostWorktree,
-    approved: firstHead,
-    scratch,
-  });
+  check('commits are authored by jig', git(repo, 'log', '-1', '--format=%an', branch) === 'jig');
   check(
-    'a second import carries only the new commit and keeps its SHA',
-    importedSecond === secondHead,
+    'commits are unsigned though the host signs',
+    git(repo, 'log', '-1', '--format=%G?', branch) === 'N',
   );
 
-  const range = await sandbox.exec(`git rev-list --count ${firstHead}..HEAD`);
+  await agentRun('echo more >> two.txt && git add -A && git commit -q --amend -m amended');
+  const refused = await workspace.saveWork('unused', { approved: second });
   check(
-    'host SHAs resolve inside the sandbox, so review ranges still work',
-    range.stdout.trim() === '1',
+    'rewriting approved work is refused',
+    refused.isErr(),
+    refused.isErr() ? refused.error._tag : '',
   );
-  const reviewNoChange = await sandbox.run({
-    agent: scriptedAgent('echo reviewed'),
-    prompt: 'scripted',
-    idleTimeoutSeconds: 30,
-  });
-  check(
-    'a read-only step leaves the head alone',
-    reviewNoChange.stdout.includes('reviewed') &&
-      (await sandbox.exec('git rev-parse HEAD')).stdout.trim() === secondHead,
-  );
+  check('a refusal leaves the host branch alone', git(repo, 'rev-parse', branch) === second);
 
-  check('commits are authored by jig', git(repo, 'log', '-1', '--format=%an', BRANCH) === 'jig');
-  check(
-    'commits are unsigned even though the host signs by default',
-    git(repo, 'log', '-1', '--format=%G?', BRANCH) === 'N',
-  );
+  const summary = (await workspace.summariseCommitsSince(fork)).unwrap();
+  check('the summary reads the host branch', summary.sha === second && summary.filesChanged === 2);
 } finally {
-  const closed = await sandbox.close();
-  check(
-    'close removes the host worktree',
-    closed.preservedWorktreePath === undefined,
-    String(closed.preservedWorktreePath),
-  );
+  (await session.close()).unwrap();
 }
 
 check(
-  'the host .git/config is byte-identical',
+  'close removes the container',
+  docker('ps', '-a', '--filter', `id=${container}`, '-q') === '',
+);
+check('close removes the host worktree', !existsSync(session.worktreePath));
+check(
+  'the host .git/config is unchanged',
   readFileSync(path.join(repo, '.git/config'), 'utf-8') === configBefore,
 );
 check(
-  'the host .git/hooks listing is unchanged',
+  'the host hooks are unchanged',
   execFileSync('ls', [path.join(repo, '.git/hooks')], { encoding: 'utf-8' }) === hooksBefore,
 );
-git(repo, 'merge', '-q', '--ff-only', BRANCH);
-check('the run branch merges into main', git(repo, 'rev-list', '--count', `${fork}..main`) === '2');
-check('the operator tree stays clean', git(repo, 'status', '--porcelain') === '');
-const stray = docker('ps', '-a', '--filter', `name=${state.container}`, '--format', '{{.Names}}');
-check('no container is left behind', stray === '');
+const merge = (await workspace.mergeRunBranch()).isOk();
+check(
+  'the run merges into main',
+  merge && git(repo, 'status', '--porcelain') === '',
+  git(repo, 'log', '-1', '--format=%s'),
+);
 
-const failed = results.filter((result) => !result.passed);
-console.log(`\n${results.length - failed.length}/${results.length} passed`);
-process.exit(failed.length ? 1 : 0);
+const failed = results.filter((passed) => !passed).length;
+console.log(`\n${results.length - failed}/${results.length} passed`);
+process.exit(failed ? 1 : 0);

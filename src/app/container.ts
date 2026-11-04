@@ -42,6 +42,7 @@ import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Clock } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
+import type { SandboxGit } from '../ports/sandbox-git.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { sandboxImageName } from './sandbox-image.js';
@@ -74,8 +75,8 @@ export interface AppCradle {
   openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SessionOpenFailure>>;
 }
 
-/** The run's sandbox: where agents and commands run, and the worktree they share with the host. */
-export interface RunSession extends AgentSession {
+/** The run's sandbox: where agents and commands run, and the host worktree of the run branch. */
+export interface RunSession extends AgentSession, SandboxGit {
   readonly worktreePath: string;
   close(): Promise<Result<void, ConfigInvalid>>;
 }
@@ -187,7 +188,13 @@ async function openRunScope(
   scope.register({
     session: asValue(session),
     workspace: asFunction(
-      () => new GitWorkspace({ repoRoot, worktreePath: session.worktreePath, ...run }),
+      () =>
+        new GitWorkspace({
+          repoRoot,
+          worktreePath: session.worktreePath,
+          sandbox: session,
+          ...run,
+        }),
     ).scoped(),
     engineDependencies: asFunction(
       ({ workspace, runStore: store, events, clock, settings }: RunCradle): EngineDependencies => ({
