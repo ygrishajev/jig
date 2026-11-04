@@ -82,6 +82,7 @@ const workspace = new GitWorkspace({
   repoRoot: repo,
   worktreePath: session.worktreePath,
   sandbox: session,
+  signing: 'skip',
   ...run,
 });
 const agentRun = async (commands: string) => {
@@ -91,6 +92,7 @@ const agentRun = async (commands: string) => {
 const sandboxHead = async () => (await session.execGit(['rev-parse', 'HEAD'])).output.trim();
 
 const container = (await session.exec('hostname')).output;
+let approved = fork;
 try {
   check(
     'the container has no mounts',
@@ -120,6 +122,7 @@ try {
   await agentRun('echo two > two.txt');
   (await workspace.saveWork("jig: it's a slice — two", { approved: first })).unwrap();
   const second = await sandboxHead();
+  approved = second;
   check('uncommitted work is committed in the sandbox', git(repo, 'rev-parse', branch) === second);
   check(
     'the message survives quoting',
@@ -159,7 +162,7 @@ check(
   'the host hooks are unchanged',
   execFileSync('ls', [path.join(repo, '.git/hooks')], { encoding: 'utf-8' }) === hooksBefore,
 );
-const merge = (await workspace.mergeRunBranch()).isOk();
+const merge = (await workspace.mergeRunBranch({ approved })).isOk();
 check(
   'the run merges into main',
   merge && git(repo, 'status', '--porcelain') === '',
