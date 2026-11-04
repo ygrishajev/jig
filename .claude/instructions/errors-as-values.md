@@ -3,7 +3,7 @@
 ## Description
 
 - **An expected failure is an `Err`; a bug is a `panic`.** A function that can fail for a reason the operator or the world can cause returns `Result<T, E>` (async: `Promise<Result<T, E>>`). A broken invariant — a phase out of order, a flow with no transition, a state that cannot happen — is `panic(message, cause?)` from `better-result`. jig code never uses `throw`; lint rejects it.
-- **An operator-fixable failure is never a bug.** Docker down, a failing git command, a full disk, a held lock, an unreachable remote, a malformed file in the repo: each is an `Err` with a `JigError` class, printed plainly. The test: the operator must never read "this is a bug" for something jig did not get wrong. Add a class to `src/domain/errors.ts` when none fits.
+- **An operator-fixable failure is never a bug.** Docker down, a failing git command, a full disk, a held lock, an unreachable remote, a malformed file in the repo: each is an `Err` with a `JigError` class, printed plainly. The test: the operator must never get a stack trace for something jig did not get wrong. Add a class to `src/domain/errors.ts` when none fits.
 - **Wrap a third-party call in the adapter that makes it.** simple-git, execa, sandcastle, fs and `JSON.parse` throw; the adapter turns that into an `Err` with `Result.try` / `Result.tryPromise` and maps it to a `JigError` there. Past the adapter nothing catches.
 - **`try` wraps only the third-party call.** `Result.try` and `Result.tryPromise` hand any throw from `try` to `catch`, a `Panic` included, so wrapping jig code that can panic turns a bug into an ordinary `Err`. Keep `try: () => readFile(path)`; never `try: () => ourOwnFunction()`.
 - **A `catch` may handle a third-party throw locally and on purpose, but never swallows a `Panic`.** A broad catch rethrows one untouched: `if (isPanic(error)) panic(messageOf(error), error)`. Re-raising after observing is `panic(message, cause)`, not `throw`.
@@ -12,7 +12,7 @@
 - **Retry uses `retryResult`** (`src/domain/retry.ts`), which retries an `Err` the policy accepts and returns the last one. Never turn an `Err` back into a rejection to feed a retry library.
 - **Never drop a `Result`.** An expression statement whose type is a `Result` (or a promise of one) is a lint error: return it, match on it, or bind it and handle it.
 - **Cleanup after work.** When cleanup fails after the work succeeded, the cleanup failure is the `Err`. When it fails after the work failed, it is logged and the work's `Err` is kept (`reportCleanup` in `src/app/container.ts`).
-- **The CLI prints an `Err` as a message and a bug with its stack.** An `Err` that reaches `withErrorHandling` is an ordinary user error; anything thrown is reported as a bug. Both exit 1.
+- **The CLI prints an `Err` as its message and a throw unedited.** An `Err` that reaches `withErrorHandling` is an ordinary user error, printed as its message. Anything thrown is printed as it was first thrown — its own stack, under any panics wrapped around it — with no wording added. Both exit 1. "A throw is a bug" is how the code treats it, not text for the operator.
 
 ## Examples
 

@@ -1,6 +1,6 @@
 import type { Result } from 'better-result';
 
-import { type JigError, messageOf } from '../domain/errors.js';
+import { type JigError, messageOf, rootCause } from '../domain/errors.js';
 
 /** Where a failed command reports itself. */
 export interface FailureOutput {
@@ -10,7 +10,7 @@ export interface FailureOutput {
 
 /**
  * An expected failure comes back as an `Err` and is printed as its message alone. Anything
- * thrown is a bug in jig, or a third-party throw nobody wrapped, and is printed with its stack.
+ * thrown surfaces as it was first thrown, with its own stack, not the panics wrapped around it.
  */
 export function withErrorHandling<Args extends unknown[]>(
   fn: (...args: Args) => Promise<Result<void, JigError>>,
@@ -21,7 +21,7 @@ export function withErrorHandling<Args extends unknown[]>(
       const result = await fn(...args);
       if (result.isErr()) fail(output, result.error.message);
     } catch (error) {
-      fail(output, `${BUG_NOTICE}\n${stackOf(error)}`);
+      fail(output, stackOf(rootCause(error)));
     }
   };
 }
@@ -38,9 +38,6 @@ function fail(output: FailureOutput, message: string): void {
   output.printError(message);
   output.setExitCode(1);
 }
-
-const BUG_NOTICE =
-  'jig hit an internal error — this is a bug in jig, not in your setup. Please report it with the details below.';
 
 function stackOf(error: unknown): string {
   return error instanceof Error && error.stack ? error.stack : messageOf(error);

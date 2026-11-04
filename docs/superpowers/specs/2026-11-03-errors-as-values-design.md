@@ -73,8 +73,9 @@ What the builder will use from it:
   way: `CommandInputInvalid` (`src/cli/with-input.ts`), `GitCommandFailed` and `MergeRefused`
   (`src/git/merge.ts`). `CommandInputInvalid` is bad user input, so it is an expected failure.
 - **One top-level handler catches anything thrown** — a `Panic`, or a third-party throw nobody
-  wrapped. It replaces today's catch-all in `with-error-handling.ts`. It prints that jig hit an
-  internal error and that this is a bug, with the stack, and sets exit code 1.
+  wrapped. It replaces today's catch-all in `with-error-handling.ts`. It prints what was first
+  thrown, unedited — its own stack, not the panics wrapped around it — and sets exit code 1. It
+  adds no wording of its own: "a throw is a bug" is how the code treats it, not a message.
   - An `Err` that reaches the CLI is printed as today: message only, exit code 1.
   - Keeping one exit code is my call. Splitting bugs onto their own code is a one-line change if
     wanted later.
@@ -89,7 +90,7 @@ simple-git, execa, sandcastle, proper-lockfile, fs and `JSON.parse` throw or rej
   `JigError` there. It adds new `JigError` classes where none fits.
   - The result is that nearly every port returns `Result`s: `AgentSession`, `Workspace`,
     `SandboxImages`, `RunStore`, and the git helpers in `src/git/`.
-  - The test for this rule: the operator must never see "this is a bug" for something jig did not
+  - The test for this rule: the operator must never get a stack trace for something jig did not
     get wrong.
 - **Only a failure that means jig itself is wrong is left to throw.** Examples: an unexpected throw
   inside our own logic, or a library violating its documented contract. It reaches the top-level
@@ -184,7 +185,7 @@ the builder's call.
 ## Non-goals
 
 - No change to which failures are `retry`, `block` or `fatal`, or to what the engine does with each.
-- No change to user-visible error messages, except the new wording for bugs.
+- No change to user-visible error messages.
 - No wrapping of every third-party call "just in case".
 - No new functional-programming layer beyond what better-result provides (no Effect, no `Option`
   type).
@@ -199,5 +200,11 @@ the builder's call.
 ## Left to the builder
 
 - **The shape of the top-level handler,** and whether `withErrorHandling` keeps its name.
-- **Error message wording for bugs.**
 - **Exact PR boundaries within the stages above.**
+
+## Behaviour changes found after landing
+
+- **A git failure inside a step now blocks the run.** Before, simple-git's throw was not a
+  `JigError`, so the engine rethrew it and the invocation ended. Now it is a `GitCommandFailed`,
+  whose kind is `block`, so the run blocks with git's message and can be resumed. This goes against
+  the non-goal above; it is kept because a git failure is the operator's to look at, not a crash.

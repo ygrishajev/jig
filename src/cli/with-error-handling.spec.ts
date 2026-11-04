@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { Result } from 'better-result';
+import { Panic, Result } from 'better-result';
 import { describe, expect, it } from 'vitest';
 
 import { ConfigInvalid, type JigError } from '../domain/errors.js';
@@ -15,21 +15,31 @@ describe('withErrorHandling', () => {
     expect(output).toEqual({ printed: [failure.message], exitCode: 1 });
   });
 
-  it('reports a thrown error as a bug in jig with its stack', async () => {
-    const message = faker.lorem.sentence();
+  it('prints a thrown error unedited, as its own stack', async () => {
+    const thrown = new Error(faker.lorem.sentence());
     const { handle, output } = setup({
       command: async () => {
-        throw new Error(message);
+        throw thrown;
       },
     });
 
     await handle();
 
-    const [printed] = output.printed;
-    expect(printed).toMatch(/^jig hit an internal error — this is a bug in jig/);
-    expect(printed).toContain(message);
-    expect(printed).toContain('at ');
-    expect(output.exitCode).toBe(1);
+    expect(output).toEqual({ printed: [thrown.stack], exitCode: 1 });
+  });
+
+  it('prints what was first thrown, not the panics wrapped around it', async () => {
+    const thrown = new Error(faker.lorem.sentence());
+    const { handle, output } = setup({
+      command: async () => {
+        const inner = new Panic({ message: faker.lorem.sentence(), cause: thrown });
+        throw new Panic({ message: faker.lorem.sentence(), cause: inner });
+      },
+    });
+
+    await handle();
+
+    expect(output.printed).toEqual([thrown.stack]);
   });
 
   it('reports a thrown value that is not an Error by its text', async () => {
@@ -42,9 +52,7 @@ describe('withErrorHandling', () => {
 
     await handle();
 
-    expect(output.printed[0]).toMatch(/^jig hit an internal error/);
-    expect(output.printed[0]).toContain(thrown);
-    expect(output.exitCode).toBe(1);
+    expect(output).toEqual({ printed: [thrown], exitCode: 1 });
   });
 
   it('passes the arguments through and leaves the exit code alone on success', async () => {
