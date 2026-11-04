@@ -1,12 +1,14 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
@@ -50,6 +52,49 @@ describe('initSandbox', () => {
     await init({ useAgent: false });
 
     expect((await file('.sandcastle/.gitignore')).split('\n')).not.toContain('*');
+  });
+
+  it.each(['.sandcastle/.gitignore', '.sandcastle/Dockerfile'])(
+    'refuses to write through %s when it is a symbolic link',
+    async (link) => {
+      const { initResult, write, linkTo } = await setup({});
+      await write('.sandcastle/keep', '');
+      const outside = path.join(await tempDirectory(), faker.string.uuid());
+      const original = `${faker.lorem.word()}\n*\n`;
+      await writeFile(outside, original);
+      await linkTo(outside, link);
+
+      const refusal = await initResult({ useAgent: false });
+
+      expect(await readFile(outside, 'utf-8')).toBe(original);
+      expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+    },
+  );
+
+  it.each(['.sandcastle/Dockerfile', 'jig.config.json'])(
+    'creates no file through %s when it is a link to nothing yet',
+    async (link) => {
+      const { initResult, write, linkTo } = await setup({});
+      await write('.sandcastle/keep', '');
+      const outside = path.join(await tempDirectory(), faker.string.uuid());
+      await linkTo(outside, link);
+
+      const refusal = await initResult({ useAgent: false });
+
+      expect(existsSync(outside)).toBe(false);
+      expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+    },
+  );
+
+  it('refuses to write through a linked .sandcastle directory', async () => {
+    const { initResult, linkTo } = await setup({});
+    const outside = await tempDirectory();
+    await linkTo(outside, '.sandcastle');
+
+    const refusal = await initResult({ useAgent: false });
+
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+    expect(await readdir(outside)).toEqual([]);
   });
 
   it("writes the planner's toolchain and commands once they pass in the sandbox", async () => {
@@ -169,7 +214,9 @@ describe('initSandbox', () => {
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, contents);
     };
-    return { init, initResult, file, write, agent };
+    const linkTo = (target: string, relativePath: string) =>
+      symlink(target, path.join(repo.dir, relativePath));
+    return { init, initResult, file, write, linkTo, agent };
   }
 });
 

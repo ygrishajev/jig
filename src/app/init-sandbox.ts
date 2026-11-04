@@ -1,10 +1,11 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 
+import { refuseSymlinks } from '../adapters/find-symlink.js';
 import {
   BASE_DOCKERFILE,
   DOCKERFILE,
@@ -36,7 +37,7 @@ export function initSandbox(
 ): Promise<Result<InitResult, JigError>> {
   return Result.gen(async function* () {
     const { repoRoot } = app.cradle;
-    await writeStarterFiles(repoRoot);
+    yield* Result.await(writeStarterFiles(repoRoot));
     if (!options.useAgent) {
       const config = yield* loadConfig(repoRoot);
       if (!config.verifyCommand) return Result.ok<InitResult, JigError>({ status: 'written' });
@@ -73,12 +74,16 @@ export function initSandbox(
   });
 }
 
-async function writeStarterFiles(repoRoot: string): Promise<void> {
-  const directory = path.join(repoRoot, SANDBOX_DIRECTORY);
-  await mkdir(directory, { recursive: true });
-  await writeIfMissing(path.join(directory, DOCKERFILE), BASE_DOCKERFILE);
-  await ignoreSandcastleDirectory(repoRoot);
-  await writeIfMissing(path.join(repoRoot, CONFIG_FILE), '{}\n');
+async function writeStarterFiles(repoRoot: string): Promise<Result<void, ConfigInvalid>> {
+  const ignored = await ignoreSandcastleDirectory(repoRoot);
+  if (ignored.isErr()) return ignored;
+  const dockerfile = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
+  const config = path.join(repoRoot, CONFIG_FILE);
+  const refused = refuseSymlinks([dockerfile, config]);
+  if (refused.isErr()) return refused;
+  await writeIfMissing(dockerfile, BASE_DOCKERFILE);
+  await writeIfMissing(config, '{}\n');
+  return Result.ok();
 }
 
 async function writeIfMissing(file: string, contents: string): Promise<void> {

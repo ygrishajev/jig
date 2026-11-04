@@ -31,6 +31,7 @@ import type {
   ExecResult,
 } from '../../ports/agent-session.js';
 import type { EventSink } from '../../ports/observability.js';
+import { refuseSymlinks } from '../find-symlink.js';
 import { type CodexAuthCache, openCodexAuthCache } from './codex-auth.js';
 import { extractOutput, OUTPUT_TAG, outputInstruction } from './structured-output.js';
 import { usageFromStreamLine } from './usage.js';
@@ -85,7 +86,8 @@ export class SandcastleSession implements AgentSession {
         }),
     });
     if (repoRoot.isErr()) return Result.err(repoRoot.error);
-    await ignoreSandcastleDirectory(repoRoot.value);
+    const ignored = await ignoreSandcastleDirectory(repoRoot.value);
+    if (ignored.isErr()) return Result.err(ignored.error);
     const codexAuth = await openCodexAuth(options);
     if (codexAuth.isErr()) return Result.err(codexAuth.error);
     const cache = codexAuth.value;
@@ -219,12 +221,22 @@ export class SandcastleSession implements AgentSession {
 }
 
 /** Also replaces a catch-all `*`, which would hide the Dockerfile from the repository. */
-export async function ignoreSandcastleDirectory(repoRoot: string): Promise<void> {
+export async function ignoreSandcastleDirectory(
+  repoRoot: string,
+): Promise<Result<void, ConfigInvalid>> {
   const directory = path.join(repoRoot, '.sandcastle');
   const gitignore = path.join(directory, '.gitignore');
-  if (existsSync(gitignore) && !ignoresEverything(await readFile(gitignore, 'utf-8'))) return;
-  await mkdir(directory, { recursive: true });
-  await writeFile(gitignore, SANDCASTLE_GITIGNORE);
+  const refused = refuseSymlinks([directory, gitignore]);
+  if (refused.isErr()) return refused;
+  return Result.tryPromise({
+    try: async () => {
+      if (existsSync(gitignore) && !ignoresEverything(await readFile(gitignore, 'utf-8'))) return;
+      await mkdir(directory, { recursive: true });
+      await writeFile(gitignore, SANDCASTLE_GITIGNORE);
+    },
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Could not write ${gitignore}: ${messageOf(cause)}` }),
+  });
 }
 
 function ignoresEverything(gitignore: string): boolean {

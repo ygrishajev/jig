@@ -5,7 +5,7 @@ import type {
   SandboxRunOptions,
 } from '@ai-hero/sandcastle';
 import { faker } from '@faker-js/faker';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import pino from 'pino';
 import { describe, expect, it, vi } from 'vitest';
@@ -161,6 +161,20 @@ describe('SandcastleSession', () => {
       exitCode,
       output: `${stdout}${stderr}`,
     });
+  });
+
+  it('starts no sandbox when the sandcastle gitignore links out of the repository', async () => {
+    const start = vi.fn<SandboxFactory>();
+    const { failure, repoRoot } = await setup({ start });
+    const outside = path.join(await tempDirectory(), faker.string.uuid());
+    const original = `${faker.lorem.word()}\n*\n`;
+    await writeFile(outside, original);
+    await mkdir(path.join(repoRoot, '.sandcastle'));
+    await symlink(outside, path.join(repoRoot, '.sandcastle', '.gitignore'));
+
+    expect(await failure()).toBeInstanceOf(ConfigInvalid);
+    expect(start).not.toHaveBeenCalled();
+    expect(await readFile(outside, 'utf-8')).toBe(original);
   });
 
   it('treats a repository path sandcastle cannot use as a configuration problem', async () => {
@@ -328,7 +342,18 @@ describe('SandcastleSession', () => {
       await cache.close();
       return true;
     };
-    return { open, failure, codexLoginIsFree, sandbox, runs, agents, printCommand, events, id };
+    return {
+      open,
+      failure,
+      codexLoginIsFree,
+      sandbox,
+      runs,
+      agents,
+      printCommand,
+      events,
+      id,
+      repoRoot,
+    };
   }
 });
 
