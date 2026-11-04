@@ -4,11 +4,13 @@ import lockfile from 'proper-lockfile';
 
 import { LocalStateUnwritable, messageOf, RunInProgress } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
-import { makeRunDirectory, runDirectory } from './run-paths.js';
+import { onLocalState } from './local-state.js';
+import { findLinkInRunDirectory, makeRunDirectory, runDirectory } from './run-paths.js';
 
 /**
  * Makes this process the run's only writer until the returned release is called. A second
- * process fails at once with `RunInProgress` rather than waiting for the first to finish.
+ * process fails at once with `RunInProgress` rather than waiting for the first to finish. Every
+ * write of a run comes after this lock, so a run directory holding a link is refused here.
  */
 export async function lockRun(
   repoRoot: string,
@@ -16,6 +18,16 @@ export async function lockRun(
 ): Promise<Result<() => Promise<void>, RunInProgress | LocalStateUnwritable>> {
   const directory = runDirectory(repoRoot, runId);
   const lockfilePath = path.join(directory, 'run.lock');
+  const link = await onLocalState(directory, async () => findLinkInRunDirectory(repoRoot, runId));
+  if (link.isErr()) return Result.err(link.error);
+  if (link.value) {
+    return Result.err(
+      new LocalStateUnwritable({
+        message: `Refusing to use run "${runId}": ${link.value} is a symbolic link.`,
+        path: link.value,
+      }),
+    );
+  }
   return Result.tryPromise({
     try: async () => {
       await makeRunDirectory(repoRoot, runId);

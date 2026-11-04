@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, vi } from 'vitest';
@@ -22,6 +22,7 @@ import { parseEnvironment } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import {
   ConfigInvalid,
+  LocalStateUnwritable,
   RunInProgress,
   RunRequestInvalid,
   SandboxUnavailable,
@@ -47,6 +48,22 @@ describe('runJig', () => {
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(agent.closed).toBe(true);
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'halted', complete: false });
+  });
+
+  it("leaves a tracked file alone when a saved run's document links to it", async () => {
+    const { app, repo } = await setup();
+    const id = runId();
+    const stateDir = stateDirectory(repo.dir, id);
+    const tracked = path.join(repo.dir, 'README.md');
+    const original = await readFile(tracked, 'utf-8');
+    await mkdir(stateDir, { recursive: true });
+    await new LocalRunStore(repo.dir).save(aRunState({ runId: id, phase: 'done' }));
+    await symlink(tracked, path.join(stateDir, 'design.md'));
+
+    const refusal = await runJig(app, { resume: id });
+
+    expect(await readFile(tracked, 'utf-8')).toBe(original);
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(LocalStateUnwritable);
   });
 
   it("ignores telemetry settings in the process environment that the app wasn't given", async () => {

@@ -1,8 +1,9 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { RunId } from '../../domain/run-id.js';
+import { findSymlink } from '../find-symlink.js';
 
 /** This machine's log of a run: what jig did, one line per event. */
 export function runLogFile(repoRoot: string, runId: RunId): string {
@@ -32,4 +33,23 @@ export async function makeRunDirectory(repoRoot: string, runId: RunId): Promise<
   const gitignore = path.join(repoRoot, JIG_DIR, '.gitignore');
   if (!existsSync(gitignore)) await writeFile(gitignore, '*\n');
   return directory;
+}
+
+/**
+ * The first link among the paths a run reads and writes. Each level is checked before it is
+ * listed, so the listing never follows a link. Worktrees below these levels may hold links freely.
+ */
+export function findLinkInRunDirectory(repoRoot: string, runId: RunId): string | undefined {
+  const jigDirectory = path.join(repoRoot, JIG_DIR);
+  const directory = runDirectory(repoRoot, runId);
+  return (
+    findSymlink([jigDirectory, path.join(jigDirectory, '.gitignore'), directory]) ??
+    findSymlink(entriesOf(directory)) ??
+    findSymlink(entriesOf(stateDirectory(repoRoot, runId)))
+  );
+}
+
+function entriesOf(directory: string): string[] {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory).map((entry) => path.join(directory, entry));
 }
