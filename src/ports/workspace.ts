@@ -9,6 +9,7 @@ import type {
   RemoteUnavailable,
   SandboxUnavailable,
 } from '../domain/errors.js';
+import type { ChangedFile } from '../domain/protected-paths.js';
 import type { CommitSummary } from '../domain/usage.js';
 
 /** The run's branch, seen from the host, and how the sandbox's work reaches it. */
@@ -24,6 +25,8 @@ export interface Workspace {
   forkPoint(): Promise<Result<string, GitCommandFailed>>;
   /** HEAD, with the size of everything committed after `since`. */
   summariseCommitsSince(since: string): Promise<Result<CommitSummary, GitCommandFailed>>;
+  /** The files the run branch changed since `start`, and how each changed. */
+  changedFilesSince(start: string): Promise<Result<ChangedFile[], GitCommandFailed>>;
   /** Reads a file from the operator's repository, relative to its root; undefined when absent. */
   readRepoFile(relativePath: string): Promise<string | undefined>;
   /**

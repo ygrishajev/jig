@@ -38,6 +38,42 @@ describe('GitWorkspace', () => {
     });
   });
 
+  it('reports how the run branch changed every file since a point', async () => {
+    const { workspace, inSandbox, writeInSandbox, save } = await setup();
+    const original = `${faker.lorem.slug()}.txt`;
+    await writeInSandbox(original, faker.lorem.sentence());
+    (await save()).unwrap();
+    const start = (await workspace.headCommit()).unwrap();
+    const added = `${faker.lorem.slug()}.txt`;
+    const moved = `${faker.lorem.slug()}.txt`;
+    await writeInSandbox(added, faker.lorem.sentence());
+    await writeInSandbox('README.md', faker.lorem.paragraph());
+    await inSandbox.rm('.gitignore');
+    await inSandbox.mv(original, moved);
+    await save();
+
+    const changes = (await workspace.changedFilesSince(start)).unwrap();
+
+    expect(changes).toHaveLength(4);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        { path: added, kind: 'added' },
+        { path: 'README.md', kind: 'modified' },
+        { path: '.gitignore', kind: 'deleted' },
+        { path: moved, kind: 'renamed' },
+      ]),
+    );
+  });
+
+  it('reports no changed files when the point is the head itself', async () => {
+    const { workspace } = await setup();
+    const head = (await workspace.headCommit()).unwrap();
+
+    const changes = (await workspace.changedFilesSince(head)).unwrap();
+
+    expect(changes).toEqual([]);
+  });
+
   it('commits nothing when the worktree has no changes', async () => {
     const { workspace, save } = await setup();
     const head = (await workspace.headCommit()).unwrap();

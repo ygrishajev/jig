@@ -14,6 +14,7 @@ import {
   type RemoteUnavailable,
   type SandboxUnavailable,
 } from '../../domain/errors.js';
+import type { ChangedFile, ChangeKind } from '../../domain/protected-paths.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type { CommitSummary } from '../../domain/usage.js';
@@ -199,6 +200,24 @@ export class GitWorkspace implements Workspace {
     }, this);
   }
 
+  changedFilesSince(start: string): Promise<Result<ChangedFile[], GitCommandFailed>> {
+    return Result.gen(async function* (this: GitWorkspace) {
+      const head = yield* Result.await(this.headCommit());
+      return gitCommand('diff', async () =>
+        parseChangedFiles(
+          await openRepoWithoutHooks(this.options.worktreePath).raw([
+            'diff',
+            '--name-status',
+            '-M',
+            '-z',
+            start,
+            head,
+          ]),
+        ),
+      );
+    }, this);
+  }
+
   async readRepoFile(relativePath: string): Promise<string | undefined> {
     try {
       return await readFile(path.join(this.options.repoRoot, relativePath), 'utf-8');
@@ -291,6 +310,34 @@ const OUTGOING_BUNDLE = '.git/jig-out.bundle';
 async function removeImportDirectory(directory: string): Promise<void> {
   await rm(directory, { recursive: true, force: true }).catch(() => undefined);
 }
+
+/** Reads `git diff --name-status -z` output: a status, then a path — and the new path after the old when the status renames or copies. */
+function parseChangedFiles(raw: string): ChangedFile[] {
+  const changes: ChangedFile[] = [];
+  const fields = raw.split('\0');
+  for (let at = 0; at < fields.length;) {
+    const status = fields[at++];
+    if (!status) break;
+    const letter = status.charAt(0);
+    const path = fields[at++];
+    const newPath = TWO_PATH_STATUS_LETTERS.includes(letter) ? fields[at++] : path;
+    if (!path || !newPath) break;
+    changes.push({ path: newPath, kind: KIND_OF_STATUS[letter] ?? 'modified' });
+  }
+  return changes;
+}
+
+/** The statuses git reports as `S<score>`, carrying the new path after the old one. */
+const TWO_PATH_STATUS_LETTERS = ['R', 'C'];
+
+const KIND_OF_STATUS: Record<string, ChangeKind> = {
+  A: 'added',
+  C: 'added',
+  D: 'deleted',
+  M: 'modified',
+  R: 'renamed',
+  T: 'modified',
+};
 
 /** Leaves the operator's repository as it was; there is nothing to abort when git never started merging. */
 async function abortMergeInProgress(repoRoot: string): Promise<void> {
