@@ -9,6 +9,8 @@ export function implementPrompt(slice: Slice): string {
     `Description: ${slice.description}`,
     ...previousFeedback(slice),
     '',
+    ...houseRulesFirst(),
+    '',
     'Make the necessary code changes in this repository to complete this slice.',
     'Do not rebase, amend or otherwise rewrite the commits already on this branch.',
     '',
@@ -26,6 +28,22 @@ function previousFeedback(slice: Slice): string[] {
     'A previous attempt at this slice was sent back with changes requested, by its review or by a failed check.',
     'Address this feedback specifically:',
     slice.lastFeedback,
+  ];
+}
+
+/**
+ * Path-scoped rule files (`.claude/rules/`, `.cursor/rules/`…) load on their own only in the tool
+ * they were written for; any other implementer has to be told to read them, or the reviewer
+ * holds the slice to rules the implementer never saw.
+ */
+function houseRulesFirst(): string[] {
+  return [
+    "Before you change any code, read this repository's instructions for agents: AGENTS.md,",
+    'CLAUDE.md or similar files at the root and in the directories you will touch, and every',
+    'rule file they point to (for example under .claude/rules/) that covers a file you will create',
+    'or change — tests included. Your tool may not load these on its own, so open them yourself.',
+    'They are binding: the review of this slice rejects code that breaks them, even when lint',
+    'passes or existing code does the same thing.',
   ];
 }
 

@@ -7,8 +7,9 @@ decisions — read the newest spec before changing anything structural.
 
 ## House rules
 
-The standing rules live in `.claude/rules/` and load on their own when you touch the files they
-cover — they are rules, not suggestions, and they override your defaults:
+The standing rules live in `.claude/rules/`. Claude Code loads them on its own when you touch the
+files they cover; any other agent must open the ones that cover the files it will change before
+editing, specs included. They are rules, not suggestions, and they override your defaults:
 
 - `clean-code-over-comments.md` — naming, structure, and why new code carries almost no comments
 - `callee-owns-its-rules.md` — a rule lives once, in the module it is about; callers ask for answers, not ingredients
