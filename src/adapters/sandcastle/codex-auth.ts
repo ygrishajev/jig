@@ -68,16 +68,29 @@ export async function openCodexAuthCache(
   });
   if (source.isErr()) return source;
   const release = await Result.tryPromise({
-    try: () => lockfile.lock(source.value, { retries: 0 }),
-    catch: () =>
+    try: () =>
+      lockfile.lock(source.value, { retries: 0, lockfilePath: `${source.value}${LOCK_SUFFIX}` }),
+    catch: (cause) =>
       new ConfigInvalid({
-        message: 'The Codex login is in use or cannot be locked. Serialize runs using this login.',
+        message: isHeldElsewhere(cause)
+          ? 'The Codex login is in use by another jig run. Serialize runs using this login.'
+          : `Could not lock the Codex login: ${messageOf(cause)}`,
       }),
   });
   if (release.isErr()) return release;
   const cache = await copyLogin(source.value, release.value);
   if (cache.isErr()) await releaseAfterFailedCopy(release.value);
   return cache;
+}
+
+/**
+ * Codex keeps its own `auth.json.lock` file beside the login, so proper-lockfile's default lock
+ * directory at that path would collide with it and the login would never lock.
+ */
+const LOCK_SUFFIX = '.jig-lock';
+
+function isHeldElsewhere(cause: unknown): boolean {
+  return (cause as { code?: unknown } | undefined)?.code === 'ELOCKED';
 }
 
 async function copyLogin(

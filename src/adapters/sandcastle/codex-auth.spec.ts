@@ -39,6 +39,16 @@ describe('Codex auth cache', () => {
     }
   });
 
+  it('opens a login beside the lock file Codex leaves after a refresh', async () => {
+    const { source } = await setup();
+    await writeFile(path.join(source, 'auth.json.lock'), '');
+
+    const cache = await openCodexAuthCache(source);
+
+    expect(cache.isOk()).toBe(true);
+    if (cache.isOk()) await cache.value.close();
+  });
+
   it('preserves a newer host login rather than overwriting it', async () => {
     const { source } = await setup();
     const cache = unwrap(await openCodexAuthCache(source));
