@@ -98,7 +98,7 @@ export function summarizeMetrics(records: MetricRecord[]): MetricsSummary {
     steps: steps.length,
     agentCalls: calls.length,
     retries: records.filter((record) => record.kind === 'retry').length,
-    reviewRounds: steps.filter((step) => step.outcome === 'changesRequested').length,
+    reviewRounds: steps.filter((step) => REVIEW_REJECTIONS.has(step.outcome)).length,
     slicesCommitted: new Set(
       steps.flatMap((step) =>
         step.commit && step.location.sliceId !== undefined ? [step.location.sliceId] : [],
@@ -119,6 +119,12 @@ export function summarizeMetrics(records: MetricRecord[]): MetricsSummary {
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
+
+/** Outcomes that send a slice back to its implementer with feedback. */
+const REVIEW_REJECTIONS: ReadonlySet<OutcomeType> = new Set([
+  'changesRequested',
+  'rulesFixRequested',
+]);
 
 /** One line for a PR footer or a status line, e.g. "2 slices · 1 review round · 412k tokens · $1.84 · 18m 3s". */
 export function formatSummary(summary: MetricsSummary): string {

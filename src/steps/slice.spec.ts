@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { approval } from '../../tests/support/agent-scripts.js';
+import { approval, ruleFindings } from '../../tests/support/agent-scripts.js';
 import { aRunState, aSlice, runId, runSettings } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
@@ -147,6 +147,13 @@ describe('slice steps', () => {
       type: 'changesRequested',
       feedback,
     });
+  });
+
+  it('asks only for rule fixes when the reviewer finds nothing but broken rules', async () => {
+    const feedback = faker.lorem.sentence();
+    const { run } = await setup({ reviewer: [ruleFindings(feedback)] });
+
+    expect(await run(reviewSlice, aSlice())).toEqual({ type: 'rulesFixRequested', feedback });
   });
 
   it('tells the reviewer the verify command that passed in the sandbox for the commits under review', async () => {

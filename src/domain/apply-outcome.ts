@@ -9,6 +9,7 @@ import { type Slice, sliceFromPlan } from './slice.js';
  * status comes next is the flow's decision, not this reducer's.
  */
 export function applyOutcome(state: RunState, outcome: Outcome): RunState {
+  if (isSendBack(outcome)) return sendSliceBack(state, outcome);
   switch (outcome.type) {
     case 'contextBuilt':
       return { ...state, context: outcome.context };
@@ -23,20 +24,6 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
         ...slice,
         commit: outcome.commit.sha,
       }));
-    case 'changesRequested':
-      return updateCurrentSlice(state, (slice) => ({
-        ...slice,
-        reviewCycles: slice.reviewCycles + 1,
-        lastFeedback: outcome.feedback,
-        verification: undefined,
-      }));
-    case 'nothingChanged':
-      return updateCurrentSlice(state, (slice) => ({
-        ...slice,
-        emptyAttempts: slice.emptyAttempts + 1,
-        lastFeedback: outcome.feedback,
-        verification: undefined,
-      }));
     case 'verified':
       return updateCurrentSlice(state, (slice) => ({
         ...slice,
@@ -48,6 +35,29 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
     default:
       return state;
   }
+}
+
+function isSendBack(outcome: Outcome): outcome is SendBack {
+  return outcome.type in ATTEMPT_COUNTER_OF;
+}
+
+/** Each way a slice goes back to its implementer counts against its own cap. */
+const ATTEMPT_COUNTER_OF = {
+  changesRequested: 'reviewCycles',
+  nothingChanged: 'emptyAttempts',
+  rulesFixRequested: 'ruleFixCycles',
+} as const satisfies Partial<Record<Outcome['type'], keyof Slice>>;
+
+type SendBack = Extract<Outcome, { type: keyof typeof ATTEMPT_COUNTER_OF }>;
+
+function sendSliceBack(state: RunState, outcome: SendBack): RunState {
+  const counter = ATTEMPT_COUNTER_OF[outcome.type];
+  return updateCurrentSlice(state, (slice) => ({
+    ...slice,
+    [counter]: slice[counter] + 1,
+    lastFeedback: outcome.feedback,
+    verification: undefined,
+  }));
 }
 
 export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Slice): RunState {

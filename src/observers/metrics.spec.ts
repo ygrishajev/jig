@@ -109,6 +109,15 @@ describe('summarizeMetrics', () => {
     expect(summary.tokens.input).toBe(tokens[0].input + tokens[1].input);
   });
 
+  it('counts a rules-only rejection as a review round', () => {
+    const summary = summarizeMetrics([
+      step({ sliceId: sliceId(), outcome: 'rulesFixRequested', durationMs: 1000 }),
+      step({ sliceId: sliceId(), outcome: 'changesRequested', durationMs: 1000 }),
+    ]);
+
+    expect(summary.reviewRounds).toBe(2);
+  });
+
   it('reads as one line', () => {
     const summary = summarizeMetrics([
       step({ sliceId: sliceId(), outcome: 'implemented', durationMs: 125_000, commit: aCommit() }),
@@ -124,7 +133,7 @@ describe('summarizeMetrics', () => {
 
 function step(input: {
   sliceId: string;
-  outcome: 'implemented' | 'changesRequested';
+  outcome: 'implemented' | 'changesRequested' | 'rulesFixRequested';
   durationMs: number;
   commit?: ReturnType<typeof aCommit>;
 }): MetricRecord {

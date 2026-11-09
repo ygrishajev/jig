@@ -31,6 +31,10 @@ export function rejection(feedback = faker.lorem.sentence()) {
   return { output: { approved: false, feedback } };
 }
 
+export function ruleFindings(feedback = faker.lorem.sentence()) {
+  return { output: { approved: false, feedback, onlyRuleFindings: true } };
+}
+
 export function aDescription() {
   return { output: { body: faker.lorem.paragraph() } };
 }

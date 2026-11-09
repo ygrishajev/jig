@@ -67,14 +67,20 @@ export const reviewSlice: SliceStep = ({ state, slice, ports }) =>
         schema: reviewVerdictSchema,
       }),
     );
-    return Result.ok<Outcome>(
-      verdict.approved
-        ? { type: 'approved' }
-        : { type: 'changesRequested', feedback: verdict.feedback },
-    );
+    return Result.ok<Outcome>(outcomeOfReview(verdict));
   });
 
-const reviewVerdictSchema = z.object({ approved: z.boolean(), feedback: z.string() });
+const reviewVerdictSchema = z.object({
+  approved: z.boolean(),
+  feedback: z.string(),
+  onlyRuleFindings: z.boolean().optional(),
+});
+
+function outcomeOfReview(verdict: z.infer<typeof reviewVerdictSchema>): Outcome {
+  if (verdict.approved) return { type: 'approved' };
+  const type = verdict.onlyRuleFindings ? 'rulesFixRequested' : 'changesRequested';
+  return { type, feedback: verdict.feedback };
+}
 
 export const verifySlice: SliceStep = async ({ settings, ports }) => {
   const command = settings.verifyCommand;

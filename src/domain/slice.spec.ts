@@ -21,9 +21,9 @@ describe('slicesInOrder', () => {
 });
 
 describe('sliceSchema', () => {
-  it('loads a slice saved before empty attempts were counted as having none', () => {
-    const { emptyAttempts: _dropped, ...saved } = aSlice();
+  it('loads a slice saved before empty attempts and rule fixes were counted as having none', () => {
+    const { emptyAttempts: _empty, ruleFixCycles: _ruleFixes, ...saved } = aSlice();
 
-    expect(sliceSchema.parse(saved).emptyAttempts).toBe(0);
+    expect(sliceSchema.parse(saved)).toMatchObject({ emptyAttempts: 0, ruleFixCycles: 0 });
   });
 });

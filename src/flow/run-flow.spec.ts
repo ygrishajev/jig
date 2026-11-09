@@ -6,6 +6,7 @@ import {
   aDescription,
   approval,
   rejection,
+  ruleFindings,
   scriptPlanning,
 } from '../../tests/support/agent-scripts.js';
 import {
@@ -141,6 +142,39 @@ describe('runFlow', () => {
     expect(status).toBe('stuck');
     expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: 0, emptyAttempts: 2 });
     expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(0);
+  });
+
+  it('sends rule fixes back without spending a review cycle, and gives up after two rounds of them', async () => {
+    const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script(
+      'implementer',
+      ...Array.from({ length: 2 }, () => ({ files: { 'a.txt': faker.lorem.sentence() } })),
+    );
+    agent.script('reviewer', ruleFindings(), ruleFindings());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('stuck');
+    expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: 0, ruleFixCycles: 2 });
+  });
+
+  it('approves a slice after a round of rule fixes even at the review cap', async () => {
+    const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'a.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', ruleFindings(), approval());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.slices[0]).toMatchObject({ reviewCycles: 0, ruleFixCycles: 1 });
   });
 
   it('stops for a person after planning when the design gate is a checkpoint, then continues on resume', async () => {

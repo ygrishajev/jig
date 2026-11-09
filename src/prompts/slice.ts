@@ -121,9 +121,14 @@ export function reviewPrompt(
     'leave for the next round may be the one it runs out on. On a later round, check the whole',
     'range again, not only what the last feedback named.',
     '',
-    'Respond with JSON matching: { "approved": boolean, "feedback": string }.',
+    'Respond with JSON matching:',
+    '{ "approved": boolean, "feedback": string, "onlyRuleFindings": boolean }.',
     'If approved is false, feedback must list every needed change as a numbered list, each item',
     'naming the file and line and saying exactly what must change.',
+    'Set onlyRuleFindings to true only when the slice already does everything its description',
+    "asks, correctly, and every needed change is a fix to follow the repository's rules (style,",
+    'naming, test conventions, error handling conventions). Set it to false when anything is',
+    'missing, wrong in behaviour, or untested, and whenever you approve.',
   ].join('\n');
 }
 

@@ -2,6 +2,7 @@ import { stuckSlice } from '../domain/run-state.js';
 import {
   emptyAttemptCapReached,
   reviewCapReached,
+  ruleFixCapReached,
   sliceNeedsVerification,
 } from '../domain/settings.js';
 import { describePullRequest, mergeRunBranch } from '../steps/finishing.js';
@@ -34,6 +35,14 @@ const retryUnlessEmptyAttemptsCapped = [
 const sliceAwaitsVerification: Guard = ({ slice, settings }) =>
   slice !== undefined && sliceNeedsVerification(slice, settings);
 
+const sliceReachedRuleFixCap: Guard = ({ slice }) =>
+  slice !== undefined && ruleFixCapReached(slice);
+
+const backToImplementUnlessRuleFixesCapped = [
+  { to: 'stuck', when: sliceReachedRuleFixCap },
+  { to: 'pending' },
+] as const;
+
 /** One slice: implement it, verify it, have it reviewed — and loop back on any requested change. */
 export const sliceFlow = defineSliceFlow({
   pending: {
@@ -53,6 +62,7 @@ export const sliceFlow = defineSliceFlow({
     on: {
       approved: [{ to: 'verifying', when: sliceAwaitsVerification }, { to: 'approved' }],
       changesRequested: backToImplementUnlessCapped,
+      rulesFixRequested: backToImplementUnlessRuleFixesCapped,
     },
   },
   approved: { final: 'done' },

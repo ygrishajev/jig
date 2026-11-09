@@ -20,6 +20,7 @@ export const sliceSchema = plannedSliceSchema.extend({
   status: sliceStatusSchema,
   reviewCycles: z.number().int().nonnegative(),
   emptyAttempts: z.number().int().nonnegative().default(0),
+  ruleFixCycles: z.number().int().nonnegative().default(0),
   lastFeedback: z.string().optional(),
   commit: z.string().optional(),
   verification: z.object({ command: z.string() }).optional(),
@@ -28,7 +29,14 @@ export const sliceSchema = plannedSliceSchema.extend({
 export type Slice = z.infer<typeof sliceSchema>;
 
 export function sliceFromPlan(planned: PlannedSlice, order: number): Slice {
-  return { ...planned, order, status: 'pending', reviewCycles: 0, emptyAttempts: 0 };
+  return {
+    ...planned,
+    order,
+    status: 'pending',
+    reviewCycles: 0,
+    emptyAttempts: 0,
+    ruleFixCycles: 0,
+  };
 }
 
 export function slicesInOrder(slices: readonly Slice[]): Slice[] {
