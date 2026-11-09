@@ -23,7 +23,7 @@
   "scripts": {
     "validate": "node --import tsx scripts/validate.ts",
     "build": "tsc -p tsconfig.build.json",
-    "install:local": "npm run build && T=$(npm pack --silent | tail -1) && trap 'rm -f \"$T\"' EXIT && npm i -g \"$PWD/$T\"",
+    "install:local": "npm run build && T=$(npm pack --silent | tail -1) && trap 'rm -f \"$T\"' EXIT && env -u _VOLTA_TOOL_RECURSION \"${VOLTA_HOME:+$VOLTA_HOME/bin/}npm\" i -g \"$PWD/$T\"",
     "dev": "tsx src/cli/main.ts",
     "lint": "eslint .",
     "lint:duplication": "jscpd",
