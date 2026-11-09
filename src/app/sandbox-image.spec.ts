@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
 
+import { everyStepOn } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
@@ -48,6 +49,15 @@ class FakeSandboxImages implements SandboxImages {
 }
 
 describe('ensureSandboxImage', () => {
+  it('refuses to build until every step has an agent', async () => {
+    const { ensure, images } = await setup({ withoutAgents: true });
+
+    const result = await ensure();
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(images.built).toHaveLength(0);
+  });
+
   it('builds the base image and the agent layer when there is no image yet', async () => {
     const { ensure, images, image } = await setup({});
 
@@ -154,6 +164,7 @@ describe('ensureSandboxImage', () => {
   });
 
   async function setup(input: {
+    withoutAgents?: boolean;
     sandboxImage?: string;
     latest?: () => string;
     agentUpdates?: AgentUpdatePolicy;
@@ -168,6 +179,7 @@ describe('ensureSandboxImage', () => {
     const loaded = unwrap(loadConfig(repoRoot));
     const config = {
       ...loaded,
+      ...(input.withoutAgents ? {} : everyStepOn()),
       sandboxImage: input.sandboxImage,
       agentUpdates: input.agentUpdates ?? loaded.agentUpdates,
     };

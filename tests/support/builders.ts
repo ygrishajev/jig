@@ -1,5 +1,7 @@
 import { faker } from '@faker-js/faker';
 
+import type { StepConfig } from '../../src/config/load-config.js';
+import { byRole } from '../../src/domain/agent-role.js';
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import {
@@ -16,6 +18,10 @@ import type { RunSettings } from '../../src/domain/settings.js';
 import type { PlannedSlice, Slice } from '../../src/domain/slice.js';
 import type { CommitSummary, TokenUsage } from '../../src/domain/usage.js';
 import type { MetricsSummary } from '../../src/observers/metrics.js';
+
+export function everyStepOn(step: StepConfig = { provider: 'claude' }) {
+  return byRole(() => step);
+}
 
 export function sliceId() {
   return `${faker.word.verb()}-${faker.word.noun()}-${faker.string.alphanumeric({ length: 5, casing: 'lower' })}`
@@ -176,4 +182,18 @@ export function aMetricsSummary({
     costUsd,
     tokens,
   };
+}
+
+/** The contents of a Codex `auth.json` holding a full ChatGPT login. */
+export function codexLogin(): string {
+  return JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: {
+      access_token: faker.string.alphanumeric(40),
+      id_token: faker.string.alphanumeric(40),
+      refresh_token: faker.string.alphanumeric(40),
+      account_id: faker.string.uuid(),
+    },
+    last_refresh: faker.date.recent().toISOString(),
+  });
 }

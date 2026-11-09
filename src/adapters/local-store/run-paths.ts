@@ -30,9 +30,14 @@ export function agentLogFile(repoRoot: string, runId: RunId): string {
 export async function makeRunDirectory(repoRoot: string, runId: RunId): Promise<string> {
   const directory = runDirectory(repoRoot, runId);
   await mkdir(directory, { recursive: true });
+  await ignoreJigDirectory(repoRoot);
+  return directory;
+}
+
+export async function ignoreJigDirectory(repoRoot: string): Promise<void> {
+  await mkdir(path.join(repoRoot, JIG_DIR), { recursive: true });
   const gitignore = path.join(repoRoot, JIG_DIR, '.gitignore');
   if (!existsSync(gitignore)) await writeFile(gitignore, '*\n');
-  return directory;
 }
 
 /**

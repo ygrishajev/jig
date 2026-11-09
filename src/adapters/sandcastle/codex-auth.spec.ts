@@ -1,12 +1,14 @@
 import { faker } from '@faker-js/faker';
 import { readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { codexLogin } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { CodexLoginNotSaved, ConfigInvalid } from '../../domain/errors.js';
-import { openCodexAuthCache } from './codex-auth.js';
+import { codexLoginProblem, openCodexAuthCache } from './codex-auth.js';
 
 describe('Codex auth cache', () => {
   it('isolates only the login and preserves refreshed credentials on close', async () => {
@@ -17,7 +19,7 @@ describe('Codex auth cache', () => {
     expect((await stat(cache.directory)).mode & 0o777).toBe(0o700);
     expect((await stat(path.join(cache.directory, 'auth.json'))).mode & 0o777).toBe(0o600);
     expect(await readFile(path.join(cache.directory, 'auth.json'), 'utf8')).toBe(original);
-    const refreshed = login();
+    const refreshed = codexLogin();
     await writeFile(path.join(cache.directory, 'auth.json'), refreshed);
     await cache.close();
     expect(await readFile(path.join(source, 'auth.json'), 'utf8')).toBe(refreshed);
@@ -40,9 +42,9 @@ describe('Codex auth cache', () => {
   it('preserves a newer host login rather than overwriting it', async () => {
     const { source } = await setup();
     const cache = unwrap(await openCodexAuthCache(source));
-    const newer = login();
+    const newer = codexLogin();
     await writeFile(path.join(source, 'auth.json'), newer);
-    await writeFile(path.join(cache.directory, 'auth.json'), login());
+    await writeFile(path.join(cache.directory, 'auth.json'), codexLogin());
     const closed = await cache.close();
     expect(closed.isErr() && closed.error).toBeInstanceOf(CodexLoginNotSaved);
     expect(closed.isErr() && closed.error.message).toContain('changed during the run');
@@ -65,7 +67,7 @@ describe('Codex auth cache', () => {
   it('keeps the selected login when the refreshed copy is a link to another login', async () => {
     const { source, original } = await setup();
     const otherLogin = path.join(await tempDirectory(), 'auth.json');
-    await writeFile(otherLogin, login());
+    await writeFile(otherLogin, codexLogin());
     const cache = unwrap(await openCodexAuthCache(source));
     await rm(path.join(cache.directory, 'auth.json'));
     await symlink(otherLogin, path.join(cache.directory, 'auth.json'));
@@ -90,23 +92,53 @@ describe('Codex auth cache', () => {
     expect(opened.isErr() && opened.error.message).not.toContain(secret);
   });
 
+  it('opens a login named by its file as well as by its directory', async () => {
+    const { source, original } = await setup();
+
+    const cache = unwrap(await openCodexAuthCache(path.join(source, 'auth.json')));
+
+    expect(await readFile(path.join(cache.directory, 'auth.json'), 'utf8')).toBe(original);
+    await cache.close();
+  });
+
+  describe('codexLoginProblem', () => {
+    it('accepts a directory holding a login, or the login file itself', async () => {
+      const { source } = await setup();
+
+      expect(codexLoginProblem(source)).toBeUndefined();
+      expect(codexLoginProblem(path.join(source, 'auth.json'))).toBeUndefined();
+    });
+
+    it('reads a leading ~ as the home directory', () => {
+      const missing = faker.string.uuid();
+
+      expect(codexLoginProblem(`~/${missing}`)).toContain(
+        path.join(homedir(), missing, 'auth.json'),
+      );
+    });
+
+    it('names the file it looked for when there is no login', async () => {
+      const directory = await tempDirectory();
+
+      expect(codexLoginProblem(directory)).toContain(path.join(directory, 'auth.json'));
+    });
+
+    it('rejects a login without the full token bundle, without repeating it', async () => {
+      const { source } = await setup();
+      const secret = faker.string.alphanumeric(40);
+      await writeFile(path.join(source, 'auth.json'), JSON.stringify({ OPENAI_API_KEY: secret }));
+
+      const problem = codexLoginProblem(source);
+
+      expect(problem).toContain('Invalid Codex subscription login');
+      expect(problem).not.toContain(secret);
+    });
+  });
+
   async function setup() {
     const source = await tempDirectory();
-    const original = login();
+    const original = codexLogin();
     await writeFile(path.join(source, 'auth.json'), original);
     return { source, original };
   }
 });
-
-function login() {
-  return JSON.stringify({
-    auth_mode: 'chatgpt',
-    tokens: {
-      access_token: faker.string.alphanumeric(40),
-      id_token: faker.string.alphanumeric(40),
-      refresh_token: faker.string.alphanumeric(40),
-      account_id: faker.string.uuid(),
-    },
-    last_refresh: faker.date.recent().toISOString(),
-  });
-}

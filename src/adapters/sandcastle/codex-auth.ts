@@ -1,7 +1,7 @@
 import { Result } from 'better-result';
-import { constants } from 'node:fs';
+import { constants, readFileSync } from 'node:fs';
 import { mkdtemp, open, readFile, realpath, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import lockfile from 'proper-lockfile';
 import writeFileAtomic from 'write-file-atomic';
@@ -14,15 +14,56 @@ export interface CodexAuthCache {
   close(): Promise<Result<void, CodexLoginNotSaved>>;
 }
 
+/** What stops `location` from serving as a Codex login, if anything. */
+export function codexLoginProblem(location: string): string | undefined {
+  const file = codexLoginFile(location);
+  const text = Result.try(() => readFileSync(file, 'utf8'));
+  if (text.isErr()) return `No Codex login at ${file}: expected the auth.json of \`codex login\`.`;
+  const valid = validateSubscription(text.value);
+  return valid.isErr() ? valid.error.message : undefined;
+}
+
+/** An operator's path to a login: `~` is the home directory, and the file itself works too. */
+function codexLoginFile(location: string): string {
+  const expanded = location.replace(/^~(?=$|\/)/, homedir());
+  return path.basename(expanded) === LOGIN_FILE ? expanded : path.join(expanded, LOGIN_FILE);
+}
+
+const LOGIN_FILE = 'auth.json';
+
+function validateSubscription(text: string): Result<void, ConfigInvalid> {
+  const value = Result.try(() => JSON.parse(text) as unknown);
+  if (value.isErr()) {
+    return Result.err(new ConfigInvalid({ message: 'Invalid Codex subscription login JSON.' }));
+  }
+  return subscriptionSchema.safeParse(value.value).success
+    ? Result.ok()
+    : Result.err(
+        new ConfigInvalid({
+          message: 'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
+        }),
+      );
+}
+
+const subscriptionSchema = z.object({
+  auth_mode: z.literal('chatgpt').optional(),
+  tokens: z.object({
+    access_token: z.string().min(1),
+    id_token: z.string().min(1),
+    refresh_token: z.string().min(1),
+    account_id: z.string().min(1),
+  }),
+});
+
 /** Mounts only a private login copy; Codex can atomically refresh it without exposing host config. */
 export async function openCodexAuthCache(
-  sourceDirectory: string,
+  location: string,
 ): Promise<Result<CodexAuthCache, ConfigInvalid>> {
   const source = await Result.tryPromise({
-    try: () => realpath(path.join(sourceDirectory, 'auth.json')),
+    try: () => realpath(codexLoginFile(location)),
     catch: (cause) =>
       new ConfigInvalid({
-        message: `Could not find the Codex login in ${sourceDirectory}: ${messageOf(cause)}`,
+        message: `Could not find the Codex login in ${location}: ${messageOf(cause)}`,
       }),
   });
   if (source.isErr()) return source;
@@ -56,7 +97,7 @@ async function copyLogin(
       const created = await mkdtemp(path.join(tmpdir(), 'jig-codex-auth-'));
       let copied = false;
       try {
-        await writeFileAtomic(path.join(created, 'auth.json'), original.value, { mode: 0o600 });
+        await writeFileAtomic(path.join(created, LOGIN_FILE), original.value, { mode: 0o600 });
         copied = true;
       } finally {
         if (!copied) await rm(created, { recursive: true, force: true });
@@ -71,30 +112,6 @@ async function copyLogin(
     close: () => persistAndRelease(source, original.value, copy, release),
   }));
 }
-
-function validateSubscription(text: string): Result<void, ConfigInvalid> {
-  const value = Result.try(() => JSON.parse(text) as unknown);
-  if (value.isErr()) {
-    return Result.err(new ConfigInvalid({ message: 'Invalid Codex subscription login JSON.' }));
-  }
-  return subscriptionSchema.safeParse(value.value).success
-    ? Result.ok()
-    : Result.err(
-        new ConfigInvalid({
-          message: 'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
-        }),
-      );
-}
-
-const subscriptionSchema = z.object({
-  auth_mode: z.literal('chatgpt').optional(),
-  tokens: z.object({
-    access_token: z.string().min(1),
-    id_token: z.string().min(1),
-    refresh_token: z.string().min(1),
-    account_id: z.string().min(1),
-  }),
-});
 
 async function persistAndRelease(
   source: string,

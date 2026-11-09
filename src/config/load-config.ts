@@ -4,7 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 
 import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
-import { type AgentRole, byRole } from '../domain/agent-role.js';
+import { type AgentRole, agentRoleSchema, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
 import { describeIssues } from './describe-issues.js';
@@ -79,14 +79,29 @@ const configSchema = z
     agentUpdates: z.enum(['auto', 'warn', 'off']).default('auto'),
     /** Silence this long means the agent hung; it is stopped. */
     agentIdleTimeoutSeconds: z.number().int().positive().default(600),
-    ...byRole(() => stepConfigSchema.default({ provider: 'claude' })),
+    ...byRole(() => stepConfigSchema.optional()),
   })
   .strict();
 
 export type JigConfig = z.infer<typeof configSchema>;
 
-export function configuredSteps(config: JigConfig): Record<AgentRole, StepConfig> {
-  return byRole((role) => config[role]);
+/** The agent of every step; a run cannot start, nor its image be built, until each has one. */
+export function configuredSteps(
+  config: JigConfig,
+): Result<Record<AgentRole, StepConfig>, ConfigInvalid> {
+  const parsed = requiredStepsSchema.safeParse(config);
+  if (parsed.success) return Result.ok(parsed.data);
+  return Result.err(
+    new ConfigInvalid({
+      message: `No agent set for ${stepsWithoutAgent(config).join(', ')} — set each in ${CONFIG_FILE} to { "provider": "${Object.keys(AGENTS).join(' | ')}", "model": "..." }.`,
+    }),
+  );
+}
+
+const requiredStepsSchema = z.object(byRole(() => stepConfigSchema));
+
+export function stepsWithoutAgent(config: JigConfig): AgentRole[] {
+  return agentRoleSchema.options.filter((role) => !config[role]);
 }
 
 /** The parts of the config that decide how a run moves, with the retry policy jig fixes. */

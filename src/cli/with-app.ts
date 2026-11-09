@@ -1,9 +1,10 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 
+import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import type { LogFormat } from '../adapters/logging/create-logger.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
-import { parseEnvironment } from '../config/environment.js';
+import { parseEnvironment, withCredentials } from '../config/environment.js';
 import { loadConfig } from '../config/load-config.js';
 import type { JigError } from '../domain/errors.js';
 import { ensureRepositoryRoot } from '../git/repository.js';
@@ -24,12 +25,14 @@ export async function withApp<T>(
   if (root.isErr()) return Result.err(root.error);
   const parsedEnvironment = parseEnvironment(environment);
   if (parsedEnvironment.isErr()) return Result.err(parsedEnvironment.error);
+  const savedCredentials = readCredentialsFile(cwd);
+  if (savedCredentials.isErr()) return Result.err(savedCredentials.error);
   const config = loadConfig(cwd);
   if (config.isErr()) return Result.err(config.error);
   const app = createAppContainer({
     repoRoot: cwd,
     logFormat,
-    environment: parsedEnvironment.value,
+    environment: withCredentials(parsedEnvironment.value, savedCredentials.value),
     config: config.value,
   });
   try {

@@ -40,6 +40,9 @@ write-file-atomic, pino, zod, simple-git, execa, commander.
   exception is `jig init`, which writes `.sandcastle/Dockerfile` and `jig.config.json` for the
   operator to review and commit.
 - **Credentials never land in a file jig writes, a log line, or the image.** They come from the
-  environment and go into the container as env vars. Every `.env` is git-ignored; keep it that way.
+  environment or `.jig/.env` and go into the container as env vars. The one exception: when the
+  operator agrees at `jig init`'s prompt, jig saves a credential to `.jig/.env`, owner-only and
+  ignored by `.jig/.gitignore`. Only credentials are read from that file. Every `.env` is
+  git-ignored; keep it that way.
 - **Tags publish.** Pushing a `v*.*.*` tag runs `.github/workflows/publish.yml`, which publishes
   the package to GitHub Packages. Bump the version in a commit first; never push a tag casually.

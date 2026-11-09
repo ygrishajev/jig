@@ -16,7 +16,7 @@ import {
   SANDBOX_DIRECTORY,
 } from '../adapters/sandbox-image/image-recipe.js';
 import { AGENTS } from '../adapters/sandcastle/agents.js';
-import { configuredSteps, type JigConfig } from '../config/load-config.js';
+import { configuredSteps, type JigConfig, type StepConfig } from '../config/load-config.js';
 import { ConfigInvalid, type ImageBuildFailed, messageOf } from '../domain/errors.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 
@@ -64,12 +64,13 @@ export async function ensureSandboxImage(
   if (d.config.sandboxImage) return Result.ok(image);
 
   return Result.gen(async function* () {
+    const steps = yield* configuredSteps(d.config);
     const recipe = yield* Result.await(readRecipe(d.repoRoot));
     const policy = options.pullAgents ? 'auto' : d.config.agentUpdates;
     const plan = planImageBuild({
       labels: yield* Result.await(d.images.labels(image)),
       dockerfileHash: recipe.dockerfileHash,
-      agentsNeeded: await agentsNeeded(d, policy),
+      agentsNeeded: await agentsNeeded(d, Object.values(steps), policy),
       policy,
     });
     for (const warning of plan.warnings) d.logger.warn(warning);
@@ -194,9 +195,10 @@ function versionChanges(installed: Record<string, string>, agents: AgentInstall[
 
 async function agentsNeeded(
   d: EnsureImageDependencies,
+  steps: StepConfig[],
   policy: AgentUpdatePolicy,
 ): Promise<AgentNeeded[]> {
-  const names = [...new Set(Object.values(configuredSteps(d.config)).map((step) => step.provider))];
+  const names = [...new Set(steps.map((step) => step.provider))];
   const packages = names.map((name) => AGENTS[name].npmPackage);
   const latest = policy === 'off' ? {} : await d.latestVersions(packages);
   return names.map((name) => ({

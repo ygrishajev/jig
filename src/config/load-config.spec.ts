@@ -4,25 +4,50 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { everyStepOn } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS } from '../domain/settings.js';
-import { CONFIG_FILE, type JigConfig, loadConfig, runSettingsFrom } from './load-config.js';
+import {
+  CONFIG_FILE,
+  configuredSteps,
+  type JigConfig,
+  loadConfig,
+  runSettingsFrom,
+  stepsWithoutAgent,
+} from './load-config.js';
 
 describe('loadConfig', () => {
-  it('runs every step on claude, merging by hand, when the repository has no config', async () => {
+  it('merges by hand and picks no agent when the repository has no config', async () => {
     const config = unwrap(loadConfig(await setup()));
 
     expect(config).toMatchObject({
       mergeMode: 'manual',
       designGate: 'auto',
       commitSigning: 'skip',
-      planner: { provider: 'claude' },
-      implementer: { provider: 'claude' },
-      reviewer: { provider: 'claude' },
-      describer: { provider: 'claude' },
     });
+    expect(stepsWithoutAgent(config)).toEqual(['planner', 'implementer', 'reviewer', 'describer']);
+  });
+
+  it('names the steps that still have no agent', async () => {
+    const config = unwrap(
+      loadConfig(
+        await setup({ planner: { provider: 'claude' }, reviewer: { provider: 'claude' } }),
+      ),
+    );
+
+    const steps = configuredSteps(config);
+
+    expect(steps.isErr() && steps.error).toBeInstanceOf(ConfigInvalid);
+    expect(steps.isErr() && steps.error.message).toContain('implementer, describer');
+  });
+
+  it('gives every step its agent once all of them have one', async () => {
+    const step = { provider: 'opencode', model: `openrouter/${faker.word.noun()}` } as const;
+    const config = unwrap(loadConfig(await setup(everyStepOn(step))));
+
+    expect(unwrap(configuredSteps(config))).toEqual(everyStepOn(step));
   });
 
   it('takes per-step agents and models from the config file', async () => {

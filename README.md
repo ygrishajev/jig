@@ -56,20 +56,19 @@ repo secret), same as `registry-url` in `actions/setup-node`.
 In the repository you want jig to work on:
 
 ```bash
-export CLAUDE_CODE_OAUTH_TOKEN=...   # from `claude setup-token` (or ANTHROPIC_API_KEY)
-jig init                            # sandbox Dockerfile + config, checked inside the sandbox
+jig init                            # asks for agents and any missing credentials, writes the Dockerfile + config, checks them in the sandbox
 git add .sandcastle jig.config.json && git commit -m "set up jig"
 jig run request.md                  # plan, implement, review, verify, describe, merge
 ```
 
 ## Commands
 
-| Command                            | What it does                                                                                                                                                                                                                                                        |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jig init [--no-agent]`            | Writes `.sandcastle/Dockerfile`, its `.gitignore` and a starter `jig.config.json`. With an agent (default), the planner fills in the toolchain and `setupCommand`/`verifyCommand`, and they are accepted only once both pass inside the sandbox (up to 3 attempts). |
-| `jig build [--pull-agents]`        | Builds the sandbox image if the Dockerfile or the agents changed. `run` does this too.                                                                                                                                                                              |
-| `jig run [request.md] [--id <id>]` | Starts a run from a request file, or resumes one by id. With both, it resumes only if the file is the request the run started with.                                                                                                                                 |
-| `jig status <id>`                  | Where a run is, its slices and feedback, and its cost so far.                                                                                                                                                                                                       |
+| Command                            | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jig init [--no-agent]`            | Writes `.sandcastle/Dockerfile`, its `.gitignore` and a starter `jig.config.json`. Steps with no agent are asked for in a terminal: select agents and models, then assign them to steps if there are several; with no answer, or outside a terminal, it stops and says what to set. Once every step has an agent (and without `--no-agent`), the planner fills in the toolchain and `setupCommand`/`verifyCommand`, and they are accepted only once both pass inside the sandbox (up to 3 attempts). |
+| `jig build [--pull-agents]`        | Builds the sandbox image if the Dockerfile or the agents changed. `run` does this too. Needs every step's agent set.                                                                                                                                                                                                                                                                                                                                                                                 |
+| `jig run [request.md] [--id <id>]` | Starts a run from a request file, or resumes one by id. With both, it resumes only if the file is the request the run started with.                                                                                                                                                                                                                                                                                                                                                                  |
+| `jig status <id>`                  | Where a run is, its slices and feedback, and its cost so far.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 `run` stops (exit 0) when the work is merged, waits for a manual merge, pauses at the design
 checkpoint, blocks, or gets stuck; `result.json` says which. Resume with `jig run --id <id>`.
@@ -94,10 +93,13 @@ expires after 30 seconds.
   tried twice more; a configuration problem such as missing credentials stops the run at once.
   `init` hands a failing `setupCommand` or `verifyCommand` back to the planner, and stops on
   anything else.
-- **Credentials** come from the environment and go into the container as env vars:
+- **Credentials** come from the environment, or from `.jig/.env` when a variable is not set there,
+  and go into the container as env vars. `jig init` asks for missing ones in a terminal and offers
+  to save them to that file, which git ignores and only you can read; `jig run` and everything
+  outside a terminal stop before building, naming what to set:
   claude needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`; opencode needs its provider's
   key, e.g. `OPENROUTER_API_KEY` for an `openrouter/...` model; codex needs `JIG_CODEX_AUTH_DIR`,
-  a directory holding a saved ChatGPT login (`auth.json`) — the one exception to env-only
+  the folder holding a saved ChatGPT login (`auth.json`), usually `~/.codex` — the one exception to env-only
   credentials, described under [Live E2E](#live-e2e). Sandcastle also injects every
   key listed in `.sandcastle/.env`, if the repository has one; jig warns with their names.
 - **What the sandbox sees.** A private clone of the run and base branches, with no remote and
@@ -111,20 +113,20 @@ expires after 30 seconds.
 
 `jig.config.json` in the repository root (strict: unknown keys are errors).
 
-| Key                                               | Default                    |                                                                                                                                                                           |
-| ------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `planner`, `implementer`, `reviewer`, `describer` | `{ "provider": "claude" }` | Agent per step: `claude`, `opencode` or `codex`; `model` optional for claude (default `opus`), required for opencode (`provider/model`) and codex.                        |
-| `setupCommand` / `setupTimeoutSeconds`            | — / `900`                  | Runs once in the sandbox before any agent, e.g. `npm ci`.                                                                                                                 |
-| `verifyCommand`                                   | —                          | Must pass in the sandbox before a reviewed slice is approved.                                                                                                             |
-| `mergeMode`                                       | `"manual"`                 | `auto` merges the run branch at the end.                                                                                                                                  |
-| `designGate`                                      | `"auto"`                   | `checkpoint` pauses after planning.                                                                                                                                       |
-| `reviewCycleCap`                                  | `3`                        | Rejections before a slice is stuck.                                                                                                                                       |
-| `commitSigning`                                   | `"skip"`                   | `repo` signs the run branch when jig merges it (automatic merges only).                                                                                                   |
-| `sandboxImage`                                    | —                          | Use this image as-is instead of building one.                                                                                                                             |
-| `agents`                                          | `{}`                       | Pin agent CLI versions, e.g. `{ "claude": "2.1.312" }`.                                                                                                                   |
-| `agentUpdates`                                    | `"auto"`                   | `warn` or `off`; how unpinned agents follow new releases.                                                                                                                 |
-| `agentIdleTimeoutSeconds`                         | `600`                      | An agent silent this long is stopped.                                                                                                                                     |
-| `runStores`                                       | `["local"]`                | Add `"git-remote"` to push state (hidden `refs/jig/<id>`) and the run branch to `origin`, so another machine can resume; or a path to a module exporting a store factory. |
+| Key                                               | Default                      |                                                                                                                                                                           |
+| ------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `planner`, `implementer`, `reviewer`, `describer` | — (required to run or build) | Agent per step: `claude`, `opencode` or `codex`; `model` optional for claude (default `opus`), required for opencode (`provider/model`) and codex.                        |
+| `setupCommand` / `setupTimeoutSeconds`            | — / `900`                    | Runs once in the sandbox before any agent, e.g. `npm ci`.                                                                                                                 |
+| `verifyCommand`                                   | —                            | Must pass in the sandbox before a reviewed slice is approved.                                                                                                             |
+| `mergeMode`                                       | `"manual"`                   | `auto` merges the run branch at the end.                                                                                                                                  |
+| `designGate`                                      | `"auto"`                     | `checkpoint` pauses after planning.                                                                                                                                       |
+| `reviewCycleCap`                                  | `3`                          | Rejections before a slice is stuck.                                                                                                                                       |
+| `commitSigning`                                   | `"skip"`                     | `repo` signs the run branch when jig merges it (automatic merges only).                                                                                                   |
+| `sandboxImage`                                    | —                            | Use this image as-is instead of building one.                                                                                                                             |
+| `agents`                                          | `{}`                         | Pin agent CLI versions, e.g. `{ "claude": "2.1.312" }`.                                                                                                                   |
+| `agentUpdates`                                    | `"auto"`                     | `warn` or `off`; how unpinned agents follow new releases.                                                                                                                 |
+| `agentIdleTimeoutSeconds`                         | `600`                        | An agent silent this long is stopped.                                                                                                                                     |
+| `runStores`                                       | `["local"]`                  | Add `"git-remote"` to push state (hidden `refs/jig/<id>`) and the run branch to `origin`, so another machine can resume; or a path to a module exporting a store factory. |
 
 ## CI and observability
 

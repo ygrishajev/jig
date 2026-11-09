@@ -7,7 +7,7 @@ import { simpleGit } from 'simple-git';
 import { describe, expect, it, vi } from 'vitest';
 
 import { scriptWholeRun } from '../../tests/support/agent-scripts.js';
-import { aRunState, runId } from '../../tests/support/builders.js';
+import { aRunState, everyStepOn, runId } from '../../tests/support/builders.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
@@ -212,7 +212,7 @@ describe('runJig', () => {
     },
   );
 
-  async function setup(options: { managedImage?: boolean } = {}) {
+  async function setup(options: { managedImage?: boolean; environment?: NodeJS.ProcessEnv } = {}) {
     const repo = await createTempRepo();
     const requests = await tempDirectory('jig-request-');
 
@@ -220,7 +220,11 @@ describe('runJig', () => {
       repoRoot: repo.dir,
       logFormat: 'json',
       logLevel: 'silent',
-      environment: unwrap(parseEnvironment({})),
+      environment: unwrap(
+        parseEnvironment(
+          options.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
+        ),
+      ),
       config: unwrap(loadConfig(repo.dir)),
     });
     const agents = new Map<string, FakeAgentSession>();
@@ -249,7 +253,9 @@ describe('runJig', () => {
       return () => sessionsOpened;
     };
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
-    app.register({ config: asValue({ ...unwrap(loadConfig(repo.dir)), sandboxImage }) });
+    app.register({
+      config: asValue({ ...unwrap(loadConfig(repo.dir)), ...everyStepOn(), sandboxImage }),
+    });
     app.register({
       settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),
       openSession: asValue(async ({ run }: OpenSessionInput) => {

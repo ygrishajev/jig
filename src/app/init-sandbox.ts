@@ -1,4 +1,4 @@
-import type { AwilixContainer } from 'awilix';
+import { asValue, type AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
@@ -6,18 +6,28 @@ import path from 'node:path';
 import { z } from 'zod';
 
 import { refuseSymlinks } from '../adapters/find-symlink.js';
+import { saveCredential } from '../adapters/local-store/credentials-file.js';
 import {
   BASE_DOCKERFILE,
   DOCKERFILE,
   SANDBOX_DIRECTORY,
   withToolchain,
 } from '../adapters/sandbox-image/image-recipe.js';
+import { collectCredentials, missingCredentials } from '../adapters/sandcastle/agents.js';
 import {
   ignoreSandcastleDirectory,
   type SessionCloseFailure,
   type SessionOpenFailure,
 } from '../adapters/sandcastle/sandcastle-session.js';
-import { CONFIG_FILE, loadConfig } from '../config/load-config.js';
+import { withCredentials } from '../config/environment.js';
+import {
+  CONFIG_FILE,
+  configuredSteps,
+  type JigConfig,
+  loadConfig,
+  type StepConfig,
+  stepsWithoutAgent,
+} from '../config/load-config.js';
 import { updateConfigFile } from '../config/write-config.js';
 import {
   type AgentOutputInvalid,
@@ -25,6 +35,7 @@ import {
   ConfigInvalid,
   type GitCommandFailed,
   type ImageBuildFailed,
+  type LocalStateUnwritable,
   messageOf,
   SetupCommandFailed,
 } from '../domain/errors.js';
@@ -35,17 +46,20 @@ import { ensureSandboxImage, readSandboxDockerfile } from './sandbox-image.js';
 export type InitResult =
   | { status: 'verified'; attempts: number }
   | { status: 'failed'; attempts: number; failure: string }
-  | { status: 'written' };
+  | { status: 'written' }
+  | { status: 'needs-agents'; instruction: string };
 
-export type InitFailure = SandboxCheckFailure | AgentRunFailed | AgentOutputInvalid;
+export type InitFailure =
+  SandboxCheckFailure | AgentRunFailed | AgentOutputInvalid | LocalStateUnwritable;
 
 /** Why a throwaway sandbox gave no answer: the image, Docker, git, or the sandbox's own cleanup. */
 export type SandboxCheckFailure =
   ConfigInvalid | ImageBuildFailed | SessionOpenFailure | SessionCloseFailure | GitCommandFailed;
 
 /**
- * Writes the sandbox Dockerfile and a starter config if the repository has none. With an agent,
- * the planner then fills in the project's toolchain and setup and verify commands, and the
+ * Writes the sandbox Dockerfile and a starter config if the repository has none, and asks which
+ * agents to use for steps without one; with none chosen, it stops there and says what to set. It then
+ * asks for credentials those agents lack. With an agent, the planner then fills in the project's toolchain and setup and verify commands, and the
  * result counts only once both commands pass inside the built sandbox — a failure goes back to
  * the planner. Without an agent, the commands already configured are checked.
  */
@@ -56,16 +70,18 @@ export function initSandbox(
   return Result.gen(async function* () {
     const { repoRoot } = app.cradle;
     yield* Result.await(writeStarterFiles(repoRoot));
-    if (!options.useAgent) {
-      const config = yield* loadConfig(repoRoot);
-      if (!config.verifyCommand) return Result.ok<InitResult, InitFailure>({ status: 'written' });
-      const failure = yield* Result.await(
-        checkInSandbox(app, config.setupCommand, config.verifyCommand),
-      );
-      return Result.ok<InitResult, InitFailure>(
-        failure ? { status: 'failed', attempts: 1, failure } : { status: 'verified', attempts: 1 },
-      );
+    if (options.useAgent) yield* Result.await(chooseMissingAgents(app));
+    const config = yield* loadConfig(repoRoot);
+    app.register({ config: asValue(config) });
+    const steps = configuredSteps(config);
+    if (steps.isErr()) {
+      return Result.ok<InitResult, InitFailure>({
+        status: 'needs-agents',
+        instruction: steps.error.message,
+      });
     }
+    if (!options.useAgent) return checkConfiguredCommands(app, config, Object.values(steps.value));
+    yield* Result.await(ensureCredentials(app, Object.values(steps.value)));
 
     let previousFailure: string | undefined;
     for (let attempt = 1; attempt <= TOOLCHAIN_ATTEMPTS; attempt++) {
@@ -113,6 +129,59 @@ function writeRepoFile(file: string, contents: string): Promise<Result<void, Con
     try: () => writeFile(file, contents),
     catch: (cause) =>
       new ConfigInvalid({ message: `Could not write ${file}: ${messageOf(cause)}` }),
+  });
+}
+
+async function chooseMissingAgents(
+  app: AwilixContainer<AppCradle>,
+): Promise<Result<void, ConfigInvalid>> {
+  const { repoRoot, askForAgents } = app.cradle;
+  const config = loadConfig(repoRoot);
+  if (config.isErr()) return Result.err(config.error);
+  const missing = stepsWithoutAgent(config.value);
+  if (missing.length === 0) return Result.ok();
+  const agents = await askForAgents(missing);
+  return agents ? updateConfigFile(repoRoot, agents) : Result.ok();
+}
+
+async function checkConfiguredCommands(
+  app: AwilixContainer<AppCradle>,
+  config: JigConfig,
+  steps: StepConfig[],
+): Promise<Result<InitResult, InitFailure>> {
+  const { verifyCommand, setupCommand } = config;
+  if (!verifyCommand) return Result.ok({ status: 'written' });
+  const credentials = await ensureCredentials(app, steps);
+  if (credentials.isErr()) return Result.err(credentials.error);
+  const checked = await checkInSandbox(app, setupCommand, verifyCommand);
+  return checked.map((failure) =>
+    failure ? { status: 'failed', attempts: 1, failure } : { status: 'verified', attempts: 1 },
+  );
+}
+
+/**
+ * Asks for the credentials the configured agents lack, before anything is built for them. The
+ * operator decides whether each is saved; either way it lasts for the rest of this command.
+ */
+async function ensureCredentials(
+  app: AwilixContainer<AppCradle>,
+  steps: StepConfig[],
+): Promise<Result<void, ConfigInvalid | LocalStateUnwritable>> {
+  return Result.gen(async function* () {
+    const { repoRoot, environment, askForCredential } = app.cradle;
+    const entered: Record<string, string> = {};
+    for (const missing of yield* missingCredentials(steps, environment.credential)) {
+      const credential = await askForCredential(missing);
+      if (!credential) break;
+      entered[credential.name] = credential.value;
+      if (credential.save) {
+        yield* Result.await(saveCredential(repoRoot, credential.name, credential.value));
+      }
+    }
+    const completed = withCredentials(environment, entered);
+    app.register({ environment: asValue(completed) });
+    yield* collectCredentials(steps, completed.credential);
+    return Result.ok();
   });
 }
 

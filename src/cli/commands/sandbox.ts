@@ -55,6 +55,8 @@ export function initSummary(result: InitResult): string {
 }
 
 const INIT_SUMMARY: Record<InitResult['status'], (result: InitResult) => string> = {
+  'needs-agents': (result) =>
+    `Wrote .sandcastle/Dockerfile and jig.config.json. ${'instruction' in result ? result.instruction : ''} Then run jig init again.`,
   written: () =>
     'Wrote .sandcastle/Dockerfile and jig.config.json — add your toolchain and a verifyCommand, then run jig init --no-agent to check them.',
   verified: (result) =>

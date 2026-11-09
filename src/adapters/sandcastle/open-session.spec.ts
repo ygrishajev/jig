@@ -5,7 +5,7 @@ import pino, { type Logger } from 'pino';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
-import { runId } from '../../../tests/support/builders.js';
+import { everyStepOn, runId } from '../../../tests/support/builders.js';
 import { RecordingEventSink } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
@@ -76,7 +76,7 @@ describe('sandcastleSessionOptions', () => {
 
   async function setup(input: { config?: Partial<JigConfig>; environment?: NodeJS.ProcessEnv }) {
     const repoRoot = await tempDirectory('jig-session-');
-    const config = { ...unwrap(loadConfig(repoRoot)), ...input.config };
+    const config = { ...unwrap(loadConfig(repoRoot)), ...everyStepOn(), ...input.config };
     const environment = unwrap(
       parseEnvironment(input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) }),
     );

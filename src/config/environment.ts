@@ -63,3 +63,19 @@ const knownVariablesSchema = z.object({
 function otelVariables(variables: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(variables).filter(([name]) => name.startsWith('OTEL_')));
 }
+
+/**
+ * Adds credentials from outside the process environment, which still wins. Only credentials: a
+ * file in the repository must not be able to set anything else jig reads.
+ */
+export function withCredentials(
+  environment: JigEnvironment,
+  credentials: Record<string, string>,
+): JigEnvironment {
+  const known = setVariables(credentials);
+  return {
+    ...environment,
+    codexAuthDirectory: environment.codexAuthDirectory ?? known.JIG_CODEX_AUTH_DIR,
+    credential: (name) => environment.credential(name) ?? known[name],
+  };
+}

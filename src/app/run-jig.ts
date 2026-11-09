@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
+import { stepCredentials } from '../adapters/sandcastle/open-session.js';
 import { startTelemetry } from '../adapters/telemetry/open-telemetry.js';
 import {
   type JigError,
@@ -127,6 +128,8 @@ async function advance(
   store: RunStore,
   state: RunState,
 ): Promise<Result<EngineResult, JigError>> {
+  const credentials = stepCredentials(app.cradle.config, app.cradle.environment);
+  if (credentials.isErr()) return Result.err(credentials.error);
   const image = await ensureSandboxImage(app.cradle);
   if (image.isErr()) return Result.err(image.error);
   const telemetry = await startTelemetry(app.cradle.environment.telemetry);

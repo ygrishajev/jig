@@ -3,7 +3,7 @@ import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
 import type { JigEnvironment } from '../../config/environment.js';
-import { configuredSteps, type JigConfig } from '../../config/load-config.js';
+import { configuredSteps, type JigConfig, type StepConfig } from '../../config/load-config.js';
 import type { AgentRole } from '../../domain/agent-role.js';
 import type { ConfigInvalid } from '../../domain/errors.js';
 import type { RunIdentity } from '../../domain/run-state.js';
@@ -61,8 +61,10 @@ export function sandcastleSessionOptions(
   { repoRoot, config, environment, imageName, logger }: SandcastleContext & { logger: Logger },
   { run, events, setupCommand }: OpenSessionInput,
 ): Result<SandcastleSessionOptions, ConfigInvalid> {
-  const steps = configuredSteps(config);
-  const credentials = collectCredentials(Object.values(steps), environment.credential);
+  const configured = configuredSteps(config);
+  if (configured.isErr()) return Result.err(configured.error);
+  const steps = configured.value;
+  const credentials = stepCredentials(config, environment);
   if (credentials.isErr()) return Result.err(credentials.error);
   const agents = agentsFor(steps);
   if (agents.isErr()) return Result.err(agents.error);
@@ -87,8 +89,18 @@ export function sandcastleSessionOptions(
   });
 }
 
+/** The credentials of every step's agent; fails naming what to set when one has none. */
+export function stepCredentials(
+  config: JigConfig,
+  environment: JigEnvironment,
+): Result<Record<string, string>, ConfigInvalid> {
+  return configuredSteps(config).andThen((steps) =>
+    collectCredentials(Object.values(steps), environment.credential),
+  );
+}
+
 function agentsFor(
-  steps: ReturnType<typeof configuredSteps>,
+  steps: Record<AgentRole, StepConfig>,
 ): Result<Record<AgentRole, AgentProvider>, ConfigInvalid> {
   return Result.gen(function* () {
     const planner = yield* AGENTS[steps.planner.provider].create(steps.planner.model);

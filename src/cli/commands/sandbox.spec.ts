@@ -8,6 +8,12 @@ describe('initSummary', () => {
     expect(initSummary({ status: 'written' })).toContain('jig init --no-agent');
   });
 
+  it('passes on what to set when steps have no agent', () => {
+    const instruction = faker.lorem.sentence();
+
+    expect(initSummary({ status: 'needs-agents', instruction })).toContain(instruction);
+  });
+
   it('counts the attempts a verified sandbox took only when it took more than one', () => {
     const attempts = faker.number.int({ min: 2, max: 3 });
 

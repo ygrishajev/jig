@@ -1,18 +1,36 @@
 import { faker } from '@faker-js/faker';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { codexLogin } from '../../../tests/support/builders.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../../domain/errors.js';
 import { AGENTS, collectCredentials } from './agents.js';
 
 describe('collectCredentials', () => {
-  it('passes the explicit Codex auth directory without forwarding unrelated credentials', () => {
-    const directory = faker.system.directoryPath();
+  it('passes the explicit Codex auth directory without forwarding unrelated credentials', async () => {
+    const directory = await tempDirectory();
+    await writeFile(path.join(directory, 'auth.json'), codexLogin());
     const credentials = collectCredentials(
       [{ provider: 'codex', model: faker.word.noun() }],
       lookup({ JIG_CODEX_AUTH_DIR: directory, OPENAI_API_KEY: faker.string.alphanumeric(40) }),
     );
     expect(unwrap(credentials)).toEqual({ JIG_CODEX_AUTH_DIR: directory });
+  });
+
+  it('fails on a Codex login that is not there, naming the variable to fix', async () => {
+    const directory = await tempDirectory();
+
+    const credentials = collectCredentials(
+      [{ provider: 'codex', model: faker.word.noun() }],
+      lookup({ JIG_CODEX_AUTH_DIR: directory }),
+    );
+
+    expect(credentials.isErr() && credentials.error).toBeInstanceOf(ConfigInvalid);
+    expect(credentials.isErr() && credentials.error.message).toContain('JIG_CODEX_AUTH_DIR');
+    expect(credentials.isErr() && credentials.error.message).toContain(directory);
   });
 
   it('requires an explicit model for Codex', () => {

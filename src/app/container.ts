@@ -15,6 +15,7 @@ import {
 } from '../adapters/logging/create-logger.js';
 import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
+import type { AgentChoice, MissingCredential } from '../adapters/sandcastle/agents.js';
 import {
   openSandcastleSession,
   type OpenSessionInput,
@@ -23,8 +24,14 @@ import type {
   SessionCloseFailure,
   SessionOpenFailure,
 } from '../adapters/sandcastle/sandcastle-session.js';
+import { askForAgents } from '../adapters/terminal/ask-for-agents.js';
+import {
+  askForCredential,
+  type EnteredCredential,
+} from '../adapters/terminal/ask-for-credential.js';
 import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
+import type { AgentRole } from '../domain/agent-role.js';
 import { type GitCommandFailed, isTransient, type JigError } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
 import { retryResult } from '../domain/retry.js';
@@ -33,6 +40,7 @@ import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
 import { deleteBranch, getCurrentBranch } from '../git/branch.js';
+import { discardBranchOnExit } from '../git/throwaway-branch.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { MetricsObserver } from '../observers/metrics.js';
 import { observe, RunEvents } from '../observers/run-events.js';
@@ -71,6 +79,10 @@ export interface AppCradle {
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SessionOpenFailure>>;
+  askForAgents: (
+    roles: AgentRole[],
+  ) => Promise<Partial<Record<AgentRole, AgentChoice>> | undefined>;
+  askForCredential: (missing: MissingCredential) => Promise<EnteredCredential | undefined>;
 }
 
 /** The run's sandbox: where agents and commands run, and the host worktree of the run branch. */
@@ -110,6 +122,8 @@ export function createAppContainer(input: {
         }),
     ).singleton(),
     latestVersions: asValue(latestAgentVersions),
+    askForAgents: asValue((roles: AgentRole[]) => askForAgents(roles)),
+    askForCredential: asValue((missing: MissingCredential) => askForCredential(missing)),
     openSession: asFunction(
       ({ repoRoot, config, environment, logger }: AppCradle) =>
         (input: OpenSessionInput) =>
@@ -263,8 +277,8 @@ function reportCleanup<T, E, C extends JigError>(
 }
 
 /**
- * A sandbox for a one-off check, on a branch of its own that is removed afterwards, its events
- * logged to the console. It is never retried: a setup command that fails is the answer the
+ * A sandbox for a one-off check, on a branch of its own that is removed afterwards, even when the
+ * process is interrupted; its events are logged to the console. It is never retried: a setup command that fails is the answer the
  * caller is waiting for, not a hiccup.
  */
 export async function withThrowawaySandbox<T, E>(
@@ -272,13 +286,25 @@ export async function withThrowawaySandbox<T, E>(
   setupCommand: string | null,
   use: (session: RunSession) => Promise<Result<T, E>>,
 ): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
-  const { repoRoot, logger, openSession } = app.cradle;
+  const { repoRoot } = app.cradle;
   const baseBranch = await getCurrentBranch(repoRoot);
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
   const run: RunIdentity = {
     runId: runIdSchema.parse(`init-${randomBytes(3).toString('hex')}`),
     baseBranch: baseBranch.value,
   };
+  return discardBranchOnExit(repoRoot, runBranchFor(run.runId), () =>
+    useThrowawaySandbox(app, run, setupCommand, use),
+  );
+}
+
+async function useThrowawaySandbox<T, E>(
+  app: AwilixContainer<AppCradle>,
+  run: RunIdentity,
+  setupCommand: string | null,
+  use: (session: RunSession) => Promise<Result<T, E>>,
+): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
+  const { repoRoot, logger, openSession } = app.cradle;
   const events = observedEvents(logger, [new LoggingObserver(logger)]);
   const session = await openSession({ run, events, setupCommand });
   if (session.isErr()) return Result.err(session.error);
