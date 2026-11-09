@@ -32,7 +32,7 @@ export const implementSlice: SliceStep = ({ state, slice, ports }) =>
     const head = yield* Result.await(workspace.headCommit());
     if (head === approved) {
       return Result.ok<Outcome>({
-        type: 'changesRequested',
+        type: 'nothingChanged',
         feedback: nothingChangedFeedback(slice),
       });
     }

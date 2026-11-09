@@ -30,6 +30,13 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
         lastFeedback: outcome.feedback,
         verification: undefined,
       }));
+    case 'nothingChanged':
+      return updateCurrentSlice(state, (slice) => ({
+        ...slice,
+        emptyAttempts: slice.emptyAttempts + 1,
+        lastFeedback: outcome.feedback,
+        verification: undefined,
+      }));
     case 'verified':
       return updateCurrentSlice(state, (slice) => ({
         ...slice,

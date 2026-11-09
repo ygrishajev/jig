@@ -113,18 +113,33 @@ describe('runFlow', () => {
     expect(agent.calls.filter((call) => call.role === 'implementer')).toHaveLength(1);
   });
 
-  it('never sends an implementation that changed nothing to review, and gives up on it at the review cap', async () => {
-    const reviewCycleCap = faker.number.int({ min: 1, max: 3 });
-    const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap }) });
+  it('retries an implementation that changed nothing without spending a review cycle', async () => {
+    const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
     scriptPlanning(agent, [aPlannedSlice()]);
-    agent.script('implementer', ...Array.from({ length: reviewCycleCap }, () => ({ files: {} })));
+    agent.script('implementer', { files: {} }, { files: { 'a.txt': faker.lorem.sentence() } });
     agent.script('reviewer', approval());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
+    expect(status).toBe('done');
+    expect(state.slices[0]).toMatchObject({
+      status: 'approved',
+      reviewCycles: 0,
+      emptyAttempts: 1,
+    });
+  });
+
+  it('never sends an implementation that changed nothing to review, and gives up after two such attempts', async () => {
+    const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script('implementer', { files: {} }, { files: {} });
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
     expect(status).toBe('stuck');
-    expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: reviewCycleCap });
+    expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: 0, emptyAttempts: 2 });
     expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(0);
   });
 

@@ -1,5 +1,9 @@
 import { stuckSlice } from '../domain/run-state.js';
-import { reviewCapReached, sliceNeedsVerification } from '../domain/settings.js';
+import {
+  emptyAttemptCapReached,
+  reviewCapReached,
+  sliceNeedsVerification,
+} from '../domain/settings.js';
 import { describePullRequest, mergeRunBranch } from '../steps/finishing.js';
 import {
   applyDesignGate,
@@ -19,6 +23,14 @@ const backToImplementUnlessCapped = [
   { to: 'pending' },
 ] as const;
 
+const sliceReachedEmptyAttemptCap: Guard = ({ slice }) =>
+  slice !== undefined && emptyAttemptCapReached(slice);
+
+const retryUnlessEmptyAttemptsCapped = [
+  { to: 'stuck', when: sliceReachedEmptyAttemptCap },
+  { to: 'pending' },
+] as const;
+
 const sliceAwaitsVerification: Guard = ({ slice, settings }) =>
   slice !== undefined && sliceNeedsVerification(slice, settings);
 
@@ -26,7 +38,11 @@ const sliceAwaitsVerification: Guard = ({ slice, settings }) =>
 export const sliceFlow = defineSliceFlow({
   pending: {
     step: implementSlice,
-    on: { implemented: 'verifying', changesRequested: backToImplementUnlessCapped },
+    on: {
+      implemented: 'verifying',
+      changesRequested: backToImplementUnlessCapped,
+      nothingChanged: retryUnlessEmptyAttemptsCapped,
+    },
   },
   verifying: {
     step: verifySlice,

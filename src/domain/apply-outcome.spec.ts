@@ -42,8 +42,8 @@ describe('applyOutcome', () => {
     const { slices } = applyOutcome(aRunState(), { type: 'sliced', slices: planned });
 
     expect(slices).toEqual([
-      { ...planned[0], order: 0, status: 'pending', reviewCycles: 0 },
-      { ...planned[1], order: 1, status: 'pending', reviewCycles: 0 },
+      { ...planned[0], order: 0, status: 'pending', reviewCycles: 0, emptyAttempts: 0 },
+      { ...planned[1], order: 1, status: 'pending', reviewCycles: 0, emptyAttempts: 0 },
     ]);
   });
 
@@ -62,6 +62,18 @@ describe('applyOutcome', () => {
       lastFeedback: feedback,
     });
     expect(slices.find((slice) => slice.id === later.id)).toEqual(later);
+  });
+
+  it('counts an empty attempt, not a review cycle, when the implementation changed nothing', () => {
+    const current = aSlice({ order: 0, reviewCycles: 1, emptyAttempts: 0 });
+    const feedback = faker.lorem.sentence();
+
+    const { slices } = applyOutcome(aRunState({ slices: [current] }), {
+      type: 'nothingChanged',
+      feedback,
+    });
+
+    expect(slices[0]).toMatchObject({ reviewCycles: 1, emptyAttempts: 1, lastFeedback: feedback });
   });
 
   it('remembers the commit an implementation ended on', () => {

@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { aSlice } from '../../tests/support/builders.js';
-import { slicesInOrder } from './slice.js';
+import { sliceSchema, slicesInOrder } from './slice.js';
 
 describe('slicesInOrder', () => {
   it('lists slices by their planned order without reordering the input', () => {
@@ -18,4 +18,12 @@ describe('slicesInOrder', () => {
     const slices = faker.helpers.shuffle([...ordered]);
     return { slices: Object.freeze(slices), ordered };
   }
+});
+
+describe('sliceSchema', () => {
+  it('loads a slice saved before empty attempts were counted as having none', () => {
+    const { emptyAttempts: _dropped, ...saved } = aSlice();
+
+    expect(sliceSchema.parse(saved).emptyAttempts).toBe(0);
+  });
 });

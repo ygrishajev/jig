@@ -21,6 +21,16 @@ export function reviewCapReached(slice: Slice, settings: RunSettings): boolean {
   return slice.reviewCycles >= settings.reviewCycleCap;
 }
 
+export function emptyAttemptCapReached(slice: Slice): boolean {
+  return slice.emptyAttempts >= EMPTY_ATTEMPT_CAP;
+}
+
+/**
+ * An attempt that changes nothing is retried without spending a review cycle — an agent that
+ * stalls once usually works on the next try — but not forever.
+ */
+export const EMPTY_ATTEMPT_CAP = 2;
+
 /** A slice still owes its verification record when a verify command is configured and it has none. */
 export function sliceNeedsVerification(slice: Slice, settings: RunSettings): boolean {
   return Boolean(settings.verifyCommand) && slice.verification === undefined;

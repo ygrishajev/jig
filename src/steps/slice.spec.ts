@@ -115,7 +115,7 @@ describe('slice steps', () => {
 
     const outcome = await run(implementSlice, aSlice());
 
-    expect(outcome).toMatchObject({ type: 'changesRequested' });
+    expect(outcome).toMatchObject({ type: 'nothingChanged' });
   });
 
   it('keeps the feedback the empty attempt was meant to address', async () => {
@@ -124,7 +124,7 @@ describe('slice steps', () => {
 
     const outcome = await run(implementSlice, aSlice({ lastFeedback }));
 
-    expect(outcome.type === 'changesRequested' && outcome.feedback).toContain(lastFeedback);
+    expect(outcome.type === 'nothingChanged' && outcome.feedback).toContain(lastFeedback);
   });
 
   it('hands the reviewer feedback from the last attempt back to the implementer', async () => {
