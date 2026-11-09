@@ -1,0 +1,20 @@
+{
+  "planner": {
+    "provider": "claude",
+    "model": "opus"
+  },
+  "implementer": {
+    "provider": "opencode",
+    "model": "openrouter/~z-ai/glm-flash-latest"
+  },
+  "reviewer": {
+    "provider": "codex",
+    "model": "gpt-6.1-sol"
+  },
+  "describer": {
+    "provider": "claude",
+    "model": "sonnet"
+  },
+  "setupCommand": "npm ci",
+  "verifyCommand": "npm run validate -- --skip test:mutation"
+}
