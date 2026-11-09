@@ -14,6 +14,8 @@ export function implementPrompt(slice: Slice): string {
     'Make the necessary code changes in this repository to complete this slice.',
     'Do not rebase, amend or otherwise rewrite the commits already on this branch.',
     '',
+    ...checkAgainstHouseRulesLast(),
+    '',
     'Before writing a script to re-derive something a tool already reported (e.g. parsing a',
     "mutation-testing or coverage tool's own output by hand), re-read what it already printed.",
     'Before re-running a slow check, check whether a later, more specific step already covers it',
@@ -44,6 +46,15 @@ function houseRulesFirst(): string[] {
     'or change — tests included. Your tool may not load these on its own, so open them yourself.',
     'They are binding: the review of this slice rejects code that breaks them, even when lint',
     'passes or existing code does the same thing.',
+  ];
+}
+
+/** A review that finds a rule the implementer could have checked costs the slice a whole attempt. */
+function checkAgainstHouseRulesLast(): string[] {
+  return [
+    'Before you finish, review your own change the way the reviewer will: read your whole diff',
+    '(your commits on this branch and anything uncommitted) and, for each rule file that covers a',
+    'changed file, go through it rule by rule. Fix every place your change breaks one.',
   ];
 }
 
@@ -100,8 +111,11 @@ export function reviewPrompt(
     'pure scaffolding (types, builders, refactors) for later slices with no meaningful purpose',
     'of its own; feedback must say it must be folded into the slice that consumes it.',
     '',
-    "Judge the change against this repository's instructions for agents (AGENTS.md, CLAUDE.md or",
-    'similar, and the rule files they point to) as well as the description.',
+    "Judge the change against the description and against this repository's instructions for",
+    'agents (AGENTS.md, CLAUDE.md or similar, and the rule files they point to). For the rules,',
+    'find every rule file that covers a file the range changes, tests included, and go through',
+    'each one rule by rule against the diff — not a general read with the rules in mind. A rule',
+    'broken in many places is reported at each place.',
     'Review the whole range in one pass and report every problem you find, not only the first or',
     'the most serious: each rejection costs the slice one of a few attempts, so a problem you',
     'leave for the next round may be the one it runs out on. On a later round, check the whole',
