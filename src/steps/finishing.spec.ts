@@ -102,6 +102,46 @@ describe('finishing steps', () => {
       expect(outcome.type === 'described' && outcome.body).toContain(plan.summary);
     });
 
+    it('reports what jig verified in the description the describer filled in', async () => {
+      const verifyCommand = `npm run ${faker.word.verb()}`;
+      const { run } = await setup({
+        describer: { output: { body: faker.lorem.paragraphs() } },
+        settings: runSettings({ verifyCommand }),
+        state: {
+          slices: [
+            aSlice({ order: 0, status: 'approved', verification: { command: verifyCommand } }),
+          ],
+        },
+      });
+
+      const outcome = (await run(describePullRequest)).unwrap();
+
+      expect(outcome.type === 'described' && outcome.body).toContain('### Verification by jig');
+      expect(outcome.type === 'described' && outcome.body).toContain(
+        `\`${verifyCommand}\` passed in the sandbox on every slice (1/1).`,
+      );
+    });
+
+    it('reports what jig verified in its own description when the describer fails', async () => {
+      const verifyCommand = `npm run ${faker.word.verb()}`;
+      const { run } = await setup({
+        describer: { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) },
+        settings: runSettings({ verifyCommand }),
+        state: {
+          slices: [
+            aSlice({ order: 0, status: 'approved', verification: { command: verifyCommand } }),
+          ],
+        },
+      });
+
+      const outcome = (await run(describePullRequest)).unwrap();
+
+      expect(outcome.type === 'described' && outcome.body).toContain('### Verification by jig');
+      expect(outcome.type === 'described' && outcome.body).toContain(
+        `\`${verifyCommand}\` passed in the sandbox on every slice (1/1).`,
+      );
+    });
+
     it('keeps the reviewer feedback of a slice that did not get approved', async () => {
       const lastFeedback = faker.lorem.sentence();
       const { run } = await setup({

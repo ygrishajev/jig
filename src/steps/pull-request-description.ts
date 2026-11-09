@@ -25,20 +25,53 @@ export const DEFAULT_PR_TEMPLATE = [
 
 /**
  * The describer's filled-in template, or — when it failed — the repo's own template, or a plain
- * summary; followed by the agent run, design and plan, collapsed.
+ * summary; jig's own verification report, from the recorded run state rather than the describer's
+ * claims; then the agent run, design and plan, collapsed.
  */
 export function renderPullRequest(
   state: RunStateIn<'describing'>,
-  input: { filled?: string; template?: string },
+  input: { filled?: string; template?: string; verifyCommand?: string },
 ): string {
   const lead = input.filled ?? input.template ?? plainSummary(state);
-  return [lead, '', collapsed('Agent run', agentRun(state)), '', ...planningDocs(state)]
+  return [
+    lead,
+    '',
+    verificationBlock(state.slices, input.verifyCommand),
+    '',
+    collapsed('Agent run', agentRun(state)),
+    '',
+    ...planningDocs(state),
+  ]
     .join('\n')
     .trimEnd();
 }
 
 function plainSummary({ plan }: RunStateIn<'describing'>): string {
   return ['## Summary', '', plan.summary, '', '## Approach', '', plan.approach].join('\n');
+}
+
+function verificationBlock(slices: Slice[], verifyCommand?: string): string {
+  return ['### Verification by jig', '', verificationReport(slices, verifyCommand)].join('\n');
+}
+
+/** What jig itself verified, per slice from the recorded run state — never the describer's claims. */
+function verificationReport(slices: Slice[], verifyCommand?: string): string {
+  if (!verifyCommand) return 'No verify command is configured, so jig ran no checks.';
+  const ordered = slicesInOrder(slices);
+  const command = ordered[0]?.verification?.command;
+  if (
+    command !== undefined &&
+    ordered.every((slice) => slice.status === 'approved' && slice.verification?.command === command)
+  ) {
+    return `\`${command}\` passed in the sandbox on every slice (${ordered.length}/${ordered.length}).`;
+  }
+  return ordered
+    .map((slice) =>
+      slice.verification
+        ? `- \`${slice.id}\`: \`${slice.verification.command}\` passed`
+        : `- \`${slice.id}\`: not verified (${slice.status})`,
+    )
+    .join('\n');
 }
 
 function collapsed(title: string, body: string): string {

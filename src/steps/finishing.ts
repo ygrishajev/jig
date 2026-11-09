@@ -19,7 +19,7 @@ export const describePullRequest: RunStep<'describing'> = async ({ state, ports,
   );
   return Result.ok<Outcome>({
     type: 'described',
-    body: renderPullRequest(state, { filled, template }),
+    body: renderPullRequest(state, { filled, template, verifyCommand: settings.verifyCommand }),
   });
 };
 
