@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { CommitRejected, type GitCommandFailed } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
+import { protectedChanges } from '../domain/protected-paths.js';
 import type { RunState } from '../domain/run-state.js';
 import { type Slice, slicesInOrder } from '../domain/slice.js';
 import type { SliceStep, StepPorts } from '../flow/define-flow.js';
@@ -58,10 +59,11 @@ async function sliceStart(
 export const reviewSlice: SliceStep = ({ state, slice, ports }) =>
   Result.gen(async function* () {
     const start = yield* Result.await(sliceStart(state, slice, ports));
+    const changed = yield* Result.await(ports.workspace.changedFilesSince(start));
     const verdict = yield* Result.await(
       ports.agent.runForOutput({
         role: 'reviewer',
-        prompt: reviewPrompt(slice, `${start}..HEAD`),
+        prompt: reviewPrompt(slice, `${start}..HEAD`, protectedChanges(changed)),
         schema: reviewVerdictSchema,
       }),
     );

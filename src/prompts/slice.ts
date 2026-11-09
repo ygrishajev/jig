@@ -1,3 +1,4 @@
+import type { ChangedFile } from '../domain/protected-paths.js';
 import type { Slice } from '../domain/slice.js';
 
 export function implementPrompt(slice: Slice): string {
@@ -56,7 +57,11 @@ export function verifyFailedFeedback(command: string, output: string): string {
 export const VERIFY_OUTPUT_TAIL = 3000;
 
 /** `range` is a git revision range holding exactly this slice's commits, e.g. `<start>..HEAD`. */
-export function reviewPrompt(slice: Slice, range: string): string {
+export function reviewPrompt(
+  slice: Slice,
+  range: string,
+  protectedChanges: readonly ChangedFile[],
+): string {
   return [
     'You are the review step of an automated SDLC pipeline.',
     `This slice's change is exactly the commits in \`${range}\` — review all of them together`,
@@ -70,6 +75,7 @@ export function reviewPrompt(slice: Slice, range: string): string {
     slice.verification
       ? `\`${slice.verification.command}\` passed in the sandbox for the commits in \`${range}\``
       : "no verify result is recorded (no verify command is configured) — run the project's tests and lint yourself before approving",
+    ...protectedPathsSection(protectedChanges),
     '',
     'Decide whether this slice is ready to merge as-is.',
     'Reject the slice if it is not a self-explanatory, standalone deliverable — for example,',
@@ -78,4 +84,15 @@ export function reviewPrompt(slice: Slice, range: string): string {
     'Respond with JSON matching: { "approved": boolean, "feedback": string }.',
     'If approved is false, feedback must explain exactly what needs to change.',
   ].join('\n');
+}
+
+function protectedPathsSection(changes: readonly ChangedFile[]): string[] {
+  if (changes.length === 0) return [];
+  return [
+    '',
+    'The commits under review also touched these protected paths — tests or snapshots that already',
+    'cover behaviour, and the files that decide what gets checked. Scrutinise each change for a',
+    'weakened check, not only for correctness:',
+    ...changes.map(({ path, kind }) => `- ${path} (${kind})`),
+  ];
 }

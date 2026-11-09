@@ -182,6 +182,66 @@ describe('slice steps', () => {
     );
   });
 
+  it('tells the reviewer which protected files the reviewed commits touched', async () => {
+    const addedSpec = `${faker.lorem.slug()}.spec.ts`;
+    const { run, agent } = await setup({
+      implementer: [
+        {
+          files: {
+            'feature.txt': faker.lorem.sentence(),
+            'package.json': `{\n  "name": "${faker.lorem.word()}"\n}\n`,
+            [addedSpec]: faker.lorem.sentence(),
+          },
+        },
+      ],
+      reviewer: [approval()],
+    });
+    const slice = aSlice();
+    await run(implementSlice, slice);
+
+    await run(reviewSlice, { ...slice, status: 'in_review' });
+
+    const prompt = agent.calls.at(-1)?.prompt ?? '';
+    expect(prompt).toContain('package.json (added)');
+    expect(prompt).not.toContain(addedSpec);
+    expect(prompt).not.toContain('feature.txt');
+  });
+
+  it('flags a test file the reviewed commits modified, and not one they added', async () => {
+    const existingSpec = `${faker.lorem.slug()}.spec.ts`;
+    const addedTest = `${faker.lorem.slug()}.test.ts`;
+    const { run, agent, workspace, sandboxPath, git, runBranch } = await setup({
+      implementer: [
+        {
+          files: {
+            [existingSpec]: faker.lorem.paragraph(),
+            [addedTest]: faker.lorem.sentence(),
+          },
+        },
+      ],
+      reviewer: [approval()],
+    });
+    await writeFile(path.join(sandboxPath, existingSpec), faker.lorem.sentence());
+    (
+      await workspace.saveWork(faker.lorem.sentence(), {
+        approved: (await workspace.forkPoint()).unwrap(),
+      })
+    ).unwrap();
+    const previous = aSlice({
+      order: 0,
+      status: 'approved',
+      commit: await git.revparse([runBranch]),
+    });
+    const slice = aSlice({ order: 1 });
+    await run(implementSlice, slice, [previous]);
+
+    await run(reviewSlice, { ...slice, status: 'in_review' }, [previous]);
+
+    const prompt = agent.calls.at(-1)?.prompt ?? '';
+    expect(prompt).toContain(`${existingSpec} (modified)`);
+    expect(prompt).not.toContain(addedTest);
+  });
+
   it('verifies without running anything when no verify command is configured', async () => {
     const { run, agent } = await setup({ settings: runSettings({ verifyCommand: undefined }) });
 
