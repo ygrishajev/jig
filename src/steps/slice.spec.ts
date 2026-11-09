@@ -149,6 +149,39 @@ describe('slice steps', () => {
     });
   });
 
+  it('tells the reviewer the verify command that passed in the sandbox for the commits under review', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { run, agent, git, runBranch } = await setup({ reviewer: [approval()] });
+    const forkPoint = await git.revparse([runBranch]);
+    const slice = aSlice({ status: 'in_review', verification: { command: verifyCommand } });
+
+    await run(reviewSlice, slice);
+
+    expect(agent.calls.at(-1)?.prompt).toContain(
+      `\`${verifyCommand}\` passed in the sandbox for the commits in \`${forkPoint}..HEAD\``,
+    );
+  });
+
+  it('tells the reviewer to run the checks itself when no verify result is recorded', async () => {
+    const { run, agent } = await setup({ reviewer: [approval()] });
+
+    await run(reviewSlice, aSlice({ status: 'in_review', verification: undefined }));
+
+    expect(agent.calls.at(-1)?.prompt).toContain(
+      "no verify result is recorded (no verify command is configured) — run the project's tests and lint yourself before approving",
+    );
+  });
+
+  it('still tells the reviewer to reject a slice that is only scaffolding', async () => {
+    const { run, agent } = await setup({ reviewer: [approval()] });
+
+    await run(reviewSlice, aSlice({ status: 'in_review' }));
+
+    expect(agent.calls.at(-1)?.prompt).toContain(
+      'pure scaffolding (types, builders, refactors) for later slices',
+    );
+  });
+
   it('verifies without running anything when no verify command is configured', async () => {
     const { run, agent } = await setup({ settings: runSettings({ verifyCommand: undefined }) });
 

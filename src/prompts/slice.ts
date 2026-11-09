@@ -67,6 +67,10 @@ export function reviewPrompt(slice: Slice, range: string): string {
     `Slice: ${slice.title}`,
     `Description: ${slice.description}`,
     '',
+    slice.verification
+      ? `\`${slice.verification.command}\` passed in the sandbox for the commits in \`${range}\``
+      : "no verify result is recorded (no verify command is configured) — run the project's tests and lint yourself before approving",
+    '',
     'Decide whether this slice is ready to merge as-is.',
     'Reject the slice if it is not a self-explanatory, standalone deliverable — for example,',
     'pure scaffolding (types, builders, refactors) for later slices with no meaningful purpose',
