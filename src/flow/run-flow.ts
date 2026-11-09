@@ -1,5 +1,5 @@
 import { stuckSlice } from '../domain/run-state.js';
-import { reviewCapReached } from '../domain/settings.js';
+import { reviewCapReached, sliceNeedsVerification } from '../domain/settings.js';
 import { describePullRequest, mergeRunBranch } from '../steps/finishing.js';
 import {
   applyDesignGate,
@@ -19,19 +19,25 @@ const backToImplementUnlessCapped = [
   { to: 'pending' },
 ] as const;
 
-/** One slice: implement it, have it reviewed, verify it — and loop back on any requested change. */
+const sliceAwaitsVerification: Guard = ({ slice, settings }) =>
+  slice !== undefined && sliceNeedsVerification(slice, settings);
+
+/** One slice: implement it, verify it, have it reviewed — and loop back on any requested change. */
 export const sliceFlow = defineSliceFlow({
   pending: {
     step: implementSlice,
-    on: { implemented: 'in_review', changesRequested: backToImplementUnlessCapped },
-  },
-  in_review: {
-    step: reviewSlice,
-    on: { approved: 'verifying', changesRequested: backToImplementUnlessCapped },
+    on: { implemented: 'verifying', changesRequested: backToImplementUnlessCapped },
   },
   verifying: {
     step: verifySlice,
-    on: { verified: 'approved', changesRequested: backToImplementUnlessCapped },
+    on: { verified: 'in_review', changesRequested: backToImplementUnlessCapped },
+  },
+  in_review: {
+    step: reviewSlice,
+    on: {
+      approved: [{ to: 'verifying', when: sliceAwaitsVerification }, { to: 'approved' }],
+      changesRequested: backToImplementUnlessCapped,
+    },
   },
   approved: { final: 'done' },
   stuck: { final: 'stuck' },

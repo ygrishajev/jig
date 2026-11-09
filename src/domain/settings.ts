@@ -20,3 +20,8 @@ export const RETRY_DELAY_MS = 5000;
 export function reviewCapReached(slice: Slice, settings: RunSettings): boolean {
   return slice.reviewCycles >= settings.reviewCycleCap;
 }
+
+/** A slice still owes its verification record when a verify command is configured and it has none. */
+export function sliceNeedsVerification(slice: Slice, settings: RunSettings): boolean {
+  return Boolean(settings.verifyCommand) && slice.verification === undefined;
+}

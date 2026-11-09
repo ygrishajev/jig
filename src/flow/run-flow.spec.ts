@@ -8,7 +8,14 @@ import {
   rejection,
   scriptPlanning,
 } from '../../tests/support/agent-scripts.js';
-import { aPlannedSlice, runId, runSettings } from '../../tests/support/builders.js';
+import {
+  aCommit,
+  aPlannedSlice,
+  aRunStateIn,
+  aSlice,
+  runId,
+  runSettings,
+} from '../../tests/support/builders.js';
 import {
   FakeAgentSession,
   InMemoryRunStore,
@@ -16,8 +23,10 @@ import {
   SteppingClock,
 } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { SandboxUnavailable } from '../domain/errors.js';
 import { type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
+import type { ExecResult } from '../ports/agent-session.js';
 import { runEngine } from './engine.js';
 import { runFlow } from './run-flow.js';
 
@@ -166,6 +175,121 @@ describe('runFlow', () => {
     expect(await interrupted.runBranchHistory()).toBe(history);
   });
 
+  it('verifies a slice before the reviewer sees it, and approves it with the record of what passed', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const reviewerCallsWhenCommandRan: number[] = [];
+    const { agent, run, start } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => {
+        reviewerCallsWhenCommandRan.push(
+          agent.calls.filter((call) => call.role === 'reviewer').length,
+        );
+        return { exitCode: 0, output: faker.lorem.sentence() };
+      },
+    });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script('reviewer', approval());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(agent.commands).toEqual([verifyCommand]);
+    expect(reviewerCallsWhenCommandRan).toEqual([0]);
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(1);
+    expect(state.slices[0]).toMatchObject({
+      status: 'approved',
+      verification: { command: verifyCommand },
+    });
+  });
+
+  it('sends a slice back to the implementer when its verify fails, without a review that cycle', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const failure = faker.lorem.sentence();
+    const results: ExecResult[] = [
+      { exitCode: 1, output: failure },
+      { exitCode: 0, output: faker.lorem.sentence() },
+    ];
+    const reviewerCallsWhenCommandRan: number[] = [];
+    const { agent, run, start } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => {
+        reviewerCallsWhenCommandRan.push(
+          agent.calls.filter((call) => call.role === 'reviewer').length,
+        );
+        return results.shift() ?? { exitCode: 0, output: '' };
+      },
+    });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'b.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', approval());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.slices[0]).toMatchObject({
+      status: 'approved',
+      reviewCycles: 1,
+      verification: { command: verifyCommand },
+    });
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
+    expect(reviewerCallsWhenCommandRan).toEqual([0, 0]);
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(1);
+    expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(failure);
+  });
+
+  it('leaves a slice stuck when its verify fails with the review cycle cap reached', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { agent, run, start } = await setup({
+      settings: runSettings({ reviewCycleCap: 1, verifyCommand }),
+      exec: () => ({ exitCode: 1, output: faker.lorem.sentence() }),
+    });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('stuck');
+    expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: 1 });
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(0);
+    expect(agent.commands).toEqual([verifyCommand]);
+  });
+
+  it('verifies a resumed slice the reviewer approved before it counts as approved', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const reviewerCallsWhenCommandRan: number[] = [];
+    const { agent, run } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => {
+        reviewerCallsWhenCommandRan.push(
+          agent.calls.filter((call) => call.role === 'reviewer').length,
+        );
+        return { exitCode: 0, output: faker.lorem.sentence() };
+      },
+    });
+    const slice = aSlice({ status: 'in_review', commit: aCommit().sha });
+    agent.script('reviewer', approval(), approval());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(aRunStateIn('slices', { slices: [slice] }));
+
+    expect(status).toBe('done');
+    expect(agent.commands).toEqual([verifyCommand]);
+    expect(reviewerCallsWhenCommandRan).toEqual([1]);
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(2);
+    expect(state.slices[0]).toMatchObject({
+      status: 'approved',
+      verification: { command: verifyCommand },
+    });
+  });
+
   it('describes a run whose slice ran out of review cycles, then ends it stuck', async () => {
     const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 2 }) });
     scriptPlanning(agent, [aPlannedSlice()]);
@@ -184,10 +308,13 @@ describe('runFlow', () => {
     expect(state.prDescription).toContain(state.slices[0].lastFeedback);
   });
 
-  async function setup(input: { settings: RunSettings }) {
+  async function setup(input: {
+    settings: RunSettings;
+    exec?: (command: string) => ExecResult | SandboxUnavailable;
+  }) {
     const id = runId();
     const { sandboxPath, workspace, git, runBranch } = await createRunWorktree(id);
-    const agent = new FakeAgentSession(sandboxPath);
+    const agent = new FakeAgentSession(sandboxPath, input.exec);
     const store = new InMemoryRunStore();
     const dependencies = {
       ports: { agent, workspace },
