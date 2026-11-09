@@ -1,3 +1,9 @@
+---
+paths:
+  - 'src/**/*.ts'
+  - 'scripts/**/*.ts'
+---
+
 ## Clean Code Over Comments
 
 ## Description

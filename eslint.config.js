@@ -7,19 +7,19 @@ import tseslint from 'typescript-eslint';
 import { declarationsInCallOrder } from './scripts/eslint-rules/declarations-in-call-order.ts';
 import { noIgnoredResult } from './scripts/eslint-rules/no-ignored-result.ts';
 
-/** `.claude/instructions/use-mock-instead-of-as-unknown-as-in-tests.md` */
+/** `.claude/rules/testing-conventions.md`: `mock<T>()`, not `as unknown as T`. */
 const noDoubleCast = {
   selector: 'TSAsExpression > TSAsExpression[typeAnnotation.type="TSUnknownKeyword"]',
   message: 'Build the double with mock<T>(), not `as unknown as T`.',
 };
 
-/** `.claude/instructions/errors-as-values.md` */
+/** `.claude/rules/errors-as-values.md` */
 const noThrow = {
   selector: 'ThrowStatement',
   message: 'jig does not throw: return an Err, or panic() for a bug.',
 };
 
-/** `.claude/instructions/testing-conventions.md` and the `setup` instruction. */
+/** `.claude/rules/testing-conventions.md` */
 const specRules = [
   {
     selector: 'CallExpression[callee.object.name="vi"][callee.property.name=/^(mock|doMock)$/]',
@@ -31,7 +31,7 @@ const specRules = [
   },
 ];
 
-/** `.claude/instructions/parse-input-at-the-edge.md` */
+/** `.claude/rules/parse-input-at-the-edge.md` */
 const noCommanderParsing = {
   selector: 'CallExpression[callee.property.name=/^(argParser|choices)$/]',
   message: "Parse a command's input with its zod schema, not commander's argParser or choices.",
@@ -44,7 +44,7 @@ const awilixOnlyInApp = {
   message: 'awilix is used only in src/app/.',
 };
 
-/** `.claude/instructions/testing-conventions.md`: every external call lives in an adapter. */
+/** `.claude/rules/testing-conventions.md`: every external call lives in an adapter. */
 const externalCallsInAdapters = [
   'fs',
   'fs/promises',

@@ -1,3 +1,9 @@
+---
+paths:
+  - 'src/**/*.ts'
+  - 'scripts/**/*.ts'
+---
+
 ## The Callee Owns Its Rules
 
 ## Description

@@ -1,4 +1,9 @@
-## Writing Requests for Agents
+---
+name: write-request
+description: How to write text an agent reads cold in jig — a request file for `jig run`, a GitHub issue a workflow turns into one, an epic split into sub-requests, or a prompt jig sends from `src/prompts/`. Use when writing or editing any of these, or when the user asks for an issue, a request, or to split work into requests.
+---
+
+# Writing requests for agents
 
 Applies to three kinds of text: a request file passed to `jig run`, a GitHub issue that a workflow
 turns into one, and the prompts jig itself sends to its agents (`src/prompts/`).

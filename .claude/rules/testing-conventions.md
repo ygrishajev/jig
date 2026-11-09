@@ -1,3 +1,9 @@
+---
+paths:
+  - '**/*.spec.ts'
+  - 'tests/**/*.ts'
+---
+
 ## Testing Conventions
 
 ## Description
@@ -15,7 +21,7 @@
 - **Pipeline code takes ports.** Steps and the engine receive their ports (`AgentSession`, `Workspace`, `RunStore`, `Clock`, …) as arguments; the composition root in `src/app/` is the only place that builds real adapters.
 - **Every external call lives in an adapter.** A process spawn, a git command, a file write, a network request or a sandcastle call is never made from `domain/`, `flow/` or `steps/` — it sits behind a port in `adapters/`. If pipeline code needs something new from the outside world, add a method to a port (or a new port), not an import.
 - **Declare the narrow port, not the library's whole type.** `AgentSession` is what the pipeline calls, not sandcastle's `Sandbox`. The real adapter implements it, and a fake or a `mock<T>()` satisfies it without a cast.
-- **`mock<T>()` from `vitest-mock-extended`, never `as unknown as T`.** Override the fields the test cares about and let the rest be auto-mocked.
+- **`mock<T>()` from `vitest-mock-extended`, never `as unknown as T`.** Override the fields the test cares about and let the rest be auto-mocked. `mock<T>()` stays in step with the real type — a renamed or added field surfaces as a type error — while an `as unknown as` double keeps compiling with stale fields. Keep `as unknown as` for a type `mock<T>()` cannot satisfy (a branded type), with a JSDoc on the helper saying why.
 
 ## Fakes over stubs
 
@@ -70,6 +76,10 @@ describe('review step', () => {
     return { slice, review: (s: Slice) => reviewSlice(s, { session }) };
   }
 });
+
+const store = mock<RunStore>({
+  load: vi.fn().mockResolvedValue(aRunSnapshot({ state: 'slices' })),
+});
 ```
 
 ### Bad
@@ -95,4 +105,6 @@ describe('review step', () => {
     expect(buildReviewPrompt(slice)).toContain('You are the review step');
   });
 });
+
+const store = { load: vi.fn().mockResolvedValue(snapshot) } as unknown as RunStore;
 ```

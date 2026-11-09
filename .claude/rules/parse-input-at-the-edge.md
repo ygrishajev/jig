@@ -1,3 +1,9 @@
+---
+paths:
+  - 'src/**/*.ts'
+  - 'scripts/**/*.ts'
+---
+
 ## Parse Input at the Edge
 
 ## Description

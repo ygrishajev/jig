@@ -18,7 +18,7 @@ and removed with its fix.
 
 ## 2. Load the rules
 
-Read `CLAUDE.md` and every file in `.claude/instructions/` now; do not work from memory, they
+Read `CLAUDE.md` and every file in `.claude/rules/` now; do not work from memory, they
 change. Each one is a checklist: `callee-owns-its-rules.md` and `parse-input-at-the-edge.md` for
 design, `clean-code-over-comments.md` for naming and comments, the testing rules for specs.
 

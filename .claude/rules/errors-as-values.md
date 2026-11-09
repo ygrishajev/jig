@@ -1,3 +1,9 @@
+---
+paths:
+  - 'src/**/*.ts'
+  - 'scripts/**/*.ts'
+---
+
 ## Errors Are Values
 
 ## Description
