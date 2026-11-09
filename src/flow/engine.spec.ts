@@ -4,7 +4,7 @@ import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
-import { Panic, Result } from 'better-result';
+import { Panic, panic, Result } from 'better-result';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
@@ -607,9 +607,7 @@ function aDescribedRun(overrides: Parameters<typeof aRunState>[0] = {}) {
   });
 }
 
-const unused: RunStep = async () => {
-  throw new Error('This phase is not part of the test flow');
-};
+const unused: RunStep = async () => panic('This phase is not part of the test flow');
 
 function flowWith(nodes: Partial<RunFlow>): RunFlow {
   const filler = { step: unused, on: {} };

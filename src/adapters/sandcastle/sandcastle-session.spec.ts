@@ -5,6 +5,7 @@ import type {
   SandboxRunOptions,
 } from '@ai-hero/sandcastle';
 import { faker } from '@faker-js/faker';
+import { panic } from 'better-result';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import pino from 'pino';
@@ -322,7 +323,7 @@ describe('SandcastleSession', () => {
       run: vi.fn<Sandbox['run']>(async (options) => {
         runs.push(options);
         const reply = replies.shift();
-        if (!reply) throw new Error('No sandbox reply scripted');
+        if (!reply) panic('No sandbox reply scripted');
         if ('fail' in reply) throw reply.fail;
         for (const event of reply.events ?? []) {
           if (options.logging?.type === 'file') options.logging.onAgentStreamEvent?.(event);
@@ -365,7 +366,7 @@ describe('SandcastleSession', () => {
     const open = async () => unwrap(await tryOpen());
     const failure = async () => {
       const result = await tryOpen();
-      if (result.isOk()) throw new Error('The session opened');
+      if (result.isOk()) panic('The session opened');
       return result.error;
     };
     const codexLoginIsFree = async () => {

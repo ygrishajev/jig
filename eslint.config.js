@@ -31,6 +31,16 @@ const specRules = [
   },
 ];
 
+/**
+ * `.claude/rules/errors-as-values.md`: a spec may throw what a fake's real counterpart throws, but
+ * a guard on the test's own assumptions — an Error with a fixed message — is a panic.
+ */
+const noGuardThrowInSpecs = {
+  selector:
+    'ThrowStatement[argument.type="NewExpression"][argument.callee.name="Error"][argument.arguments.0.type=/^(Literal|TemplateLiteral)$/]',
+  message: 'A guard in a spec is a bug in the test: panic() instead of throwing an Error.',
+};
+
 /** `.claude/rules/parse-input-at-the-edge.md` */
 const noCommanderParsing = {
   selector: 'CallExpression[callee.property.name=/^(argParser|choices)$/]',
@@ -104,7 +114,7 @@ export default tseslint.config(
   },
   {
     files: ['**/*.spec.ts'],
-    rules: { 'no-restricted-syntax': ['error', noDoubleCast, ...specRules] },
+    rules: { 'no-restricted-syntax': ['error', noDoubleCast, noGuardThrowInSpecs, ...specRules] },
   },
   {
     files: ['src/**/*.ts'],

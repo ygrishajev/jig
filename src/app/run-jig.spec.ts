@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
-import { Result } from 'better-result';
+import { panic, Result } from 'better-result';
 import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
@@ -276,7 +276,7 @@ describe('runJig', () => {
         const failure = sessionFailures.shift();
         if (failure) return Result.err(failure);
         const agent = agents.get(run.runId);
-        if (!agent) throw new Error(`No fake agent prepared for run ${run.runId}`);
+        if (!agent) panic(`No fake agent prepared for run ${run.runId}`);
         const holding = held;
         held = undefined;
         holding?.opened();
