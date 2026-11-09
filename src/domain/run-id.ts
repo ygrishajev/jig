@@ -1,4 +1,42 @@
+import { randomBytes } from 'node:crypto';
+import path from 'node:path';
 import { z } from 'zod';
+
+/**
+ * `<name>-<random>`: the name, from the request's first `# heading` or else its file name, lets a
+ * person tell runs apart in branches and worktrees; the random part keeps two runs of the same
+ * request apart.
+ */
+export function newRunId({ file, request }: { file: string; request: string }): RunId {
+  const name = slugOf(firstHeading(request) ?? '') || slugOf(path.parse(file).name);
+  const unique = randomBytes(4).toString('hex');
+  return runIdSchema.parse(name ? `${name}-${unique}` : unique);
+}
+
+function slugOf(text: string): string {
+  const slug = text
+    .normalize('NFKD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return shortened(slug);
+}
+
+function shortened(slug: string): string {
+  if (slug.length <= MAX_NAME_LENGTH) return slug;
+  const cut = slug.slice(0, MAX_NAME_LENGTH);
+  const endsOnWord = slug[MAX_NAME_LENGTH] === '-';
+  const lastBreak = cut.lastIndexOf('-');
+  return endsOnWord || lastBreak < 0 ? cut.replace(/-$/, '') : cut.slice(0, lastBreak);
+}
+
+/** Keeps a branch name short enough to read in `git branch` and a terminal prompt. */
+const MAX_NAME_LENGTH = 40;
+
+function firstHeading(markdown: string): string | undefined {
+  return /^#[ \t]+(.+)$/m.exec(markdown)?.[1];
+}
 
 /**
  * A run id becomes a `.jig/<runId>` directory, a `jig/run/<runId>` branch and a

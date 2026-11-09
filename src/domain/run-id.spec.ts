@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { runId } from '../../tests/support/builders.js';
-import { runIdSchema } from './run-id.js';
+import { newRunId, runIdSchema } from './run-id.js';
 
 describe('runIdSchema', () => {
   it('accepts an id made of lowercase letters, digits and hyphens', () => {
@@ -13,5 +13,69 @@ describe('runIdSchema', () => {
 
   it.each(['../x', 'a/b', 'Upper', 'two words', ''])('refuses "%s"', (raw) => {
     expect(runIdSchema.safeParse(raw).success).toBe(false);
+  });
+});
+
+describe('newRunId', () => {
+  it("names the run after the request's first heading", () => {
+    const id = newRunId({ file: 'request.md', request: '# Add Retry Backoff!\n\nBody' });
+
+    expect(id).toMatch(/^add-retry-backoff-[0-9a-f]{8}$/);
+  });
+
+  it('skips text before the heading and a deeper heading', () => {
+    const id = newRunId({ file: 'request.md', request: 'intro\n## Deeper\n# Fix the lock\n' });
+
+    expect(id).toMatch(/^fix-the-lock-[0-9a-f]{8}$/);
+  });
+
+  it('names the run after the request file when it has no heading', () => {
+    const id = newRunId({ file: '/tmp/requests/Issue_42.md', request: 'no heading' });
+
+    expect(id).toMatch(/^issue-42-[0-9a-f]{8}$/);
+  });
+
+  it('drops accents and keeps the letters under them', () => {
+    const id = newRunId({ file: 'request.md', request: '# Café crème' });
+
+    expect(id).toMatch(/^cafe-creme-[0-9a-f]{8}$/);
+  });
+
+  it('is only the random part when neither heading nor file name has a letter or digit', () => {
+    const id = newRunId({ file: '/tmp/__.md', request: '# 🚀' });
+
+    expect(id).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it('cuts a long name at a word boundary', () => {
+    const words = faker.helpers.multiple(() => faker.string.alpha({ length: 7, casing: 'lower' }), {
+      count: 12,
+    });
+
+    const id = newRunId({ file: 'request.md', request: `# ${words.join(' ')}` });
+
+    const name = id.replace(/-[0-9a-f]{8}$/, '');
+    expect(name.length).toBeLessThanOrEqual(40);
+    expect(words.join('-').startsWith(`${name}-`)).toBe(true);
+  });
+
+  it('cuts a single long word at the limit', () => {
+    const word = faker.string.alpha({ length: 60, casing: 'lower' });
+
+    const id = newRunId({ file: 'request.md', request: `# ${word}` });
+
+    expect(id).toBe(`${word.slice(0, 40)}-${id.slice(-8)}`);
+  });
+
+  it('gives two runs of the same request different ids', () => {
+    const request = { file: 'request.md', request: `# ${faker.lorem.words()}` };
+
+    expect(newRunId(request)).not.toBe(newRunId(request));
+  });
+
+  it('always produces an id the schema accepts', () => {
+    const id = newRunId({ file: faker.system.filePath(), request: `# ${faker.lorem.sentence()}` });
+
+    expect(runIdSchema.safeParse(id).success).toBe(true);
   });
 });

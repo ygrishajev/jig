@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
-import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, vi } from 'vitest';
@@ -188,6 +188,19 @@ describe('runJig', () => {
     expect(failed.isErr() && failed.error).toBeInstanceOf(RunRequestInvalid);
     const lock = await lockRun(repo.dir, id);
     expect(lock.isOk()).toBe(true);
+  });
+
+  it('names a run started without an id after the heading of its request', async () => {
+    const { app, repo, requests, failNextSessions } = await setup();
+    failNextSessions(new ConfigInvalid({ message: faker.lorem.sentence() }));
+    const file = path.join(requests, `${faker.string.uuid()}.md`);
+    await writeFile(file, `# Add retry backoff\n\n${faker.lorem.paragraph()}`);
+
+    await runJig(app, { start: file });
+
+    expect(await readdir(path.join(repo.dir, '.jig'))).toContainEqual(
+      expect.stringMatching(/^add-retry-backoff-[0-9a-f]{8}$/),
+    );
   });
 
   it('refuses a request file that cannot be read', async () => {

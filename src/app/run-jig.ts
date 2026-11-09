@@ -1,6 +1,5 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
-import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
@@ -14,7 +13,7 @@ import {
   type MetricsLogCorrupt,
   RunRequestInvalid,
 } from '../domain/errors.js';
-import { type RunId, runIdSchema } from '../domain/run-id.js';
+import { newRunId, type RunId } from '../domain/run-id.js';
 import { type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
 import { type EngineResult, runEngine } from '../flow/engine.js';
@@ -34,6 +33,9 @@ export type RunJigInput = { start: string; runId?: RunId } | { resume: RunId };
 
 export type RunReport = EngineResult;
 
+/** The run to start or resume: its id, and the request text when one was given. */
+type RunTarget = { runId: RunId; request?: string };
+
 /**
  * Runs `input` to its next stop. The whole run holds the run's lock, so a second
  * process for the same id fails with `RunInProgress` instead of writing over it. A run that
@@ -43,28 +45,44 @@ export async function runJig(
   app: AwilixContainer<AppCradle>,
   input: RunJigInput,
 ): Promise<Result<RunReport, JigError>> {
-  const runId = 'resume' in input ? input.resume : (input.runId ?? newRunId());
-  const releaseLock = await lockRun(app.cradle.repoRoot, runId);
+  const target = await targetOf(input);
+  if (target.isErr()) return Result.err(target.error);
+  const releaseLock = await lockRun(app.cradle.repoRoot, target.value.runId);
   if (releaseLock.isErr()) return Result.err(releaseLock.error);
   try {
-    return await runLocked(app, input, runId);
+    return await runLocked(app, target.value);
   } finally {
     await releaseLock.value();
   }
 }
 
-function newRunId(): RunId {
-  return runIdSchema.parse(randomBytes(4).toString('hex'));
+/** A fresh id is named after the request, so the request is read before the run is locked. */
+async function targetOf(input: RunJigInput): Promise<Result<RunTarget, RunRequestInvalid>> {
+  if ('resume' in input) return Result.ok({ runId: input.resume });
+  const request = await readRequest(input.start);
+  return request.map((text) => ({
+    request: text,
+    runId: input.runId ?? newRunId({ file: input.start, request: text }),
+  }));
+}
+
+function readRequest(file: string): Promise<Result<string, RunRequestInvalid>> {
+  return Result.tryPromise({
+    try: () => readFile(file, 'utf-8'),
+    catch: (error) =>
+      new RunRequestInvalid({
+        message: `Cannot read the request file "${file}": ${messageOf(error)}`,
+      }),
+  });
 }
 
 function runLocked(
   app: AwilixContainer<AppCradle>,
-  input: RunJigInput,
-  runId: RunId,
+  target: RunTarget,
 ): Promise<Result<RunReport, JigError>> {
   return Result.gen(async function* () {
     const store = yield* Result.await(openRunStore(app.cradle));
-    const state = yield* Result.await(startOrResume(app.cradle, store, input, runId));
+    const state = yield* Result.await(startOrResume(app.cradle, store, target));
     const finished = finalStatus(runFlow, state);
     const report = finished
       ? { state, status: finished }
@@ -77,20 +95,17 @@ function runLocked(
 async function startOrResume(
   cradle: AppCradle,
   store: RunStore,
-  input: RunJigInput,
-  runId: RunId,
+  { runId, request }: RunTarget,
 ): Promise<Result<RunState, RunStoreFailure | RunRequestInvalid>> {
   const existing = await store.load(runId);
   if (existing.isErr()) return Result.err(existing.error);
-  if ('resume' in input) {
+  if (request === undefined) {
     return existing.value
       ? Result.ok(existing.value)
       : Result.err(new RunRequestInvalid({ message: `No run found with id "${runId}".` }));
   }
-  const request = await readRequest(input.start);
-  if (request.isErr()) return Result.err(request.error);
-  if (!existing.value) return startNewRun(cradle, store, runId, request.value);
-  if (request.value !== existing.value.request) {
+  if (!existing.value) return startNewRun(cradle, store, runId, request);
+  if (request !== existing.value.request) {
     return Result.err(
       new RunRequestInvalid({
         message: `Run "${runId}" was started from a different request — pass a new --id to start a new run.`,
@@ -98,16 +113,6 @@ async function startOrResume(
     );
   }
   return Result.ok(existing.value);
-}
-
-function readRequest(file: string): Promise<Result<string, RunRequestInvalid>> {
-  return Result.tryPromise({
-    try: () => readFile(file, 'utf-8'),
-    catch: (error) =>
-      new RunRequestInvalid({
-        message: `Cannot read the request file "${file}": ${messageOf(error)}`,
-      }),
-  });
 }
 
 async function startNewRun(
