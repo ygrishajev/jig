@@ -34,9 +34,7 @@ export function pullRequestPrompt(input: PullRequestPromptInput): string {
     '- Write the sections that describe the result and the motivation in plain words for',
     '  someone who has not seen the code: no file paths, identifiers or technical terms.',
     '- Keep "how" or approach sections to a few lines on the approach and notable decisions.',
-    '- Only report verification you can back up. Tick a checkbox or list a command as passed',
-    `  only if you ran it here and saw it pass${verifyCommand ? ` (the pipeline's verify command is \`${verifyCommand}\`)` : ''};`,
-    '  otherwise say it was not run.',
+    ...verificationRule(verifyCommand),
     '- Any slice that is not approved, and any requirement that was changed or not met, goes in',
     '  the section for deviations, with the reviewer feedback in one or two lines. Write',
     '  "None" there when everything landed as planned. Do not list approved slices.',
@@ -50,7 +48,20 @@ export function pullRequestPrompt(input: PullRequestPromptInput): string {
 function sliceLines(slices: Slice[]): string[] {
   if (slices.length === 0) return ['(none)'];
   return slicesInOrder(slices).map((slice) => {
-    const line = `- [${slice.status}] ${slice.id}: ${slice.description.split('\n')[0]}`;
+    const verification = slice.verification ? `, verify passed: ${slice.verification.command}` : '';
+    const line = `- [${slice.status}${verification}] ${slice.id}: ${slice.description.split('\n')[0]}`;
     return slice.lastFeedback ? `${line}\n  reviewer feedback: ${slice.lastFeedback}` : line;
   });
+}
+
+/** The describer states jig's own verification record; it runs nothing and invents nothing. */
+function verificationRule(verifyCommand?: string): string[] {
+  return [
+    '- Each slice line shows what jig verified: where it says "verify passed: <cmd>", jig ran',
+    '  that command in the sandbox and it passed. State that record as fact. Do not run checks',
+    '  yourself, and do not claim any check passed beyond what jig recorded.',
+    verifyCommand
+      ? `  The configured verify command is \`${verifyCommand}\`.`
+      : '  No verify command is configured, so say jig ran no checks.',
+  ];
 }
