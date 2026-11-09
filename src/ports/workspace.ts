@@ -2,6 +2,7 @@ import type { Result } from 'better-result';
 
 import type {
   CommitImportRefused,
+  CommitRejected,
   GitCommandFailed,
   LocalStateUnwritable,
   MergeFailed,
@@ -13,7 +14,7 @@ import type { CommitSummary } from '../domain/usage.js';
 /** The run's branch, seen from the host, and how the sandbox's work reaches it. */
 export interface Workspace {
   /**
-   * Commits whatever is uncommitted in the sandbox, then brings its commits onto the run branch.
+   * Commits whatever is uncommitted in the sandbox, through the repository's own commit hooks, then brings its commits onto the run branch.
    * Work after `approved` may be replaced; `approved` itself must stay in the history.
    */
   saveWork(message: string, options: { approved: string }): Promise<Result<void, SaveWorkFailure>>;
@@ -36,4 +37,8 @@ export interface Workspace {
 
 /** Why the sandbox's work did not reach the run branch. */
 export type SaveWorkFailure =
-  GitCommandFailed | CommitImportRefused | SandboxUnavailable | LocalStateUnwritable;
+  | GitCommandFailed
+  | CommitImportRefused
+  | CommitRejected
+  | SandboxUnavailable
+  | LocalStateUnwritable;

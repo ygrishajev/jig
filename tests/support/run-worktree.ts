@@ -1,3 +1,5 @@
+import { chmod, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { simpleGit } from 'simple-git';
 
 import { GitWorkspace } from '../../src/adapters/git/git-workspace.js';
@@ -30,5 +32,22 @@ export async function createRunWorktree(runId: RunId) {
     signing: 'skip',
   });
   const inSandbox = simpleGit({ baseDir: sandboxPath });
-  return { repo, worktreePath, sandboxPath, runBranch, git, inSandbox, agent, workspace };
+  /** Installs a commit-msg hook in the sandbox's clone that refuses every commit, printing `output`. */
+  const rejectCommitsInSandbox = async (output: string) => {
+    const hooks = path.resolve(sandboxPath, await inSandbox.revparse(['--git-path', 'hooks']));
+    const hook = path.join(hooks, 'commit-msg');
+    await writeFile(hook, `#!/bin/sh\necho '${output}' >&2\nexit 1\n`);
+    await chmod(hook, 0o755);
+  };
+  return {
+    repo,
+    worktreePath,
+    sandboxPath,
+    runBranch,
+    git,
+    inSandbox,
+    agent,
+    workspace,
+    rejectCommitsInSandbox,
+  };
 }

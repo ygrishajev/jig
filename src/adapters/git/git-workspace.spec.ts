@@ -11,6 +11,7 @@ import { runId } from '../../../tests/support/builders.js';
 import { createRunWorktree } from '../../../tests/support/run-worktree.js';
 import {
   CommitImportRefused,
+  CommitRejected,
   GitCommandFailed,
   MergeFailed,
   SandboxUnavailable,
@@ -68,6 +69,20 @@ describe('GitWorkspace', () => {
 
     expect((await inSandbox.log(['-1'])).latest?.message).toBe(message);
     expect((await git.log([runBranch, '-1'])).latest?.message).toBe(message);
+  });
+
+  it("reports the hooks' output when the repository's commit hooks reject the commit", async () => {
+    const { save, writeInSandbox, rejectCommitsInSandbox, git, runBranch, forkPoint } =
+      await setup();
+    const hookOutput = faker.lorem.words(4);
+    await rejectCommitsInSandbox(hookOutput);
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+
+    const saved = await save();
+
+    expect(saved.isErr() && saved.error).toBeInstanceOf(CommitRejected);
+    expect(saved.isErr() && saved.error).toMatchObject({ output: hookOutput });
+    expect(await git.revparse([runBranch])).toBe(forkPoint);
   });
 
   it('takes an amended commit when the commit it replaces was not approved yet', async () => {
@@ -236,7 +251,7 @@ describe('GitWorkspace', () => {
     expect(await git.revparse([runBranch])).toBe(approved);
   });
 
-  it.each(['status', 'add', 'commit', 'rev-parse', 'bundle'])(
+  it.each(['status', 'add', 'rev-parse', 'bundle'])(
     'reports git %s failing in the sandbox without moving the host branch',
     async (command) => {
       const { workspaceOn, writeInSandbox, git, runBranch, forkPoint, agent } = await setup();
@@ -376,7 +391,16 @@ describe('GitWorkspace', () => {
   async function setup() {
     const id = runId();
     const created = await createRunWorktree(id);
-    const { workspace, repo, git, runBranch, worktreePath, inSandbox, agent } = created;
+    const {
+      workspace,
+      repo,
+      git,
+      runBranch,
+      worktreePath,
+      inSandbox,
+      agent,
+      rejectCommitsInSandbox,
+    } = created;
     const forkPoint = (await workspace.forkPoint()).unwrap();
     const writeInSandbox = (file: string, contents: string) =>
       writeFile(path.join(created.sandboxPath, file), contents);
@@ -401,6 +425,7 @@ describe('GitWorkspace', () => {
       agent,
       forkPoint,
       writeInSandbox,
+      rejectCommitsInSandbox,
       save: () => saveAfter(forkPoint),
       saveAfter,
     };

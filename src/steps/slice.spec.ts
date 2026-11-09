@@ -28,7 +28,22 @@ describe('slice steps', () => {
       type: 'implemented',
       commit: { sha: head?.hash, filesChanged: 1, insertions: 1, deletions: 0 },
     });
-    expect(head?.message).toContain(slice.id);
+    expect(head?.message).toBe(slice.title);
+  });
+
+  it("sends the slice back to the implementer with the hooks' output when the repository's commit hooks reject its work", async () => {
+    const hookOutput = faker.lorem.words(4);
+    const { run, rejectCommitsInSandbox } = await setup({
+      implementer: [{ files: { 'feature.txt': faker.lorem.sentence() } }],
+    });
+    await rejectCommitsInSandbox(hookOutput);
+
+    const outcome = await run(implementSlice, aSlice());
+
+    expect(outcome).toMatchObject({
+      type: 'changesRequested',
+      feedback: expect.stringContaining(hookOutput),
+    });
   });
 
   it("takes a commit the implementer made itself as the slice's change", async () => {
@@ -208,6 +223,7 @@ describe('slice steps', () => {
       sandboxPath: created.sandboxPath,
       git: created.git,
       runBranch: created.runBranch,
+      rejectCommitsInSandbox: created.rejectCommitsInSandbox,
     };
   }
 });

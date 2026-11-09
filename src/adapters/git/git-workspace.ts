@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import {
   CommitImportRefused,
+  CommitRejected,
   GitCommandFailed,
   LocalStateUnwritable,
   MergeFailed,
@@ -53,12 +54,22 @@ export class GitWorkspace implements Workspace {
 
   private async commitInSandbox(
     message: string,
-  ): Promise<Result<void, GitCommandFailed | SandboxUnavailable>> {
+  ): Promise<Result<void, GitCommandFailed | CommitRejected | SandboxUnavailable>> {
     const status = await this.sandboxGit(['status', '--porcelain']);
     if (status.isErr() || status.value === '') return status.map(() => undefined);
     const added = await this.sandboxGit(['add', '-A']);
     if (added.isErr()) return added.map(() => undefined);
-    return (await this.sandboxGit(['commit', '-q', '-m', message])).map(() => undefined);
+    const committed = await this.options.sandbox.execGit(['commit', '-q', '-m', message]);
+    if (committed.isErr()) return Result.err(committed.error);
+    const { exitCode, output } = committed.value;
+    return exitCode === 0
+      ? Result.ok()
+      : Result.err(
+          new CommitRejected({
+            message: `The repository's commit hooks rejected the commit: ${output.trim()}`,
+            output: output.trim(),
+          }),
+        );
   }
 
   private async sandboxGit(

@@ -1,12 +1,17 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import type { GitCommandFailed } from '../domain/errors.js';
+import { CommitRejected, type GitCommandFailed } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunState } from '../domain/run-state.js';
 import { type Slice, slicesInOrder } from '../domain/slice.js';
 import type { SliceStep, StepPorts } from '../flow/define-flow.js';
-import { implementPrompt, nothingChangedFeedback, reviewPrompt } from '../prompts/slice.js';
+import {
+  commitRejectedFeedback,
+  implementPrompt,
+  nothingChangedFeedback,
+  reviewPrompt,
+} from '../prompts/slice.js';
 
 export const implementSlice: SliceStep = ({ state, slice, ports }) =>
   Result.gen(async function* () {
@@ -14,9 +19,14 @@ export const implementSlice: SliceStep = ({ state, slice, ports }) =>
     const attemptStart = yield* Result.await(workspace.headCommit());
     yield* Result.await(ports.agent.run({ role: 'implementer', prompt: implementPrompt(slice) }));
     const approved = yield* Result.await(sliceStart(state, slice, ports));
-    yield* Result.await(
-      workspace.saveWork(`jig: implement ${slice.id} — ${slice.title}`, { approved }),
-    );
+    const saved = await workspace.saveWork(slice.title, { approved });
+    if (saved.isErr() && CommitRejected.is(saved.error)) {
+      return Result.ok<Outcome>({
+        type: 'changesRequested',
+        feedback: commitRejectedFeedback(saved.error.output),
+      });
+    }
+    yield* saved;
     const head = yield* Result.await(workspace.headCommit());
     if (head === approved) {
       return Result.ok<Outcome>({

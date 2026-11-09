@@ -42,7 +42,7 @@ describe('runFlow', () => {
     expect(state.slices.map((slice) => slice.status)).toEqual(['approved', 'approved']);
     const merged = await git.log(['main', '-3']);
     expect(merged.all.map((commit) => commit.message)).toEqual(
-      expect.arrayContaining(slices.map((slice) => expect.stringContaining(slice.id))),
+      expect.arrayContaining(slices.map((slice) => slice.title)),
     );
   });
 

@@ -16,6 +16,7 @@ export type JigError =
   | MergeFailed
   | GitCommandFailed
   | CommitImportRefused
+  | CommitRejected
   | ConfigInvalid
   | RunRequestInvalid
   | RunInProgress
@@ -106,6 +107,14 @@ export class CommitImportRefused extends TaggedError('CommitImportRefused')<{ me
   readonly kind = 'block' as const;
 }
 
+/** The target repository's commit hooks refused the commit; `output` is what they printed. */
+export class CommitRejected extends TaggedError('CommitRejected')<{
+  message: string;
+  output: string;
+}> {
+  readonly kind = 'block' as const;
+}
+
 export class ConfigInvalid extends TaggedError('ConfigInvalid')<{ message: string }> {
   readonly kind = 'fatal' as const;
 }
@@ -166,6 +175,7 @@ const jigErrorClasses = [
   MergeFailed,
   GitCommandFailed,
   CommitImportRefused,
+  CommitRejected,
   ConfigInvalid,
   RunRequestInvalid,
   RunInProgress,

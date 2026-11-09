@@ -88,6 +88,9 @@ export function slicePlanPrompt(planMarkdown: string): string {
     '',
     'Respond with JSON matching an array of:',
     '{ "id": string (kebab-case, unique), "title": string, "description": string }.',
+    "A slice's title becomes its commit message when the implementer leaves work uncommitted,",
+    "so write it as a one-line commit header in this repository's convention (its history and",
+    'any commit-message lint config show it), at most 72 characters.',
     'Order the array the way the slices must be implemented.',
   ].join('\n');
 }

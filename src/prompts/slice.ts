@@ -35,6 +35,15 @@ export function nothingChangedFeedback(slice: Slice): string {
   ].join('\n');
 }
 
+export function commitRejectedFeedback(hookOutput: string): string {
+  return [
+    "The previous attempt's work is still uncommitted: this repository's commit hooks rejected",
+    'the commit made for it. Fix what the hooks report, then commit the work yourself with a',
+    'message they accept. Their output:',
+    hookOutput,
+  ].join('\n');
+}
+
 /** `range` is a git revision range holding exactly this slice's commits, e.g. `<start>..HEAD`. */
 export function reviewPrompt(slice: Slice, range: string): string {
   return [
