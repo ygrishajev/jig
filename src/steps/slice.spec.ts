@@ -242,6 +242,72 @@ describe('slice steps', () => {
     expect(prompt).not.toContain(addedTest);
   });
 
+  it('names every protected file the slice modified, deleted or reconfigured for the reviewer', async () => {
+    const existingSpec = `${faker.lorem.slug()}.spec.ts`;
+    const secondTest = `${faker.lorem.slug()}.test.ts`;
+    const { run, agent, workspace, sandboxPath, git, runBranch } = await setup({
+      implementer: [
+        {
+          files: {
+            [existingSpec]: faker.lorem.paragraph(),
+            'package.json': `{\n  "name": "${faker.lorem.word()}"\n}\n`,
+          },
+          deletes: [secondTest],
+        },
+      ],
+      reviewer: [approval()],
+    });
+    await writeFile(path.join(sandboxPath, existingSpec), faker.lorem.paragraph());
+    await writeFile(path.join(sandboxPath, secondTest), faker.lorem.paragraph());
+    await writeFile(
+      path.join(sandboxPath, 'package.json'),
+      `{\n  "name": "${faker.lorem.word()}"\n}\n`,
+    );
+    (
+      await workspace.saveWork(faker.lorem.sentence(), {
+        approved: await git.revparse([runBranch]),
+      })
+    ).unwrap();
+    const previous = aSlice({
+      order: 0,
+      status: 'approved',
+      commit: await git.revparse([runBranch]),
+    });
+    const slice = aSlice({ order: 1 });
+    await run(implementSlice, slice, [previous]);
+
+    await run(reviewSlice, { ...slice, status: 'in_review' }, [previous]);
+
+    const prompt = agent.calls.at(-1)?.prompt ?? '';
+    expect(prompt).toContain(`${existingSpec} (modified)`);
+    expect(prompt).toContain(`${secondTest} (deleted)`);
+    expect(prompt).toContain('package.json (modified)');
+  });
+
+  it('lists no protected files for a slice that only adds new files', async () => {
+    const addedSource = `${faker.lorem.slug()}.ts`;
+    const addedSpec = `${faker.lorem.slug()}.spec.ts`;
+    const { run, agent } = await setup({
+      implementer: [
+        {
+          files: {
+            [addedSource]: faker.lorem.sentence(),
+            [addedSpec]: faker.lorem.sentence(),
+          },
+        },
+      ],
+      reviewer: [approval()],
+    });
+    const slice = aSlice();
+    await run(implementSlice, slice);
+
+    await run(reviewSlice, { ...slice, status: 'in_review' });
+
+    const prompt = agent.calls.at(-1)?.prompt ?? '';
+    expect(prompt).not.toContain(addedSpec);
+    expect(prompt).not.toContain('- ');
+  });
+
   it('verifies without running anything when no verify command is configured', async () => {
     const { run, agent } = await setup({ settings: runSettings({ verifyCommand: undefined }) });
 

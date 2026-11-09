@@ -75,7 +75,7 @@ export function reviewPrompt(
     slice.verification
       ? `\`${slice.verification.command}\` passed in the sandbox for the commits in \`${range}\``
       : "no verify result is recorded (no verify command is configured) — run the project's tests and lint yourself before approving",
-    ...protectedPathsSection(protectedChanges),
+    ...protectedChangesSection(protectedChanges),
     '',
     'Decide whether this slice is ready to merge as-is.',
     'Reject the slice if it is not a self-explanatory, standalone deliverable — for example,',
@@ -86,13 +86,17 @@ export function reviewPrompt(
   ].join('\n');
 }
 
-function protectedPathsSection(changes: readonly ChangedFile[]): string[] {
+function protectedChangesSection(changes: readonly ChangedFile[]): string[] {
   if (changes.length === 0) return [];
   return [
     '',
-    'The commits under review also touched these protected paths — tests or snapshots that already',
-    'cover behaviour, and the files that decide what gets checked. Scrutinise each change for a',
-    'weakened check, not only for correctness:',
+    'The commits under review also changed these protected files — existing tests or check',
+    'configuration. Verify ran from these same edited files, so its result covers the edited',
+    'versions, not the originals:',
     ...changes.map(({ path, kind }) => `- ${path} (${kind})`),
+    "For each file, confirm that the slice's description requires its change, and that the change",
+    'does not weaken a check: removed or skipped tests, loosened assertions, disabled or relaxed',
+    'rules, a narrower verify script or CI. If either confirmation fails for a file, reject the',
+    'slice with feedback naming that file.',
   ];
 }

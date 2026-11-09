@@ -1,6 +1,6 @@
 import { Result } from 'better-result';
 import { execa } from 'execa';
-import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import type { ZodType } from 'zod';
@@ -28,7 +28,7 @@ import type { RunStore } from '../../src/ports/run-store.js';
  * fail the way a real agent does (a value), or crash the way a bug does (a throw).
  */
 export type AgentScript =
-  | { files: Record<string, string>; commitMessage?: string }
+  | { files: Record<string, string>; deletes?: string[]; commitMessage?: string }
   | { output: unknown }
   | { fail: AgentRunFailed }
   | { crash: Error };
@@ -66,6 +66,7 @@ export class FakeAgentSession implements AgentSession {
     if ('fail' in turn) return Result.err(turn.fail);
     if ('files' in turn) {
       await this.writeFiles(turn.files);
+      await this.deleteFiles(turn.deletes ?? []);
       if (turn.commitMessage) await this.commit(turn.commitMessage);
     }
     return Result.ok();
@@ -131,6 +132,12 @@ export class FakeAgentSession implements AgentSession {
       const file = path.join(this.sandboxPath, relativePath);
       await mkdir(path.dirname(file), { recursive: true });
       await writeFile(file, contents);
+    }
+  }
+
+  private async deleteFiles(paths: readonly string[]) {
+    for (const relativePath of paths) {
+      await rm(path.join(this.sandboxPath, relativePath));
     }
   }
 }
