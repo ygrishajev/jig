@@ -99,8 +99,17 @@ export function reviewPrompt(
     'Reject the slice if it is not a self-explanatory, standalone deliverable — for example,',
     'pure scaffolding (types, builders, refactors) for later slices with no meaningful purpose',
     'of its own; feedback must say it must be folded into the slice that consumes it.',
+    '',
+    "Judge the change against this repository's instructions for agents (AGENTS.md, CLAUDE.md or",
+    'similar, and the rule files they point to) as well as the description.',
+    'Review the whole range in one pass and report every problem you find, not only the first or',
+    'the most serious: each rejection costs the slice one of a few attempts, so a problem you',
+    'leave for the next round may be the one it runs out on. On a later round, check the whole',
+    'range again, not only what the last feedback named.',
+    '',
     'Respond with JSON matching: { "approved": boolean, "feedback": string }.',
-    'If approved is false, feedback must explain exactly what needs to change.',
+    'If approved is false, feedback must list every needed change as a numbered list, each item',
+    'naming the file and line and saying exactly what must change.',
   ].join('\n');
 }
 
