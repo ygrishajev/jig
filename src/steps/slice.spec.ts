@@ -7,6 +7,7 @@ import { approval } from '../../tests/support/agent-scripts.js';
 import { aRunState, aSlice, runId, runSettings } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { applyOutcome } from '../domain/apply-outcome.js';
 import { SandboxUnavailable } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
@@ -153,6 +154,34 @@ describe('slice steps', () => {
 
     expect(await run(verifySlice, aSlice())).toEqual({ type: 'verified' });
     expect(agent.commands).toEqual([]);
+  });
+
+  it('records the verify command it ran when the slice passes', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const output = faker.lorem.sentence();
+    const { run } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => ({ exitCode: 0, output }),
+    });
+
+    expect(await run(verifySlice, aSlice())).toEqual({ type: 'verified', command: verifyCommand });
+  });
+
+  it('clears the verification a slice passed once changes are requested on it', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { run } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => ({ exitCode: 0, output: faker.lorem.sentence() }),
+    });
+    const slice = aSlice({ status: 'verifying' });
+    const verified = await run(verifySlice, slice);
+    let state = applyOutcome(aRunState({ slices: [slice] }), verified);
+
+    expect(state.slices[0].verification).toEqual({ command: verifyCommand });
+
+    state = applyOutcome(state, { type: 'changesRequested', feedback: faker.lorem.sentence() });
+
+    expect(state.slices[0].verification).toBeUndefined();
   });
 
   it('runs the verify command in the sandbox and requests changes with its output when it fails', async () => {

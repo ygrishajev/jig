@@ -21,6 +21,7 @@ export const sliceSchema = plannedSliceSchema.extend({
   reviewCycles: z.number().int().nonnegative(),
   lastFeedback: z.string().optional(),
   commit: z.string().optional(),
+  verification: z.object({ command: z.string() }).optional(),
 });
 
 export type Slice = z.infer<typeof sliceSchema>;

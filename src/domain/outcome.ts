@@ -17,7 +17,7 @@ export type Outcome = OfKnownType<
   | { type: 'implemented'; commit: CommitSummary }
   | { type: 'approved' }
   | { type: 'changesRequested'; feedback: string }
-  | { type: 'verified' }
+  | { type: 'verified'; command?: string }
   | { type: 'described'; body: string }
   | { type: 'merged' }
   | { type: 'awaitingManualMerge' }

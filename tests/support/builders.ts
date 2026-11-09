@@ -50,8 +50,19 @@ export function aSlice({
   reviewCycles = 0,
   lastFeedback,
   commit,
+  verification,
 }: Partial<Slice> = {}): Slice {
-  return { id, title, description, order, status, reviewCycles, lastFeedback, commit };
+  return {
+    id,
+    title,
+    description,
+    order,
+    status,
+    reviewCycles,
+    lastFeedback,
+    commit,
+    verification,
+  };
 }
 
 export function aContext({

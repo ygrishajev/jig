@@ -28,9 +28,14 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
         ...slice,
         reviewCycles: slice.reviewCycles + 1,
         lastFeedback: outcome.feedback,
+        verification: undefined,
       }));
     case 'verified':
-      return updateCurrentSlice(state, (slice) => ({ ...slice, lastFeedback: undefined }));
+      return updateCurrentSlice(state, (slice) => ({
+        ...slice,
+        lastFeedback: undefined,
+        verification: outcome.command ? { command: outcome.command } : undefined,
+      }));
     case 'described':
       return { ...state, prDescription: outcome.body };
     default:

@@ -13,6 +13,7 @@ import {
   designDocs,
 } from '../../tests/support/builders.js';
 import { applyOutcome } from './apply-outcome.js';
+import { sliceSchema } from './slice.js';
 
 describe('applyOutcome', () => {
   it.each(['continue', 'pause', 'approved', 'merged', 'awaitingManualMerge'] as const)(
@@ -78,6 +79,44 @@ describe('applyOutcome', () => {
     const { slices } = applyOutcome(aRunState({ slices: [slice] }), { type: 'verified' });
 
     expect(slices[0].lastFeedback).toBeUndefined();
+  });
+
+  it('records the verify command the current slice passed once it is verified', () => {
+    const command = `npm run ${faker.word.verb()}`;
+    const slice = aSlice({ order: 0, status: 'verifying' });
+
+    const { slices } = applyOutcome(aRunState({ slices: [slice] }), { type: 'verified', command });
+
+    expect(slices[0].verification).toEqual({ command });
+  });
+
+  it('records no verification when a slice is verified without a command', () => {
+    const slice = aSlice({ order: 0, status: 'verifying' });
+
+    const { slices } = applyOutcome(aRunState({ slices: [slice] }), { type: 'verified' });
+
+    expect(slices[0].verification).toBeUndefined();
+  });
+
+  it('forgets an earlier verification when changes are requested on the current slice', () => {
+    const slice = aSlice({
+      order: 0,
+      status: 'verifying',
+      verification: { command: `npm run ${faker.word.verb()}` },
+    });
+
+    const { slices } = applyOutcome(aRunState({ slices: [slice] }), {
+      type: 'changesRequested',
+      feedback: faker.lorem.sentence(),
+    });
+
+    expect(slices[0].verification).toBeUndefined();
+  });
+
+  it('still parses a slice saved before slices recorded their verification', () => {
+    const { verification: _neverSaved, ...old } = aSlice();
+
+    expect(sliceSchema.parse(old)).toEqual(old);
   });
 
   it('skips approved slices when picking the slice an outcome belongs to', () => {
