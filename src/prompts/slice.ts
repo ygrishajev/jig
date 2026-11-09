@@ -22,7 +22,7 @@ function previousFeedback(slice: Slice): string[] {
   if (!slice.lastFeedback) return [];
   return [
     '',
-    'A previous attempt at this slice was reviewed and changes were requested.',
+    'A previous attempt at this slice was sent back with changes requested, by its review or by a failed check.',
     'Address this feedback specifically:',
     slice.lastFeedback,
   ];
@@ -43,6 +43,17 @@ export function commitRejectedFeedback(hookOutput: string): string {
     hookOutput,
   ].join('\n');
 }
+
+export function verifyFailedFeedback(command: string, output: string): string {
+  const trimmed = output.trim();
+  return [
+    `The verify command \`${command}\` failed in the sandbox for this slice's commits.`,
+    'Fix what it reports. Its output:',
+    trimmed.length > VERIFY_OUTPUT_TAIL ? `…${trimmed.slice(-VERIFY_OUTPUT_TAIL)}` : trimmed,
+  ].join('\n');
+}
+
+export const VERIFY_OUTPUT_TAIL = 3000;
 
 /** `range` is a git revision range holding exactly this slice's commits, e.g. `<start>..HEAD`. */
 export function reviewPrompt(slice: Slice, range: string): string {

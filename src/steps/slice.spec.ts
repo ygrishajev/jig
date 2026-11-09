@@ -199,15 +199,21 @@ describe('slice steps', () => {
     expect(outcome.type === 'changesRequested' && outcome.feedback).toContain(failure);
   });
 
-  it('cuts long verify output short in the feedback', async () => {
+  it("gives the implementer the tail of a failing verify's output, not its head", async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const head = faker.string.alpha(2000);
+    const tail = faker.string.alpha(2000);
     const { run } = await setup({
-      settings: runSettings({ verifyCommand: 'npm test' }),
-      exec: () => ({ exitCode: 1, output: faker.string.alpha(5000) }),
+      settings: runSettings({ verifyCommand }),
+      exec: () => ({ exitCode: 1, output: `${head}${tail}` }),
     });
 
     const outcome = await run(verifySlice, aSlice());
 
-    expect(outcome.type === 'changesRequested' && outcome.feedback.length).toBeLessThan(600);
+    const feedback = outcome.type === 'changesRequested' && outcome.feedback;
+    expect(feedback).toContain(tail);
+    expect(feedback).toContain(verifyCommand);
+    expect(feedback).not.toContain(head);
   });
 
   it('passes on a sandbox that cannot run the verify command at all', async () => {

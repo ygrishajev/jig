@@ -11,6 +11,7 @@ import {
   implementPrompt,
   nothingChangedFeedback,
   reviewPrompt,
+  verifyFailedFeedback,
 } from '../prompts/slice.js';
 
 export const implementSlice: SliceStep = ({ state, slice, ports }) =>
@@ -81,15 +82,5 @@ export const verifySlice: SliceStep = async ({ settings, ports }) => {
   if (ran.isErr()) return Result.err(ran.error);
   const { exitCode, output } = ran.value;
   if (exitCode === 0) return Result.ok<Outcome>({ type: 'verified', command });
-  return Result.ok({
-    type: 'changesRequested',
-    feedback: `The reviewer approved this slice, but the verify command ("${command}") failed:\n${truncate(output.trim(), VERIFY_OUTPUT_LIMIT)}`,
-  });
+  return Result.ok({ type: 'changesRequested', feedback: verifyFailedFeedback(command, output) });
 };
-
-function truncate(text: string, limit: number): string {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
-}
-
-/** Enough of a failing verify command's output to act on, without flooding the next prompt. */
-const VERIFY_OUTPUT_LIMIT = 400;
