@@ -7,12 +7,16 @@ import { describe, expect, it } from 'vitest';
 
 import { codexLogin } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import type { MissingCredential } from '../sandcastle/agents.js';
+import type { AgentName } from '../sandcastle/agents.js';
 import { askForCredential } from './ask-for-credential.js';
 
 const ENTER = '\r';
 const DOWN = '\u001B[B';
-const BACKSPACE = '\u007F';
+/**
+ * Ctrl+H, not DEL: readline deletes left for it whether it decodes it as backspace or as ctrl+h,
+ * while a DEL some runs decode as text lands in the value instead of erasing it.
+ */
+const BACKSPACE = '\b';
 
 /** The password prompt draws this hint only while idle, so a frame showing it is ready for keys. */
 const VISIBILITY_HINT = 'ctrl+t toggle visibility';
@@ -114,7 +118,7 @@ describe('askForCredential', () => {
     expect(printed()).toContain('No Codex login');
   });
 
-  function setup(missing: MissingCredential) {
+  function setup(missing: { provider: AgentName; keys: string[] }) {
     const stdin = Object.assign(new PassThrough(), { isTTY: true });
     const stdout = new TerminalScreen();
     let output = '';
@@ -186,7 +190,6 @@ function rejectedSecret(problem: string): ScreenState {
   return (screen) => rejected(problem)(screen) && screen.endsWith(VISIBILITY_HINT);
 }
 
-/** What follows a prompt's label: a space comes before the value only when there is one. */
 function afterLabel(value: string) {
   return value ? `: ${value}` : ':';
 }
