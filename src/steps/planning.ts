@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { AgentOutputInvalid } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
+import { checkPlanCoverage } from '../domain/plan-coverage.js';
 import { designDocsSchema, featurePlanSchema, runContextSchema } from '../domain/run-state.js';
 import { type PlannedSlice, plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
@@ -50,6 +51,7 @@ export const sliceThePlan: RunStep<'slicing'> = ({ state, ports }) =>
       }),
     );
     yield* requireUniqueIds(slices);
+    yield* checkPlanCoverage(state.docs.plan, slices);
     return Result.ok<Outcome>({ type: 'sliced', slices });
   });
 

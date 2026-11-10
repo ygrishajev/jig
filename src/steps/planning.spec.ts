@@ -9,6 +9,7 @@ import {
   aRunState,
   aRunStateIn,
   designDocs,
+  implementingPlanSteps,
   runSettings,
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
@@ -61,7 +62,10 @@ describe('planning steps', () => {
   });
 
   it('slices the plan document', async () => {
-    const slices = [aPlannedSlice(), aPlannedSlice()];
+    const slices = [
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+    ];
     const docs = designDocs();
     const { run, agent } = setup({ turn: { output: slices } });
 
@@ -70,6 +74,20 @@ describe('planning steps', () => {
       slices,
     });
     expect(agent.calls[0].prompt).toContain(docs.plan);
+  });
+
+  it('rejects a slice plan that leaves a plan step unimplemented', async () => {
+    const docs = designDocs({
+      plan: `# Plan\n\n## Step 1 — ${faker.lorem.sentence()}\n## Step 2 — ${faker.lorem.sentence()}\n`,
+    });
+    const { run } = setup({
+      turn: { output: [aPlannedSlice({ description: implementingPlanSteps(1) })] },
+    });
+
+    const result = await run(sliceThePlan, aRunStateIn('slicing', { docs }));
+
+    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error.message).toContain('plan step 2');
   });
 
   it('rejects a slice plan that repeats an id', async () => {

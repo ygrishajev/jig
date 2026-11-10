@@ -1,7 +1,13 @@
 import { faker } from '@faker-js/faker';
 
 import type { PlannedSlice } from '../../src/domain/slice.js';
-import { aContext, aFeaturePlan, aPlannedSlice, designDocs } from './builders.js';
+import {
+  aContext,
+  aFeaturePlan,
+  aPlannedSlice,
+  designDocs,
+  implementingPlanSteps,
+} from './builders.js';
 import type { FakeAgentSession } from './fakes.js';
 
 /** Scripts the planner's four turns: context, feature plan, design docs, then `slices`. */
@@ -16,7 +22,10 @@ export function scriptPlanning(agent: FakeAgentSession, slices: PlannedSlice[]) 
 }
 
 /** Scripts a whole run of one slice that is implemented, approved, finally checked and described. */
-export function scriptWholeRun(agent: FakeAgentSession, slice = aPlannedSlice()) {
+export function scriptWholeRun(
+  agent: FakeAgentSession,
+  slice = aPlannedSlice({ description: implementingPlanSteps(1) }),
+) {
   scriptPlanning(agent, [slice]);
   agent.script('implementer', { files: { [`${slice.id}.txt`]: faker.lorem.sentence() } });
   agent.script('reviewer', approval(), fulfillment());

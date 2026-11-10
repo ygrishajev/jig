@@ -19,6 +19,7 @@ import {
   aPlannedSlice,
   aRunStateIn,
   aSlice,
+  implementingPlanSteps,
   runId,
   runSettings,
 } from '../../tests/support/builders.js';
@@ -38,7 +39,10 @@ import { runFlow } from './run-flow.js';
 
 describe('runFlow', () => {
   it('takes a request from planning through two slices to a merged run branch', async () => {
-    const slices = [aPlannedSlice(), aPlannedSlice()];
+    const slices = [
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+    ];
     const { agent, run, start, git } = await setup({
       settings: runSettings({ mergeMode: 'auto' }),
     });
@@ -63,7 +67,7 @@ describe('runFlow', () => {
   });
 
   it('sends a slice back with the reviewer feedback and gets it approved on the next attempt', async () => {
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const feedback = faker.lorem.sentence();
     const { agent, run, start } = await setup({ settings: runSettings({ mergeMode: 'manual' }) });
     scriptPlanning(agent, [slice]);
@@ -84,7 +88,7 @@ describe('runFlow', () => {
   });
 
   it('asks the reviewer again after a malformed verdict instead of sending the slice back to the implementer', async () => {
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const { agent, run, start } = await setup({ settings: runSettings({ maxStepRetries: 1 }) });
     scriptPlanning(agent, [slice]);
     agent.script(
@@ -106,7 +110,7 @@ describe('runFlow', () => {
   it('blocks a run whose reviewer keeps producing malformed verdicts, without spending review cycles', async () => {
     const maxStepRetries = faker.number.int({ min: 0, max: 2 });
     const { agent, run, start } = await setup({ settings: runSettings({ maxStepRetries }) });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
     agent.script(
       'reviewer',
@@ -122,7 +126,7 @@ describe('runFlow', () => {
 
   it('retries an implementation that changed nothing without spending a review cycle', async () => {
     const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script('implementer', { files: {} }, { files: { 'a.txt': faker.lorem.sentence() } });
     agent.script('reviewer', approval(), fulfillment());
     agent.script('describer', aDescription());
@@ -139,7 +143,7 @@ describe('runFlow', () => {
 
   it('never sends an implementation that changed nothing to review, and gives up after two such attempts', async () => {
     const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script('implementer', { files: {} }, { files: {} });
     agent.script('describer', aDescription());
 
@@ -152,7 +156,7 @@ describe('runFlow', () => {
 
   it('sends rule fixes back without spending a review cycle, and gives up after two rounds of them', async () => {
     const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script(
       'implementer',
       ...Array.from({ length: 2 }, () => ({ files: { 'a.txt': faker.lorem.sentence() } })),
@@ -168,7 +172,7 @@ describe('runFlow', () => {
 
   it('approves a slice after a round of rule fixes even at the review cap', async () => {
     const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script(
       'implementer',
       { files: { 'a.txt': faker.lorem.sentence() } },
@@ -184,7 +188,7 @@ describe('runFlow', () => {
   });
 
   it('stops for a person after planning when the design gate is a checkpoint, then continues on resume', async () => {
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const { agent, run, start } = await setup({
       settings: runSettings({ designGate: 'checkpoint' }),
     });
@@ -202,7 +206,10 @@ describe('runFlow', () => {
   });
 
   it('finishes from saved state after an interruption with the commits an uninterrupted run makes', async () => {
-    const slices = [aPlannedSlice(), aPlannedSlice()];
+    const slices = [
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+    ];
     const files = slices.map((slice) => ({ [`${slice.id}.txt`]: faker.lorem.paragraph() }));
     const settings = runSettings({ mergeMode: 'manual' });
     const uninterrupted = await setup({ settings });
@@ -242,7 +249,7 @@ describe('runFlow', () => {
         return { exitCode: 0, output: faker.lorem.sentence() };
       },
     });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
     agent.script('reviewer', approval(), fulfillment());
     agent.script('describer', aDescription());
@@ -276,7 +283,7 @@ describe('runFlow', () => {
         return results.shift() ?? { exitCode: 0, output: '' };
       },
     });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script(
       'implementer',
       { files: { 'a.txt': faker.lorem.sentence() } },
@@ -305,7 +312,7 @@ describe('runFlow', () => {
       settings: runSettings({ reviewCycleCap: 1, verifyCommand }),
       exec: () => ({ exitCode: 1, output: faker.lorem.sentence() }),
     });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
     agent.script('describer', aDescription());
 
@@ -349,7 +356,7 @@ describe('runFlow', () => {
     const { agent, run, start, git } = await setup({
       settings: runSettings({ reviewCycleCap: 2 }),
     });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script(
       'implementer',
       { files: { 'a.txt': faker.lorem.sentence() } },
@@ -369,7 +376,7 @@ describe('runFlow', () => {
   });
 
   it('runs the final check on the whole request once every slice is approved, then describes', async () => {
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const { agent, run, start } = await setup({ settings: runSettings() });
     scriptPlanning(agent, [slice]);
     agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
@@ -385,7 +392,7 @@ describe('runFlow', () => {
 
   it('gives a failed final check one repair and merges when the repair fulfils the request', async () => {
     const gap = faker.lorem.sentence();
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const { agent, run, start, git, runBranch } = await setup({ settings: runSettings() });
     scriptPlanning(agent, [slice]);
     agent.script(
@@ -412,7 +419,7 @@ describe('runFlow', () => {
   });
 
   it('refuses to merge when the run branch gained an unapproved commit after the last approval', async () => {
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const crash = new Error(faker.lorem.sentence());
     const { agent, run, start, store, git, runBranch, worktreePath } = await setup({
       settings: runSettings(),
@@ -456,7 +463,7 @@ describe('runFlow', () => {
 
   it('describes the run and stops for a person when the repaired run still fails its final check', async () => {
     const { agent, run, start, git } = await setup({ settings: runSettings() });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script(
       'implementer',
       { files: { 'a.txt': faker.lorem.sentence() } },
@@ -489,7 +496,7 @@ describe('runFlow', () => {
       { exitCode: 0, output: faker.lorem.sentence() },
       { exitCode: 0, output: faker.lorem.sentence() },
     ];
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const { agent, run, start } = await setup({
       settings: runSettings({ verifyCommand }),
       exec: () => results.shift() ?? { exitCode: 1, output: '' },
@@ -525,7 +532,7 @@ describe('runFlow', () => {
       settings: runSettings({ verifyCommand }),
       exec: () => results.shift() ?? { exitCode: 1, output: '' },
     });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script(
       'implementer',
       { files: { 'a.txt': faker.lorem.sentence() } },
@@ -550,7 +557,7 @@ describe('runFlow', () => {
     const { agent, run, start, git } = await setup({
       settings: runSettings({ reviewCycleCap: 1 }),
     });
-    scriptPlanning(agent, [aPlannedSlice()]);
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script(
       'implementer',
       { files: { 'a.txt': faker.lorem.sentence() } },
@@ -569,7 +576,7 @@ describe('runFlow', () => {
   });
 
   it('resumes from the saved repair and appends no second one when the recheck fails again', async () => {
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const crash = new Error(faker.lorem.sentence());
     const { agent, run, start, store, git } = await setup({ settings: runSettings() });
     scriptPlanning(agent, [slice]);
@@ -595,7 +602,7 @@ describe('runFlow', () => {
   });
 
   it('resumes a saved run whose repair the reviewer approved, and appends no second repair when the recheck fails again', async () => {
-    const slice = aPlannedSlice();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const crash = new Error(faker.lorem.sentence());
     const { agent, run, start, store, git } = await setup({ settings: runSettings() });
     scriptPlanning(agent, [slice]);

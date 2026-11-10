@@ -42,6 +42,12 @@ export function aPlannedSlice({
   return { id, title, description };
 }
 
+/** A slice description that opens by naming the plan steps it delivers, as the slicing prompt requires. */
+export function implementingPlanSteps(...steps: number[]): string {
+  const reference = steps.length === 1 ? `step ${steps[0]}` : `steps ${steps.join(', ')}`;
+  return `Implements plan ${reference}. ${faker.lorem.paragraph()}`;
+}
+
 export function aSlice({
   id = sliceId(),
   title = faker.lorem.sentence(),
