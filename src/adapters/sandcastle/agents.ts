@@ -60,7 +60,8 @@ export const AGENTS = {
     credentialHelp: "the API key of the model's provider",
     credentialIsSecret: true,
     credentialProblem: () => undefined,
-    create: (model) => requireModel(model).map((required) => opencode(required)),
+    create: (model) =>
+      requireModel(model).map((required) => opencode(required, { captureSessions: false })),
   },
   codex: {
     npmPackage: '@openai/codex',

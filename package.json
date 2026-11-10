@@ -39,7 +39,7 @@
     "typecheck": "tsc -p tsconfig.typecheck.json"
   },
   "dependencies": {
-    "@ai-hero/sandcastle": "^0.12.0",
+    "@ai-hero/sandcastle": "^0.14.0",
     "@inquirer/prompts": "^8.7.5",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
