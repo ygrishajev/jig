@@ -1,6 +1,6 @@
 import { Result } from 'better-result';
-import { z } from 'zod';
 
+import { fulfillmentVerdictSchema } from '../domain/final-check.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunStep } from '../flow/define-flow.js';
 import type { ExecResult } from '../ports/agent-session.js';
@@ -46,8 +46,3 @@ function verificationOf(command: string, ran: ExecResult): FinalCheckVerificatio
     ...(ran.exitCode === 0 ? {} : { output: ran.output }),
   };
 }
-
-const fulfillmentVerdictSchema = z.object({
-  fulfilled: z.boolean(),
-  gaps: z.array(z.string()),
-});

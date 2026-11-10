@@ -1,9 +1,19 @@
+import { z } from 'zod';
+
 import type { Outcome } from './outcome.js';
 import type { FinalCheckResult, RunState } from './run-state.js';
 import { type PlannedSlice, type Slice, sliceFromPlan } from './slice.js';
 
 /** The outcome of a completed final check: what its verification did, and what the review found. */
 export type FinalCheckCompletion = Extract<Outcome, { type: 'finalChecked' }>;
+
+/** What the whole-run reviewer reports: whether the run fulfils its request, and every gap. */
+export const fulfillmentVerdictSchema = z.object({
+  fulfilled: z.boolean(),
+  gaps: z.array(z.string()),
+});
+
+export type FulfillmentVerdict = z.infer<typeof fulfillmentVerdictSchema>;
 
 /**
  * Folds a completed final check into the run atomically: the first failure records round 1 and
