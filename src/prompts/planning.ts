@@ -62,7 +62,7 @@ export function designPrompt(request: string, repoSummary: string, plan: Feature
   ].join('\n');
 }
 
-export function slicePlanPrompt(planMarkdown: string): string {
+export function slicePlanPrompt(planMarkdown: string, correction?: string): string {
   return [
     'You are the PR-slicing step of an automated SDLC pipeline.',
     '',
@@ -91,6 +91,7 @@ export function slicePlanPrompt(planMarkdown: string): string {
     'Slices may share plan steps, and one slice may implement every step, but together the',
     'slices must cover the whole plan: every step of the plan must be implemented by at',
     'least one slice.',
+    ...correctionSection(correction),
     '',
     'Respond with JSON matching an array of:',
     '{ "id": string (kebab-case, unique), "title": string, "description": string }.',
@@ -99,4 +100,16 @@ export function slicePlanPrompt(planMarkdown: string): string {
     'any commit-message lint config show it), at most 72 characters.',
     'Order the array the way the slices must be implemented.',
   ].join('\n');
+}
+
+/** What the planner reads when its previous slice plan failed the coverage check; `problems` is that check's exact diagnostic. */
+function correctionSection(problems: string | undefined): string[] {
+  if (!problems) return [];
+  return [
+    '',
+    'A previous slice plan for this same implementation plan was rejected with these problems:',
+    problems,
+    'Respond with a complete replacement array of slices that fixes every problem — not only',
+    'the slices that would change, and not the previous array with the changes described.',
+  ];
 }

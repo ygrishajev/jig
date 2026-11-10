@@ -1,12 +1,12 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { AgentOutputInvalid } from '../domain/errors.js';
+import { AgentOutputInvalid, type AgentRunFailed } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import { checkPlanCoverage } from '../domain/plan-coverage.js';
 import { designDocsSchema, featurePlanSchema, runContextSchema } from '../domain/run-state.js';
 import { type PlannedSlice, plannedSliceSchema } from '../domain/slice.js';
-import type { RunStep } from '../flow/define-flow.js';
+import type { RunStep, StepPorts } from '../flow/define-flow.js';
 import {
   contextPrompt,
   designPrompt,
@@ -43,17 +43,32 @@ export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
 
 export const sliceThePlan: RunStep<'slicing'> = ({ state, ports }) =>
   Result.gen(async function* () {
+    const plan = state.docs.plan;
+    const first = yield* Result.await(plannerSlices(plan, ports));
+    const covered = slicedOutcome(plan, first);
+    if (covered.isOk()) return covered;
+    const replacement = yield* Result.await(plannerSlices(plan, ports, covered.error.message));
+    return slicedOutcome(plan, replacement);
+  });
+
+/** The planner's answer to the slice plan request: parsed, with its slice ids checked. */
+function plannerSlices(
+  plan: string,
+  ports: StepPorts,
+  correction?: string,
+): Promise<Result<PlannedSlice[], AgentRunFailed | AgentOutputInvalid>> {
+  return Result.gen(async function* () {
     const slices = yield* Result.await(
       ports.agent.runForOutput({
         role: 'planner',
-        prompt: slicePlanPrompt(state.docs.plan),
+        prompt: slicePlanPrompt(plan, correction),
         schema: plannedSlicesSchema,
       }),
     );
     yield* requireUniqueIds(slices);
-    yield* checkPlanCoverage(state.docs.plan, slices);
-    return Result.ok<Outcome>({ type: 'sliced', slices });
+    return Result.ok(slices);
   });
+}
 
 const plannedSlicesSchema = z
   .array(plannedSliceSchema)
@@ -69,6 +84,10 @@ function requireUniqueIds(slices: PlannedSlice[]): Result<void, AgentOutputInval
       message: `The slice plan repeats slice ids: ${[...new Set(duplicates)].join(', ')}`,
     }),
   );
+}
+
+function slicedOutcome(plan: string, slices: PlannedSlice[]): Result<Outcome, AgentOutputInvalid> {
+  return checkPlanCoverage(plan, slices).map(() => ({ type: 'sliced', slices }));
 }
 
 export const applyDesignGate: RunStep = async ({ settings }) =>
