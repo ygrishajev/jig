@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { registerRunCommand } from './commands/run.js';
 import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';
+import { exitWhenDone } from './exit-when-done.js';
 
 const packageManifestSchema = z.object({ version: z.string() });
 
@@ -33,4 +34,5 @@ const isMainModule =
 
 if (isMainModule) {
   await buildCli().parseAsync(process.argv);
+  await exitWhenDone();
 }
