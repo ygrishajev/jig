@@ -220,11 +220,14 @@ describe('checkPlanCoverage', () => {
     expect(result.isErr() && result.error.message).toContain('heading: 2');
   });
 
-  it('accepts a step heading numbered below one', () => {
+  it('rejects a step heading numbered below one', () => {
     const { plan } = setup({ steps: [0, 1] });
     const slices = [aSliceClaiming(implementingPlanSteps(1))];
 
-    expect(checkPlanCoverage(plan, slices).isOk()).toBe(true);
+    const result = checkPlanCoverage(plan, slices);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
+    expect(result.isErr() && result.error.message).toMatch(/\bnot 0\b/);
   });
 
   it('reports every problem in one error, in the same order every time', () => {

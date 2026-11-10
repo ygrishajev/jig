@@ -124,11 +124,20 @@ function planProblems(headings: number[]): string[] {
   if (headings.length === 0) {
     return ['The plan has no step headings for slices to implement.'];
   }
+  const problems: string[] = [];
+  const belowOne = headings.filter((step) => step < 1);
+  if (belowOne.length > 0) {
+    problems.push(`Plan step headings are numbered from 1, not ${joinNumbers(belowOne)}.`);
+  }
   const duplicated = [
     ...new Set(headings.filter((step, index) => headings.indexOf(step) !== index)),
   ];
-  if (duplicated.length === 0) return [];
-  return [`These plan step numbers have more than one heading: ${joinNumbers(duplicated)}.`];
+  if (duplicated.length > 0) {
+    problems.push(
+      `These plan step numbers have more than one heading: ${joinNumbers(duplicated)}.`,
+    );
+  }
+  return problems;
 }
 
 function coverageProblems(steps: readonly number[], claimed: readonly number[]): string[] {
