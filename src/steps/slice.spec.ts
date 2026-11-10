@@ -8,7 +8,7 @@ import { aRunState, aSlice, runId, runSettings } from '../../tests/support/build
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { applyOutcome } from '../domain/apply-outcome.js';
-import { SandboxUnavailable } from '../domain/errors.js';
+import { AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
 import type { SliceStep } from '../flow/define-flow.js';
@@ -30,6 +30,43 @@ describe('slice steps', () => {
       commit: { sha: head?.hash, filesChanged: 1, insertions: 1, deletions: 0 },
     });
     expect(head?.message).toBe(slice.title);
+  });
+
+  it('commits what the implementer left uncommitted with the message it replied with', async () => {
+    const commitMessage = faker.lorem.sentence();
+    const { run, git, runBranch } = await setup({
+      implementer: [
+        { files: { 'feature.txt': faker.lorem.sentence() }, output: { commitMessage } },
+      ],
+    });
+
+    await run(implementSlice, aSlice());
+
+    expect((await git.log([runBranch, '-1'])).latest?.message).toBe(commitMessage);
+  });
+
+  it('commits with the slice title when the implementer replies without a commit message', async () => {
+    const slice = aSlice();
+    const { run, git, runBranch } = await setup({
+      implementer: [
+        { files: { 'feature.txt': faker.lorem.sentence() }, output: { commitMessage: ' ' } },
+      ],
+    });
+
+    await run(implementSlice, slice);
+
+    expect((await git.log([runBranch, '-1'])).latest?.message).toBe(slice.title);
+  });
+
+  it('reports a failed implementer run without committing anything', async () => {
+    const failure = new AgentRunFailed({ message: faker.lorem.sentence() });
+    const { attempt, git, runBranch } = await setup({ implementer: [{ fail: failure }] });
+    const before = await git.revparse([runBranch]);
+
+    const result = await attempt(implementSlice, aSlice());
+
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(await git.revparse([runBranch])).toBe(before);
   });
 
   it("sends the slice back to the implementer with the hooks' output when the repository's commit hooks reject its work", async () => {

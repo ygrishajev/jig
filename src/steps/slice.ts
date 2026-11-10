@@ -1,7 +1,12 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { CommitRejected, type GitCommandFailed } from '../domain/errors.js';
+import {
+  AgentOutputInvalid,
+  type AgentRunFailed,
+  CommitRejected,
+  type GitCommandFailed,
+} from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import { protectedChanges } from '../domain/protected-paths.js';
 import type { RunState } from '../domain/run-state.js';
@@ -19,9 +24,14 @@ export const implementSlice: SliceStep = ({ state, slice, ports }) =>
   Result.gen(async function* () {
     const { workspace } = ports;
     const attemptStart = yield* Result.await(workspace.headCommit());
-    yield* Result.await(ports.agent.run({ role: 'implementer', prompt: implementPrompt(slice) }));
+    const reply = await ports.agent.runForOutput({
+      role: 'implementer',
+      prompt: implementPrompt(slice),
+      schema: implementerReplySchema,
+    });
+    const message = yield* commitMessageOf(reply, slice);
     const approved = yield* Result.await(sliceStart(state, slice, ports));
-    const saved = await workspace.saveWork(slice.title, { approved });
+    const saved = await workspace.saveWork(message, { approved });
     if (saved.isErr() && CommitRejected.is(saved.error)) {
       return Result.ok<Outcome>({
         type: 'changesRequested',
@@ -39,6 +49,20 @@ export const implementSlice: SliceStep = ({ state, slice, ports }) =>
     const commit = yield* Result.await(workspace.summariseCommitsSince(attemptStart));
     return Result.ok<Outcome>({ type: 'implemented', commit });
   });
+
+const implementerReplySchema = z.object({ commitMessage: z.string().trim().min(1) });
+
+/**
+ * The message for what the implementer left uncommitted. A reply jig cannot read must not cost
+ * the work it describes, so the slice title stands in and the repository's hooks judge it.
+ */
+function commitMessageOf(
+  reply: Result<z.infer<typeof implementerReplySchema>, AgentRunFailed | AgentOutputInvalid>,
+  slice: Slice,
+): Result<string, AgentRunFailed> {
+  if (reply.isOk()) return Result.ok(reply.value.commitMessage);
+  return AgentOutputInvalid.is(reply.error) ? Result.ok(slice.title) : Result.err(reply.error);
+}
 
 /**
  * Where a slice's commits begin: where the slice before it ended, or the run branch's fork point

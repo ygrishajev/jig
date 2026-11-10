@@ -16,6 +16,8 @@ export function implementPrompt(slice: Slice): string {
     '',
     ...checkAgainstHouseRulesLast(),
     '',
+    ...commitMessageReply(),
+    '',
     'Before writing a script to re-derive something a tool already reported (e.g. parsing a',
     "mutation-testing or coverage tool's own output by hand), re-read what it already printed.",
     'Before re-running a slow check, check whether a later, more specific step already covers it',
@@ -81,6 +83,15 @@ function checkAgainstHouseRulesLast(): string[] {
     'Before you finish, review your own change the way the reviewer will: read your whole diff',
     '(your commits on this branch and anything uncommitted) and, for each rule file that covers a',
     'changed file, go through it rule by rule. Fix every place your change breaks one.',
+  ];
+}
+
+function commitMessageReply(): string[] {
+  return [
+    'When you are done, reply with { "commitMessage": string }: the commit message for your',
+    'change. Whatever you leave uncommitted is committed with it, so write it in this',
+    "repository's commit convention (its history and any commit-message lint config show it): a",
+    'one-line header that says what changed, then a body that says why.',
   ];
 }
 

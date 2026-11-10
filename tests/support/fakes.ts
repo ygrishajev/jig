@@ -28,7 +28,7 @@ import type { RunStore } from '../../src/ports/run-store.js';
  * fail the way a real agent does (a value), or crash the way a bug does (a throw).
  */
 export type AgentScript =
-  | { files: Record<string, string>; deletes?: string[]; commitMessage?: string }
+  | { files: Record<string, string>; deletes?: string[]; commitMessage?: string; output?: unknown }
   | { output: unknown }
   | { fail: AgentRunFailed }
   | { crash: Error };
@@ -64,11 +64,7 @@ export class FakeAgentSession implements AgentSession {
     const turn = this.nextTurn(input.role);
     if ('crash' in turn) throw turn.crash;
     if ('fail' in turn) return Result.err(turn.fail);
-    if ('files' in turn) {
-      await this.writeFiles(turn.files);
-      await this.deleteFiles(turn.deletes ?? []);
-      if (turn.commitMessage) await this.commit(turn.commitMessage);
-    }
+    if ('files' in turn) await this.work(turn);
     return Result.ok();
   }
 
@@ -79,6 +75,12 @@ export class FakeAgentSession implements AgentSession {
     const turn = this.nextTurn(input.role);
     if ('crash' in turn) throw turn.crash;
     if ('fail' in turn) return Result.err(turn.fail);
+    if ('files' in turn) {
+      await this.work(turn);
+      if (turn.output === undefined) {
+        return Result.err(new AgentOutputInvalid({ message: 'The reply tagged no output' }));
+      }
+    }
     if (!('output' in turn)) throw new Error(`The ${input.role} turn has no output scripted`);
     const parsed = input.schema.safeParse(turn.output);
     return parsed.success
@@ -121,6 +123,16 @@ export class FakeAgentSession implements AgentSession {
     const turn = this.queues.get(role)?.shift();
     if (!turn) throw new Error(`The fake agent has no turn scripted for ${role}`);
     return turn;
+  }
+
+  private async work(turn: {
+    files: Record<string, string>;
+    deletes?: string[];
+    commitMessage?: string;
+  }) {
+    await this.writeFiles(turn.files);
+    await this.deleteFiles(turn.deletes ?? []);
+    if (turn.commitMessage) await this.commit(turn.commitMessage);
   }
 
   private async commit(message: string) {
