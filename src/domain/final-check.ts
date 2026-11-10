@@ -76,11 +76,16 @@ function repairDescription(checked: FinalCheckCompletion): string {
 
 function failedVerification(checked: FinalCheckCompletion): string[] {
   if (checked.verified || checked.output === undefined) return [];
-  const command = checked.command === undefined ? '' : ` \`${checked.command}\``;
   return [
-    `The verify command${command} failed in the sandbox for the run branch. Its output:`,
+    `${failedVerificationLine(checked.command)} Its output:`,
     keepTail(checked.output, FINAL_CHECK_OUTPUT_TAIL),
   ];
+}
+
+/** How jig words a whole-run verification failure, in a repair description and in the PR body. */
+function failedVerificationLine(command: string | undefined): string {
+  const named = command === undefined ? '' : ` \`${command}\``;
+  return `The verify command${named} failed in the sandbox for the run branch.`;
 }
 
 function keepTail(text: string, limit: number): string {
@@ -93,7 +98,8 @@ function keepTail(text: string, limit: number): string {
  */
 export const FINAL_CHECK_OUTPUT_TAIL = 3000;
 
-function unmetRequirements(gaps: string[]): string[] {
+/** How jig lists the whole-run review's unmet requirements, wherever it reports them. */
+export function unmetRequirements(gaps: string[]): string[] {
   if (gaps.length === 0) return [];
   return [
     'The review of the whole run reported these unmet requirements:',
@@ -125,4 +131,31 @@ export function finalCheckNeedsRepair(state: RunState): boolean {
 export function finalCheckFailed(state: RunState): boolean {
   const result = state.finalCheck;
   return result !== undefined && checkFailed(result);
+}
+
+/** How jig states the whole-run verification result: what ran in the sandbox and what it reported. */
+export function wholeRunVerification(result: FinalCheckResult): string {
+  if (result.command === undefined) {
+    return 'No verify command is configured, so jig ran no whole-run verification.';
+  }
+  return result.verified
+    ? `The verify command \`${result.command}\` passed in the sandbox for the run branch.`
+    : failedVerificationLine(result.command);
+}
+
+/** How jig states what the whole-run review decided about the request. */
+export function wholeRunFulfillment(result: FinalCheckResult): string {
+  return result.fulfilled
+    ? 'The review of the whole run reported the request fulfilled.'
+    : 'The review of the whole run reported the request unfulfilled.';
+}
+
+/** What a completed check leaves behind, as jig reports it: a failed verification and every gap. */
+export function unresolvedFindings(result: FinalCheckResult): string[] {
+  return [...verificationFinding(result), ...unmetRequirements(result.gaps)];
+}
+
+function verificationFinding(result: FinalCheckResult): string[] {
+  if (result.verified || result.command === undefined) return [];
+  return [failedVerificationLine(result.command)];
 }

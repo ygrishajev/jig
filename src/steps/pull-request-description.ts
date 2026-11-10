@@ -1,4 +1,9 @@
-import type { RunStateIn } from '../domain/run-state.js';
+import {
+  unresolvedFindings,
+  wholeRunFulfillment,
+  wholeRunVerification,
+} from '../domain/final-check.js';
+import type { FinalCheckResult, RunStateIn } from '../domain/run-state.js';
 import { type Slice, slicesInOrder } from '../domain/slice.js';
 
 export const DEFAULT_PR_TEMPLATE = [
@@ -26,7 +31,8 @@ export const DEFAULT_PR_TEMPLATE = [
 /**
  * The describer's filled-in template, or — when it failed — the repo's own template, or a plain
  * summary; jig's own verification report, from the recorded run state rather than the describer's
- * claims; then the agent run, design and plan, collapsed.
+ * claims; what the whole-run final check decided; the findings it left under a heading jig owns;
+ * then the agent run, design and plan, collapsed.
  */
 export function renderPullRequest(
   state: RunStateIn<'describing'>,
@@ -35,14 +41,13 @@ export function renderPullRequest(
   const lead = input.filled ?? input.template ?? plainSummary(state);
   return [
     lead,
-    '',
     verificationBlock(state.slices, input.verifyCommand),
-    '',
+    wholeRunBlock(state.finalCheck),
+    ...deviationsBlock(state.finalCheck),
     collapsed('Agent run', agentRun(state)),
-    '',
     ...planningDocs(state),
   ]
-    .join('\n')
+    .join('\n\n')
     .trimEnd();
 }
 
@@ -74,6 +79,30 @@ function verificationReport(slices: Slice[], verifyCommand?: string): string {
     .join('\n');
 }
 
+/**
+ * What the whole-run final check decided, from the recorded result; a run without one — a legacy
+ * save or a slice that got stuck before the check — reports it as not run.
+ */
+function wholeRunBlock(finalCheck?: FinalCheckResult): string {
+  const heading =
+    finalCheck === undefined
+      ? '### Whole-run final check'
+      : `### Whole-run final check (round ${finalCheck.round})`;
+  const report =
+    finalCheck === undefined
+      ? 'The whole-run final check did not run.'
+      : [wholeRunVerification(finalCheck), wholeRunFulfillment(finalCheck)].join('\n');
+  return [heading, '', report].join('\n');
+}
+
+/** The whole-run findings under a heading jig owns, shown whatever the describer or template did. */
+function deviationsBlock(finalCheck?: FinalCheckResult): string[] {
+  if (finalCheck === undefined) return [];
+  const findings = unresolvedFindings(finalCheck);
+  if (findings.length === 0) return [];
+  return [['### Deviations by jig', '', ...findings].join('\n')];
+}
+
 function collapsed(title: string, body: string): string {
   return ['<details>', `<summary>${title}</summary>`, '', body, '', '</details>'].join('\n');
 }
@@ -97,5 +126,5 @@ function sliceChecklist(slices: Slice[]): string {
 }
 
 function planningDocs({ docs }: RunStateIn<'describing'>): string[] {
-  return [collapsed('Design', docs.design.trim()), '', collapsed('Plan', docs.plan.trim())];
+  return [collapsed('Design', docs.design.trim()), collapsed('Plan', docs.plan.trim())];
 }

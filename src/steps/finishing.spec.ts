@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   aFeaturePlan,
+  aFinalCheckResult,
   aRunStateIn,
   aSlice,
   runId,
@@ -152,6 +153,82 @@ describe('finishing steps', () => {
       const outcome = (await run(describePullRequest)).unwrap();
 
       expect(outcome.type === 'described' && outcome.body).toContain(`> ${lastFeedback}`);
+    });
+
+    it('gives the describer the persisted final-check result to state as fact', async () => {
+      const command = `npm run ${faker.word.verb()}`;
+      const gap = faker.lorem.sentence();
+      const finalCheck = aFinalCheckResult({
+        verified: false,
+        command,
+        fulfilled: false,
+        gaps: [gap],
+        round: 2,
+      });
+      const { run, agent } = await setup({
+        describer: { output: { body: faker.lorem.paragraphs() } },
+        state: { finalCheck },
+      });
+
+      await run(describePullRequest);
+
+      expect(agent.calls[0].prompt).toContain(`Round completed: ${finalCheck.round}`);
+      expect(agent.calls[0].prompt).toContain(
+        `\`${command}\` failed in the sandbox for the run branch.`,
+      );
+      expect(agent.calls[0].prompt).toContain(`1. ${gap}`);
+    });
+
+    it('reports the whole-run findings in its own description when the describer fails', async () => {
+      const command = `npm run ${faker.word.verb()}`;
+      const gap = faker.lorem.sentence();
+      const { run } = await setup({
+        describer: { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) },
+        state: {
+          finalCheck: aFinalCheckResult({
+            verified: false,
+            command,
+            fulfilled: false,
+            gaps: [gap],
+            round: 2,
+          }),
+        },
+      });
+
+      const outcome = (await run(describePullRequest)).unwrap();
+
+      expect(outcome.type === 'described' && outcome.body).toContain('### Deviations by jig');
+      expect(outcome.type === 'described' && outcome.body).toContain(
+        `\`${command}\` failed in the sandbox for the run branch.`,
+      );
+      expect(outcome.type === 'described' && outcome.body).toContain(`1. ${gap}`);
+    });
+
+    it('reports the whole-run findings even when the template has no deviations section', async () => {
+      const gap = faker.lorem.sentence();
+      const command = `npm run ${faker.word.verb()}`;
+      const template = `## ${faker.word.noun()}\n\n<!-- ${faker.lorem.sentence()} -->`;
+      const { run, writeRepoFile } = await setup({
+        describer: { output: { body: faker.lorem.paragraphs() } },
+        state: {
+          finalCheck: aFinalCheckResult({
+            verified: false,
+            command,
+            fulfilled: false,
+            gaps: [gap],
+            round: 2,
+          }),
+        },
+      });
+      await writeRepoFile('.github/pull_request_template.md', template);
+
+      const outcome = (await run(describePullRequest)).unwrap();
+
+      expect(outcome.type === 'described' && outcome.body).toContain('### Deviations by jig');
+      expect(outcome.type === 'described' && outcome.body).toContain(
+        `\`${command}\` failed in the sandbox for the run branch.`,
+      );
+      expect(outcome.type === 'described' && outcome.body).toContain(`1. ${gap}`);
     });
   });
 

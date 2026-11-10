@@ -7,6 +7,7 @@ import { runIdSchema } from '../../src/domain/run-id.js';
 import {
   type DesignDocs,
   type FeaturePlan,
+  type FinalCheckResult,
   type RunContext,
   type RunPhase,
   runPhaseSchema,
@@ -69,6 +70,16 @@ export function aSlice({
     commit,
     verification,
   };
+}
+
+export function aFinalCheckResult({
+  verified = true,
+  command,
+  fulfilled = true,
+  gaps = [],
+  round = faker.number.int({ min: 1, max: 2 }),
+}: Partial<FinalCheckResult> = {}): FinalCheckResult {
+  return { verified, command, fulfilled, gaps, round };
 }
 
 export function aContext({

@@ -51,6 +51,7 @@ async function fillTemplate(
       slices: state.slices,
       design: state.docs.design,
       verifyCommand,
+      finalCheck: state.finalCheck,
     }),
     schema: descriptionSchema,
   });
