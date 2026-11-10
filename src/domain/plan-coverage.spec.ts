@@ -60,6 +60,16 @@ describe('checkPlanCoverage', () => {
     expect(checkPlanCoverage(plan, slices).isOk()).toBe(true);
   });
 
+  it('does not read the step number out of a heading token that runs on past it', () => {
+    const plan = `## Step 1abc — ${faker.lorem.sentence()}`;
+    const slice = aSliceClaiming(implementingPlanSteps(1));
+
+    const result = checkPlanCoverage(plan, [slice]);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error.message).toContain('no step headings');
+  });
+
   it('rejects a plan step no slice implements', () => {
     const { plan } = setup({ steps: [1, 2] });
     const slices = [aSliceClaiming(implementingPlanSteps(1))];
@@ -113,6 +123,57 @@ describe('checkPlanCoverage', () => {
     );
 
     expect(results.every((result) => result.isErr())).toBe(true);
+  });
+
+  it('rejects a malformed list of steps even when its claims would cover the whole plan', () => {
+    const { plan } = setup({ steps: [1] });
+    const malformed = [
+      `Implements plan steps and 1. ${faker.lorem.paragraph()}`,
+      `Implements plan steps 1,,. ${faker.lorem.paragraph()}`,
+      `Implements plan steps ,1. ${faker.lorem.paragraph()}`,
+      `Implements plan steps 1 and. ${faker.lorem.paragraph()}`,
+      `Implements plan steps 1, and. ${faker.lorem.paragraph()}`,
+    ];
+    const results = malformed.map((description) =>
+      checkPlanCoverage(plan, [aSliceClaiming(description)]),
+    );
+
+    expect(results.every((result) => result.isErr())).toBe(true);
+    expect(
+      results.every((result) => result.isErr() && result.error.message.includes('malformed')),
+    ).toBe(true);
+  });
+
+  it('rejects references whose numbers pass the largest safe integer', () => {
+    const { plan } = setup({ steps: [1] });
+    const beyond = `${Number.MAX_SAFE_INTEGER + 1}`;
+    const malformed = [
+      `Implements plan step ${beyond}. ${faker.lorem.paragraph()}`,
+      `Implements plan steps ${beyond}-${beyond}. ${faker.lorem.paragraph()}`,
+      `Implements plan steps 1-${beyond}. ${faker.lorem.paragraph()}`,
+    ];
+    const results = malformed.map((description) =>
+      checkPlanCoverage(plan, [aSliceClaiming(description)]),
+    );
+
+    expect(results.every((result) => result.isErr())).toBe(true);
+    expect(
+      results.every((result) => result.isErr() && result.error.message.includes('malformed')),
+    ).toBe(true);
+  });
+
+  it('treats a claim at the largest safe integer as a step the plan does not have', () => {
+    const { plan } = setup({ steps: [1] });
+    const atBoundary = `${Number.MAX_SAFE_INTEGER}`;
+    const slice = aSliceClaiming(
+      `Implements plan steps ${atBoundary}-${atBoundary}. ${faker.lorem.paragraph()}`,
+    );
+
+    const result = checkPlanCoverage(plan, [slice]);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error.message).toContain(atBoundary);
+    expect(result.isErr() && result.error.message).toContain('which the plan does not have');
   });
 
   it('rejects a plan without step headings', () => {

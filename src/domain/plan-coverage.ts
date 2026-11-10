@@ -37,8 +37,12 @@ function stepHeadings(planMarkdown: string): number[] {
     .map(Number);
 }
 
-/** A plan step heading, `## Step N — <title>`; the delimiter and title vary, only the number counts. */
-const STEP_HEADING = /^#{1,6}\s+step\s+(\d+)/i;
+/**
+ * A plan step heading, `## Step N — <title>`; the delimiter and title vary, only the number counts.
+ * The number must end at a word boundary — a digit run that runs on into letters, as in
+ * `## Step 1abc`, is not a step number.
+ */
+const STEP_HEADING = /^#{1,6}\s+step\s+(\d+)\b/i;
 
 function claimOf(slice: PlannedSlice, steps: readonly number[]): Claim {
   const reference = STEP_REFERENCE.exec(slice.description);
@@ -80,32 +84,48 @@ const STEP_REFERENCE = /^implements\s+plan\s+steps?\s+(.+?)\s*([.:;!?—])(?:\s[
 
 function parseClaimedSteps(reference: string): number[] | undefined {
   const items = reference
-    .replace(/\s+and\s+/gi, ', ')
-    .replace(/^and\s+/i, '')
+    .replace(OXFORD_CONJUNCTION, ', ')
+    .replace(CONJUNCTION, ', ')
     .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item !== '');
+    .map((item) => item.trim());
+  if (items.some((item) => item === '')) return undefined;
   const claimed: number[] = [];
   for (const item of items) {
-    const range = CLAIMED_RANGE.exec(item);
-    if (range) {
-      const start = Number(range[1]);
-      const end = Number(range[2]);
-      if (start > end || end - start > MAX_RANGE_SPAN) return undefined;
-      for (let step = start; step <= end; step += 1) claimed.push(step);
-      continue;
-    }
-    if (!/^\d+$/.test(item)) return undefined;
-    claimed.push(Number(item));
+    const expanded = expandClaimedItem(item);
+    if (!expanded) return undefined;
+    claimed.push(...expanded);
   }
-  return claimed.length > 0 ? claimed : undefined;
+  return claimed;
 }
 
-/** One claimed step, or a contiguous range written `1-3`. */
+/** The Oxford conjunction: a comma and "and" joining list items, as in `1, 2, and 3`. */
+const OXFORD_CONJUNCTION = /\s*,\s+and\s+/gi;
+
+/** A conjunction joining list items with no comma, as in `1 and 2`. */
+const CONJUNCTION = /\s+and\s+/gi;
+
+/** One claimed item: a single step, or a contiguous range written `1-3`. */
+function expandClaimedItem(item: string): number[] | undefined {
+  const range = CLAIMED_RANGE.exec(item);
+  if (range) return expandClaimedRange(Number(range[1]), Number(range[2]));
+  const step = Number(item);
+  if (!DIGITS.test(item) || !Number.isSafeInteger(step)) return undefined;
+  return [step];
+}
+
+/** A contiguous claimed range, written `1-3`, an en dash accepted. */
 const CLAIMED_RANGE = /^(\d+)\s*[-–]\s*(\d+)$/;
+
+function expandClaimedRange(start: number, end: number): number[] | undefined {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return undefined;
+  if (start > end || end - start > MAX_RANGE_SPAN) return undefined;
+  return Array.from({ length: end - start + 1 }, (_, offset) => start + offset);
+}
 
 /** A range wider than any plan has steps is a mistyped reference, not a claim to count on. */
 const MAX_RANGE_SPAN = 1000;
+
+const DIGITS = /^\d+$/;
 
 const joinNumbers = (numbers: readonly number[]): string => numbers.join(', ');
 
