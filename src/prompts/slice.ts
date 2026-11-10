@@ -1,5 +1,5 @@
 import type { ChangedFile } from '../domain/protected-paths.js';
-import { earlierFeedback,type Slice } from '../domain/slice.js';
+import { earlierFeedback, type Slice } from '../domain/slice.js';
 
 export function implementPrompt(slice: Slice): string {
   return [
