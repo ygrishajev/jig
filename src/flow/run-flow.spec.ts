@@ -342,8 +342,10 @@ describe('runFlow', () => {
     });
   });
 
-  it('describes a run whose slice ran out of review cycles, then ends it stuck', async () => {
-    const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 2 }) });
+  it('skips the final check when a slice runs out of review cycles, and ends the run stuck and unmerged', async () => {
+    const { agent, run, start, git } = await setup({
+      settings: runSettings({ reviewCycleCap: 2 }),
+    });
     scriptPlanning(agent, [aPlannedSlice()]);
     agent.script(
       'implementer',
@@ -358,6 +360,9 @@ describe('runFlow', () => {
     expect(status).toBe('stuck');
     expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: 2 });
     expect(state.prDescription).toContain(state.slices[0].lastFeedback);
+    expect(state.finalCheck).toBeUndefined();
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(2);
+    expect((await git.log(['main'])).all).toHaveLength(1);
   });
 
   it('runs the final check on the whole request once every slice is approved, then describes', async () => {
@@ -378,7 +383,7 @@ describe('runFlow', () => {
   it('gives a failed final check one repair and merges when the repair fulfils the request', async () => {
     const gap = faker.lorem.sentence();
     const slice = aPlannedSlice();
-    const { agent, run, start } = await setup({ settings: runSettings() });
+    const { agent, run, start, git, runBranch } = await setup({ settings: runSettings() });
     scriptPlanning(agent, [slice]);
     agent.script(
       'implementer',
@@ -394,11 +399,17 @@ describe('runFlow', () => {
     expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 2 });
     expect(state.slices[0]).toMatchObject({ id: slice.id, status: 'approved' });
     expect(state.slices[1]).toMatchObject({ id: 'final-fixes', status: 'approved' });
+    const repair = state.slices[1];
+    expect(repair.commit).toBeTruthy();
     expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(gap);
+    expect(agent.calls.filter((call) => call.role === 'reviewer')[2].prompt).toContain(gap);
+    expect((await git.log(['main'])).all.map((commit) => commit.message)).toContain(repair.title);
+    expect(await git.revparse(['main'])).toBe(repair.commit);
+    expect(await git.revparse([runBranch])).toBe(repair.commit);
   });
 
   it('describes the run and stops for a person when the repaired run still fails its final check', async () => {
-    const { agent, run, start } = await setup({ settings: runSettings() });
+    const { agent, run, start, git } = await setup({ settings: runSettings() });
     scriptPlanning(agent, [aPlannedSlice()]);
     agent.script(
       'implementer',
@@ -420,6 +431,7 @@ describe('runFlow', () => {
     expect(state.finalCheck).toMatchObject({ fulfilled: false, round: 2 });
     expect(state.slices.every((slice) => slice.status === 'approved')).toBe(true);
     expect(state.prDescription).toBeTruthy();
+    expect((await git.log(['main'])).all).toHaveLength(1);
   });
 
   it('sends the run back with the failed verification when its final check cannot verify it', async () => {
@@ -453,6 +465,89 @@ describe('runFlow', () => {
     expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(failure);
   });
 
+  it('sends the repair one description carrying the failed verification and the reviewer gaps', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const failure = faker.lorem.sentence();
+    const gap = faker.lorem.sentence();
+    const results: ExecResult[] = [
+      { exitCode: 0, output: faker.lorem.sentence() },
+      { exitCode: 1, output: failure },
+      { exitCode: 0, output: faker.lorem.sentence() },
+      { exitCode: 0, output: faker.lorem.sentence() },
+    ];
+    const { agent, run, start } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => results.shift() ?? { exitCode: 1, output: '' },
+    });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'fix.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', approval(), unfulfilled(gap), approval(), fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    const repair = state.slices[1];
+    expect(repair).toMatchObject({ id: 'final-fixes', status: 'approved' });
+    expect(repair.description).toContain(failure);
+    expect(repair.description).toContain(gap);
+    const prompted = agent.calls.filter((call) => call.role === 'implementer')[1].prompt;
+    expect(prompted).toContain(failure);
+    expect(prompted).toContain(gap);
+  });
+
+  it('describes a run whose repair ran out of review cycles and stops for a person without merging it', async () => {
+    const { agent, run, start, git } = await setup({
+      settings: runSettings({ reviewCycleCap: 1 }),
+    });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'fix.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', approval(), unfulfilled(faker.lorem.sentence()), rejection());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('stuck');
+    expect(state.finalCheck).toMatchObject({ fulfilled: false, round: 1 });
+    expect(state.slices[1]).toMatchObject({ id: 'final-fixes', status: 'stuck', reviewCycles: 1 });
+    expect(state.prDescription).toBeTruthy();
+    expect((await git.log(['main'])).all).toHaveLength(1);
+  });
+
+  it('resumes from the saved repair and appends no second one when the recheck fails again', async () => {
+    const slice = aPlannedSlice();
+    const crash = new Error(faker.lorem.sentence());
+    const { agent, run, start, store, git } = await setup({ settings: runSettings() });
+    scriptPlanning(agent, [slice]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } }, { crash });
+    agent.script('reviewer', approval(), unfulfilled(faker.lorem.sentence()));
+
+    await expect(run(start)).rejects.toThrow(Panic);
+    const saved = (await store.load(start.runId)).unwrap();
+    expect(saved?.phase).toBe('slices');
+    expect(saved?.finalCheck).toMatchObject({ fulfilled: false, round: 1 });
+    expect(saved?.slices.map((entry) => entry.id)).toEqual([slice.id, 'final-fixes']);
+
+    agent.script('implementer', { files: { 'fix.txt': faker.lorem.sentence() } });
+    agent.script('reviewer', approval(), unfulfilled(faker.lorem.sentence()));
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(saved ?? start);
+
+    expect(status).toBe('stuck');
+    expect(state.slices.map((entry) => entry.id)).toEqual([slice.id, 'final-fixes']);
+    expect(state.finalCheck).toMatchObject({ fulfilled: false, round: 2 });
+    expect((await git.log(['main'])).all).toHaveLength(1);
+  });
+
   async function setup(input: {
     settings: RunSettings;
     exec?: (command: string) => ExecResult | SandboxUnavailable;
@@ -472,7 +567,7 @@ describe('runFlow', () => {
     const run = async (state: RunState) => (await runEngine(runFlow, state, dependencies)).unwrap();
     const runBranchHistory = () =>
       git.raw(['log', '--reverse', '--format=%s', '--patch', `main..${runBranch}`]);
-    return { agent, run, start, store, git, runBranchHistory };
+    return { agent, run, start, store, git, runBranch, runBranchHistory };
   }
 });
 
