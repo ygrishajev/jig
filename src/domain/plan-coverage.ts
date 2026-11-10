@@ -34,10 +34,10 @@ function stepHeadings(planMarkdown: string): number[] {
 
 /**
  * A plan step heading, `## Step N — <title>`; the delimiter and title vary, only the number counts.
- * The number must end at a word boundary — a digit run that runs on into letters, as in
- * `## Step 1abc`, is not a step number.
+ * Other heading levels do not mark plan steps, and the number must end at a word boundary — a
+ * digit run that runs on into letters, as in `## Step 1abc`, is not a step number.
  */
-const STEP_HEADING = /^#{1,6}\s+step\s+(\d+)\b/i;
+const STEP_HEADING = /^##\s+step\s+(\d+)\b/i;
 
 function claimOf(slice: PlannedSlice, steps: readonly number[]): Claim {
   const reference = STEP_REFERENCE.exec(slice.description);
@@ -124,27 +124,11 @@ function planProblems(headings: number[]): string[] {
   if (headings.length === 0) {
     return ['The plan has no step headings for slices to implement.'];
   }
-  const problems: string[] = [];
-  const belowOne = headings.filter((step) => step < 1);
-  if (belowOne.length > 0) {
-    problems.push(`Plan step headings are numbered from 1, not ${joinNumbers(belowOne)}.`);
-  }
   const duplicated = [
     ...new Set(headings.filter((step, index) => headings.indexOf(step) !== index)),
   ];
-  if (duplicated.length > 0) {
-    problems.push(
-      `These plan step numbers have more than one heading: ${joinNumbers(duplicated)}.`,
-    );
-  }
-  const numbered = [...new Set(headings)].filter((step) => step > 0).sort((a, b) => a - b);
-  const inOrder = numbered.every((step, index) => step === index + 1);
-  if (!inOrder) {
-    problems.push(
-      `The plan's steps are numbered ${joinNumbers(numbered)}, not 1 through ${numbered.at(-1)} without gaps.`,
-    );
-  }
-  return problems;
+  if (duplicated.length === 0) return [];
+  return [`These plan step numbers have more than one heading: ${joinNumbers(duplicated)}.`];
 }
 
 function coverageProblems(steps: readonly number[], claimed: readonly number[]): string[] {

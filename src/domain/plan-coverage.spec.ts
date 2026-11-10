@@ -48,14 +48,33 @@ describe('checkPlanCoverage', () => {
     expect(checkPlanCoverage(plan, slices).isOk()).toBe(true);
   });
 
-  it('recognizes step headings whatever delimiter, heading depth or line ending they use', () => {
+  it('recognizes the specified step headings whatever delimiter or line ending they use', () => {
     const plan = [
-      `# Step 1 — ${faker.lorem.sentence()}`,
+      `## Step 1 — ${faker.lorem.sentence()}`,
       `## step 2: ${faker.lorem.sentence()}`,
-      `### Step 3 - ${faker.lorem.sentence()}`,
-      '#### Step 4',
     ].join('\r\n');
-    const slices = [1, 2, 3, 4].map((step) => aSliceClaiming(implementingPlanSteps(step)));
+    const slices = [1, 2].map((step) => aSliceClaiming(implementingPlanSteps(step)));
+
+    expect(checkPlanCoverage(plan, slices).isOk()).toBe(true);
+  });
+
+  it('reports no step headings when the plan marks its step with another heading level', () => {
+    const plan = `# Step 1 — ${faker.lorem.sentence()}`;
+    const slice = aSliceClaiming(implementingPlanSteps(1));
+
+    const result = checkPlanCoverage(plan, [slice]);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
+    expect(result.isErr() && result.error.message).toContain('no step headings');
+  });
+
+  it('gives other heading levels no coverage requirement', () => {
+    const plan = [
+      `## Step 1 — ${faker.lorem.sentence()}`,
+      `### Step 2 — ${faker.lorem.sentence()}`,
+      `#### Step 3 - ${faker.lorem.sentence()}`,
+    ].join('\n');
+    const slices = [aSliceClaiming(implementingPlanSteps(1))];
 
     expect(checkPlanCoverage(plan, slices).isOk()).toBe(true);
   });
@@ -184,14 +203,11 @@ describe('checkPlanCoverage', () => {
     expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
   });
 
-  it('rejects a plan whose step numbers are not consecutive from 1', () => {
-    const { plan } = setup({ steps: [1, 3] });
-    const slices = [aSliceClaiming(implementingPlanSteps(1, 3))];
+  it('accepts a plan whose steps are not consecutive from 1, when every step is covered', () => {
+    const { plan } = setup({ steps: [2, 4] });
+    const slices = [2, 4].map((step) => aSliceClaiming(implementingPlanSteps(step)));
 
-    const result = checkPlanCoverage(plan, slices);
-
-    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
-    expect(result.isErr() && result.error.message).toContain('1, 3');
+    expect(checkPlanCoverage(plan, slices).isOk()).toBe(true);
   });
 
   it('rejects a plan step with more than one heading', () => {
@@ -204,14 +220,11 @@ describe('checkPlanCoverage', () => {
     expect(result.isErr() && result.error.message).toContain('heading: 2');
   });
 
-  it('rejects a step heading numbered below one', () => {
+  it('accepts a step heading numbered below one', () => {
     const { plan } = setup({ steps: [0, 1] });
     const slices = [aSliceClaiming(implementingPlanSteps(1))];
 
-    const result = checkPlanCoverage(plan, slices);
-
-    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
-    expect(result.isErr() && result.error.message).toMatch(/\bnot 0\b/);
+    expect(checkPlanCoverage(plan, slices).isOk()).toBe(true);
   });
 
   it('reports every problem in one error, in the same order every time', () => {
@@ -223,7 +236,7 @@ describe('checkPlanCoverage', () => {
 
     expect(first.isErr() && first.error).toBeInstanceOf(PlanNotCovered);
     const message = first.isErr() ? first.error.message : '';
-    expect(message).toContain('numbered 1, 3');
+    expect(message).toContain('plan steps 1, 3');
     expect(message).toContain(unreferenced.id);
     expect(message).toContain(unknown.id);
     expect(message).toContain('plan step 9');

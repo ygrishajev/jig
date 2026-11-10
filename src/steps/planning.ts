@@ -44,10 +44,14 @@ export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
   return docs.map((written) => ({ type: 'designWritten', docs: written }));
 };
 
-export const sliceThePlan: RunStep<'slicing'> = ({ state, ports }) => {
+/**
+ * One correction attempt for a plan its slices do not cover; whatever survives it is the planner's
+ * invalid output, so the check's PlanNotCovered surfaces as AgentOutputInvalid.
+ */
+export const sliceThePlan: RunStep<'slicing'> = async ({ state, ports }) => {
   const plan = state.docs.plan;
   let correction: string | undefined;
-  return retryResult(() => slicePlanAttempt(plan, ports, correction), {
+  const sliced = await retryResult(() => slicePlanAttempt(plan, ports, correction), {
     retries: 1,
     delayMs: 0,
     shouldRetry: (error) => error instanceof PlanNotCovered,
@@ -55,6 +59,9 @@ export const sliceThePlan: RunStep<'slicing'> = ({ state, ports }) => {
       if (error instanceof PlanNotCovered) correction = error.message;
     },
   });
+  return sliced.mapError((error) =>
+    error instanceof PlanNotCovered ? new AgentOutputInvalid({ message: error.message }) : error,
+  );
 };
 
 function slicePlanAttempt(
