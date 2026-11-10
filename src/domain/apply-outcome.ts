@@ -1,5 +1,6 @@
 import { panic } from 'better-result';
 
+import { recordFinalCheck } from './final-check.js';
 import type { Outcome } from './outcome.js';
 import { currentSlice, type RunState } from './run-state.js';
 import { type Slice, sliceFromPlan } from './slice.js';
@@ -30,6 +31,8 @@ export function applyOutcome(state: RunState, outcome: Outcome): RunState {
         lastFeedback: undefined,
         verification: outcome.command ? { command: outcome.command } : undefined,
       }));
+    case 'finalChecked':
+      return recordFinalCheck(state, outcome);
     case 'described':
       return { ...state, prDescription: outcome.body };
     default:

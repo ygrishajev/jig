@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest';
 import {
   aDescription,
   approval,
+  fulfillment,
   rejection,
   ruleFindings,
   scriptPlanning,
+  unfulfilled,
 } from '../../tests/support/agent-scripts.js';
 import {
   aCommit,
@@ -43,13 +45,14 @@ describe('runFlow', () => {
       { files: { [`${slices[0].id}.txt`]: faker.lorem.sentence() } },
       { files: { [`${slices[1].id}.txt`]: faker.lorem.sentence() } },
     );
-    agent.script('reviewer', approval(), approval());
+    agent.script('reviewer', approval(), approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
     expect(status).toBe('done');
     expect(state.slices.map((slice) => slice.status)).toEqual(['approved', 'approved']);
+    expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
     const merged = await git.log(['main', '-3']);
     expect(merged.all.map((commit) => commit.message)).toEqual(
       expect.arrayContaining(slices.map((slice) => slice.title)),
@@ -66,7 +69,7 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'b.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', { output: { approved: false, feedback } }, approval());
+    agent.script('reviewer', { output: { approved: false, feedback } }, approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
@@ -86,7 +89,7 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'b.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', malformedVerdict(), approval());
+    agent.script('reviewer', malformedVerdict(), approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
@@ -118,7 +121,7 @@ describe('runFlow', () => {
     const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
     scriptPlanning(agent, [aPlannedSlice()]);
     agent.script('implementer', { files: {} }, { files: { 'a.txt': faker.lorem.sentence() } });
-    agent.script('reviewer', approval());
+    agent.script('reviewer', approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
@@ -168,7 +171,7 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'a.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', ruleFindings(), approval());
+    agent.script('reviewer', ruleFindings(), approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
@@ -189,7 +192,7 @@ describe('runFlow', () => {
     expect(agent.calls.some((call) => call.role === 'implementer')).toBe(false);
 
     agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
-    agent.script('reviewer', approval());
+    agent.script('reviewer', approval(), fulfillment());
     agent.script('describer', aDescription());
     const resumed = await run(paused.state);
     expect(resumed.status).toBe('done');
@@ -202,7 +205,7 @@ describe('runFlow', () => {
     const uninterrupted = await setup({ settings });
     scriptPlanning(uninterrupted.agent, slices);
     uninterrupted.agent.script('implementer', ...files.map((written) => ({ files: written })));
-    uninterrupted.agent.script('reviewer', approval(), approval());
+    uninterrupted.agent.script('reviewer', approval(), approval(), fulfillment());
     uninterrupted.agent.script('describer', aDescription());
     await uninterrupted.run(uninterrupted.start);
     const interrupted = await setup({ settings });
@@ -214,7 +217,7 @@ describe('runFlow', () => {
     await expect(interrupted.run(interrupted.start)).rejects.toThrow(Panic);
     const saved = (await interrupted.store.load(interrupted.start.runId)).unwrap();
     expect(saved?.slices.map((slice) => slice.status)).toEqual(['approved', 'in_review']);
-    interrupted.agent.script('reviewer', approval());
+    interrupted.agent.script('reviewer', approval(), fulfillment());
     interrupted.agent.script('describer', aDescription());
     const finished = await interrupted.run(saved ?? interrupted.start);
 
@@ -238,15 +241,15 @@ describe('runFlow', () => {
     });
     scriptPlanning(agent, [aPlannedSlice()]);
     agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
-    agent.script('reviewer', approval());
+    agent.script('reviewer', approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
     expect(status).toBe('done');
-    expect(agent.commands).toEqual([verifyCommand]);
-    expect(reviewerCallsWhenCommandRan).toEqual([0]);
-    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(1);
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
+    expect(reviewerCallsWhenCommandRan).toEqual([0, 1]);
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(2);
     expect(state.slices[0]).toMatchObject({
       status: 'approved',
       verification: { command: verifyCommand },
@@ -276,7 +279,7 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'b.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', approval());
+    agent.script('reviewer', approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
@@ -287,9 +290,9 @@ describe('runFlow', () => {
       reviewCycles: 1,
       verification: { command: verifyCommand },
     });
-    expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
-    expect(reviewerCallsWhenCommandRan).toEqual([0, 0]);
-    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(1);
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand, verifyCommand]);
+    expect(reviewerCallsWhenCommandRan).toEqual([0, 0, 1]);
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(2);
     expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(failure);
   });
 
@@ -324,15 +327,15 @@ describe('runFlow', () => {
       },
     });
     const slice = aSlice({ status: 'in_review', commit: aCommit().sha });
-    agent.script('reviewer', approval(), approval());
+    agent.script('reviewer', approval(), approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(aRunStateIn('slices', { slices: [slice] }));
 
     expect(status).toBe('done');
-    expect(agent.commands).toEqual([verifyCommand]);
-    expect(reviewerCallsWhenCommandRan).toEqual([1]);
-    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(2);
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
+    expect(reviewerCallsWhenCommandRan).toEqual([1, 2]);
+    expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(3);
     expect(state.slices[0]).toMatchObject({
       status: 'approved',
       verification: { command: verifyCommand },
@@ -355,6 +358,99 @@ describe('runFlow', () => {
     expect(status).toBe('stuck');
     expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: 2 });
     expect(state.prDescription).toContain(state.slices[0].lastFeedback);
+  });
+
+  it('runs the final check on the whole request once every slice is approved, then describes', async () => {
+    const slice = aPlannedSlice();
+    const { agent, run, start } = await setup({ settings: runSettings() });
+    scriptPlanning(agent, [slice]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script('reviewer', approval(), fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
+    expect(agent.calls.at(-2)?.prompt).toContain(state.request);
+  });
+
+  it('gives a failed final check one repair and merges when the repair fulfils the request', async () => {
+    const gap = faker.lorem.sentence();
+    const slice = aPlannedSlice();
+    const { agent, run, start } = await setup({ settings: runSettings() });
+    scriptPlanning(agent, [slice]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'fix.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', approval(), unfulfilled(gap), approval(), fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 2 });
+    expect(state.slices[0]).toMatchObject({ id: slice.id, status: 'approved' });
+    expect(state.slices[1]).toMatchObject({ id: 'final-fixes', status: 'approved' });
+    expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(gap);
+  });
+
+  it('describes the run and stops for a person when the repaired run still fails its final check', async () => {
+    const { agent, run, start } = await setup({ settings: runSettings() });
+    scriptPlanning(agent, [aPlannedSlice()]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'fix.txt': faker.lorem.sentence() } },
+    );
+    agent.script(
+      'reviewer',
+      approval(),
+      unfulfilled(faker.lorem.sentence()),
+      approval(),
+      unfulfilled(faker.lorem.sentence()),
+    );
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('stuck');
+    expect(state.finalCheck).toMatchObject({ fulfilled: false, round: 2 });
+    expect(state.slices.every((slice) => slice.status === 'approved')).toBe(true);
+    expect(state.prDescription).toBeTruthy();
+  });
+
+  it('sends the run back with the failed verification when its final check cannot verify it', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const failure = faker.lorem.sentence();
+    const results: ExecResult[] = [
+      { exitCode: 0, output: faker.lorem.sentence() },
+      { exitCode: 1, output: failure },
+      { exitCode: 0, output: faker.lorem.sentence() },
+      { exitCode: 0, output: faker.lorem.sentence() },
+    ];
+    const slice = aPlannedSlice();
+    const { agent, run, start } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => results.shift() ?? { exitCode: 1, output: '' },
+    });
+    scriptPlanning(agent, [slice]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'fix.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', approval(), fulfillment(), approval(), fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand, verifyCommand, verifyCommand]);
+    expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 2 });
+    expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(failure);
   });
 
   async function setup(input: {

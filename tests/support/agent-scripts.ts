@@ -15,16 +15,26 @@ export function scriptPlanning(agent: FakeAgentSession, slices: PlannedSlice[]) 
   );
 }
 
-/** Scripts a whole run of one slice that is implemented, approved and described. */
+/** Scripts a whole run of one slice that is implemented, approved, finally checked and described. */
 export function scriptWholeRun(agent: FakeAgentSession, slice = aPlannedSlice()) {
   scriptPlanning(agent, [slice]);
   agent.script('implementer', { files: { [`${slice.id}.txt`]: faker.lorem.sentence() } });
-  agent.script('reviewer', approval());
+  agent.script('reviewer', approval(), fulfillment());
   agent.script('describer', aDescription());
 }
 
 export function approval() {
   return { output: { approved: true, feedback: '' } };
+}
+
+/** The final check's verdict: the whole run fulfils its request. */
+export function fulfillment() {
+  return { output: { fulfilled: true, gaps: [] } };
+}
+
+/** The final check's verdict: the whole run still misses these requirements. */
+export function unfulfilled(...gaps: string[]) {
+  return { output: { fulfilled: false, gaps } };
 }
 
 export function rejection(feedback = faker.lorem.sentence()) {

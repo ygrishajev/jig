@@ -32,6 +32,7 @@ const FEATURE_PIPELINE_STEPS = [
   'implemented',
   'approved',
   'verified',
+  'finalChecked',
   'described',
   'merged',
 ];

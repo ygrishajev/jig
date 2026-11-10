@@ -42,6 +42,17 @@ export const designDocsSchema = z.object({ design: z.string().min(1), plan: z.st
 
 export type DesignDocs = z.infer<typeof designDocsSchema>;
 
+/** What the run's whole-request final check decided, recorded as each check completes. */
+export const finalCheckResultSchema = z.object({
+  verified: z.boolean(),
+  command: z.string().optional(),
+  fulfilled: z.boolean(),
+  gaps: z.array(z.string()),
+  round: z.number().int().min(1),
+});
+
+export type FinalCheckResult = z.infer<typeof finalCheckResultSchema>;
+
 /** What every run carries, whatever its phase; what a phase adds is required from that phase on. */
 const runFields = z.object({
   runId: runIdSchema,
@@ -57,6 +68,7 @@ const runFields = z.object({
   plan: featurePlanSchema.optional(),
   docs: designDocsSchema.optional(),
   slices: z.array(sliceSchema),
+  finalCheck: finalCheckResultSchema.optional(),
   prDescription: z.string().optional(),
   /** Why the last invocation stopped short; cleared when the run is resumed. */
   blockedReason: z.string().optional(),
@@ -70,6 +82,7 @@ export const runPhaseSchema = z.enum([
   'gate',
   'paused',
   'slices',
+  'finalCheck',
   'describing',
   'merging',
   'awaitingMerge',
@@ -96,7 +109,14 @@ export const runStateSchema = z.discriminatedUnion('phase', [
   withContext.extend({ phase: runPhaseSchema.extract(['planning']) }),
   withPlan.extend({ phase: runPhaseSchema.extract(['designing']) }),
   withDocs.extend({
-    phase: runPhaseSchema.extract(['slicing', 'gate', 'paused', 'slices', 'describing']),
+    phase: runPhaseSchema.extract([
+      'slicing',
+      'gate',
+      'paused',
+      'slices',
+      'finalCheck',
+      'describing',
+    ]),
   }),
   withDescription.extend({
     phase: runPhaseSchema.extract(['merging', 'awaitingMerge', 'done', 'stuck']),

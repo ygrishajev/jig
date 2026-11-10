@@ -1,3 +1,4 @@
+import { finalCheckFailed, finalCheckNeedsRepair } from '../domain/final-check.js';
 import { stuckSlice } from '../domain/run-state.js';
 import {
   emptyAttemptCapReached,
@@ -5,6 +6,7 @@ import {
   ruleFixCapReached,
   sliceNeedsVerification,
 } from '../domain/settings.js';
+import { checkWholeRun } from '../steps/final-check.js';
 import { describePullRequest, mergeRunBranch } from '../steps/finishing.js';
 import {
   applyDesignGate,
@@ -69,11 +71,17 @@ export const sliceFlow = defineSliceFlow({
   stuck: { final: 'stuck' },
 });
 
+const repairStillOwed: Guard = ({ state }) => finalCheckNeedsRepair(state);
+
 const someSliceStuck: Guard = ({ state }) => stuckSlice(state) !== undefined;
 
+const theFinalCheckFailed: Guard = ({ state }) => finalCheckFailed(state);
+
 /**
- * A whole run: plan the work, deliver it slice by slice, describe it, merge it. A run with a
- * stuck slice is still described, so the reviewer's feedback reaches whoever picks it up.
+ * A whole run: plan the work, deliver it slice by slice, check the whole request is fulfilled,
+ * describe it, merge it. A stuck slice bypasses the final check; a failed one sends its one
+ * repair back through the slices before the run is described and, still failing, stops for a
+ * person — so the feedback reaches whoever picks it up.
  */
 export const runFlow = defineRunFlow({
   context: { step: buildContext, on: { contextBuilt: 'planning' } },
@@ -82,10 +90,20 @@ export const runFlow = defineRunFlow({
   slicing: { step: sliceThePlan, on: { sliced: 'gate' } },
   gate: { step: applyDesignGate, on: { continue: 'slices', pause: 'paused' } },
   paused: { halt: true, resumeAt: 'slices' },
-  slices: { forEachSlice: sliceFlow, on: { allApproved: 'describing', sliceStuck: 'describing' } },
+  slices: { forEachSlice: sliceFlow, on: { allApproved: 'finalCheck', sliceStuck: 'describing' } },
+  finalCheck: {
+    step: checkWholeRun,
+    on: { finalChecked: [{ to: 'slices', when: repairStillOwed }, { to: 'describing' }] },
+  },
   describing: {
     step: describePullRequest,
-    on: { described: [{ to: 'stuck', when: someSliceStuck }, { to: 'merging' }] },
+    on: {
+      described: [
+        { to: 'stuck', when: someSliceStuck },
+        { to: 'stuck', when: theFinalCheckFailed },
+        { to: 'merging' },
+      ],
+    },
   },
   merging: { step: mergeRunBranch, on: { merged: 'done', awaitingManualMerge: 'awaitingMerge' } },
   awaitingMerge: { halt: true, resumeAt: 'merging' },

@@ -20,6 +20,14 @@ export type Outcome = OfKnownType<
   | { type: 'nothingChanged'; feedback: string }
   | { type: 'rulesFixRequested'; feedback: string }
   | { type: 'verified'; command?: string }
+  | {
+      type: 'finalChecked';
+      verified: boolean;
+      command?: string;
+      output?: string;
+      fulfilled: boolean;
+      gaps: string[];
+    }
   | { type: 'described'; body: string }
   | { type: 'merged' }
   | { type: 'awaitingManualMerge' }
@@ -38,6 +46,7 @@ export const outcomeTypeSchema = z.enum([
   'nothingChanged',
   'rulesFixRequested',
   'verified',
+  'finalChecked',
   'described',
   'merged',
   'awaitingManualMerge',

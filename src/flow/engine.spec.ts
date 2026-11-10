@@ -619,6 +619,7 @@ function flowWith(nodes: Partial<RunFlow>): RunFlow {
     gate: filler,
     paused: filler,
     slices: filler,
+    finalCheck: filler,
     describing: filler,
     merging: filler,
     awaitingMerge: filler,
