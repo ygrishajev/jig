@@ -604,7 +604,9 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'fix.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', approval(), unfulfilled(faker.lorem.sentence()), approval(), { crash });
+    agent.script('reviewer', approval(), unfulfilled(faker.lorem.sentence()), approval(), {
+      crash,
+    });
 
     await expect(run(start)).rejects.toThrow(Panic);
     const saved = (await store.load(start.runId)).unwrap();
