@@ -244,6 +244,41 @@ describe('SandcastleSession', () => {
     expect(sandbox.close).not.toHaveBeenCalled();
   });
 
+  it("installs the repository's git hooks after the setup command", async () => {
+    const setupCommand = `npm ${faker.word.verb()}`;
+    const { open, sandbox } = await setup({ setupCommand, husky: true });
+
+    await open();
+
+    expect(sandbox.exec.mock.calls.map(([command]) => command)).toEqual([
+      setupCommand,
+      'npx --no -- husky',
+    ]);
+  });
+
+  it('installs no git hooks without a setup command to install their manager', async () => {
+    const { open, sandbox } = await setup({ husky: true });
+
+    await open();
+
+    expect(sandbox.exec).not.toHaveBeenCalled();
+  });
+
+  it('closes the sandbox and reports git hooks that fail to install', async () => {
+    const output = faker.lorem.sentence();
+    const { failure, sandbox } = await setup({
+      setupCommand: `npm ${faker.word.verb()}`,
+      husky: true,
+      execResults: [{ exitCode: 0 }, { exitCode: 1, stderr: output }],
+    });
+
+    const error = await failure();
+
+    expect(error).toBeInstanceOf(SetupCommandFailed);
+    expect(error).toMatchObject({ output });
+    expect(sandbox.close).toHaveBeenCalled();
+  });
+
   it('reports a setup command that exits non-zero with its output', async () => {
     const output = faker.lorem.sentence();
     const { failure, sandbox } = await setup({
@@ -302,8 +337,12 @@ describe('SandcastleSession', () => {
     execFails?: Error;
     replies?: Reply[];
     withCodexLogin?: boolean;
+    husky?: boolean;
+    execResults?: { exitCode: number; stderr?: string }[];
   }) {
     const repoRoot = await tempDirectory('jig-session-');
+    if (input.husky) await mkdir(path.join(repoRoot, '.husky'));
+    const execResults = [...(input.execResults ?? [])];
     const codexAuthDirectory = input.withCodexLogin ? await codexLoginDirectory() : undefined;
     const id = runId();
     const events = new RecordingEventSink();
@@ -318,7 +357,9 @@ describe('SandcastleSession', () => {
       worktreePath: repoRoot,
       exec: vi.fn<Sandbox['exec']>(async () => {
         if (input.execFails) throw input.execFails;
-        return input.hangs ? new Promise(() => {}) : result;
+        if (input.hangs) return new Promise(() => {});
+        const scripted = execResults.shift();
+        return scripted ? { stdout: '', stderr: '', ...scripted } : result;
       }),
       run: vi.fn<Sandbox['run']>(async (options) => {
         runs.push(options);

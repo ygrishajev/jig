@@ -36,6 +36,7 @@ import type { EventSink } from '../../ports/observability.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { refuseSymlinks } from '../find-symlink.js';
 import { type CodexAuthCache, openCodexAuthCache } from './codex-auth.js';
+import { hookManagerOf } from './git-hooks.js';
 import { type PrivateClone, privateCloneDocker, shellQuote } from './private-clone-docker.js';
 import { extractOutput, OUTPUT_TAG, outputInstruction } from './structured-output.js';
 import { usageFromStreamLine } from './usage.js';
@@ -63,6 +64,12 @@ export interface SandcastleSessionOptions {
   agentLogFile: string;
   events: EventSink;
   logger: Logger;
+}
+
+/** A command that prepares the sandbox before any agent runs, named the way a failure reports it. */
+interface SetupStep {
+  name: string;
+  command: string;
 }
 
 /**
@@ -119,9 +126,11 @@ export class SandcastleSession implements AgentSession, SandboxGit {
       await releaseAfterFailedOpen(cache, options.logger);
       return Result.err(sandbox.error);
     }
-    const ready = options.setupCommand
-      ? await runSetupCommand(sandbox.value, options.setupCommand, options)
-      : Result.ok();
+    const ready = await runSetupSteps(
+      sandbox.value,
+      setupSteps(repoRoot.value, options.setupCommand),
+      options,
+    );
     if (ready.isErr()) {
       await releaseAfterFailedOpen(cache, options.logger);
       return Result.err(ready.error);
@@ -333,15 +342,27 @@ async function releaseAfterFailedOpen(
     logger.warn({ err: released.error }, 'cleanup failed after the open failed');
 }
 
-async function runSetupCommand(
+async function runSetupSteps(
   sandbox: Sandbox,
-  command: string,
+  steps: SetupStep[],
+  options: SandcastleSessionOptions,
+): Promise<Result<void, SandboxUnavailable | SetupCommandFailed>> {
+  for (const step of steps) {
+    const ran = await runSetupStep(sandbox, step, options);
+    if (ran.isErr()) return ran;
+  }
+  return Result.ok();
+}
+
+async function runSetupStep(
+  sandbox: Sandbox,
+  step: SetupStep,
   { setupTimeoutSeconds, logger }: SandcastleSessionOptions,
 ): Promise<Result<void, SandboxUnavailable | SetupCommandFailed>> {
   const attempt = await Result.tryPromise({
-    try: () => setupFailure(sandbox, command, setupTimeoutSeconds),
+    try: () => setupFailure(sandbox, step, setupTimeoutSeconds),
     catch: (error) =>
-      new SandboxUnavailable({ message: `Could not run the setup command: ${messageOf(error)}` }),
+      new SandboxUnavailable({ message: `Could not run ${step.name}: ${messageOf(error)}` }),
   });
   const failure = attempt.isErr() ? attempt.error : attempt.value;
   if (!failure) return Result.ok();
@@ -352,7 +373,7 @@ async function runSetupCommand(
 
 async function setupFailure(
   sandbox: Sandbox,
-  command: string,
+  { name, command }: SetupStep,
   timeoutSeconds: number,
 ): Promise<SetupCommandFailed | undefined> {
   const timer = new AbortController();
@@ -362,14 +383,14 @@ async function setupFailure(
   ]).finally(() => timer.abort());
   if (!finished) {
     return new SetupCommandFailed({
-      message: `setupCommand "${command}" did not finish within ${timeoutSeconds}s`,
+      message: `${name} did not finish within ${timeoutSeconds}s`,
       output: '',
     });
   }
   if (finished.exitCode === 0) return undefined;
   const output = `${finished.stdout}${finished.stderr}`.trim().slice(-SETUP_OUTPUT_TAIL);
   return new SetupCommandFailed({
-    message: `setupCommand "${command}" exited with ${finished.exitCode}:\n${output}`,
+    message: `${name} exited with ${finished.exitCode}:\n${output}`,
     output,
   });
 }
@@ -385,6 +406,24 @@ function stopSandbox(sandbox: Sandbox): Promise<Result<void, SandboxUnavailable>
     catch: (cause) =>
       new SandboxUnavailable({ message: `Could not stop the sandbox: ${messageOf(cause)}` }),
   });
+}
+
+/**
+ * The setup command, then the repository's git hooks, so commits made in the sandbox meet the
+ * same checks as the operator's. Without a setup command nothing installed the hook manager.
+ */
+function setupSteps(repoRoot: string, setupCommand: string | undefined): SetupStep[] {
+  if (!setupCommand) return [];
+  const steps = [{ name: `setupCommand "${setupCommand}"`, command: setupCommand }];
+  const hooks = hookManagerOf(repoRoot);
+  if (!hooks) return steps;
+  return [
+    ...steps,
+    {
+      name: `installing ${hooks.name}'s git hooks ("${hooks.installCommand}")`,
+      command: hooks.installCommand,
+    },
+  ];
 }
 
 /** How many times an agent is asked, in its own session, to correct output that did not parse. */
