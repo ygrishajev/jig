@@ -3,8 +3,10 @@ import { z } from 'zod';
 /** Slice ids become lookup keys in state and log lines, so they are restricted to safe characters. */
 export const SLICE_ID_PATTERN = /^[a-z0-9-]+$/;
 
+export const SLICE_ID_MESSAGE = 'slice id must be lowercase letters, digits and hyphens';
+
 export const plannedSliceSchema = z.object({
-  id: z.string().regex(SLICE_ID_PATTERN, 'slice id must be lowercase letters, digits and hyphens'),
+  id: z.string().regex(SLICE_ID_PATTERN, SLICE_ID_MESSAGE),
   title: z.string().min(1),
   description: z.string().min(1),
 });

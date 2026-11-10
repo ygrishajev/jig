@@ -5,11 +5,6 @@ import type { PlannedSlice } from './slice.js';
 
 type Claim = { steps: number[]; problems: string[] };
 
-/**
- * Whether the slices together implement every step of the plan, each by a description that names
- * the steps it delivers. Slices may share steps and one slice may claim them all; overlapping
- * claims are how a slice spans several steps of shared work.
- */
 export function checkPlanCoverage(
   planMarkdown: string,
   slices: readonly PlannedSlice[],
@@ -85,7 +80,7 @@ const STEP_REFERENCE = /^implements\s+plan\s+steps?\s+(.+?)\s*([.:;!?—])(?:\s[
 function parseClaimedSteps(reference: string): number[] | undefined {
   const items = reference
     .replace(OXFORD_CONJUNCTION, ', ')
-    .replace(CONJUNCTION, ', ')
+    .replace(BARE_CONJUNCTION, ', ')
     .split(',')
     .map((item) => item.trim());
   if (items.some((item) => item === '')) return undefined;
@@ -98,13 +93,10 @@ function parseClaimedSteps(reference: string): number[] | undefined {
   return claimed;
 }
 
-/** The Oxford conjunction: a comma and "and" joining list items, as in `1, 2, and 3`. */
 const OXFORD_CONJUNCTION = /\s*,\s+and\s+/gi;
 
-/** A conjunction joining list items with no comma, as in `1 and 2`. */
-const CONJUNCTION = /\s+and\s+/gi;
+const BARE_CONJUNCTION = /\s+and\s+/gi;
 
-/** One claimed item: a single step, or a contiguous range written `1-3`. */
 function expandClaimedItem(item: string): number[] | undefined {
   const range = CLAIMED_RANGE.exec(item);
   if (range) return expandClaimedRange(Number(range[1]), Number(range[2]));
@@ -113,7 +105,6 @@ function expandClaimedItem(item: string): number[] | undefined {
   return [step];
 }
 
-/** A contiguous claimed range, written `1-3`, an en dash accepted. */
 const CLAIMED_RANGE = /^(\d+)\s*[-–]\s*(\d+)$/;
 
 function expandClaimedRange(start: number, end: number): number[] | undefined {

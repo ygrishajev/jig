@@ -16,6 +16,7 @@ import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js
 import { AgentOutputInvalid } from '../domain/errors.js';
 import type { RunPhase, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
+import { SLICE_ID_MESSAGE } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
 import type { Workspace } from '../ports/workspace.js';
 import {
@@ -91,19 +92,34 @@ describe('planning steps', () => {
   });
 
   it('rejects a slice plan that repeats an id', async () => {
-    const repeated = aPlannedSlice();
-    const { run } = setup({ turn: { output: [repeated, aPlannedSlice({ id: repeated.id })] } });
+    const repeated = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { run } = setup({
+      turn: {
+        output: [
+          repeated,
+          aPlannedSlice({ id: repeated.id, description: implementingPlanSteps(1) }),
+        ],
+      },
+    });
 
     const result = await run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }));
 
     expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error.message).toContain('repeats slice ids');
     expect(result.isErr() && result.error.message).toContain(repeated.id);
   });
 
   it('rejects a slice plan with no slices or with an unsafe id', async () => {
     const empty = setup({ turn: { output: [] } });
     const unsafe = setup({
-      turn: { output: [aPlannedSlice({ id: `${faker.word.noun()} ${faker.word.noun()}` })] },
+      turn: {
+        output: [
+          aPlannedSlice({
+            id: `${faker.word.noun()} ${faker.word.noun()}`,
+            description: implementingPlanSteps(1),
+          }),
+        ],
+      },
     });
 
     const emptied = await empty.run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }));
@@ -111,6 +127,7 @@ describe('planning steps', () => {
 
     expect(emptied.isErr() && emptied.error).toBeInstanceOf(AgentOutputInvalid);
     expect(unsafed.isErr() && unsafed.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(unsafed.isErr() && unsafed.error.message).toContain(SLICE_ID_MESSAGE);
   });
 
   it('pauses for a person after planning only when the design gate is a checkpoint', async () => {
