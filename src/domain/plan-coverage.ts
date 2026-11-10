@@ -1,6 +1,6 @@
 import { Result } from 'better-result';
 
-import { AgentOutputInvalid } from './errors.js';
+import { PlanNotCovered } from './errors.js';
 import type { PlannedSlice } from './slice.js';
 
 type Claim = { steps: number[]; problems: string[] };
@@ -8,7 +8,7 @@ type Claim = { steps: number[]; problems: string[] };
 export function checkPlanCoverage(
   planMarkdown: string,
   slices: readonly PlannedSlice[],
-): Result<void, AgentOutputInvalid> {
+): Result<void, PlanNotCovered> {
   const headings = stepHeadings(planMarkdown);
   const steps = [...new Set(headings.filter((step) => step > 0))].sort((a, b) => a - b);
   const claims = slices.map((slice) => claimOf(slice, steps));
@@ -21,7 +21,7 @@ export function checkPlanCoverage(
     ),
   ];
   if (problems.length === 0) return Result.ok();
-  return Result.err(new AgentOutputInvalid({ message: problems.join('; ') }));
+  return Result.err(new PlanNotCovered({ message: problems.join('; ') }));
 }
 
 function stepHeadings(planMarkdown: string): number[] {

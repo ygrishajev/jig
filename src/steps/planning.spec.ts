@@ -14,7 +14,7 @@ import {
   runSettings,
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
-import { AgentOutputInvalid, AgentRunFailed } from '../domain/errors.js';
+import { AgentOutputInvalid, AgentRunFailed, PlanNotCovered } from '../domain/errors.js';
 import { checkPlanCoverage } from '../domain/plan-coverage.js';
 import type { RunPhase, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -109,7 +109,7 @@ describe('planning steps', () => {
     const result = await run(sliceThePlan, aRunStateIn('slicing', { docs }));
 
     expect(agent.calls).toHaveLength(2);
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toBe(coverageProblems(docs.plan, overreaching));
   });
 
@@ -212,7 +212,7 @@ describe('planning steps', () => {
     const result = await run(sliceThePlan, aRunStateIn('slicing', { docs }));
 
     expect(agent.calls).toHaveLength(2);
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain('no step headings');
   });
 
@@ -237,7 +237,6 @@ describe('planning steps', () => {
     return { run, agent };
   }
 
-  /** The diagnostic the coverage check computes for these fixtures, for asserting what the step forwards. */
   function coverageProblems(plan: string, slices: PlannedSlice[]): string {
     const checked = checkPlanCoverage(plan, slices);
     if (checked.isOk()) panic('expected the fixture answer to fail the coverage check');

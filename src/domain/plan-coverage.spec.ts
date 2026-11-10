@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { aPlannedSlice, implementingPlanSteps } from '../../tests/support/builders.js';
-import { AgentOutputInvalid } from './errors.js';
+import { PlanNotCovered } from './errors.js';
 import { checkPlanCoverage } from './plan-coverage.js';
 
 describe('checkPlanCoverage', () => {
@@ -66,7 +66,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, [slice]);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain('no step headings');
   });
 
@@ -76,7 +76,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, slices);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain('plan step 2');
   });
 
@@ -86,7 +86,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, [slice]);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain('plan step 9');
   });
 
@@ -96,7 +96,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, [slice]);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain('plan step 0');
   });
 
@@ -106,7 +106,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, [slice]);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain(slice.id);
   });
 
@@ -171,7 +171,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, [slice]);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain(atBoundary);
     expect(result.isErr() && result.error.message).toContain('which the plan does not have');
   });
@@ -181,7 +181,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(faker.lorem.paragraphs(), [slice]);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
   });
 
   it('rejects a plan whose step numbers are not consecutive from 1', () => {
@@ -190,7 +190,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, slices);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain('1, 3');
   });
 
@@ -200,7 +200,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, slices);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toContain('heading: 2');
   });
 
@@ -210,7 +210,7 @@ describe('checkPlanCoverage', () => {
 
     const result = checkPlanCoverage(plan, slices);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
     expect(result.isErr() && result.error.message).toMatch(/\bnot 0\b/);
   });
 
@@ -221,7 +221,7 @@ describe('checkPlanCoverage', () => {
     const first = checkPlanCoverage(plan, [unreferenced, unknown]);
     const second = checkPlanCoverage(plan, [unreferenced, unknown]);
 
-    expect(first.isErr() && first.error).toBeInstanceOf(AgentOutputInvalid);
+    expect(first.isErr() && first.error).toBeInstanceOf(PlanNotCovered);
     const message = first.isErr() ? first.error.message : '';
     expect(message).toContain('numbered 1, 3');
     expect(message).toContain(unreferenced.id);

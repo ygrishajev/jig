@@ -13,6 +13,7 @@ import {
   MergeFailed,
   messageOf,
   MetricsLogCorrupt,
+  PlanNotCovered,
   RemoteUnavailable,
   rootCause,
   RunInProgress,
@@ -72,6 +73,11 @@ describe('failure kinds', () => {
   it.each<[string, () => JigError, JigError['kind']]>([
     ['an agent run that failed', () => new AgentRunFailed({ message: message() }), 'retry'],
     ['malformed agent output', () => new AgentOutputInvalid({ message: message() }), 'retry'],
+    [
+      'slices that do not cover the plan',
+      () => new PlanNotCovered({ message: message() }),
+      'retry',
+    ],
     ['an unreachable remote', () => new RemoteUnavailable({ message: message() }), 'retry'],
     ['a sandbox that did not start', () => new SandboxUnavailable({ message: message() }), 'retry'],
     [

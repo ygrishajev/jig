@@ -102,7 +102,6 @@ export function slicePlanPrompt(planMarkdown: string, correction?: string): stri
   ].join('\n');
 }
 
-/** What the planner reads when its previous slice plan failed the coverage check; `problems` is that check's exact diagnostic. */
 function correctionSection(problems: string | undefined): string[] {
   if (!problems) return [];
   return [

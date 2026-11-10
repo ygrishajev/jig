@@ -9,6 +9,7 @@ export type FailureKind = 'retry' | 'block' | 'fatal';
 export type JigError =
   | AgentRunFailed
   | AgentOutputInvalid
+  | PlanNotCovered
   | RemoteUnavailable
   | SandboxUnavailable
   | SetupCommandFailed
@@ -53,6 +54,14 @@ export class AgentRunFailed extends TaggedError('AgentRunFailed')<{ message: str
 
 /** The agent's own reply was malformed; a fresh attempt at the same step may well get it right. */
 export class AgentOutputInvalid extends TaggedError('AgentOutputInvalid')<{ message: string }> {
+  readonly kind = 'retry' as const;
+}
+
+/**
+ * The planner's slices do not cover its plan. Distinct from AgentOutputInvalid so the slicing
+ * step can retry exactly this failure once, with the check's diagnostics as correction feedback.
+ */
+export class PlanNotCovered extends TaggedError('PlanNotCovered')<{ message: string }> {
   readonly kind = 'retry' as const;
 }
 
@@ -168,6 +177,7 @@ export class CommandInputInvalid extends TaggedError('CommandInputInvalid')<{ me
 const jigErrorClasses = [
   AgentRunFailed,
   AgentOutputInvalid,
+  PlanNotCovered,
   RemoteUnavailable,
   SandboxUnavailable,
   SetupCommandFailed,

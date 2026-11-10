@@ -1,9 +1,10 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { AgentOutputInvalid, type AgentRunFailed } from '../domain/errors.js';
+import { AgentOutputInvalid, type AgentRunFailed, PlanNotCovered } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import { checkPlanCoverage } from '../domain/plan-coverage.js';
+import { retryResult } from '../domain/retry.js';
 import { designDocsSchema, featurePlanSchema, runContextSchema } from '../domain/run-state.js';
 import { type PlannedSlice, plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
@@ -13,6 +14,8 @@ import {
   featurePlanPrompt,
   slicePlanPrompt,
 } from '../prompts/planning.js';
+
+type SlicePlanFailure = AgentRunFailed | AgentOutputInvalid | PlanNotCovered;
 
 export const buildContext: RunStep = async ({ state, ports }) => {
   const context = await ports.agent.runForOutput({
@@ -41,22 +44,24 @@ export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
   return docs.map((written) => ({ type: 'designWritten', docs: written }));
 };
 
-export const sliceThePlan: RunStep<'slicing'> = ({ state, ports }) =>
-  Result.gen(async function* () {
-    const plan = state.docs.plan;
-    const first = yield* Result.await(plannerSlices(plan, ports));
-    const covered = slicedOutcome(plan, first);
-    if (covered.isOk()) return covered;
-    const replacement = yield* Result.await(plannerSlices(plan, ports, covered.error.message));
-    return slicedOutcome(plan, replacement);
+export const sliceThePlan: RunStep<'slicing'> = ({ state, ports }) => {
+  const plan = state.docs.plan;
+  let correction: string | undefined;
+  return retryResult(() => slicePlanAttempt(plan, ports, correction), {
+    retries: 1,
+    delayMs: 0,
+    shouldRetry: (error) => error instanceof PlanNotCovered,
+    onFailedAttempt: ({ error }) => {
+      if (error instanceof PlanNotCovered) correction = error.message;
+    },
   });
+};
 
-/** The planner's answer to the slice plan request: parsed, with its slice ids checked. */
-function plannerSlices(
+function slicePlanAttempt(
   plan: string,
   ports: StepPorts,
   correction?: string,
-): Promise<Result<PlannedSlice[], AgentRunFailed | AgentOutputInvalid>> {
+): Promise<Result<Outcome, SlicePlanFailure>> {
   return Result.gen(async function* () {
     const slices = yield* Result.await(
       ports.agent.runForOutput({
@@ -66,7 +71,8 @@ function plannerSlices(
       }),
     );
     yield* requireUniqueIds(slices);
-    return Result.ok(slices);
+    yield* checkPlanCoverage(plan, slices);
+    return Result.ok<Outcome>({ type: 'sliced', slices });
   });
 }
 
@@ -84,10 +90,6 @@ function requireUniqueIds(slices: PlannedSlice[]): Result<void, AgentOutputInval
       message: `The slice plan repeats slice ids: ${[...new Set(duplicates)].join(', ')}`,
     }),
   );
-}
-
-function slicedOutcome(plan: string, slices: PlannedSlice[]): Result<Outcome, AgentOutputInvalid> {
-  return checkPlanCoverage(plan, slices).map(() => ({ type: 'sliced', slices }));
 }
 
 export const applyDesignGate: RunStep = async ({ settings }) =>
