@@ -25,7 +25,7 @@ describe('privateCloneDocker', () => {
 
   it('ignores the mounts sandcastle offers', async () => {
     const { create, runArguments } = await setup();
-    const offered = faker.system.directoryPath();
+    const offered = path.join(faker.system.directoryPath(), faker.string.alphanumeric(16));
 
     await create([{ hostPath: offered, sandboxPath: offered }]);
 
