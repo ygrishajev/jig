@@ -22,6 +22,7 @@ export const sliceSchema = plannedSliceSchema.extend({
   emptyAttempts: z.number().int().nonnegative().default(0),
   ruleFixCycles: z.number().int().nonnegative().default(0),
   lastFeedback: z.string().optional(),
+  feedbackHistory: z.array(z.string()).default([]),
   commit: z.string().optional(),
   verification: z.object({ command: z.string() }).optional(),
 });
@@ -36,7 +37,17 @@ export function sliceFromPlan(planned: PlannedSlice, order: number): Slice {
     reviewCycles: 0,
     emptyAttempts: 0,
     ruleFixCycles: 0,
+    feedbackHistory: [],
   };
+}
+
+/**
+ * The rounds before the one the implementer still has to address: once `lastFeedback` is cleared
+ * the whole history is earlier, because every round in it was already worked on.
+ */
+export function earlierFeedback(slice: Slice): string[] {
+  if (!slice.lastFeedback) return slice.feedbackHistory;
+  return slice.feedbackHistory.slice(0, -1);
 }
 
 export function slicesInOrder(slices: readonly Slice[]): Slice[] {

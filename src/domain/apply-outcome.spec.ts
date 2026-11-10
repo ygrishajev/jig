@@ -49,6 +49,7 @@ describe('applyOutcome', () => {
         reviewCycles: 0,
         emptyAttempts: 0,
         ruleFixCycles: 0,
+        feedbackHistory: [],
       },
       {
         ...planned[1],
@@ -57,6 +58,7 @@ describe('applyOutcome', () => {
         reviewCycles: 0,
         emptyAttempts: 0,
         ruleFixCycles: 0,
+        feedbackHistory: [],
       },
     ]);
   });
@@ -112,11 +114,35 @@ describe('applyOutcome', () => {
   });
 
   it('forgets earlier feedback once a slice is verified', () => {
-    const slice = aSlice({ order: 0, status: 'verifying', lastFeedback: faker.lorem.sentence() });
+    const history = [faker.lorem.sentence(), faker.lorem.sentence()];
+    const slice = aSlice({
+      order: 0,
+      status: 'verifying',
+      lastFeedback: history[1],
+      feedbackHistory: history,
+    });
 
     const { slices } = applyOutcome(aRunState({ slices: [slice] }), { type: 'verified' });
 
     expect(slices[0].lastFeedback).toBeUndefined();
+    expect(slices[0].feedbackHistory).toEqual(history);
+  });
+
+  it('keeps every round of feedback in order as a slice is sent back again and again', () => {
+    const first = faker.lorem.sentence();
+    const second = faker.lorem.sentence();
+    const third = faker.lorem.sentence();
+    const current = aSlice({ order: 0 });
+
+    let state = applyOutcome(aRunState({ slices: [current] }), {
+      type: 'changesRequested',
+      feedback: first,
+    });
+    state = applyOutcome(state, { type: 'verified' });
+    state = applyOutcome(state, { type: 'rulesFixRequested', feedback: second });
+    state = applyOutcome(state, { type: 'nothingChanged', feedback: third });
+
+    expect(state.slices[0].feedbackHistory).toEqual([first, second, third]);
   });
 
   it('records the verify command the current slice passed once it is verified', () => {

@@ -56,6 +56,7 @@ function sendSliceBack(state: RunState, outcome: SendBack): RunState {
     ...slice,
     [counter]: slice[counter] + 1,
     lastFeedback: outcome.feedback,
+    feedbackHistory: [...slice.feedbackHistory, outcome.feedback],
     verification: undefined,
   }));
 }

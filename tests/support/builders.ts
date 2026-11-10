@@ -51,6 +51,7 @@ export function aSlice({
   emptyAttempts = 0,
   ruleFixCycles = 0,
   lastFeedback,
+  feedbackHistory = [],
   commit,
   verification,
 }: Partial<Slice> = {}): Slice {
@@ -64,6 +65,7 @@ export function aSlice({
     emptyAttempts,
     ruleFixCycles,
     lastFeedback,
+    feedbackHistory,
     commit,
     verification,
   };

@@ -1,5 +1,5 @@
 import type { ChangedFile } from '../domain/protected-paths.js';
-import type { Slice } from '../domain/slice.js';
+import { earlierFeedback,type Slice } from '../domain/slice.js';
 
 export function implementPrompt(slice: Slice): string {
   return [
@@ -30,8 +30,34 @@ function previousFeedback(slice: Slice): string[] {
     'A previous attempt at this slice was sent back with changes requested, by its review or by a failed check.',
     'Address this feedback specifically:',
     slice.lastFeedback,
+    ...earlierRounds(slice),
   ];
 }
+
+function earlierRounds(slice: Slice): string[] {
+  const rounds = earlierFeedback(slice);
+  if (rounds.length === 0) return [];
+  return [
+    '',
+    'Earlier rounds of this slice were sent back with this feedback:',
+    ...rounds.map((feedback, round) => roundSection(feedback, round)),
+    '',
+    'If the latest feedback reports a problem an earlier round already reported, the previous fix',
+    'did not work: find out why before changing code again, and take a different approach rather',
+    'than adjusting the same one.',
+  ];
+}
+
+function roundSection(feedback: string, round: number): string {
+  return `Round ${round + 1}:\n${keepTail(feedback, EARLIER_FEEDBACK_LIMIT)}`;
+}
+
+function keepTail(text: string, limit: number): string {
+  return text.length > limit ? `…${text.slice(-limit)}` : text;
+}
+
+/** An earlier round is history, not the task: cap each one so old rounds cannot drown the latest. */
+export const EARLIER_FEEDBACK_LIMIT = 3000;
 
 /**
  * Path-scoped rule files (`.claude/rules/`, `.cursor/rules/`…) load on their own only in the tool
@@ -79,7 +105,7 @@ export function verifyFailedFeedback(command: string, output: string): string {
   return [
     `The verify command \`${command}\` failed in the sandbox for this slice's commits.`,
     'Fix what it reports. Its output:',
-    trimmed.length > VERIFY_OUTPUT_TAIL ? `…${trimmed.slice(-VERIFY_OUTPUT_TAIL)}` : trimmed,
+    keepTail(trimmed, VERIFY_OUTPUT_TAIL),
   ].join('\n');
 }
 

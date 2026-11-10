@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { aSlice } from '../../tests/support/builders.js';
-import { sliceSchema, slicesInOrder } from './slice.js';
+import { earlierFeedback, sliceSchema, slicesInOrder } from './slice.js';
 
 describe('slicesInOrder', () => {
   it('lists slices by their planned order without reordering the input', () => {
@@ -26,4 +26,33 @@ describe('sliceSchema', () => {
 
     expect(sliceSchema.parse(saved)).toMatchObject({ emptyAttempts: 0, ruleFixCycles: 0 });
   });
+
+  it('loads a slice saved before feedback was kept as a history with none', () => {
+    const { feedbackHistory: _neverSaved, ...saved } = aSlice();
+
+    expect(sliceSchema.parse(saved)).toMatchObject({ feedbackHistory: [] });
+  });
+});
+
+describe('earlierFeedback', () => {
+  it('returns every round but the latest while the latest feedback is still to address', () => {
+    const { history, slice } = setup();
+
+    expect(earlierFeedback(slice)).toEqual(history.slice(0, -1));
+  });
+
+  it('returns the whole history once the latest feedback has been cleared', () => {
+    const { history, slice } = setup({ verified: true });
+
+    expect(earlierFeedback(slice)).toEqual(history);
+  });
+
+  function setup(input: { verified?: boolean } = {}) {
+    const history = [faker.lorem.sentence(), faker.lorem.sentence(), faker.lorem.sentence()];
+    const slice = aSlice({
+      feedbackHistory: history,
+      lastFeedback: input.verified ? undefined : history[2],
+    });
+    return { history, slice };
+  }
 });
