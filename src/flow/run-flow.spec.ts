@@ -1,5 +1,8 @@
 import { faker } from '@faker-js/faker';
 import { Panic } from 'better-result';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -408,6 +411,49 @@ describe('runFlow', () => {
     expect(await git.revparse([runBranch])).toBe(repair.commit);
   });
 
+  it('refuses to merge when the run branch gained an unapproved commit after the last approval', async () => {
+    const slice = aPlannedSlice();
+    const crash = new Error(faker.lorem.sentence());
+    const { agent, run, start, store, git, runBranch, worktreePath } = await setup({
+      settings: runSettings(),
+    });
+    scriptPlanning(agent, [slice]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'fix.txt': faker.lorem.sentence() } },
+    );
+    agent.script(
+      'reviewer',
+      approval(),
+      unfulfilled(faker.lorem.sentence()),
+      approval(),
+      fulfillment(),
+    );
+    agent.script('describer', { crash });
+
+    await expect(run(start)).rejects.toThrow(Panic);
+    const saved = (await store.load(start.runId)).unwrap();
+    expect(saved?.finalCheck).toMatchObject({ fulfilled: true, round: 2 });
+    expect(saved?.slices.at(-1)).toMatchObject({ id: 'final-fixes', status: 'approved' });
+    expect(saved?.slices.at(-1)?.commit).toBeTruthy();
+
+    const hostGit = simpleGit({ baseDir: worktreePath });
+    await writeFile(path.join(worktreePath, 'host.txt'), faker.lorem.sentence());
+    await hostGit.add('-A').commit(faker.git.commitMessage());
+    const unapproved = await hostGit.revparse(['HEAD']);
+
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(saved ?? start);
+
+    expect(status).toBe('blocked');
+    expect(state.blockedReason).toBeTruthy();
+    expect(state.finalCheck).toMatchObject({ fulfilled: true, round: 2 });
+    expect((await git.log(['main'])).all).toHaveLength(1);
+    expect(await git.revparse([runBranch])).toBe(unapproved);
+  });
+
   it('describes the run and stops for a person when the repaired run still fails its final check', async () => {
     const { agent, run, start, git } = await setup({ settings: runSettings() });
     scriptPlanning(agent, [aPlannedSlice()]);
@@ -548,12 +594,44 @@ describe('runFlow', () => {
     expect((await git.log(['main'])).all).toHaveLength(1);
   });
 
+  it('resumes a saved run whose repair the reviewer approved, and appends no second repair when the recheck fails again', async () => {
+    const slice = aPlannedSlice();
+    const crash = new Error(faker.lorem.sentence());
+    const { agent, run, start, store, git } = await setup({ settings: runSettings() });
+    scriptPlanning(agent, [slice]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'fix.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', approval(), unfulfilled(faker.lorem.sentence()), approval(), { crash });
+
+    await expect(run(start)).rejects.toThrow(Panic);
+    const saved = (await store.load(start.runId)).unwrap();
+    expect(saved?.phase).toBe('finalCheck');
+    expect(saved?.slices.map((entry) => entry.id)).toEqual([slice.id, 'final-fixes']);
+    expect(saved?.slices[1]).toMatchObject({ id: 'final-fixes', status: 'approved' });
+    expect(saved?.slices[1].commit).toBeTruthy();
+
+    agent.script('reviewer', unfulfilled(faker.lorem.sentence()));
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(saved ?? start);
+
+    expect(status).toBe('stuck');
+    expect(state.slices.map((entry) => entry.id)).toEqual([slice.id, 'final-fixes']);
+    expect(state.slices[1]).toMatchObject({ id: 'final-fixes', status: 'approved' });
+    expect(state.finalCheck).toMatchObject({ fulfilled: false, round: 2 });
+    expect(state.prDescription).toBeTruthy();
+    expect((await git.log(['main'])).all).toHaveLength(1);
+  });
+
   async function setup(input: {
     settings: RunSettings;
     exec?: (command: string) => ExecResult | SandboxUnavailable;
   }) {
     const id = runId();
-    const { sandboxPath, workspace, git, runBranch } = await createRunWorktree(id);
+    const { sandboxPath, workspace, git, runBranch, worktreePath } = await createRunWorktree(id);
     const agent = new FakeAgentSession(sandboxPath, input.exec);
     const store = new InMemoryRunStore();
     const dependencies = {
@@ -567,7 +645,7 @@ describe('runFlow', () => {
     const run = async (state: RunState) => (await runEngine(runFlow, state, dependencies)).unwrap();
     const runBranchHistory = () =>
       git.raw(['log', '--reverse', '--format=%s', '--patch', `main..${runBranch}`]);
-    return { agent, run, start, store, git, runBranch, runBranchHistory };
+    return { agent, run, start, store, git, runBranch, worktreePath, runBranchHistory };
   }
 });
 
