@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { stripVTControlCharacters } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { codexLogin } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
@@ -12,11 +12,14 @@ import { askForCredential } from './ask-for-credential.js';
 
 const ENTER = '\r';
 const DOWN = '\u001B[B';
+/** What a terminal's Backspace key sends. */
+const BACKSPACE = '\u007F';
+
 /**
- * Ctrl+H, not DEL: readline deletes left for it whether it decodes it as backspace or as ctrl+h,
- * while a DEL some runs decode as text lands in the value instead of erasing it.
+ * Readline gives a `dumb` TERM a line editor that inserts every key except Enter, so deletion
+ * only works when the fake terminal names a capable type, whatever TERM the test run inherits.
  */
-const BACKSPACE = '\b';
+const CAPABLE_TERMINAL_TYPE = 'xterm-256color';
 
 /** The password prompt draws this hint only while idle, so a frame showing it is ready for keys. */
 const VISIBILITY_HINT = 'ctrl+t toggle visibility';
@@ -119,6 +122,7 @@ describe('askForCredential', () => {
   });
 
   function setup(missing: { provider: AgentName; keys: string[] }) {
+    vi.stubEnv('TERM', CAPABLE_TERMINAL_TYPE);
     const stdin = Object.assign(new PassThrough(), { isTTY: true });
     const stdout = new TerminalScreen();
     let output = '';
