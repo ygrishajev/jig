@@ -13,6 +13,7 @@ import {
   designDocs,
 } from '../../tests/support/builders.js';
 import { applyOutcome } from './apply-outcome.js';
+import type { Outcome } from './outcome.js';
 import { sliceSchema } from './slice.js';
 
 describe('applyOutcome', () => {
@@ -114,33 +115,34 @@ describe('applyOutcome', () => {
   });
 
   it('forgets earlier feedback once a slice is verified', () => {
-    const history = [faker.lorem.sentence(), faker.lorem.sentence()];
-    const slice = aSlice({
-      order: 0,
-      status: 'verifying',
-      lastFeedback: history[1],
-      feedbackHistory: history,
+    const first = faker.lorem.sentence();
+    const second = faker.lorem.sentence();
+
+    const { state } = setup({
+      outcomes: [
+        { type: 'changesRequested', feedback: first },
+        { type: 'changesRequested', feedback: second },
+        { type: 'verified' },
+      ],
     });
 
-    const { slices } = applyOutcome(aRunState({ slices: [slice] }), { type: 'verified' });
-
-    expect(slices[0].lastFeedback).toBeUndefined();
-    expect(slices[0].feedbackHistory).toEqual(history);
+    expect(state.slices[0].lastFeedback).toBeUndefined();
+    expect(state.slices[0].feedbackHistory).toEqual([first, second]);
   });
 
   it('keeps every round of feedback in order as a slice is sent back again and again', () => {
     const first = faker.lorem.sentence();
     const second = faker.lorem.sentence();
     const third = faker.lorem.sentence();
-    const current = aSlice({ order: 0 });
 
-    let state = applyOutcome(aRunState({ slices: [current] }), {
-      type: 'changesRequested',
-      feedback: first,
+    const { state } = setup({
+      outcomes: [
+        { type: 'changesRequested', feedback: first },
+        { type: 'verified' },
+        { type: 'rulesFixRequested', feedback: second },
+        { type: 'nothingChanged', feedback: third },
+      ],
     });
-    state = applyOutcome(state, { type: 'verified' });
-    state = applyOutcome(state, { type: 'rulesFixRequested', feedback: second });
-    state = applyOutcome(state, { type: 'nothingChanged', feedback: third });
 
     expect(state.slices[0].feedbackHistory).toEqual([first, second, third]);
   });
@@ -205,4 +207,12 @@ describe('applyOutcome', () => {
   it('refuses a slice outcome when no slice is left', () => {
     expect(() => applyOutcome(aRunState({ slices: [] }), { type: 'verified' })).toThrow(Panic);
   });
+
+  function setup(input: { outcomes: Outcome[] }) {
+    let state = aRunState({ slices: [aSlice({ order: 0 })] });
+    for (const outcome of input.outcomes) {
+      state = applyOutcome(state, outcome);
+    }
+    return { state };
+  }
 });

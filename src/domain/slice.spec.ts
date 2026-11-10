@@ -28,10 +28,15 @@ describe('sliceSchema', () => {
   });
 
   it('loads a slice saved before feedback was kept as a history with none', () => {
-    const { feedbackHistory: _neverSaved, ...saved } = aSlice();
+    const { saved } = setup();
 
     expect(sliceSchema.parse(saved)).toMatchObject({ feedbackHistory: [] });
   });
+
+  function setup() {
+    const { feedbackHistory: _neverSaved, ...saved } = aSlice();
+    return { saved };
+  }
 });
 
 describe('earlierFeedback', () => {

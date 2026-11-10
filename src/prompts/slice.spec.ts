@@ -7,7 +7,7 @@ import { EARLIER_FEEDBACK_LIMIT, implementPrompt, reviewPrompt } from './slice.j
 describe('implementPrompt', () => {
   it('presents the latest feedback to address before the earlier rounds', () => {
     const rounds = [faker.lorem.sentence(), faker.lorem.sentence(), faker.lorem.sentence()];
-    const prompt = implementPrompt(aSlice({ lastFeedback: rounds[2], feedbackHistory: rounds }));
+    const { prompt } = setup({ rounds });
 
     expect(prompt.indexOf('Address this feedback specifically:')).toBeLessThan(
       prompt.indexOf(rounds[2]),
@@ -16,24 +16,18 @@ describe('implementPrompt', () => {
   });
 
   it('lists the earlier rounds oldest first', () => {
-    const oldest = faker.lorem.sentence();
-    const middle = faker.lorem.sentence();
-    const latest = faker.lorem.sentence();
-    const prompt = implementPrompt(
-      aSlice({ lastFeedback: latest, feedbackHistory: [oldest, middle, latest] }),
-    );
+    const rounds = [faker.lorem.sentence(), faker.lorem.sentence(), faker.lorem.sentence()];
+    const { prompt } = setup({ rounds });
 
-    expect(prompt).toContain(`Round 1:\n${oldest}`);
-    expect(prompt).toContain(`Round 2:\n${middle}`);
-    expect(prompt.indexOf(`Round 1:\n${oldest}`)).toBeLessThan(
-      prompt.indexOf(`Round 2:\n${middle}`),
+    expect(prompt).toContain(`Round 1:\n${rounds[0]}`);
+    expect(prompt).toContain(`Round 2:\n${rounds[1]}`);
+    expect(prompt.indexOf(`Round 1:\n${rounds[0]}`)).toBeLessThan(
+      prompt.indexOf(`Round 2:\n${rounds[1]}`),
     );
   });
 
   it('warns that a problem an earlier round already reported needs a different approach', () => {
-    const prompt = implementPrompt(
-      aSlice({ lastFeedback: faker.lorem.sentence(), feedbackHistory: twoRounds() }),
-    );
+    const { prompt } = setup({ rounds: [faker.lorem.sentence(), faker.lorem.sentence()] });
 
     expect(prompt).toContain('did not work: find out why before changing code again');
     expect(prompt).toContain('take a different approach');
@@ -42,24 +36,25 @@ describe('implementPrompt', () => {
   it('cuts an earlier round to its last characters when it exceeds the limit', () => {
     const longRound = faker.string.alphanumeric({ length: EARLIER_FEEDBACK_LIMIT + 500 });
     const latest = faker.lorem.sentence();
-    const prompt = implementPrompt(
-      aSlice({ lastFeedback: latest, feedbackHistory: [longRound, latest] }),
-    );
+    const { prompt } = setup({ rounds: [longRound, latest] });
 
     expect(prompt).toContain(`…${longRound.slice(-EARLIER_FEEDBACK_LIMIT)}`);
     expect(prompt).not.toContain(longRound.slice(0, 100));
   });
 
   it('adds nothing about earlier rounds when the slice has only been sent back once', () => {
-    const only = faker.lorem.sentence();
-    const prompt = implementPrompt(aSlice({ lastFeedback: only, feedbackHistory: [only] }));
+    const { prompt } = setup({ rounds: [faker.lorem.sentence()] });
 
     expect(prompt).not.toContain('Round 1:');
     expect(prompt).not.toContain('did not work: find out why');
   });
 
-  function twoRounds() {
-    return [faker.lorem.sentence(), faker.lorem.sentence()];
+  function setup(input: { rounds: string[] }) {
+    const slice = aSlice({
+      lastFeedback: input.rounds[input.rounds.length - 1],
+      feedbackHistory: input.rounds,
+    });
+    return { slice, prompt: implementPrompt(slice) };
   }
 });
 
