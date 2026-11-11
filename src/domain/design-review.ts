@@ -5,7 +5,6 @@ import { type DesignDocs, designDocsSchema } from './design-docs.js';
 import { DesignUnresolved } from './errors.js';
 import type { RunState } from './run-state.js';
 
-/** How far a run's design review has come, in the order a run passes through them. */
 export type DesignReviewStage =
   'awaitingReview' | 'awaitingRevision' | 'awaitingReReview' | 'approved' | 'unresolved';
 
@@ -163,7 +162,6 @@ function designRevisionOwed(progress: DesignReviewProgress): boolean {
   );
 }
 
-/** The findings the latest review left standing; none once the design is approved. */
 export function outstandingFindings(progress: DesignReviewProgress): DesignFinding[] {
   return progress.reviews.at(-1)?.findings ?? [];
 }
@@ -203,11 +201,7 @@ export function designApproved(state: RunState): boolean {
   return progress !== undefined && outstandingFindings(progress).length === 0;
 }
 
-/**
- * Where the run's design review stands; undefined for a run that has none — one before its design
- * is written, or one saved before design reviews existed. Approval needs a completed review that
- * left nothing standing, so a review still owed is never reported as approved.
- */
+/** Undefined for a run saved before design reviews existed, which must still load and report. */
 export function designReviewStage(state: RunState): DesignReviewStage | undefined {
   const progress = state.designReview;
   if (!progress) return state.phase === 'reviewingDesign' ? 'awaitingReview' : undefined;

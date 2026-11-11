@@ -10,12 +10,7 @@ import {
 } from './design-review.js';
 import type { RunState } from './run-state.js';
 
-/**
- * The run's design review as markdown for a person: where it stands, every review with its
- * evidence, the planner's revision and the documents it replaced, and what the operator must
- * decide. Undefined for a run that has no design review. Built from the saved run alone, so any
- * machine holding the run renders the same report.
- */
+/** Built from the saved run alone, so a run resumed on another machine explains itself without local reports. */
 export function designReviewReport(state: RunState): string | undefined {
   const stage = designReviewStage(state);
   if (stage === undefined) return undefined;

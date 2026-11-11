@@ -553,10 +553,6 @@ async function runBranchCommits(repoRoot: string, id: RunId) {
   return log.all.map((commit) => commit.hash);
 }
 
-/**
- * Scripts a design that the first review finds a problem with, the planner's revision of it, and
- * then `reReview` — each scripted reply to the re-review in turn.
- */
 function scriptRevisedDesign(agent: FakeAgentSession, ...reReview: AgentScript[]) {
   const written = designDocs();
   const revised = designDocs();
