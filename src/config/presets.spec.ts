@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -159,6 +159,21 @@ describe('presets', () => {
         path.join(locations.homeDirectory, '.jig', 'presets'),
       );
     });
+
+    it('refuses rather than falls back when the repository presets cannot be looked at', async () => {
+      const { locations, writePreset, makeRepositoryJigUnreachable } = await setup({
+        xdgConfigHome: 'set',
+      });
+      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
+      await makeRepositoryJigUnreachable();
+
+      const presets = discoverPresets(locations);
+
+      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
+      expect(presets.isErr() && presets.error.message).toContain(
+        path.join(locations.repoRoot, '.jig', 'presets'),
+      );
+    });
   });
 
   describe('loadPreset', () => {
@@ -187,6 +202,21 @@ describe('presets', () => {
       const { locations, writePreset, writeRaw } = await setup({ xdgConfigHome: 'set' });
       await writeRaw('repository', 'shared.json', '{ not json');
       await writePreset('home', 'shared', { planner: { provider: 'claude' } });
+
+      const preset = loadPreset(locations, presetName('shared'));
+
+      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
+      expect(preset.isErr() && preset.error.message).toContain(
+        path.join(locations.repoRoot, '.jig', 'presets', 'shared.json'),
+      );
+    });
+
+    it('refuses rather than falls back to the home preset when the repository one cannot be looked at', async () => {
+      const { locations, writePreset, makeRepositoryJigUnreachable } = await setup({
+        xdgConfigHome: 'set',
+      });
+      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
+      await makeRepositoryJigUnreachable();
 
       const preset = loadPreset(locations, presetName('shared'));
 
@@ -324,7 +354,9 @@ describe('presets', () => {
       writeRaw(source, `${name}.json`, JSON.stringify(contents));
     const writeProjectConfig = (contents: unknown) =>
       writeFile(configFileFor(locations.repoRoot).path, JSON.stringify(contents));
-    return { locations, writePreset, writeRaw, writeProjectConfig };
+    const makeRepositoryJigUnreachable = () =>
+      symlink('.jig', path.join(locations.repoRoot, '.jig'));
+    return { locations, writePreset, writeRaw, writeProjectConfig, makeRepositoryJigUnreachable };
   }
 });
 

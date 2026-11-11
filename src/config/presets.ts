@@ -1,5 +1,5 @@
 import { Result } from 'better-result';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -9,7 +9,6 @@ import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { describeIssues } from './describe-issues.js';
 import { type JigConfig, type StepConfig, stepConfigSchema } from './load-config.js';
 
-/** What decides where presets live; the caller reads these from the process, nothing here does. */
 export interface PresetLocations {
   repoRoot: string;
   homeDirectory: string;
@@ -38,7 +37,6 @@ interface PresetFile {
   path: string;
 }
 
-/** Every preset an operator can name, each from the directory that wins it. */
 export function discoverPresets(locations: PresetLocations): Result<Preset[], ConfigInvalid> {
   return presetFiles(presetDirectories(locations)).andThen((files) =>
     Result.all(files.map(readPreset)),
@@ -52,14 +50,26 @@ function presetFiles(directories: PresetDirectory[]): Result<PresetFile[], Confi
 }
 
 function presetFilesIn(directory: PresetDirectory): Result<PresetFile[], ConfigInvalid> {
-  if (!existsSync(directory.path)) return Result.ok([]);
+  return Result.gen(function* () {
+    if (!(yield* existsAt(directory.path))) return Result.ok([]);
+    const entries = yield* Result.try({
+      try: () => readdirSync(directory.path),
+      catch: (cause) =>
+        new ConfigInvalid({
+          message: `Cannot list presets in ${directory.path}: ${messageOf(cause)}`,
+        }),
+    });
+    return Result.ok(presetNamesAmong(entries).map((name) => presetFileIn(directory, name)));
+  });
+}
+
+/** Only a missing entry is absent; any other failure is reported, so an unreadable winner never yields to a lower-precedence preset. */
+function existsAt(entryPath: string): Result<boolean, ConfigInvalid> {
   return Result.try({
-    try: () => readdirSync(directory.path),
+    try: () => statSync(entryPath, { throwIfNoEntry: false }),
     catch: (cause) =>
-      new ConfigInvalid({
-        message: `Cannot list presets in ${directory.path}: ${messageOf(cause)}`,
-      }),
-  }).map((entries) => presetNamesAmong(entries).map((name) => presetFileIn(directory, name)));
+      new ConfigInvalid({ message: `Cannot look for ${entryPath}: ${messageOf(cause)}` }),
+  }).map((stats) => stats !== undefined);
 }
 
 function presetNamesAmong(entries: string[]): PresetName[] {
@@ -96,7 +106,6 @@ function shadowedRemoved(files: PresetFile[]): PresetFile[] {
   return files.filter((file, index) => files.findIndex(({ name }) => name === file.name) === index);
 }
 
-/** The directories presets are read from, in precedence order, each named once. */
 export function presetDirectories(locations: PresetLocations): PresetDirectory[] {
   const paths = directoryPaths(locations);
   const directories = PRESET_SOURCES.map((source) => ({
@@ -129,19 +138,19 @@ export const PRESET_SOURCES = ['repository', 'home', 'xdg'] as const;
 export type PresetSource = (typeof PRESET_SOURCES)[number];
 
 function readPreset(file: PresetFile): Result<Preset, ConfigInvalid> {
-  return Result.try({
-    try: () => readFileSync(file.path, 'utf-8'),
-    catch: (cause) =>
-      new ConfigInvalid({ message: `Cannot read ${file.path}: ${messageOf(cause)}` }),
-  })
-    .andThen((contents) =>
-      Result.try({
-        try: (): unknown => JSON.parse(contents),
-        catch: (cause) =>
-          new ConfigInvalid({ message: `${file.path} is not valid JSON: ${messageOf(cause)}` }),
-      }),
-    )
-    .andThen((json) => parsePresetFile(file, json));
+  return Result.gen(function* () {
+    const contents = yield* Result.try({
+      try: () => readFileSync(file.path, 'utf-8'),
+      catch: (cause) =>
+        new ConfigInvalid({ message: `Cannot read ${file.path}: ${messageOf(cause)}` }),
+    });
+    const json = yield* Result.try({
+      try: (): unknown => JSON.parse(contents),
+      catch: (cause) =>
+        new ConfigInvalid({ message: `${file.path} is not valid JSON: ${messageOf(cause)}` }),
+    });
+    return parsePresetFile(file, json);
+  });
 }
 
 function parsePresetFile(file: PresetFile, json: unknown): Result<Preset, ConfigInvalid> {
@@ -171,10 +180,13 @@ export function loadPreset(
   name: PresetName,
 ): Result<Preset, ConfigInvalid> {
   const directories = presetDirectories(locations);
-  const winner = directories
-    .map((directory) => presetFileIn(directory, name))
-    .find((file) => existsSync(file.path));
-  return winner ? readPreset(winner) : missingPreset(name, directories);
+  return Result.gen(function* () {
+    for (const directory of directories) {
+      const candidate = presetFileIn(directory, name);
+      if (yield* existsAt(candidate.path)) return readPreset(candidate);
+    }
+    return missingPreset(name, directories);
+  });
 }
 
 function missingPreset(
