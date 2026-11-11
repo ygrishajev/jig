@@ -62,7 +62,7 @@ const agentNameSchema = z
   .string()
   .refine(isAgentName, { message: `the agent must be one of ${Object.keys(AGENTS).join(', ')}` });
 
-const stepConfigSchema = z.object({
+export const stepConfigSchema = z.object({
   provider: agentNameSchema,
   /** Passed to the agent CLI; claude falls back to a default, opencode requires one ("provider/model"). */
   model: z.string().optional(),
