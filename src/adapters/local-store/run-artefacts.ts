@@ -4,6 +4,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
+import { designReviewReport } from '../../domain/design-review-report.js';
 import type { LocalStateUnwritable } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { type RunPhase, type RunState, stuckSlice } from '../../domain/run-state.js';
@@ -27,8 +28,8 @@ interface RunResult {
 
 /**
  * This machine's record of how an invocation of a run ended, written once at its end and only
- * here: `result.json` for CI, and the design, plan and pull request description as markdown for
- * a person. Each file is replaced atomically, so a reader never sees half of one.
+ * here: `result.json` for CI, and the design, plan, design review and pull request description
+ * as markdown for a person. Each file is replaced atomically, so a reader never sees half of one.
  */
 export class RunArtefacts {
   constructor(private readonly repoRoot: string) {}
@@ -95,6 +96,7 @@ function documentContents(
   return {
     'design.md': state.docs?.design,
     'plan.md': state.docs?.plan,
+    'design-review.md': designReviewReport(state),
     'PR_DESCRIPTION.md': pullRequestDescription(state, metrics),
   };
 }
@@ -106,6 +108,6 @@ function pullRequestDescription(state: RunState, metrics: MetricsSummary): strin
 }
 
 /** The markdown a run leaves for a person to read, in the order `jig status` lists them. */
-const DOCUMENTS = ['design.md', 'plan.md', 'PR_DESCRIPTION.md'] as const;
+const DOCUMENTS = ['design.md', 'plan.md', 'design-review.md', 'PR_DESCRIPTION.md'] as const;
 
 export type RunDocument = (typeof DOCUMENTS)[number];

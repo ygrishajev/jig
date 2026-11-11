@@ -4,8 +4,17 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { aMetricsSummary, aRunState, aSlice, designDocs } from '../../../tests/support/builders.js';
+import {
+  aDesignFinding,
+  aMetricsSummary,
+  aRevisionAwaitingReReview,
+  aRunBlockedByDesignReview,
+  aRunState,
+  aSlice,
+  designDocs,
+} from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { designReviewReport } from '../../domain/design-review-report.js';
 import type { RunId } from '../../domain/run-id.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { LocalRunStore } from './local-run-store.js';
@@ -55,15 +64,55 @@ describe('RunArtefacts', () => {
 
   it('removes a document the run no longer has', async () => {
     const { artefacts, repoRoot } = await setup();
-    const state = aRunState({ docs: designDocs(), prDescription: faker.lorem.paragraph() });
+    const state = aRunState({
+      phase: 'reviewingDesign',
+      designReview: aRevisionAwaitingReReview(),
+      prDescription: faker.lorem.paragraph(),
+    });
     await artefacts.write(state, 'halted', aMetricsSummary());
 
     await artefacts.write(aRunState({ runId: state.runId }), 'halted', aMetricsSummary());
 
     const directory = stateDirectory(repoRoot, state.runId);
-    for (const name of ['design.md', 'plan.md', 'PR_DESCRIPTION.md']) {
+    for (const name of ['design.md', 'plan.md', 'design-review.md', 'PR_DESCRIPTION.md']) {
       expect(existsSync(path.join(directory, name))).toBe(false);
     }
+  });
+
+  it('exports a design review in progress with the revised documents, listed after the plan', async () => {
+    const { artefacts, read, repoRoot } = await setup();
+    const state = aRunState({
+      phase: 'reviewingDesign',
+      designReview: aRevisionAwaitingReReview(),
+      blockedReason: faker.lorem.sentence(),
+    });
+
+    await artefacts.write(state, 'blocked', aMetricsSummary());
+
+    expect(await read(state.runId, 'design-review.md')).toBe(designReviewReport(state));
+    expect(await read(state.runId, 'design.md')).toBe(state.docs?.design);
+    const directory = stateDirectory(repoRoot, state.runId);
+    expect(artefacts.documents(state.runId)).toEqual([
+      { name: 'design.md', path: path.join(directory, 'design.md') },
+      { name: 'plan.md', path: path.join(directory, 'plan.md') },
+      { name: 'design-review.md', path: path.join(directory, 'design-review.md') },
+    ]);
+  });
+
+  it('tells CI which design findings block the run', async () => {
+    const { artefacts, read } = await setup();
+    const outstanding = [aDesignFinding(), aDesignFinding()];
+    const state = aRunBlockedByDesignReview({ outstanding });
+
+    await artefacts.write(state, 'blocked', aMetricsSummary());
+
+    const result = JSON.parse(await read(state.runId, 'result.json'));
+    expect(result).toMatchObject({
+      status: 'blocked',
+      phase: 'resolvingDesign',
+      blockedReason: state.blockedReason,
+    });
+    for (const finding of outstanding) expect(result.blockedReason).toContain(finding.id);
   });
 
   it('summarises how a run ended for CI, naming a stuck slice', async () => {

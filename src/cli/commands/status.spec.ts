@@ -1,7 +1,13 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aMetricsSummary, aRunState, aSlice } from '../../../tests/support/builders.js';
+import {
+  aDesignFinding,
+  aMetricsSummary,
+  aRunBlockedByDesignReview,
+  aRunState,
+  aSlice,
+} from '../../../tests/support/builders.js';
 import type { RunStatus } from '../../app/run-status.js';
 import type { RunState } from '../../domain/run-state.js';
 import { runBranchFor } from '../../domain/run-state.js';
@@ -44,6 +50,25 @@ describe('describeRun', () => {
     );
 
     expect(shown).toContain(blockedReason);
+    expect(shown).toContain(path);
+  });
+
+  it('names every design finding that blocks the run, and where its review report is', () => {
+    const outstanding = [aDesignFinding(), aDesignFinding()];
+    const state = aRunBlockedByDesignReview({ outstanding });
+    const path = faker.system.filePath();
+
+    const shown = describeRun(
+      aStatus({
+        state,
+        documents: [{ name: 'design-review.md', path }],
+      }),
+    );
+
+    for (const finding of outstanding) {
+      expect(shown).toContain(finding.id);
+      expect(shown).toContain(finding.recommendation);
+    }
     expect(shown).toContain(path);
   });
 

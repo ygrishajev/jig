@@ -4,11 +4,12 @@ import type { StepConfig } from '../../src/config/load-config.js';
 import { type Preset, type PresetName, presetNameSchema } from '../../src/config/presets.js';
 import { byRole } from '../../src/domain/agent-role.js';
 import type { DesignDocs } from '../../src/domain/design-docs.js';
-import type {
-  DesignFinding,
-  DesignReview,
-  DesignReviewProgress,
-  FindingDisposition,
+import {
+  type DesignFinding,
+  type DesignReview,
+  type DesignReviewProgress,
+  type FindingDisposition,
+  resolveDesignReview,
 } from '../../src/domain/design-review.js';
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
@@ -239,6 +240,16 @@ export function aRevisedDesignReview({
 }: { findings?: DesignFinding[]; outstanding?: DesignFinding[] } = {}): DesignReviewProgress {
   const revised = aRevisionAwaitingReReview({ findings });
   return { ...revised, reviews: [...revised.reviews, { findings: outstanding }] };
+}
+
+/** A run stopped after its re-review because `outstanding` still stand, saying so as a run does. */
+export function aRunBlockedByDesignReview({
+  outstanding = [aDesignFinding()],
+}: { outstanding?: DesignFinding[] } = {}): RunState {
+  const designReview = aRevisedDesignReview({ outstanding });
+  const unresolved = resolveDesignReview(designReview);
+  const blockedReason = unresolved.isErr() ? unresolved.error.message : undefined;
+  return aRunState({ phase: 'resolvingDesign', designReview, blockedReason });
 }
 
 /** A design review that approved the design, at the first review or at the re-review. */

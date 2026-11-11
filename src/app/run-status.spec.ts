@@ -5,7 +5,13 @@ import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { aRunState, aSlice, runId } from '../../tests/support/builders.js';
+import {
+  aDesignFinding,
+  aRunBlockedByDesignReview,
+  aRunState,
+  aSlice,
+  runId,
+} from '../../tests/support/builders.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
@@ -55,6 +61,19 @@ describe('readRunStatus', () => {
     const status = (await statusIn(here, ['local', 'git-remote'], stale.runId)).unwrap();
 
     expect(status.state).toEqual(fresher);
+  });
+
+  it('explains a run the design review blocked elsewhere from its saved state alone', async () => {
+    const { cloneOf, statusIn } = await setup();
+    const outstanding = [aDesignFinding(), aDesignFinding()];
+    const state = aRunBlockedByDesignReview({ outstanding });
+    await new GitRemoteRunStore(await cloneOf()).save(state);
+
+    const status = (await statusIn(await cloneOf(), ['git-remote'], state.runId)).unwrap();
+
+    expect(status.documents).toEqual([]);
+    expect(status.state).toEqual(state);
+    for (const finding of outstanding) expect(status.state.blockedReason).toContain(finding.id);
   });
 
   it('refuses a run that no configured store holds', async () => {

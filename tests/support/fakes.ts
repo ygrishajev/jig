@@ -1,3 +1,4 @@
+import { faker } from '@faker-js/faker';
 import { Result } from 'better-result';
 import { execa } from 'execa';
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -14,6 +15,7 @@ import {
 import type { RunEvent } from '../../src/domain/events.js';
 import type { RunId } from '../../src/domain/run-id.js';
 import type { RunState } from '../../src/domain/run-state.js';
+import type { TokenUsage } from '../../src/domain/usage.js';
 import type {
   AgentRole,
   AgentRunInput,
@@ -22,6 +24,7 @@ import type {
 } from '../../src/ports/agent-session.js';
 import type { Clock, EventSink } from '../../src/ports/observability.js';
 import type { RunStore } from '../../src/ports/run-store.js';
+import { tokenUsage } from './builders.js';
 
 /**
  * What the fake agent does for one call: write files into the worktree, return structured output,
@@ -37,11 +40,20 @@ export interface AgentCall extends AgentRunInput {
   kind: 'run' | 'runForOutput';
 }
 
+/** What one agent call cost, as the real session reports it from the agent's stream. */
+export interface AgentUsage {
+  role: AgentRole;
+  costUsd: number;
+  tokens: TokenUsage;
+}
+
 /** Plays scripted turns per role, in order, the way a real agent working in `worktreePath` would. */
 export class FakeAgentSession implements AgentSession {
   readonly calls: AgentCall[] = [];
   readonly commands: string[] = [];
+  readonly usage: AgentUsage[] = [];
   private readonly queues = new Map<AgentRole, AgentScript[]>();
+  private usageReport?: { events: EventSink; runId: RunId };
 
   constructor(
     private readonly sandboxPath: string,
@@ -56,6 +68,12 @@ export class FakeAgentSession implements AgentSession {
 
   script(role: AgentRole, ...turns: AgentScript[]) {
     this.queues.set(role, [...(this.queues.get(role) ?? []), ...turns]);
+    return this;
+  }
+
+  /** Publishes each call's usage on `events`, the way the real session does for its run. */
+  reportUsageTo(events: EventSink, runId: RunId) {
+    this.usageReport = { events, runId };
     return this;
   }
 
@@ -122,7 +140,23 @@ export class FakeAgentSession implements AgentSession {
   private nextTurn(role: AgentRole) {
     const turn = this.queues.get(role)?.shift();
     if (!turn) throw new Error(`The fake agent has no turn scripted for ${role}`);
+    this.reportUsage(role);
     return turn;
+  }
+
+  private reportUsage(role: AgentRole) {
+    if (!this.usageReport) return;
+    const usage = {
+      role,
+      costUsd: faker.number.float({ max: 2, fractionDigits: 2 }),
+      tokens: tokenUsage(),
+    };
+    this.usage.push(usage);
+    this.usageReport.events.publish({
+      type: 'agentUsage',
+      runId: this.usageReport.runId,
+      ...usage,
+    });
   }
 
   private async work(turn: {

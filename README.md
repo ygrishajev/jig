@@ -153,9 +153,16 @@ resuming.
   uses and falls back to `load`, and whatever a module store returns is checked as a run. Everything else in `.jig/<id>/state/` is this machine's own
   record of the invocations it ran and is never pushed.
 - `.jig/<id>/state/result.json`: `status`, `complete`, `blockedReason`, and `metrics`
-  (cost, tokens, durations, review rounds). It is written, with `design.md`, `plan.md` and
-  `PR_DESCRIPTION.md` (whose footer is the same summary), each time `jig run` stops;
-  `metrics.jsonl` has one line per step and agent call.
+  (cost, tokens, durations, review rounds). It is written, with `design.md`, `plan.md`,
+  `design-review.md` and `PR_DESCRIPTION.md` (whose footer is the same summary), each time
+  `jig run` stops; `metrics.jsonl` has one line per step and agent call, the design reviewer's
+  and planner's included.
+- `design.md` and `plan.md` are the current documents, revised if the design review asked for
+  it. `design-review.md` shows how far the review got, each review's findings with their
+  evidence and uncertainty, the planner's dispositions, the documents as first reviewed, and
+  the decisions left for the operator; a review still pending never reads as approved. A run
+  the review blocked names its unresolved findings in `blockedReason`, which `jig status`
+  shows from the saved run on any machine, even one without these files.
 - `JIG_IMAGE_CACHE=gha` builds through buildx with the GitHub Actions cache.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` exports the run as an OpenTelemetry trace and turns on
   Claude Code's own telemetry in the sandbox. Every `OTEL_*` variable goes into the sandbox

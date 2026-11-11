@@ -11,23 +11,32 @@ import { mock } from 'vitest-mock-extended';
 import {
   aDescription,
   approval,
+  designApproval,
+  designFindings,
+  designRevision,
   fulfillment,
   scriptPlanning,
   scriptWholeRun,
 } from '../../tests/support/agent-scripts.js';
 import {
+  aContext,
+  aDesignFinding,
+  aDisposition,
+  aFeaturePlan,
   aPlannedSlice,
   aRunState,
+  designDocs,
   everyStepOn,
   implementingPlanSteps,
   runId,
 } from '../../tests/support/builders.js';
-import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { DOCKERFILE, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
@@ -40,6 +49,8 @@ import {
   loadConfig,
   validationWarnings,
 } from '../config/load-config.js';
+import { designReviewStage } from '../domain/design-review.js';
+import { designReviewReport } from '../domain/design-review-report.js';
 import {
   ConfigInvalid,
   ImageBuildFailed,
@@ -50,10 +61,11 @@ import {
   SetupCommandFailed,
 } from '../domain/errors.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
-import { runBranchFor } from '../domain/run-state.js';
+import { runBranchFor, type RunPhase } from '../domain/run-state.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import { createAppContainer } from './container.js';
 import { runJig } from './run-jig.js';
+import { readRunStatus } from './run-status.js';
 
 /** TEST-NET-1: routable nowhere, so an exporter aimed at it waits out its timeout. */
 const UNREACHABLE_COLLECTOR = 'http://192.0.2.1:4318';
@@ -328,6 +340,106 @@ describe('runJig', () => {
     expect(warnings()).toEqual([]);
   });
 
+  it('exports the approved design review beside the design and plan it approved', async () => {
+    const { app, writeRequest, agentFor, repo } = await setup();
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+
+    const { state } = (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
+
+    expect(designReviewStage(state)).toBe('approved');
+    expect(await readDocument(repo.dir, id, 'design-review.md')).toBe(designReviewReport(state));
+    expect(await readDocument(repo.dir, id, 'design.md')).toBe(state.docs?.design);
+  });
+
+  it('pauses at the checkpoint with the revised documents exported and the originals in the report', async () => {
+    const { app, writeRequest, agentFor, repo } = await setup({
+      config: { designGate: 'checkpoint' },
+    });
+    const id = runId();
+    const agent = agentFor(id);
+    const { written, revised } = scriptRevisedDesign(agent, designApproval());
+    agent.script('planner', {
+      output: [aPlannedSlice({ description: implementingPlanSteps(1) })],
+    });
+
+    const report = (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
+
+    expect(report).toMatchObject({ status: 'halted', state: { phase: 'paused' } });
+    expect(designReviewStage(report.state)).toBe('approved');
+    expect(await readDocument(repo.dir, id, 'design.md')).toBe(revised.design);
+    expect(await readDocument(repo.dir, id, 'plan.md')).toBe(revised.plan);
+    const exported = await readDocument(repo.dir, id, 'design-review.md');
+    expect(exported).toBe(designReviewReport(report.state));
+    expect(exported).toContain(written.design);
+    expect(report.state.designReview?.revision?.reviewedDocs).toEqual(written);
+  });
+
+  it('blocks on findings left after the revision, naming them in the result, the report and the status', async () => {
+    const { app, writeRequest, agentFor, repo } = await setup();
+    const id = runId();
+    const outstanding = aDesignFinding({ resolution: 'operatorDecision' });
+    scriptRevisedDesign(agentFor(id), designFindings(outstanding));
+
+    const report = (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
+
+    expect(report).toMatchObject({ status: 'blocked', state: { phase: 'resolvingDesign' } });
+    expect((await readResult(repo.dir, id)).blockedReason).toContain(outstanding.id);
+    const exported = await readDocument(repo.dir, id, 'design-review.md');
+    expect(exported).toBe(designReviewReport(report.state));
+    for (const evidence of outstanding.evidence) expect(exported).toContain(evidence);
+    const status = (await readRunStatus(app, id)).unwrap();
+    expect(status.state.blockedReason).toContain(outstanding.id);
+    expect(status.documents.map((document) => document.name)).toContain('design-review.md');
+  });
+
+  it('keeps the review done so far when the re-review reply is invalid, without reading as approved', async () => {
+    const { app, writeRequest, agentFor, repo } = await setup();
+    const id = runId();
+    const malformed = { output: { verdict: faker.lorem.word() } };
+    const { finding, revised } = scriptRevisedDesign(agentFor(id), malformed, malformed, malformed);
+
+    const report = (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
+
+    expect(report).toMatchObject({ status: 'blocked', state: { phase: 'reviewingDesign' } });
+    expect(designReviewStage(report.state)).toBe('awaitingReReview');
+    const exported = await readDocument(repo.dir, id, 'design-review.md');
+    expect(exported).toBe(designReviewReport(report.state));
+    expect(exported).toContain(finding.failureScenario);
+    expect(await readDocument(repo.dir, id, 'design.md')).toBe(revised.design);
+  });
+
+  it("counts the design reviewer's and planner's calls and steps in the run's metrics", async () => {
+    const { app, writeRequest, agentFor, repo } = await setup();
+    const id = runId();
+    const agent = agentFor(id);
+    scriptRevisedDesign(agent, designFindings(aDesignFinding()));
+
+    (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
+
+    const records = unwrap(new MetricsLog(repo.dir, id).readAll());
+    const rolesCalledIn = (phase: RunPhase) =>
+      records.flatMap((record) =>
+        record.kind === 'agentCall' && record.location?.phase === phase ? [record.role] : [],
+      );
+    expect(rolesCalledIn('reviewingDesign')).toEqual(['reviewer', 'reviewer']);
+    expect(rolesCalledIn('revisingDesign')).toEqual(['planner']);
+    const steps = records.filter((record) => record.kind === 'step');
+    expect(steps.map((step) => step.location.phase)).toEqual([
+      'context',
+      'planning',
+      'designing',
+      'reviewingDesign',
+      'revisingDesign',
+      'reviewingDesign',
+    ]);
+    const { metrics } = await readResult(repo.dir, id);
+    expect(metrics.agentCalls).toBe(agent.usage.length);
+    expect(metrics.tokens.input).toBe(sum(agent.usage.map((usage) => usage.tokens.input)));
+    expect(metrics.costUsd).toBeCloseTo(sum(agent.usage.map((usage) => usage.costUsd)));
+    expect(metrics.durationMs).toBe(sum(steps.map((step) => step.durationMs)));
+  });
+
   async function setup(
     options: {
       managedImage?: boolean;
@@ -390,7 +502,7 @@ describe('runJig', () => {
       settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),
       logger: asValue(logger),
       images: asValue(images),
-      openSession: asValue(async ({ run }: OpenSessionInput) => {
+      openSession: asValue(async ({ run, events }: OpenSessionInput) => {
         sessionsOpened++;
         const failure = sessionFailures.shift();
         if (failure) return Result.err(failure);
@@ -401,7 +513,7 @@ describe('runJig', () => {
         holding?.opened();
         await holding?.released;
         await openRunWorktree({ repoRoot: repo.dir, ...run });
-        return Result.ok(agent);
+        return Result.ok(agent.reportUsageTo(events, run.runId));
       }),
     });
     const writeRequest = async () => {
@@ -439,6 +551,33 @@ function scriptTwoSliceRun(agent: FakeAgentSession) {
 async function runBranchCommits(repoRoot: string, id: RunId) {
   const log = await simpleGit({ baseDir: repoRoot }).log([`main..${runBranchFor(id)}`]);
   return log.all.map((commit) => commit.hash);
+}
+
+/**
+ * Scripts a design that the first review finds a problem with, the planner's revision of it, and
+ * then `reReview` — each scripted reply to the re-review in turn.
+ */
+function scriptRevisedDesign(agent: FakeAgentSession, ...reReview: AgentScript[]) {
+  const written = designDocs();
+  const revised = designDocs();
+  const finding = aDesignFinding();
+  agent.script(
+    'planner',
+    { output: aContext() },
+    { output: aFeaturePlan() },
+    { output: written },
+    designRevision(revised, [aDisposition(finding)]),
+  );
+  agent.script('reviewer', designFindings(finding), ...reReview);
+  return { written, revised, finding };
+}
+
+async function readDocument(repoRoot: string, id: RunId, name: string) {
+  return readFile(path.join(stateDirectory(repoRoot, id), name), 'utf-8');
+}
+
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + value, 0);
 }
 
 async function readResult(repoRoot: string, id: RunId) {

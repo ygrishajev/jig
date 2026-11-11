@@ -8,6 +8,7 @@ import {
   aDisposition,
   aFirstDesignReview,
   aRevisedDesignReview,
+  aRevisionAwaitingReReview,
   aRunState,
   designDocs,
 } from '../../tests/support/builders.js';
@@ -15,14 +16,17 @@ import {
   designApproved,
   designNeedsRevision,
   designReReview,
+  type DesignReviewProgress,
   designReviewProgressSchema,
   designReviewSchema,
+  designReviewStage,
   designRevisionSchemaFor,
   recordDesignReview,
   recordDesignRevision,
   resolveDesignReview,
 } from './design-review.js';
 import { DesignUnresolved } from './errors.js';
+import type { RunPhase } from './run-state.js';
 
 describe('designReviewSchema', () => {
   it('accepts findings that each carry evidence and a distinct id', () => {
@@ -211,5 +215,33 @@ describe('resolveDesignReview', () => {
     const resolved = resolveDesignReview(progress);
 
     expect(resolved.isErr() && resolved.error.findingIds).toEqual([introduced.id]);
+  });
+});
+
+describe('designReviewStage', () => {
+  it('reports a design awaiting its first review as pending, never approved', () => {
+    expect(designReviewStage(aRunState({ phase: 'reviewingDesign' }))).toBe('awaitingReview');
+  });
+
+  it('follows the review through its revision and re-review', () => {
+    const stageOf = (designReview: DesignReviewProgress, phase: RunPhase) =>
+      designReviewStage(aRunState({ phase, designReview }));
+
+    expect(stageOf(aFirstDesignReview(), 'revisingDesign')).toBe('awaitingRevision');
+    expect(stageOf(aRevisionAwaitingReReview(), 'reviewingDesign')).toBe('awaitingReReview');
+    expect(stageOf(aRevisedDesignReview(), 'resolvingDesign')).toBe('unresolved');
+  });
+
+  it('approves a design whose latest review found nothing, first time or after the revision', () => {
+    const stageOf = (designReview: DesignReviewProgress) =>
+      designReviewStage(aRunState({ phase: 'slicing', designReview }));
+
+    expect(stageOf({ reviews: [{ findings: [] }] })).toBe('approved');
+    expect(stageOf(aRevisedDesignReview({ outstanding: [] }))).toBe('approved');
+  });
+
+  it('has no stage for a run before its design, or one saved before design reviews existed', () => {
+    expect(designReviewStage(aRunState({ phase: 'designing' }))).toBeUndefined();
+    expect(designReviewStage(aRunState({ phase: 'slices' }))).toBeUndefined();
   });
 });
