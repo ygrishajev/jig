@@ -1,6 +1,8 @@
 import { panic } from 'better-result';
 import { z } from 'zod';
 
+import { designDocsSchema } from './design-docs.js';
+import { designReviewProgressSchema } from './design-review.js';
 import { type RunId, runIdSchema } from './run-id.js';
 import { type Slice, sliceSchema, slicesInOrder } from './slice.js';
 
@@ -38,10 +40,6 @@ export const featurePlanSchema = z.object({
 
 export type FeaturePlan = z.infer<typeof featurePlanSchema>;
 
-export const designDocsSchema = z.object({ design: z.string().min(1), plan: z.string().min(1) });
-
-export type DesignDocs = z.infer<typeof designDocsSchema>;
-
 /** What the run's whole-request final check decided, recorded as each check completes. */
 export const finalCheckResultSchema = z.object({
   verified: z.boolean(),
@@ -67,6 +65,7 @@ const runFields = z.object({
   context: runContextSchema.optional(),
   plan: featurePlanSchema.optional(),
   docs: designDocsSchema.optional(),
+  designReview: designReviewProgressSchema.optional(),
   slices: z.array(sliceSchema),
   finalCheck: finalCheckResultSchema.optional(),
   prDescription: z.string().optional(),
@@ -78,6 +77,9 @@ export const runPhaseSchema = z.enum([
   'context',
   'planning',
   'designing',
+  'reviewingDesign',
+  'revisingDesign',
+  'resolvingDesign',
   'slicing',
   'gate',
   'paused',
@@ -98,6 +100,8 @@ const withPlan = withContext.extend({ plan: featurePlanSchema });
 
 const withDocs = withPlan.extend({ docs: designDocsSchema });
 
+const withDesignReview = withDocs.extend({ designReview: designReviewProgressSchema });
+
 const withDescription = withDocs.extend({ prDescription: z.string() });
 
 /**
@@ -108,6 +112,10 @@ export const runStateSchema = z.discriminatedUnion('phase', [
   runFields.extend({ phase: runPhaseSchema.extract(['context']) }),
   withContext.extend({ phase: runPhaseSchema.extract(['planning']) }),
   withPlan.extend({ phase: runPhaseSchema.extract(['designing']) }),
+  withDocs.extend({ phase: runPhaseSchema.extract(['reviewingDesign']) }),
+  withDesignReview.extend({
+    phase: runPhaseSchema.extract(['revisingDesign', 'resolvingDesign']),
+  }),
   withDocs.extend({
     phase: runPhaseSchema.extract([
       'slicing',

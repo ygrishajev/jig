@@ -1,5 +1,6 @@
 import { panic } from 'better-result';
 
+import { recordDesignReview, recordDesignRevision } from './design-review.js';
 import { recordFinalCheck } from './final-check.js';
 import type { Outcome } from './outcome.js';
 import { currentSlice, type RunState } from './run-state.js';
@@ -11,13 +12,12 @@ import { type Slice, sliceFromPlan } from './slice.js';
  */
 export function applyOutcome(state: RunState, outcome: Outcome): RunState {
   if (isSendBack(outcome)) return sendSliceBack(state, outcome);
+  if (isDesignOutcome(outcome)) return applyDesignOutcome(state, outcome);
   switch (outcome.type) {
     case 'contextBuilt':
       return { ...state, context: outcome.context };
     case 'featurePlanned':
       return { ...state, plan: outcome.plan };
-    case 'designWritten':
-      return { ...state, docs: outcome.docs };
     case 'sliced':
       return { ...state, slices: outcome.slices.map(sliceFromPlan) };
     case 'implemented':
@@ -71,4 +71,28 @@ export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Sl
     ...state,
     slices: state.slices.map((slice) => (slice.id === target.id ? update(slice) : slice)),
   };
+}
+
+function isDesignOutcome(outcome: Outcome): outcome is DesignOutcome {
+  return DESIGN_OUTCOME_TYPES.some((type) => type === outcome.type);
+}
+
+/** The outcomes that write, review and revise the design documents before slicing. */
+const DESIGN_OUTCOME_TYPES = [
+  'designWritten',
+  'designReviewed',
+  'designRevised',
+] as const satisfies readonly Outcome['type'][];
+
+type DesignOutcome = Extract<Outcome, { type: (typeof DESIGN_OUTCOME_TYPES)[number] }>;
+
+function applyDesignOutcome(state: RunState, outcome: DesignOutcome): RunState {
+  switch (outcome.type) {
+    case 'designWritten':
+      return { ...state, docs: outcome.docs };
+    case 'designReviewed':
+      return recordDesignReview(state, outcome.review);
+    case 'designRevised':
+      return recordDesignRevision(state, outcome.revision);
+  }
 }

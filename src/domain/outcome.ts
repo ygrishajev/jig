@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-import type { DesignDocs, FeaturePlan, RunContext } from './run-state.js';
+import type { DesignDocs } from './design-docs.js';
+import type { DesignReview, DesignRevision } from './design-review.js';
+import type { FeaturePlan, RunContext } from './run-state.js';
 import type { PlannedSlice } from './slice.js';
 import type { CommitSummary } from './usage.js';
 
@@ -11,6 +13,8 @@ export type Outcome = OfKnownType<
   | { type: 'contextBuilt'; context: RunContext }
   | { type: 'featurePlanned'; plan: FeaturePlan }
   | { type: 'designWritten'; docs: DesignDocs }
+  | { type: 'designReviewed'; review: DesignReview }
+  | { type: 'designRevised'; revision: DesignRevision }
   | { type: 'sliced'; slices: PlannedSlice[] }
   | { type: 'continue' }
   | { type: 'pause' }
@@ -37,6 +41,8 @@ export const outcomeTypeSchema = z.enum([
   'contextBuilt',
   'featurePlanned',
   'designWritten',
+  'designReviewed',
+  'designRevised',
   'sliced',
   'continue',
   'pause',

@@ -3,10 +3,16 @@ import { faker } from '@faker-js/faker';
 import type { StepConfig } from '../../src/config/load-config.js';
 import { type Preset, type PresetName, presetNameSchema } from '../../src/config/presets.js';
 import { byRole } from '../../src/domain/agent-role.js';
+import type { DesignDocs } from '../../src/domain/design-docs.js';
+import type {
+  DesignFinding,
+  DesignReview,
+  DesignReviewProgress,
+  FindingDisposition,
+} from '../../src/domain/design-review.js';
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import {
-  type DesignDocs,
   type FeaturePlan,
   type FinalCheckResult,
   type RunContext,
@@ -111,6 +117,13 @@ export function designDocs({
   return { design, plan };
 }
 
+/** A plan document with a `## Step N — <title>` heading for each of `steps`. */
+export function planWithSteps(...steps: number[]): string {
+  return `# Plan\n\n${steps
+    .map((step) => `## Step ${step} — ${faker.lorem.sentence()}`)
+    .join('\n')}\n`;
+}
+
 /**
  * A run in `phase` with everything that phase guarantees generated, unless given; parsed, so a
  * spec can only build a run the store would load.
@@ -156,8 +169,69 @@ function producedBefore(phase: RunPhase) {
   return {
     ...(reached('planning') ? { context: aContext() } : {}),
     ...(reached('designing') ? { plan: aFeaturePlan() } : {}),
-    ...(reached('slicing') ? { docs: designDocs() } : {}),
+    ...(reached('reviewingDesign') ? { docs: designDocs() } : {}),
+    ...designReviewProducedBefore(phase),
     ...(reached('merging') ? { prDescription: faker.lorem.paragraphs() } : {}),
+  };
+}
+
+function designReviewProducedBefore(phase: RunPhase) {
+  if (phase === 'revisingDesign') return { designReview: aFirstDesignReview() };
+  if (phase === 'resolvingDesign') return { designReview: aRevisedDesignReview() };
+  return {};
+}
+
+export function aDesignFinding({
+  id = sliceId(),
+  concern = faker.lorem.sentence(),
+  failureScenario = faker.lorem.sentence(),
+  evidence = [faker.lorem.sentence()],
+  recommendation = faker.lorem.sentence(),
+  resolution = faker.helpers.arrayElement(['correction', 'operatorDecision'] as const),
+  uncertainty = faker.helpers.arrayElement(['', faker.lorem.sentence()]),
+}: Partial<DesignFinding> = {}): DesignFinding {
+  return { id, concern, failureScenario, evidence, recommendation, resolution, uncertainty };
+}
+
+export function aDesignReview({
+  findings = [aDesignFinding()],
+}: Partial<DesignReview> = {}): DesignReview {
+  return { findings };
+}
+
+/** A disposition for `finding`: addressed by a change, or disputed with evidence. */
+export function aDisposition(
+  finding: DesignFinding,
+  status: FindingDisposition['status'] = faker.helpers.arrayElement(['addressed', 'disputed']),
+): FindingDisposition {
+  return status === 'addressed'
+    ? { findingId: finding.id, status, change: faker.lorem.sentence() }
+    : {
+        findingId: finding.id,
+        status,
+        reasoning: faker.lorem.sentence(),
+        evidence: [faker.lorem.sentence()],
+      };
+}
+
+/** A design review whose first pass found problems, awaiting the planner's revision. */
+export function aFirstDesignReview({
+  findings = [aDesignFinding()],
+}: { findings?: DesignFinding[] } = {}): DesignReviewProgress {
+  return { reviews: [{ findings }] };
+}
+
+/** A design review through its revision and re-review, with `outstanding` left standing. */
+export function aRevisedDesignReview({
+  findings = [aDesignFinding()],
+  outstanding = [aDesignFinding()],
+}: { findings?: DesignFinding[]; outstanding?: DesignFinding[] } = {}): DesignReviewProgress {
+  return {
+    reviews: [{ findings }, { findings: outstanding }],
+    revision: {
+      reviewedDocs: designDocs(),
+      dispositions: findings.map((finding) => aDisposition(finding)),
+    },
   };
 }
 

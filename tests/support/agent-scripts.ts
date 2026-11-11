@@ -1,5 +1,7 @@
 import { faker } from '@faker-js/faker';
 
+import type { DesignDocs } from '../../src/domain/design-docs.js';
+import type { DesignFinding, FindingDisposition } from '../../src/domain/design-review.js';
 import type { PlannedSlice } from '../../src/domain/slice.js';
 import {
   aContext,
@@ -10,7 +12,10 @@ import {
 } from './builders.js';
 import type { FakeAgentSession } from './fakes.js';
 
-/** Scripts the planner's four turns: context, feature plan, design docs, then `slices`. */
+/**
+ * Scripts the planner's four turns — context, feature plan, design docs, then `slices` — and the
+ * reviewer's approval of the design in between.
+ */
 export function scriptPlanning(agent: FakeAgentSession, slices: PlannedSlice[]) {
   agent.script(
     'planner',
@@ -19,6 +24,22 @@ export function scriptPlanning(agent: FakeAgentSession, slices: PlannedSlice[]) 
     { output: designDocs() },
     { output: slices },
   );
+  agent.script('reviewer', designApproval());
+}
+
+/** The design review's verdict: no consequential findings. */
+export function designApproval() {
+  return { output: { findings: [] } };
+}
+
+/** The design review's verdict: these findings stand. */
+export function designFindings(...findings: DesignFinding[]) {
+  return { output: { findings } };
+}
+
+/** The planner's revision: `docs` with one disposition per finding answered. */
+export function designRevision(docs: DesignDocs, dispositions: FindingDisposition[]) {
+  return { output: { ...docs, dispositions } };
 }
 
 /** Scripts a whole run of one slice that is implemented, approved, finally checked and described. */

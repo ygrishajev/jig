@@ -1,3 +1,4 @@
+import { designApproved, designNeedsRevision } from '../domain/design-review.js';
 import { finalCheckFailed, finalCheckNeedsRepair } from '../domain/final-check.js';
 import { stuckSlice } from '../domain/run-state.js';
 import {
@@ -6,6 +7,7 @@ import {
   ruleFixCapReached,
   sliceNeedsVerification,
 } from '../domain/settings.js';
+import { resolveDesign, reviewDesign, reviseDesign } from '../steps/design-review.js';
 import { checkWholeRun } from '../steps/final-check.js';
 import { describePullRequest, mergeRunBranch } from '../steps/finishing.js';
 import {
@@ -17,6 +19,10 @@ import {
 } from '../steps/planning.js';
 import { implementSlice, reviewSlice, verifySlice } from '../steps/slice.js';
 import { defineRunFlow, defineSliceFlow, type Guard } from './define-flow.js';
+
+const designPassedReview: Guard = ({ state }) => designApproved(state);
+
+const designOwesRevision: Guard = ({ state }) => designNeedsRevision(state);
 
 const sliceReachedReviewCap: Guard = ({ slice, settings }) =>
   slice !== undefined && reviewCapReached(slice, settings);
@@ -78,15 +84,28 @@ const someSliceStuck: Guard = ({ state }) => stuckSlice(state) !== undefined;
 const theFinalCheckFailed: Guard = ({ state }) => finalCheckFailed(state);
 
 /**
- * A whole run: plan the work, deliver it slice by slice, check the whole request is fulfilled,
- * describe it, merge it. A stuck slice bypasses the final check; a failed one sends its one
+ * A whole run: plan the work, have the design reviewed — with one revision and one re-review
+ * when the review finds problems, blocking on any left standing — then deliver it slice by
+ * slice, check the whole request is fulfilled, describe it, merge it. A stuck slice bypasses the final check; a failed one sends its one
  * repair back through the slices before the run is described and, still failing, stops for a
  * person — so the feedback reaches whoever picks it up.
  */
 export const runFlow = defineRunFlow({
   context: { step: buildContext, on: { contextBuilt: 'planning' } },
   planning: { step: planFeature, on: { featurePlanned: 'designing' } },
-  designing: { step: writeDesign, on: { designWritten: 'slicing' } },
+  designing: { step: writeDesign, on: { designWritten: 'reviewingDesign' } },
+  reviewingDesign: {
+    step: reviewDesign,
+    on: {
+      designReviewed: [
+        { to: 'slicing', when: designPassedReview },
+        { to: 'revisingDesign', when: designOwesRevision },
+        { to: 'resolvingDesign' },
+      ],
+    },
+  },
+  revisingDesign: { step: reviseDesign, on: { designRevised: 'reviewingDesign' } },
+  resolvingDesign: { step: resolveDesign, on: { continue: 'slicing' } },
   slicing: { step: sliceThePlan, on: { sliced: 'gate' } },
   gate: { step: applyDesignGate, on: { continue: 'slices', pause: 'paused' } },
   paused: { halt: true, resumeAt: 'slices' },

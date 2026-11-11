@@ -11,6 +11,7 @@ import {
   aRunStateIn,
   designDocs,
   implementingPlanSteps,
+  planWithSteps,
   runSettings,
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
@@ -241,11 +242,5 @@ describe('planning steps', () => {
     const checked = checkPlanCoverage(plan, slices);
     if (checked.isOk()) panic('expected the fixture answer to fail the coverage check');
     return checked.error.message;
-  }
-
-  function planWithSteps(...steps: number[]): string {
-    return `# Plan\n\n${steps
-      .map((step) => `## Step ${step} — ${faker.lorem.sentence()}`)
-      .join('\n')}\n`;
   }
 });

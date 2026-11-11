@@ -14,12 +14,21 @@ describe('runStateSchema', () => {
   it.each([
     ['planning', 'context'],
     ['designing', 'plan'],
+    ['reviewingDesign', 'docs'],
+    ['revisingDesign', 'designReview'],
+    ['resolvingDesign', 'designReview'],
     ['describing', 'docs'],
     ['done', 'prDescription'],
   ] as const)('refuses a run saved in %s without its %s', (phase, missing) => {
     const { [missing]: _dropped, ...saved } = aRunState({ phase });
 
     expect(runStateSchema.safeParse(saved).success).toBe(false);
+  });
+
+  it('loads a run saved past planning before design reviews were recorded', () => {
+    const { designReview: _neverSaved, ...saved } = aRunState({ phase: 'paused' });
+
+    expect(runStateSchema.parse(saved)).toEqual(saved);
   });
 
   it('loads a run saved in describing with what the earlier phases produced', () => {

@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import {
   aCommit,
   aContext,
+  aDesignFinding,
+  aDisposition,
   aFeaturePlan,
   anImplementation,
   aPlannedSlice,
@@ -35,6 +37,28 @@ describe('applyOutcome', () => {
     state = applyOutcome(state, { type: 'designWritten', docs });
 
     expect(state).toMatchObject({ context, plan, docs });
+  });
+
+  it('folds the design review, the revision and the re-review into one record of the cycle', () => {
+    const reviewedDocs = designDocs();
+    const revisedDocs = designDocs();
+    const findings = [aDesignFinding(), aDesignFinding()];
+    const dispositions = findings.map((finding) => aDisposition(finding));
+    const outstanding = [aDesignFinding()];
+
+    let state = aRunState({ phase: 'reviewingDesign', docs: reviewedDocs });
+    state = applyOutcome(state, { type: 'designReviewed', review: { findings } });
+    state = applyOutcome(state, {
+      type: 'designRevised',
+      revision: { ...revisedDocs, dispositions },
+    });
+    state = applyOutcome(state, { type: 'designReviewed', review: { findings: outstanding } });
+
+    expect(state.docs).toEqual(revisedDocs);
+    expect(state.designReview).toEqual({
+      reviews: [{ findings }, { findings: outstanding }],
+      revision: { reviewedDocs, dispositions },
+    });
   });
 
   it('turns planned slices into pending slices in the order they were planned', () => {

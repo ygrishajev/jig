@@ -1,11 +1,12 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
+import { designDocsSchema } from '../domain/design-docs.js';
 import { AgentOutputInvalid, type AgentRunFailed, PlanNotCovered } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import { checkPlanCoverage } from '../domain/plan-coverage.js';
 import { retryResult } from '../domain/retry.js';
-import { designDocsSchema, featurePlanSchema, runContextSchema } from '../domain/run-state.js';
+import { featurePlanSchema, runContextSchema } from '../domain/run-state.js';
 import { type PlannedSlice, plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
 import {

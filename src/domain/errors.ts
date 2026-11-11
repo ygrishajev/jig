@@ -10,6 +10,7 @@ export type JigError =
   | AgentRunFailed
   | AgentOutputInvalid
   | PlanNotCovered
+  | DesignUnresolved
   | RemoteUnavailable
   | SandboxUnavailable
   | SetupCommandFailed
@@ -63,6 +64,17 @@ export class AgentOutputInvalid extends TaggedError('AgentOutputInvalid')<{ mess
  */
 export class PlanNotCovered extends TaggedError('PlanNotCovered')<{ message: string }> {
   readonly kind = 'retry' as const;
+}
+
+/**
+ * The design still carries consequential findings after the planner's one revision and its
+ * re-review. Only the operator can settle them, so the run stops before any slice is written.
+ */
+export class DesignUnresolved extends TaggedError('DesignUnresolved')<{
+  message: string;
+  findingIds: string[];
+}> {
+  readonly kind = 'block' as const;
 }
 
 /** A fetch or push to the remote failed; the network may well be back on the next attempt. */
@@ -178,6 +190,7 @@ const jigErrorClasses = [
   AgentRunFailed,
   AgentOutputInvalid,
   PlanNotCovered,
+  DesignUnresolved,
   RemoteUnavailable,
   SandboxUnavailable,
   SetupCommandFailed,
