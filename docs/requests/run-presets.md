@@ -55,6 +55,7 @@ What exists today:
 
    The home directory and `XDG_CONFIG_HOME` are read at the edge (`src/cli/with-app.ts` already
    receives `environment`), not deep inside the config module.
+
 3. **A preset overrides only the steps it names.** Load the base config as today
    (`jig.config.json`, or the `--config` file), then replace each step the preset names. Every
    other key comes from the base config. The config module owns this merge, in a new file
@@ -80,19 +81,20 @@ What exists today:
    section explains presets, the two directories, and `cp examples/presets/*.json ~/.config/jig/presets/`.
    The starters, verbatim:
 
-   | File | description | planner | implementer | reviewer | describer |
-   |---|---|---|---|---|---|
-   | `full-power.json` | Subscriptions: best quality, spends Claude most | codex `gpt-6-astra` | claude `opus` | codex `gpt-6.1-sol` | claude `haiku` |
-   | `full-power-codex.json` | Subscriptions: best quality, spends Codex most | claude `opus` | codex `gpt-6.1-sol` | claude `opus` | codex `gpt-6-luna` |
-   | `long-claude.json` | Subscriptions: many slices, Sonnet stretches the Claude window | claude `opus` | claude `sonnet` | codex `gpt-6.1-sol` | claude `haiku` |
-   | `codex-only.json` | Claude is out of limits | codex `gpt-6-astra` | codex `gpt-6.1-sol` | codex `gpt-6-astra` | codex `gpt-6-luna` |
-   | `claude-only.json` | Codex is out of limits | claude `opus` | claude `sonnet` | claude `opus` | claude `haiku` |
-   | `cheap-volume.json` | Pay-per-token: open-weight implementer, strong reviewer | codex `gpt-6.1-sol` | opencode `openrouter/z-ai/glm-5.3` | claude `opus` | opencode `openrouter/deepseek/deepseek-v4.1-flash` |
-   | `open-weight.json` | Both subscriptions are out; simpler requests only | opencode `openrouter/moonshotai/kimi-k3` | opencode `openrouter/z-ai/glm-5.3` | opencode `openrouter/deepseek/deepseek-v4-pro` | opencode `openrouter/deepseek/deepseek-v4.1-flash` |
+   | File                    | description                                                    | planner                                  | implementer                        | reviewer                                       | describer                                          |
+   | ----------------------- | -------------------------------------------------------------- | ---------------------------------------- | ---------------------------------- | ---------------------------------------------- | -------------------------------------------------- |
+   | `full-power.json`       | Subscriptions: best quality, spends Claude most                | codex `gpt-6-astra`                      | claude `opus`                      | codex `gpt-6.1-sol`                            | claude `haiku`                                     |
+   | `full-power-codex.json` | Subscriptions: best quality, spends Codex most                 | claude `opus`                            | codex `gpt-6.1-sol`                | claude `opus`                                  | codex `gpt-6-luna`                                 |
+   | `long-claude.json`      | Subscriptions: many slices, Sonnet stretches the Claude window | claude `opus`                            | claude `sonnet`                    | codex `gpt-6.1-sol`                            | claude `haiku`                                     |
+   | `codex-only.json`       | Claude is out of limits                                        | codex `gpt-6-astra`                      | codex `gpt-6.1-sol`                | codex `gpt-6-astra`                            | codex `gpt-6-luna`                                 |
+   | `claude-only.json`      | Codex is out of limits                                         | claude `opus`                            | claude `sonnet`                    | claude `opus`                                  | claude `haiku`                                     |
+   | `cheap-volume.json`     | Pay-per-token: open-weight implementer, strong reviewer        | codex `gpt-6.1-sol`                      | opencode `openrouter/z-ai/glm-5.3` | claude `opus`                                  | opencode `openrouter/deepseek/deepseek-v4.1-flash` |
+   | `open-weight.json`      | Both subscriptions are out; simpler requests only              | opencode `openrouter/moonshotai/kimi-k3` | opencode `openrouter/z-ai/glm-5.3` | opencode `openrouter/deepseek/deepseek-v4-pro` | opencode `openrouter/deepseek/deepseek-v4.1-flash` |
 
    The OpenRouter model ids were not checked against OpenRouter's live listing; check each one
    and correct it in the file if the id differs, and say so in the PR. Note in the README that
    `gpt-6-astra` may not be in every Codex plan and `gpt-6.1-sol` is its stand-in.
+
 7. **This repository uses it too.** `jig.config.json` at the root keeps the project keys and the
    default agents (`full-power`'s steps). Delete `jig.config.glm-impl.json` from the root if it
    exists; its setup is covered by `cheap-volume.json`.

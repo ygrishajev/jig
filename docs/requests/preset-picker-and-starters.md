@@ -78,18 +78,18 @@ How presets work today:
 - The starters, verbatim (`provider` then `model`; OpenRouter ids were checked against
   OpenRouter's live model list on 2026-11-11):
 
-| File | description | planner | implementer | reviewer | describer |
-|---|---|---|---|---|---|
-| `full-power.json` | Subscriptions: best quality, spends Claude most | codex `gpt-6-astra` | claude `opus` | codex `gpt-6.1-sol` | claude `haiku` |
-| `full-power-codex.json` | Subscriptions: best quality, spends Codex most | claude `opus` | codex `gpt-6.1-sol` | claude `opus` | codex `gpt-6-luna` |
-| `long-claude.json` | Subscriptions: many slices, Sonnet stretches the Claude window | claude `opus` | claude `sonnet` | codex `gpt-6.1-sol` | claude `haiku` |
-| `codex-only.json` | Claude is out of limits | codex `gpt-6-astra` | codex `gpt-6.1-sol` | codex `gpt-6-astra` | codex `gpt-6-luna` |
-| `claude-only.json` | Codex is out of limits | claude `opus` | claude `sonnet` | claude `opus` | claude `haiku` |
-| `cheap-volume.json` | Pay-per-token: open-weight implementer, strong reviewer | codex `gpt-6.1-sol` | opencode `openrouter/z-ai/glm-5.3` | claude `opus` | opencode `openrouter/deepseek/deepseek-v4.1-flash` |
-| `open-weight.json` | Both subscriptions are out; simpler requests only | opencode `openrouter/moonshotai/kimi-k3` | opencode `openrouter/z-ai/glm-5.3` | opencode `openrouter/deepseek/deepseek-v4-pro` | opencode `openrouter/deepseek/deepseek-v4.1-flash` |
+| File                    | description                                                    | planner                                  | implementer                        | reviewer                                       | describer                                          |
+| ----------------------- | -------------------------------------------------------------- | ---------------------------------------- | ---------------------------------- | ---------------------------------------------- | -------------------------------------------------- |
+| `full-power.json`       | Subscriptions: best quality, spends Claude most                | codex `gpt-6-astra`                      | claude `opus`                      | codex `gpt-6.1-sol`                            | claude `haiku`                                     |
+| `full-power-codex.json` | Subscriptions: best quality, spends Codex most                 | claude `opus`                            | codex `gpt-6.1-sol`                | claude `opus`                                  | codex `gpt-6-luna`                                 |
+| `long-claude.json`      | Subscriptions: many slices, Sonnet stretches the Claude window | claude `opus`                            | claude `sonnet`                    | codex `gpt-6.1-sol`                            | claude `haiku`                                     |
+| `codex-only.json`       | Claude is out of limits                                        | codex `gpt-6-astra`                      | codex `gpt-6.1-sol`                | codex `gpt-6-astra`                            | codex `gpt-6-luna`                                 |
+| `claude-only.json`      | Codex is out of limits                                         | claude `opus`                            | claude `sonnet`                    | claude `opus`                                  | claude `haiku`                                     |
+| `cheap-volume.json`     | Pay-per-token: open-weight implementer, strong reviewer        | codex `gpt-6.1-sol`                      | opencode `openrouter/z-ai/glm-5.3` | claude `opus`                                  | opencode `openrouter/deepseek/deepseek-v4.1-flash` |
+| `open-weight.json`      | Both subscriptions are out; simpler requests only              | opencode `openrouter/moonshotai/kimi-k3` | opencode `openrouter/z-ai/glm-5.3` | opencode `openrouter/deepseek/deepseek-v4-pro` | opencode `openrouter/deepseek/deepseek-v4.1-flash` |
 
-  Each file is `{ "description": ..., "planner": { "provider": ..., "model": ... }, ... }` with
-  all four steps.
+Each file is `{ "description": ..., "planner": { "provider": ..., "model": ... }, ... }` with
+all four steps.
 
 ### 3. README
 
