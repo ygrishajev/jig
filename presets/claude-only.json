@@ -1,0 +1,7 @@
+{
+  "description": "Codex is out of limits",
+  "planner": { "provider": "claude", "model": "opus" },
+  "implementer": { "provider": "claude", "model": "sonnet" },
+  "reviewer": { "provider": "claude", "model": "opus" },
+  "describer": { "provider": "claude", "model": "haiku" }
+}

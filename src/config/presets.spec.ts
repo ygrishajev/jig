@@ -1,6 +1,8 @@
 import { faker } from '@faker-js/faker';
+import { readdirSync } from 'node:fs';
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../tests/support/temp-directory.js';
@@ -11,6 +13,7 @@ import {
   configWithPreset,
   discoverPresets,
   loadPreset,
+  type Preset,
   presetDirectories,
   type PresetLocations,
   type PresetName,
@@ -39,13 +42,14 @@ describe('presets', () => {
   });
 
   describe('presetDirectories', () => {
-    it('looks in the repository, then the home directory, then the XDG config directory', async () => {
+    it('looks in the repository, the home directory, the XDG config directory, then the starters', async () => {
       const { locations } = await setup({ xdgConfigHome: 'set' });
 
       expect(presetDirectories(locations)).toEqual([
         { source: 'repository', path: path.join(locations.repoRoot, '.jig', 'presets') },
         { source: 'home', path: path.join(locations.homeDirectory, '.jig', 'presets') },
         { source: 'xdg', path: path.join(locations.xdgConfigHome ?? '', 'jig', 'presets') },
+        { source: 'builtin', path: SHIPPED_PRESETS_DIRECTORY },
       ]);
     });
 
@@ -56,7 +60,7 @@ describe('presets', () => {
 
         const directories = presetDirectories({ ...locations, xdgConfigHome });
 
-        expect(directories.at(-1)).toEqual({
+        expect(directories.find(({ source }) => source === 'xdg')).toEqual({
           source: 'xdg',
           path: path.join(locations.homeDirectory, '.config', 'jig', 'presets'),
         });
@@ -71,15 +75,65 @@ describe('presets', () => {
         repoRoot: `${locations.homeDirectory}${path.sep}`,
       });
 
-      expect(directories.map(({ source }) => source)).toEqual(['repository', 'xdg']);
+      expect(directories.map(({ source }) => source)).toEqual(['repository', 'xdg', 'builtin']);
     });
   });
 
   describe('discoverPresets', () => {
-    it('finds nothing when no preset directory exists', async () => {
+    it('lists every shipped starter as builtin when the operator has no presets', async () => {
       const { locations } = await setup({ xdgConfigHome: 'set' });
 
-      expect(unwrap(discoverPresets(locations))).toEqual([]);
+      const presets = unwrap(discoverPresets(locations));
+
+      expect(presets.map(({ name, source, path }) => ({ name, source, path }))).toEqual(
+        SHIPPED_STARTERS.map((name) => ({
+          name,
+          source: 'builtin',
+          path: path.join(SHIPPED_PRESETS_DIRECTORY, `${name}.json`),
+        })),
+      );
+    });
+
+    it('reads every starter with a description and an agent for each step', async () => {
+      const { locations } = await setup({ xdgConfigHome: 'set' });
+
+      const presets = unwrap(discoverPresets(locations));
+
+      for (const preset of presets) {
+        expect(preset.description).toEqual(expect.any(String));
+        expect(Object.keys(preset.steps).sort()).toEqual([
+          'describer',
+          'implementer',
+          'planner',
+          'reviewer',
+        ]);
+      }
+    });
+
+    it('lists an operator preset in place of the starter of the same name', async () => {
+      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
+      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
+      await writePreset('xdg', starter, { planner: { provider: 'claude' } });
+
+      const presets = unwrap(discoverPresets(locations));
+
+      expect(presets.filter(({ name }) => name === starter).map(({ source }) => source)).toEqual([
+        'xdg',
+      ]);
+      expect(presets).toHaveLength(SHIPPED_STARTERS.length);
+    });
+
+    it('refuses rather than lists the starter when an operator preset of its name is broken', async () => {
+      const { locations, writeRaw } = await setup({ xdgConfigHome: 'set' });
+      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
+      await writeRaw('home', `${starter}.json`, '{ not json');
+
+      const presets = discoverPresets(locations);
+
+      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
+      expect(presets.isErr() && presets.error.message).toContain(
+        path.join(locations.homeDirectory, '.jig', 'presets', `${starter}.json`),
+      );
     });
 
     it('collects presets from every directory with where each came from', async () => {
@@ -89,7 +143,7 @@ describe('presets', () => {
       await writePreset('home', 'alpha', { description, reviewer: { provider: 'claude', model } });
       await writePreset('xdg', 'beta', { planner: { provider: 'codex' } });
 
-      const presets = unwrap(discoverPresets(locations));
+      const presets = operatorPresets(unwrap(discoverPresets(locations)));
 
       expect(presets).toEqual([
         {
@@ -115,7 +169,7 @@ describe('presets', () => {
       await writePreset('repository', 'shared', { implementer: { provider: 'claude', model } });
       await writeRaw('home', 'shared.json', '{ not json');
 
-      const presets = unwrap(discoverPresets(locations));
+      const presets = operatorPresets(unwrap(discoverPresets(locations)));
 
       expect(presets.map(({ name, source }) => ({ name, source }))).toEqual([
         { name: 'shared', source: 'repository' },
@@ -142,7 +196,7 @@ describe('presets', () => {
       await writeRaw('repository', 'notes.md', faker.lorem.paragraph());
       await writeRaw('repository', 'Not Safe.json', '{ not json');
 
-      const presets = unwrap(discoverPresets(locations));
+      const presets = operatorPresets(unwrap(discoverPresets(locations)));
 
       expect(presets.map(({ name }) => name)).toEqual(['kept']);
     });
@@ -201,6 +255,44 @@ describe('presets', () => {
   });
 
   describe('loadPreset', () => {
+    it('loads a starter by name from the package', async () => {
+      const { locations } = await setup({ xdgConfigHome: 'set' });
+      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
+
+      const preset = unwrap(loadPreset(locations, starter));
+
+      expect(preset).toMatchObject({
+        name: starter,
+        source: 'builtin',
+        path: path.join(SHIPPED_PRESETS_DIRECTORY, `${starter}.json`),
+      });
+    });
+
+    it('takes an operator preset over the starter of the same name', async () => {
+      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
+      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
+      const model = faker.word.noun();
+      await writePreset('xdg', starter, { reviewer: { provider: 'claude', model } });
+
+      const preset = unwrap(loadPreset(locations, starter));
+
+      expect(preset.source).toBe('xdg');
+      expect(preset.steps).toEqual({ reviewer: { provider: 'claude', model } });
+    });
+
+    it('refuses rather than falls back to the starter when an operator preset of its name is invalid', async () => {
+      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
+      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
+      await writePreset('repository', starter, { planner: { provider: 'nobody' } });
+
+      const preset = loadPreset(locations, starter);
+
+      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
+      expect(preset.isErr() && preset.error.message).toContain(
+        path.join(locations.repoRoot, '.jig', 'presets', `${starter}.json`),
+      );
+    });
+
     it('keeps a dangling repository preset winning over the home one of the same name', async () => {
       const { locations, writePreset, linkDangling } = await setup({ xdgConfigHome: 'set' });
       await writePreset('home', 'shared', { planner: { provider: 'claude' } });
@@ -444,3 +536,14 @@ describe('presets', () => {
 function presetName(name: string): PresetName {
   return presetNameSchema.parse(name);
 }
+
+function operatorPresets(presets: Preset[]): Preset[] {
+  return presets.filter(({ source }) => source !== 'builtin');
+}
+
+/** Read from the repository's own `presets/`, not through the module, so the spec checks where the module looks. */
+const SHIPPED_PRESETS_DIRECTORY = fileURLToPath(new URL('../../presets', import.meta.url));
+
+const SHIPPED_STARTERS = readdirSync(SHIPPED_PRESETS_DIRECTORY)
+  .map((entry) => presetName(path.basename(entry, '.json')))
+  .sort();

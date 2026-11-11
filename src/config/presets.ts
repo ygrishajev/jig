@@ -1,6 +1,7 @@
 import { Result } from 'better-result';
 import { lstatSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { JIG_DIR } from '../adapters/local-store/run-paths.js';
@@ -136,11 +137,15 @@ function directoryPaths({
     repository: path.join(repoRoot, JIG_DIR, 'presets'),
     home: path.join(homeDirectory, JIG_DIR, 'presets'),
     xdg: path.join(xdgRoot, 'jig', 'presets'),
+    builtin: BUILTIN_PRESETS_DIRECTORY,
   };
 }
 
+/** The starters ship in the package's `presets/`, two levels up from both `src/config/` and `dist/config/`. */
+const BUILTIN_PRESETS_DIRECTORY = fileURLToPath(new URL('../../presets', import.meta.url));
+
 /** Where presets are looked for, highest precedence first: a name found earlier shadows the rest. */
-export const PRESET_SOURCES = ['repository', 'home', 'xdg'] as const;
+export const PRESET_SOURCES = ['repository', 'home', 'xdg', 'builtin'] as const;
 export type PresetSource = (typeof PRESET_SOURCES)[number];
 
 function readPreset(file: PresetFile): Result<Preset, ConfigInvalid> {

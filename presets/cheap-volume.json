@@ -1,0 +1,7 @@
+{
+  "description": "Pay-per-token: open-weight implementer, strong reviewer",
+  "planner": { "provider": "codex", "model": "gpt-6.1-sol" },
+  "implementer": { "provider": "opencode", "model": "openrouter/z-ai/glm-5.3" },
+  "reviewer": { "provider": "claude", "model": "opus" },
+  "describer": { "provider": "opencode", "model": "openrouter/deepseek/deepseek-v4.1-flash" }
+}

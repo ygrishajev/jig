@@ -1,0 +1,7 @@
+{
+  "description": "Subscriptions: best quality, spends Claude most",
+  "planner": { "provider": "codex", "model": "gpt-6-astra" },
+  "implementer": { "provider": "claude", "model": "opus" },
+  "reviewer": { "provider": "codex", "model": "gpt-6.1-sol" },
+  "describer": { "provider": "claude", "model": "haiku" }
+}

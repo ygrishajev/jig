@@ -1,7 +1,12 @@
 import { faker } from '@faker-js/faker';
 
 import type { StepConfig } from '../../src/config/load-config.js';
-import { type Preset, type PresetName, presetNameSchema } from '../../src/config/presets.js';
+import {
+  type Preset,
+  PRESET_SOURCES,
+  type PresetName,
+  presetNameSchema,
+} from '../../src/config/presets.js';
 import { byRole } from '../../src/domain/agent-role.js';
 import type { DesignDocs } from '../../src/domain/design-docs.js';
 import {
@@ -338,7 +343,7 @@ export function presetName(): PresetName {
 
 export function aPreset({
   name = presetName(),
-  source = faker.helpers.arrayElement(['repository', 'home', 'xdg'] as const),
+  source = faker.helpers.arrayElement(PRESET_SOURCES),
   path = faker.system.filePath(),
   description,
   steps = {},

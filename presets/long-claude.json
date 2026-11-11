@@ -1,0 +1,7 @@
+{
+  "description": "Subscriptions: many slices, Sonnet stretches the Claude window",
+  "planner": { "provider": "claude", "model": "opus" },
+  "implementer": { "provider": "claude", "model": "sonnet" },
+  "reviewer": { "provider": "codex", "model": "gpt-6.1-sol" },
+  "describer": { "provider": "claude", "model": "haiku" }
+}

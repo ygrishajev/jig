@@ -1,0 +1,7 @@
+{
+  "description": "Both subscriptions are out; simpler requests only",
+  "planner": { "provider": "opencode", "model": "openrouter/moonshotai/kimi-k3" },
+  "implementer": { "provider": "opencode", "model": "openrouter/z-ai/glm-5.3" },
+  "reviewer": { "provider": "opencode", "model": "openrouter/deepseek/deepseek-v4-pro" },
+  "describer": { "provider": "opencode", "model": "openrouter/deepseek/deepseek-v4.1-flash" }
+}

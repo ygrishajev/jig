@@ -120,13 +120,27 @@ repository root, and a named file must exist. Pass the same `--config` again whe
 
 `jig run` and `jig build` also take `--preset <name>`, which swaps in another set of agents
 without editing the config: `jig run request.md --preset cheap`. A preset is `<name>.json` in
-`.jig/presets/` of the repository, `~/.jig/presets/`, or `$XDG_CONFIG_HOME/jig/presets/`
-(`~/.config` when unset), searched in that order; the first file with the name wins, even when it
-is broken. It holds only an optional `description` and any of `planner`, `implementer`,
+`.jig/presets/` of the repository, `~/.jig/presets/`, `$XDG_CONFIG_HOME/jig/presets/`
+(`~/.config` when unset), or the starters that ship with jig (source `builtin`), searched in that
+order; the first file with the name wins, even when it is broken, so your own file of a starter's
+name replaces that starter. It holds only an optional `description` and any of `planner`, `implementer`,
 `reviewer` and `describer`; each step it names replaces the config's step whole, so a model never
 carries over to another provider, and every other setting stays the config's. Names are
 lowercase letters and digits joined by single hyphens. Pass the same `--preset` again when
 resuming.
+
+The starters, each naming all four steps:
+
+- `full-power` — subscriptions, best quality, spends Claude most.
+- `full-power-codex` — subscriptions, best quality, spends Codex most.
+- `long-claude` — subscriptions, many slices; Sonnet implements to stretch the Claude window.
+- `codex-only` — Claude is out of limits.
+- `claude-only` — Codex is out of limits.
+- `cheap-volume` — pay-per-token: an open-weight implementer on OpenRouter, a strong reviewer.
+- `open-weight` — both subscriptions are out; OpenRouter open-weight models, simpler requests only.
+
+`gpt-6-astra` (used by `full-power` and `codex-only`) may not be in every Codex plan; if yours
+lacks it, copy the starter to `~/.jig/presets/` under the same name with `gpt-6.1-sol` in its place.
 
 | Key                                               | Default                      |                                                                                                                                                                           |
 | ------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

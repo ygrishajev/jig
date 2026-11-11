@@ -1,0 +1,7 @@
+{
+  "description": "Claude is out of limits",
+  "planner": { "provider": "codex", "model": "gpt-6-astra" },
+  "implementer": { "provider": "codex", "model": "gpt-6.1-sol" },
+  "reviewer": { "provider": "codex", "model": "gpt-6-astra" },
+  "describer": { "provider": "codex", "model": "gpt-6-luna" }
+}
