@@ -1,9 +1,18 @@
 import { faker } from '@faker-js/faker';
-import { describe, expect, it } from 'vitest';
+import { Command } from 'commander';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
 import { aRunState, aSlice, presetName, runId } from '../../../tests/support/builders.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { createTempRepo } from '../../../tests/support/temp-repo.js';
+import { createAppContainer } from '../../app/container.js';
+import type { Preset, PresetName } from '../../config/presets.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import { nextStep, runInputSchema } from './run.js';
+import type { FailureOutput } from '../with-error-handling.js';
+import { nextStep, registerRunCommand, runInputSchema } from './run.js';
 
 describe('nextStep', () => {
   it('asks for nothing more once the run is done', () => {
@@ -100,4 +109,58 @@ describe('runInputSchema', () => {
     });
     expect(runInputSchema.parse({ request, logFormat }).preset).toBeUndefined();
   });
+});
+
+describe('run --preset', () => {
+  it('asks which preset to use on a bare --preset and stops before opening the app when nobody answers', async () => {
+    const preset = presetName();
+    const { parse, askForPreset, createApp, failureOutput } = await setup({
+      builtinPresets: [preset],
+    });
+
+    await parse(['run', faker.system.filePath(), '--preset', '--log-format', 'json']);
+
+    expect(askForPreset.mock.calls[0]?.[0].map(({ name }: Preset) => name)).toEqual([preset]);
+    expect(createApp).not.toHaveBeenCalled();
+    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  it('looks up a named preset without asking and stops before opening the app when it is missing', async () => {
+    const { parse, askForPreset, createApp, failureOutput } = await setup({
+      builtinPresets: [presetName()],
+    });
+
+    await parse(['run', faker.system.filePath(), '--preset', presetName(), '--log-format', 'json']);
+
+    expect(askForPreset).not.toHaveBeenCalled();
+    expect(createApp).not.toHaveBeenCalled();
+    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  async function setup(input: { builtinPresets: PresetName[] }) {
+    const repo = await createTempRepo();
+    const home = await tempDirectory('jig-run-home-');
+    const builtinPresetsDirectory = await tempDirectory('jig-run-builtin-');
+    for (const name of input.builtinPresets) {
+      await writeFile(path.join(builtinPresetsDirectory, `${name}.json`), '{}');
+    }
+    const askForPreset = vi.fn(async (_presets: Preset[]) => undefined);
+    const createApp = vi.fn(createAppContainer);
+    const failureOutput = mock<FailureOutput>();
+    const program = new Command();
+    registerRunCommand(program, {
+      invocation: {
+        cwd: repo.dir,
+        environment: { HOME: home },
+        askForPreset,
+        createAppContainer: createApp,
+        builtinPresetsDirectory,
+      },
+      failureOutput,
+    });
+    const parse = async (argv: string[]) => {
+      await program.parseAsync(argv, { from: 'user' });
+    };
+    return { parse, askForPreset, createApp, failureOutput };
+  }
 });

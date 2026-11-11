@@ -23,6 +23,7 @@ export interface Invocation {
   cwd: string;
   environment: NodeJS.ProcessEnv;
   askForPreset: (presets: Preset[]) => Promise<PresetPick | undefined>;
+  createAppContainer: typeof createAppContainer;
   /** The starters' folder; the package's own unless a spec points elsewhere. */
   builtinPresetsDirectory?: string;
 }
@@ -36,64 +37,77 @@ export interface AppOptions {
 
 /** Runs a command against the repository in the working directory, then releases what it opened. */
 export async function withApp<T>(
-  { logFormat, config: configPath, preset }: AppOptions,
+  options: AppOptions,
   command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, JigError>>,
-  { cwd, environment, askForPreset: ask, builtinPresetsDirectory }: Invocation = {
-    cwd: process.cwd(),
-    environment: process.env,
-    askForPreset,
-  },
+  invocation: Invocation = processInvocation(),
 ): Promise<Result<T, JigError>> {
-  const root = await ensureRepositoryRoot(cwd);
-  if (root.isErr()) return Result.err(root.error);
-  const parsedEnvironment = parseEnvironment(environment);
-  if (parsedEnvironment.isErr()) return Result.err(parsedEnvironment.error);
-  const savedCredentials = readCredentialsFile(cwd);
-  if (savedCredentials.isErr()) return Result.err(savedCredentials.error);
-  const jigEnvironment = withCredentials(parsedEnvironment.value, savedCredentials.value);
-  const configFile = configFileFor(cwd, configPath);
-  const projectConfig = loadConfig(configFile);
-  if (projectConfig.isErr()) return Result.err(projectConfig.error);
-  const presetLocations = {
-    repoRoot: cwd,
-    builtinDirectory: builtinPresetsDirectory,
-    ...jigEnvironment,
-  };
-  const presetName = await selectedPreset(preset, presetLocations, ask);
-  if (presetName.isErr()) return Result.err(presetName.error);
-  const config = configWithPreset(projectConfig.value, presetLocations, presetName.value);
-  if (config.isErr()) return Result.err(config.error);
-  const app = createAppContainer({
-    repoRoot: cwd,
-    logFormat,
-    environment: jigEnvironment,
-    configFile,
-    config: config.value,
-  });
+  const app = await openApp(options, invocation);
+  if (app.isErr()) return Result.err(app.error);
   try {
-    return await command(app);
+    return await command(app.value);
   } finally {
-    await app.dispose();
+    await app.value.dispose();
   }
 }
 
-/** The preset the operator named or picked; `undefined` for the project's config alone. */
-async function selectedPreset(
+function processInvocation(): Invocation {
+  return { cwd: process.cwd(), environment: process.env, askForPreset, createAppContainer };
+}
+
+function openApp(
+  { logFormat, config: configPath, preset }: AppOptions,
+  {
+    cwd,
+    environment,
+    askForPreset: ask,
+    createAppContainer: createApp,
+    builtinPresetsDirectory,
+  }: Invocation,
+): Promise<Result<AwilixContainer<AppCradle>, JigError>> {
+  return Result.gen(async function* () {
+    yield* Result.await(ensureRepositoryRoot(cwd));
+    const parsedEnvironment = yield* parseEnvironment(environment);
+    const savedCredentials = yield* readCredentialsFile(cwd);
+    const jigEnvironment = withCredentials(parsedEnvironment, savedCredentials);
+    const configFile = configFileFor(cwd, configPath);
+    const projectConfig = yield* loadConfig(configFile);
+    const presetLocations = {
+      repoRoot: cwd,
+      builtinDirectory: builtinPresetsDirectory,
+      ...jigEnvironment,
+    };
+    const presetName = yield* Result.await(selectedPreset(preset, presetLocations, ask));
+    const config = yield* configWithPreset(projectConfig, presetLocations, presetName);
+    const app = createApp({
+      repoRoot: cwd,
+      logFormat,
+      environment: jigEnvironment,
+      configFile,
+      config,
+    });
+    if (presetName !== undefined) {
+      app.cradle.logger.info({ preset: presetName }, `Using preset ${presetName}`);
+    }
+    return Result.ok(app);
+  });
+}
+
+function selectedPreset(
   selection: PresetSelection | undefined,
   locations: PresetLocations,
   ask: Invocation['askForPreset'],
 ): Promise<Result<PresetName | undefined, ConfigInvalid>> {
-  if (selection === undefined) return Result.ok(undefined);
-  if (selection.kind === 'named') return Result.ok(selection.name);
-  const presets = discoverPresets(locations);
-  if (presets.isErr()) return Result.err(presets.error);
-  const pick = presets.value.length > 0 ? await ask(presets.value) : undefined;
-  if (pick === undefined) {
-    return Result.err(
-      new ConfigInvalid({
-        message: 'No preset was picked — pass --preset <name>; jig presets lists them.',
-      }),
-    );
-  }
-  return Result.ok(pick.kind === 'preset' ? pick.name : undefined);
+  return Result.gen(async function* () {
+    if (selection?.kind !== 'ask') return Result.ok(selection?.name);
+    const presets = yield* discoverPresets(locations);
+    const pick = presets.length > 0 ? await ask(presets) : undefined;
+    if (pick === undefined) {
+      return Result.err(
+        new ConfigInvalid({
+          message: 'No preset was picked — pass --preset <name>; jig presets lists them.',
+        }),
+      );
+    }
+    return Result.ok(pick.kind === 'preset' ? pick.name : undefined);
+  });
 }

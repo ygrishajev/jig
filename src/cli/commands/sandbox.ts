@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { type InitResult, initSandbox } from '../../app/init-sandbox.js';
 import { ensureSandboxImage } from '../../app/sandbox-image.js';
+import { appAction, type CommandIo } from '../app-action.js';
 import {
   configInputSchema,
   configOption,
@@ -11,11 +12,8 @@ import {
   presetOption,
 } from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
-import { withApp } from '../with-app.js';
-import { withErrorHandling } from '../with-error-handling.js';
-import { withInput } from '../with-input.js';
 
-export function registerSandboxCommands(program: Command): void {
+export function registerSandboxCommands(program: Command, io?: CommandIo): void {
   program
     .command('init')
     .description("Set up this repository's sandbox and check its setup and verify commands in it")
@@ -23,16 +21,16 @@ export function registerSandboxCommands(program: Command): void {
     .addOption(configOption())
     .addOption(logFormatOption())
     .action(
-      withErrorHandling(
-        withInput(initInputSchema, async ({ agent, ...options }) => {
-          return withApp(options, async (app) => {
-            const result = await initSandbox(app, { useAgent: agent });
-            if (result.isErr()) return Result.err(result.error);
-            app.cradle.logger.info(initSummary(result.value, app.cradle.configFile.name));
-            if (result.value.status === 'failed') process.exitCode = 1;
-            return Result.ok();
-          });
-        }),
+      appAction(
+        initInputSchema,
+        async ({ agent }, app) => {
+          const result = await initSandbox(app, { useAgent: agent });
+          if (result.isErr()) return Result.err(result.error);
+          app.cradle.logger.info(initSummary(result.value, app.cradle.configFile.name));
+          if (result.value.status === 'failed') process.exitCode = 1;
+          return Result.ok();
+        },
+        io,
       ),
     );
 
@@ -44,15 +42,15 @@ export function registerSandboxCommands(program: Command): void {
     .addOption(presetOption())
     .addOption(logFormatOption())
     .action(
-      withErrorHandling(
-        withInput(buildInputSchema, async ({ pullAgents, ...options }) => {
-          return withApp(options, async (app) => {
-            const image = await ensureSandboxImage(app.cradle, { pullAgents });
-            if (image.isErr()) return Result.err(image.error);
-            app.cradle.logger.info(`Sandbox image ready: ${image.value}`);
-            return Result.ok();
-          });
-        }),
+      appAction(
+        buildInputSchema,
+        async ({ pullAgents }, app) => {
+          const image = await ensureSandboxImage(app.cradle, { pullAgents });
+          if (image.isErr()) return Result.err(image.error);
+          app.cradle.logger.info(`Sandbox image ready: ${image.value}`);
+          return Result.ok();
+        },
+        io,
       ),
     );
 }

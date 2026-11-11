@@ -3,7 +3,6 @@ import { z } from 'zod';
 
 import { type PresetName, presetNameSchema } from '../config/presets.js';
 
-/** What `--preset` asked for: a named preset, or to pick one in the terminal. */
 export type PresetSelection = { kind: 'named'; name: PresetName } | { kind: 'ask' };
 
 /** The input of a command that reads the config; its input schema extends this one. */

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, stuckSlice } from '../../domain/run-state.js';
+import { appAction, type CommandIo } from '../app-action.js';
 import {
   configInputSchema,
   configOption,
@@ -12,11 +13,8 @@ import {
   presetOption,
 } from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
-import { withApp } from '../with-app.js';
-import { withErrorHandling } from '../with-error-handling.js';
-import { withInput } from '../with-input.js';
 
-export function registerRunCommand(program: Command): void {
+export function registerRunCommand(program: Command, io?: CommandIo): void {
   program
     .command('run')
     .description('Start a run from a request file, or resume one with --id')
@@ -26,21 +24,18 @@ export function registerRunCommand(program: Command): void {
     .addOption(presetOption())
     .addOption(logFormatOption())
     .action(
-      withErrorHandling(
-        withInput(runInputSchema, async ({ run, ...options }) => {
-          return withApp(options, async (app) => {
-            const report = await runJig(app, run);
-            if (report.isErr()) return Result.err(report.error);
-            app.cradle.logger.info(
-              {
-                runId: report.value.state.runId,
-                branch: runBranchFor(report.value.state.runId),
-              },
-              nextStep(report.value),
-            );
-            return Result.ok();
-          });
-        }),
+      appAction(
+        runInputSchema,
+        async ({ run }, app) => {
+          const report = await runJig(app, run);
+          if (report.isErr()) return Result.err(report.error);
+          app.cradle.logger.info(
+            { runId: report.value.state.runId, branch: runBranchFor(report.value.state.runId) },
+            nextStep(report.value),
+          );
+          return Result.ok();
+        },
+        io,
       ),
     );
 }

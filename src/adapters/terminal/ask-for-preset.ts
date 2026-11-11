@@ -9,10 +9,8 @@ interface PresetChoice {
   description?: string;
 }
 
-/** A preset the operator picked, or the project's config with no preset over it. */
 export type PresetPick = { kind: 'preset'; name: PresetName } | { kind: 'none' };
 
-/** The preset the operator picks; `undefined` when nobody can answer or they cancel. */
 export function askForPreset(
   presets: Preset[],
   terminal: Terminal = PROCESS_TERMINAL,
