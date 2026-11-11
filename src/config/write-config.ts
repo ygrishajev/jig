@@ -1,21 +1,21 @@
 import { Result } from 'better-result';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
 import { ConfigInvalid, messageOf } from '../domain/errors.js';
-import { CONFIG_FILE } from './load-config.js';
+import type { ConfigFile } from './load-config.js';
 
-/** Sets the given keys in `jig.config.json`, keeping every other key as the operator wrote it. */
+/** Sets the given keys in the config file, keeping every other key as the operator wrote it. */
 export async function updateConfigFile(
-  repoRoot: string,
+  { path: file, name }: ConfigFile,
   values: Record<string, unknown>,
 ): Promise<Result<void, ConfigInvalid>> {
-  const file = path.join(repoRoot, CONFIG_FILE);
   const current = existsSync(file)
-    ? (await onConfigFile(file, () => readFile(file, 'utf-8'))).andThen(parseConfigObject)
+    ? (await onConfigFile(file, () => readFile(file, 'utf-8'))).andThen((contents) =>
+        parseConfigObject(name, contents),
+      )
     : Result.ok({});
   if (current.isErr()) return Result.err(current.error);
   const contents = `${JSON.stringify({ ...current.value, ...values }, null, 2)}\n`;
@@ -34,13 +34,16 @@ function onConfigFile<T>(
 }
 
 /** Only an object can take more keys; anything else is left for the operator to fix, not overwritten. */
-function parseConfigObject(contents: string): Result<Record<string, unknown>, ConfigInvalid> {
+function parseConfigObject(
+  name: string,
+  contents: string,
+): Result<Record<string, unknown>, ConfigInvalid> {
   const parsed = z.record(z.unknown()).safeParse(parseJson(contents));
   return parsed.success
     ? Result.ok(parsed.data)
     : Result.err(
         new ConfigInvalid({
-          message: `${CONFIG_FILE} must hold a JSON object to add settings to.`,
+          message: `${name} must hold a JSON object to add settings to.`,
         }),
       );
 }

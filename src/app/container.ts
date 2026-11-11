@@ -30,7 +30,7 @@ import {
   type EnteredCredential,
 } from '../adapters/terminal/ask-for-credential.js';
 import type { JigEnvironment } from '../config/environment.js';
-import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
+import { type ConfigFile, type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import { type GitCommandFailed, isTransient, type JigError } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
@@ -71,6 +71,7 @@ export interface AppCradle {
   environment: JigEnvironment;
   logFormat: LogFormat;
   logLevel: string;
+  configFile: ConfigFile;
   config: JigConfig;
   settings: RunSettings;
   logger: Logger;
@@ -96,6 +97,7 @@ export function createAppContainer(input: {
   logFormat: LogFormat;
   logLevel?: string;
   environment: JigEnvironment;
+  configFile: ConfigFile;
   config: JigConfig;
 }): AwilixContainer<AppCradle> {
   const container = createContainer<AppCradle>({
@@ -107,6 +109,7 @@ export function createAppContainer(input: {
     environment: asValue(input.environment),
     logFormat: asValue(input.logFormat),
     logLevel: asValue(input.logLevel ?? 'info'),
+    configFile: asValue(input.configFile),
     config: asValue(input.config),
     settings: asFunction(({ config }: AppCradle) => runSettingsFrom(config)).singleton(),
     logger: asFunction(({ logFormat, logLevel }: AppCradle) =>

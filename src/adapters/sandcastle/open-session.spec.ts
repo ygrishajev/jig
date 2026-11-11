@@ -10,7 +10,7 @@ import { RecordingEventSink } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { parseEnvironment } from '../../config/environment.js';
-import { type JigConfig, loadConfig } from '../../config/load-config.js';
+import { configFileFor, type JigConfig, loadConfig } from '../../config/load-config.js';
 import { stateDirectory } from '../local-store/run-paths.js';
 import {
   type OpenSessionInput,
@@ -76,7 +76,11 @@ describe('sandcastleSessionOptions', () => {
 
   async function setup(input: { config?: Partial<JigConfig>; environment?: NodeJS.ProcessEnv }) {
     const repoRoot = await tempDirectory('jig-session-');
-    const config = { ...unwrap(loadConfig(repoRoot)), ...everyStepOn(), ...input.config };
+    const config = {
+      ...unwrap(loadConfig(configFileFor(repoRoot))),
+      ...everyStepOn(),
+      ...input.config,
+    };
     const environment = unwrap(
       parseEnvironment(input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) }),
     );

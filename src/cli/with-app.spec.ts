@@ -80,6 +80,20 @@ describe('withApp', () => {
     expect(command).not.toHaveBeenCalled();
   });
 
+  it('opens the app on the config preset it was given', async () => {
+    const preset = `${faker.word.noun()}.json`;
+    const { run, cwd } = await setup({ config: preset });
+    await writeFile(path.join(cwd, preset), JSON.stringify({ mergeMode: 'auto' }));
+
+    const opened = (
+      await run(async (app) =>
+        Result.ok({ file: app.cradle.configFile.path, mergeMode: app.cradle.config.mergeMode }),
+      )
+    ).unwrap();
+
+    expect(opened).toEqual({ file: path.join(cwd, preset), mergeMode: 'auto' });
+  });
+
   it('refuses to start below the repository root, before the command runs', async () => {
     const { run } = await setup({ belowRoot: true });
     const command = vi.fn();
@@ -90,14 +104,16 @@ describe('withApp', () => {
     expect(command).not.toHaveBeenCalled();
   });
 
-  async function setup(input: { belowRoot?: boolean; environment?: NodeJS.ProcessEnv } = {}) {
+  async function setup(
+    input: { belowRoot?: boolean; environment?: NodeJS.ProcessEnv; config?: string } = {},
+  ) {
     const repo = await createTempRepo();
     const cwd = input.belowRoot ? path.join(repo.dir, faker.word.noun()) : repo.dir;
     await mkdir(cwd, { recursive: true });
     const disposed = vi.fn();
     const run = <T>(command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, JigError>>) =>
       withApp(
-        'json',
+        { logFormat: 'json', config: input.config },
         async (app) => {
           app.register({
             clock: asFunction(() => ({ now: Date.now }))

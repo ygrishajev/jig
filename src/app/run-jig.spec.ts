@@ -19,7 +19,7 @@ import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import { loadConfig } from '../config/load-config.js';
+import { configFileFor, loadConfig } from '../config/load-config.js';
 import {
   ConfigInvalid,
   LocalStateUnwritable,
@@ -231,6 +231,7 @@ describe('runJig', () => {
 
     const app = createAppContainer({
       repoRoot: repo.dir,
+      configFile: configFileFor(repo.dir),
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(
@@ -238,7 +239,7 @@ describe('runJig', () => {
           options.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
         ),
       ),
-      config: unwrap(loadConfig(repo.dir)),
+      config: unwrap(loadConfig(configFileFor(repo.dir))),
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
@@ -267,7 +268,11 @@ describe('runJig', () => {
     };
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
     app.register({
-      config: asValue({ ...unwrap(loadConfig(repo.dir)), ...everyStepOn(), sandboxImage }),
+      config: asValue({
+        ...unwrap(loadConfig(configFileFor(repo.dir))),
+        ...everyStepOn(),
+        sandboxImage,
+      }),
     });
     app.register({
       settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),

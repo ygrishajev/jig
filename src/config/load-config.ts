@@ -9,27 +9,42 @@ import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
 import { describeIssues } from './describe-issues.js';
 
-export function loadConfig(repoRoot: string): Result<JigConfig, ConfigInvalid> {
-  return readConfigFile(path.join(repoRoot, CONFIG_FILE)).andThen(parseConfig);
+/** The config a command reads and writes: the repository's own, or a preset named with `--config`. */
+export interface ConfigFile {
+  path: string;
+  name: string;
+  /** A preset the operator named must exist; the repository's own may be absent. */
+  named: boolean;
 }
 
-function readConfigFile(configPath: string): Result<string, ConfigInvalid> {
-  if (!existsSync(configPath)) return Result.ok('{}');
-  return Result.try({
-    try: () => readFileSync(configPath, 'utf-8'),
-    catch: (cause) =>
-      new ConfigInvalid({ message: `Cannot read ${CONFIG_FILE}: ${messageOf(cause)}` }),
-  });
+/** A named preset resolves against the repository root, where every command starts. */
+export function configFileFor(repoRoot: string, preset?: string): ConfigFile {
+  return preset === undefined
+    ? { path: path.join(repoRoot, CONFIG_FILE), name: CONFIG_FILE, named: false }
+    : { path: path.resolve(repoRoot, preset), name: preset, named: true };
 }
 
 export const CONFIG_FILE = 'jig.config.json';
 
-function parseConfig(contents: string): Result<JigConfig, ConfigInvalid> {
+export function loadConfig(file: ConfigFile): Result<JigConfig, ConfigInvalid> {
+  return readConfigFile(file).andThen((contents) => parseConfig(file, contents));
+}
+
+function readConfigFile(file: ConfigFile): Result<string, ConfigInvalid> {
+  if (!file.named && !existsSync(file.path)) return Result.ok('{}');
+  return Result.try({
+    try: () => readFileSync(file.path, 'utf-8'),
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Cannot read ${file.name}: ${messageOf(cause)}` }),
+  });
+}
+
+function parseConfig(file: ConfigFile, contents: string): Result<JigConfig, ConfigInvalid> {
   return Result.try({
     try: (): unknown => JSON.parse(contents),
     catch: (cause) =>
       new ConfigInvalid({
-        message: `${CONFIG_FILE} is not valid JSON: ${messageOf(cause)}`,
+        message: `${file.name} is not valid JSON: ${messageOf(cause)}`,
       }),
   }).andThen((json) => {
     const parsed = configSchema.safeParse(json);
@@ -37,7 +52,7 @@ function parseConfig(contents: string): Result<JigConfig, ConfigInvalid> {
       ? Result.ok(parsed.data)
       : Result.err(
           new ConfigInvalid({
-            message: `${CONFIG_FILE} is not valid — ${describeIssues(parsed.error)}`,
+            message: `${file.name} is not valid — ${describeIssues(parsed.error)}`,
           }),
         );
   });
@@ -93,7 +108,7 @@ export function configuredSteps(
   if (parsed.success) return Result.ok(parsed.data);
   return Result.err(
     new ConfigInvalid({
-      message: `No agent set for ${stepsWithoutAgent(config).join(', ')} — set each in ${CONFIG_FILE} to { "provider": "${Object.keys(AGENTS).join(' | ')}", "model": "..." }.`,
+      message: `No agent set for ${stepsWithoutAgent(config).join(', ')} — set each in the config to { "provider": "${Object.keys(AGENTS).join(' | ')}", "model": "..." }.`,
     }),
   );
 }

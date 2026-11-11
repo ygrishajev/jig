@@ -113,6 +113,10 @@ expires after 30 seconds.
 
 `jig.config.json` in the repository root (strict: unknown keys are errors).
 
+Every command takes `--config <path>` to read another file instead, e.g. a preset per kind of
+run: `jig run request.md --config jig.config.cheap.json`. The path is relative to the
+repository root, and a named file must exist. Pass the same `--config` again when resuming.
+
 | Key                                               | Default                      |                                                                                                                                                                           |
 | ------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `planner`, `implementer`, `reviewer`, `describer` | — (required to run or build) | Agent per step: `claude`, `opencode` or `codex`; `model` optional for claude (default `opus`), required for opencode (`provider/model`) and codex.                        |

@@ -18,7 +18,7 @@ import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import type { EnteredCredential } from '../adapters/terminal/ask-for-credential.js';
 import { parseEnvironment } from '../config/environment.js';
-import { loadConfig } from '../config/load-config.js';
+import { configFileFor, loadConfig } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import type { ExecResult } from '../ports/agent-session.js';
@@ -316,6 +316,7 @@ describe('initSandbox', () => {
     const checkSandboxFailures = [...(input.checkSandboxFailures ?? [])];
     const app = createAppContainer({
       repoRoot: repo.dir,
+      configFile: configFileFor(repo.dir),
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(
@@ -327,7 +328,7 @@ describe('initSandbox', () => {
           },
         ),
       ),
-      config: unwrap(loadConfig(repo.dir)),
+      config: unwrap(loadConfig(configFileFor(repo.dir))),
     });
     const images = mock<SandboxImages>({
       labels: vi.fn().mockResolvedValue(Result.ok(undefined)),

@@ -11,7 +11,7 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { parseEnvironment } from '../config/environment.js';
-import { loadConfig } from '../config/load-config.js';
+import { configFileFor, loadConfig } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
@@ -70,13 +70,16 @@ describe('readRunStatus', () => {
     const statusIn = async (repoRoot: string, runStores: string[], id: RunId) => {
       const app = createAppContainer({
         repoRoot,
+        configFile: configFileFor(repoRoot),
         logFormat: 'json',
         logLevel: 'silent',
         environment: unwrap(parseEnvironment({})),
-        config: unwrap(loadConfig(repoRoot)),
+        config: unwrap(loadConfig(configFileFor(repoRoot))),
       });
       onTestFinished(() => app.dispose());
-      app.register({ config: asValue({ ...unwrap(loadConfig(repoRoot)), runStores }) });
+      app.register({
+        config: asValue({ ...unwrap(loadConfig(configFileFor(repoRoot))), runStores }),
+      });
       return readRunStatus(app, id);
     };
     return { cloneOf, statusIn };

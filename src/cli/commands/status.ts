@@ -1,6 +1,5 @@
 import { Result } from 'better-result';
 import { Command } from 'commander';
-import { z } from 'zod';
 
 import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
 import { readRunStatus, type RunStatus } from '../../app/run-status.js';
@@ -8,6 +7,7 @@ import { runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { slicesInOrder } from '../../domain/slice.js';
 import { formatSummary } from '../../observers/metrics.js';
+import { configInputSchema, configOption } from '../config-option.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
@@ -17,10 +17,11 @@ export function registerStatusCommand(program: Command): void {
     .command('status')
     .description('Show where a run is, without changing anything')
     .argument('<id>', 'run id')
+    .addOption(configOption())
     .action(
       withErrorHandling(
-        withInput(z.object({ id: runIdSchema }), async ({ id }) => {
-          return withApp(defaultLogFormat(), async (app) => {
+        withInput(configInputSchema.extend({ id: runIdSchema }), async ({ id, config }) => {
+          return withApp({ logFormat: defaultLogFormat(), config }, async (app) => {
             const status = await readRunStatus(app, id);
             if (status.isErr()) return Result.err(status.error);
             console.log(describeRun(status.value));

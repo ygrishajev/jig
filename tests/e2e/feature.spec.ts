@@ -6,7 +6,7 @@ import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { sandboxImageName } from '../../src/app/sandbox-image.js';
-import { loadConfig } from '../../src/config/load-config.js';
+import { configFileFor, loadConfig } from '../../src/config/load-config.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import { runBranchFor } from '../../src/domain/run-state.js';
 import { unwrap } from '../support/unwrap.js';
@@ -76,7 +76,7 @@ describe('live feature pipeline', () => {
       }
       console.error(`E2E artifacts retained at ${repo}`);
     });
-    const image = sandboxImageName(repo, unwrap(loadConfig(repo)));
+    const image = sandboxImageName(repo, unwrap(loadConfig(configFileFor(repo))));
     return {
       repo,
       jig: async (...args: string[]) => {

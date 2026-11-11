@@ -11,7 +11,7 @@ import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import { loadConfig } from '../config/load-config.js';
+import { configFileFor, loadConfig } from '../config/load-config.js';
 import { MergeFailed, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer, withRunScope, withThrowawaySandbox } from './container.js';
@@ -67,9 +67,10 @@ describe('withRunScope', () => {
   async function setup(input: { failWith?: SandboxUnavailable } = {}) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
-    const config = unwrap(loadConfig(repoRoot));
+    const config = unwrap(loadConfig(configFileFor(repoRoot)));
     const app = createAppContainer({
       repoRoot,
+      configFile: configFileFor(repoRoot),
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(parseEnvironment({})),
@@ -151,10 +152,11 @@ describe('withThrowawaySandbox', () => {
     let opened = 0;
     const app = createAppContainer({
       repoRoot,
+      configFile: configFileFor(repoRoot),
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(parseEnvironment({})),
-      config: unwrap(loadConfig(repoRoot)),
+      config: unwrap(loadConfig(configFileFor(repoRoot))),
     });
     app.register({
       openSession: asValue(async ({ run }: OpenSessionInput) => {

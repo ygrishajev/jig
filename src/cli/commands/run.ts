@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, stuckSlice } from '../../domain/run-state.js';
+import { configInputSchema, configOption } from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
@@ -16,11 +17,12 @@ export function registerRunCommand(program: Command): void {
     .description('Start a run from a request file, or resume one with --id')
     .argument('[request]', 'markdown file describing what to build')
     .option('--id <id>', 'run id: resumes that run if it exists, otherwise names the new one')
+    .addOption(configOption())
     .addOption(logFormatOption())
     .action(
       withErrorHandling(
-        withInput(runInputSchema, async ({ run, logFormat }) => {
-          return withApp(logFormat, async (app) => {
+        withInput(runInputSchema, async ({ run, ...options }) => {
+          return withApp(options, async (app) => {
             const report = await runJig(app, run);
             if (report.isErr()) return Result.err(report.error);
             app.cradle.logger.info(
@@ -42,10 +44,11 @@ export function registerRunCommand(program: Command): void {
  * alone resumes that run.
  */
 export const runInputSchema = logFormatInputSchema
+  .merge(configInputSchema)
   .extend({ request: z.string().optional(), id: runIdSchema.optional() })
-  .transform(({ request, id, logFormat }, context) => {
+  .transform(({ request, id, ...options }, context) => {
     const run = runToDo(request, id);
-    if (run) return { run, logFormat };
+    if (run) return { run, ...options };
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Pass a request file to start a run, or --id to resume one.',
