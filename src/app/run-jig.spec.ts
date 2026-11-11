@@ -316,6 +316,7 @@ describe('runJig', () => {
         implementer: { provider: 'claude', model: 'sonnet' },
         reviewer: { provider: 'claude', model: 'opus' },
         mergeMode: 'manual',
+        verifyCommand: `npm run ${faker.word.verb()}`,
       },
     });
     const id = runId();

@@ -173,49 +173,54 @@ describe('runSettingsFrom', () => {
 });
 
 describe('validationWarnings', () => {
-  it('warns about nothing when the reviewer differs and an automatic merge is verified', async () => {
+  it('warns about nothing when the reviewer differs and a verifyCommand is set', async () => {
     const config = await setup({
       implementer: { provider: 'claude', model: 'sonnet' },
       reviewer: { provider: 'claude', model: 'opus' },
-      mergeMode: 'auto',
-      verifyCommand: `npm run ${faker.word.verb()}`,
+      verifyCommand: aVerifyCommand(),
     });
 
     expect(validationWarnings(config)).toEqual([]);
   });
 
-  it('warns about nothing for the defaults, which pick no agent and merge by hand', async () => {
-    expect(validationWarnings(await setup({}))).toEqual([]);
+  it('warns once for the defaults, which pick no agent and set no verifyCommand', async () => {
+    expect(validationWarnings(await setup({}))).toHaveLength(1);
   });
 
-  it('warns once when the reviewer runs the same model as the implementer', async () => {
+  it('names the provider and model when the reviewer runs the same model as the implementer', async () => {
     const step = { provider: 'opencode', model: `openrouter/${faker.word.noun()}` } as const;
-    const config = await setup({ implementer: step, reviewer: step });
+    const config = await setup({
+      implementer: step,
+      reviewer: step,
+      verifyCommand: aVerifyCommand(),
+    });
 
     const warnings = validationWarnings(config);
 
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain(step.model);
+    expect(warnings[0]).toContain(`${step.provider}/${step.model}`);
   });
 
-  it('warns once when an automatic merge has no command to verify it', async () => {
-    const config = await setup({ mergeMode: 'auto' });
+  it.each(['manual', 'auto'] as const)(
+    'warns once when no verifyCommand is set and mergeMode is %s',
+    async (mergeMode) => {
+      const config = await setup({ mergeMode });
 
-    expect(validationWarnings(config)).toHaveLength(1);
-    expect(validationWarnings({ ...config, mergeMode: 'manual' })).toEqual([]);
-  });
+      expect(validationWarnings(config)).toHaveLength(1);
+      expect(validationWarnings({ ...config, verifyCommand: aVerifyCommand() })).toEqual([]);
+    },
+  );
 
-  it('names the shared model before the unverified merge when both apply', async () => {
+  it('names the shared model before the missing verifyCommand when both apply', async () => {
     const step = { provider: 'codex', model: faker.word.noun() } as const;
-    const config = await setup({ implementer: step, reviewer: step, mergeMode: 'auto' });
-
-    const mergeOnlyWarnings = validationWarnings(await setup({ mergeMode: 'auto' }));
+    const config = await setup({ implementer: step, reviewer: step });
+    const unverifiedOnlyWarnings = validationWarnings(await setup({}));
 
     const warnings = validationWarnings(config);
 
     expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toContain(step.model);
-    expect(warnings.slice(1)).toEqual(mergeOnlyWarnings);
+    expect(warnings[0]).toContain(`${step.provider}/${step.model}`);
+    expect(warnings.slice(1)).toEqual(unverifiedOnlyWarnings);
   });
 
   it.each<{ case: string; implementer: StepConfig; reviewer: StepConfig; shared: boolean }>([
@@ -258,16 +263,30 @@ describe('validationWarnings', () => {
   ])(
     'decides whether $case is a shared reviewer model',
     async ({ implementer, reviewer, shared }) => {
-      const config = await setup({ implementer, reviewer });
+      const config = await setup({ implementer, reviewer, verifyCommand: aVerifyCommand() });
 
       expect(validationWarnings(config)).toHaveLength(shared ? 1 : 0);
     },
   );
 
+  it('names claude with its default model when neither step names one', async () => {
+    const step = { provider: 'claude' } as const;
+    const config = await setup({
+      implementer: step,
+      reviewer: step,
+      verifyCommand: aVerifyCommand(),
+    });
+
+    expect(validationWarnings(config)[0]).toContain(`claude/${DEFAULT_CLAUDE_MODEL}`);
+  });
+
   it.each(['implementer', 'reviewer'] as const)(
     'compares no models while the %s has no agent',
     async (configured) => {
-      const config = await setup({ [configured]: { provider: 'claude' } });
+      const config = await setup({
+        [configured]: { provider: 'claude' },
+        verifyCommand: aVerifyCommand(),
+      });
 
       expect(validationWarnings(config)).toEqual([]);
     },
@@ -279,3 +298,7 @@ describe('validationWarnings', () => {
     return unwrap(loadConfig(configFileFor(repoRoot)));
   }
 });
+
+function aVerifyCommand() {
+  return `npm run ${faker.word.verb()}`;
+}

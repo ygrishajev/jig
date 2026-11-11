@@ -121,7 +121,7 @@ export function stepsWithoutAgent(config: JigConfig): AgentRole[] {
 
 /** Risks a config can run with; jig names them on every start or resume and carries on. */
 export function validationWarnings(config: JigConfig): string[] {
-  return [reviewerSharesImplementerModel(config), autoMergeWithoutVerify(config)].filter(
+  return [reviewerSharesImplementerModel(config), approvalWithoutVerify(config)].filter(
     (warning) => warning !== undefined,
   );
 }
@@ -130,7 +130,7 @@ function reviewerSharesImplementerModel({ implementer, reviewer }: JigConfig): s
   if (!implementer || !reviewer || implementer.provider !== reviewer.provider) return undefined;
   const model = resolvedModel(implementer);
   if (model === undefined || model !== resolvedModel(reviewer)) return undefined;
-  return `The reviewer runs the same agent and model as the implementer (${implementer.provider} ${model}), so it tends to miss the same mistakes — give the reviewer a different provider or model.`;
+  return `The implementer and reviewer are the same model (${implementer.provider}/${model}); a different reviewer catches more.`;
 }
 
 /** Only claude has a model of its own to fall back to; the others run without one only to fail. */
@@ -138,9 +138,9 @@ function resolvedModel(step: StepConfig): string | undefined {
   return step.model ?? (step.provider === 'claude' ? DEFAULT_CLAUDE_MODEL : undefined);
 }
 
-function autoMergeWithoutVerify({ mergeMode, verifyCommand }: JigConfig): string | undefined {
-  if (mergeMode !== 'auto' || verifyCommand !== undefined) return undefined;
-  return 'mergeMode is "auto" but no verifyCommand is set, so agent code lands on the base branch without any check passing — set verifyCommand, or use mergeMode "manual".';
+function approvalWithoutVerify({ verifyCommand }: JigConfig): string | undefined {
+  if (verifyCommand !== undefined) return undefined;
+  return "No verifyCommand is set: slices are approved on the reviewer's word alone. Run `jig init` to have one proposed, or set it in jig.config.json.";
 }
 
 /** The parts of the config that decide how a run moves, with the retry policy jig fixes. */
