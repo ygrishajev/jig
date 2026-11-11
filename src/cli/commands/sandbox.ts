@@ -79,7 +79,7 @@ const INIT_SUMMARY: Record<
     `Setup or verify did not pass in the sandbox${'attempts' in result && result.attempts > 1 ? ` after ${result.attempts} attempts` : ''} — fix what this shows, then run jig init --no-agent:\n${'failure' in result ? result.failure : ''}`,
 };
 
-const buildInputSchema = logFormatInputSchema
+export const buildInputSchema = logFormatInputSchema
   .merge(configInputSchema)
   .merge(presetInputSchema)
   .extend({ pullAgents: z.boolean().optional() });

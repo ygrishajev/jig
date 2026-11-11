@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aRunState, aSlice, runId } from '../../../tests/support/builders.js';
+import { aRunState, aSlice, presetName, runId } from '../../../tests/support/builders.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { nextStep, runInputSchema } from './run.js';
 
@@ -83,9 +83,21 @@ describe('runInputSchema', () => {
 
   it('passes on the preset it was asked for and refuses a name that could leave the presets directory', () => {
     const request = faker.system.filePath();
-    const preset = faker.string.alpha({ length: 8, casing: 'lower' });
+    const name = presetName();
 
-    expect(runInputSchema.parse({ request, preset, logFormat }).preset).toBe(preset);
+    expect(runInputSchema.parse({ request, preset: name, logFormat }).preset).toEqual({
+      kind: 'named',
+      name,
+    });
     expect(runInputSchema.safeParse({ request, preset: '../x', logFormat }).success).toBe(false);
+  });
+
+  it('asks for a preset on a bare --preset and uses none when it is left out', () => {
+    const request = faker.system.filePath();
+
+    expect(runInputSchema.parse({ request, preset: true, logFormat }).preset).toEqual({
+      kind: 'ask',
+    });
+    expect(runInputSchema.parse({ request, logFormat }).preset).toBeUndefined();
   });
 });

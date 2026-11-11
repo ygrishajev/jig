@@ -1,8 +1,9 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
+import { presetName } from '../../../tests/support/builders.js';
 import { CONFIG_FILE } from '../../config/load-config.js';
-import { initSummary } from './sandbox.js';
+import { buildInputSchema, initSummary } from './sandbox.js';
 
 describe('initSummary', () => {
   it('tells the operator to check the starter files without an agent', () => {
@@ -37,5 +38,20 @@ describe('initSummary', () => {
     expect(initSummary({ status: 'failed', attempts: 1, failure }, CONFIG_FILE)).not.toContain(
       'attempts',
     );
+  });
+});
+
+describe('buildInputSchema', () => {
+  const logFormat = 'json';
+
+  it('passes on a named preset, asks on a bare --preset, and uses none when it is left out', () => {
+    const name = presetName();
+
+    expect(buildInputSchema.parse({ preset: name, logFormat }).preset).toEqual({
+      kind: 'named',
+      name,
+    });
+    expect(buildInputSchema.parse({ preset: true, logFormat }).preset).toEqual({ kind: 'ask' });
+    expect(buildInputSchema.parse({ logFormat }).preset).toBeUndefined();
   });
 });

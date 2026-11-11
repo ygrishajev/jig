@@ -129,6 +129,14 @@ carries over to another provider, and every other setting stays the config's. Na
 lowercase letters and digits joined by single hyphens. Pass the same `--preset` again when
 resuming.
 
+`--preset` with no name asks which preset to use: `jig build --preset`. The list starts with
+`jig.config.json (no preset)`, which keeps the config's own agents, then every preset found,
+showing the highlighted one's description; a preset that is not a starter has its source beside
+its name, e.g. `long-claude (home)`. The pick then works exactly as if you had passed that name.
+With no terminal to ask in, a cancelled prompt, or no presets at all, the command stops and asks
+for `--preset <name>`. Put a bare `--preset` after the request file, or it reads the file as the
+preset's name: `jig run request.md --preset`.
+
 The starters, each naming all four steps:
 
 - `full-power` — subscriptions, best quality, spends Claude most.

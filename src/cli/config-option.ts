@@ -1,7 +1,10 @@
 import { Option } from 'commander';
 import { z } from 'zod';
 
-import { presetNameSchema } from '../config/presets.js';
+import { type PresetName, presetNameSchema } from '../config/presets.js';
+
+/** What `--preset` asked for: a named preset, or to pick one in the terminal. */
+export type PresetSelection = { kind: 'named'; name: PresetName } | { kind: 'ask' };
 
 /** The input of a command that reads the config; its input schema extends this one. */
 export const configInputSchema = z.object({ config: z.string().min(1).optional() });
@@ -13,12 +16,18 @@ export function configOption(): Option {
   );
 }
 
+/** Commander hands a bare `--preset` over as `true`, which here means "ask". */
+const presetSelectionSchema = z.union([
+  z.literal(true).transform((): PresetSelection => ({ kind: 'ask' })),
+  presetNameSchema.transform((name): PresetSelection => ({ kind: 'named', name })),
+]);
+
 /** The input of a command that can swap in a preset's agents; its input schema extends this one. */
-export const presetInputSchema = z.object({ preset: presetNameSchema.optional() });
+export const presetInputSchema = z.object({ preset: presetSelectionSchema.optional() });
 
 export function presetOption(): Option {
   return new Option(
-    '--preset <name>',
-    "preset whose agents replace the config's; jig presets lists them",
+    '--preset [name]',
+    "preset whose agents replace the config's; without a name, pick one from a list",
   );
 }

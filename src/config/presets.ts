@@ -14,6 +14,8 @@ import { type JigConfig, type StepConfig, stepConfigSchema } from './load-config
 /** The XDG config home is ignored unless absolute, as the XDG base directory spec requires. */
 export interface PresetLocations extends Pick<JigEnvironment, 'homeDirectory' | 'xdgConfigHome'> {
   repoRoot: string;
+  /** Where the starters are read from; the package's own `presets/` unless a spec points elsewhere. */
+  builtinDirectory?: string;
 }
 
 export interface Preset {
@@ -128,6 +130,7 @@ function directoryPaths({
   repoRoot,
   homeDirectory,
   xdgConfigHome,
+  builtinDirectory = BUILTIN_PRESETS_DIRECTORY,
 }: PresetLocations): Record<PresetSource, string> {
   const xdgRoot =
     xdgConfigHome && path.isAbsolute(xdgConfigHome)
@@ -137,7 +140,7 @@ function directoryPaths({
     repository: path.join(repoRoot, JIG_DIR, 'presets'),
     home: path.join(homeDirectory, JIG_DIR, 'presets'),
     xdg: path.join(xdgRoot, 'jig', 'presets'),
-    builtin: BUILTIN_PRESETS_DIRECTORY,
+    builtin: builtinDirectory,
   };
 }
 

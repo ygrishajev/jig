@@ -8,9 +8,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { presetName } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
+import type { PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import type { AppCradle } from '../app/container.js';
-import type { PresetName } from '../config/presets.js';
+import type { Preset, PresetName } from '../config/presets.js';
 import { ConfigInvalid, type JigError } from '../domain/errors.js';
+import type { PresetSelection } from './config-option.js';
 import { withApp } from './with-app.js';
 
 describe('withApp', () => {
@@ -101,12 +103,11 @@ describe('withApp', () => {
     const home = await tempDirectory('jig-with-app-home-');
     const model = faker.word.noun();
     const preset = presetName();
-    await mkdir(path.join(home, '.jig', 'presets'), { recursive: true });
-    await writeFile(
-      path.join(home, '.jig', 'presets', `${preset}.json`),
-      JSON.stringify({ reviewer: { provider: 'claude', model } }),
-    );
-    const { run } = await setup({ preset, environment: { HOME: home } });
+    await writePreset(home, preset, { reviewer: { provider: 'claude', model } });
+    const { run } = await setup({
+      preset: { kind: 'named', name: preset },
+      environment: { HOME: home },
+    });
 
     const reviewer = (await run(async (app) => Result.ok(app.cradle.config.reviewer))).unwrap();
 
@@ -115,12 +116,117 @@ describe('withApp', () => {
 
   it('refuses a preset it cannot find, before the command runs', async () => {
     const home = await tempDirectory('jig-with-app-home-');
-    const { run } = await setup({ preset: presetName(), environment: { HOME: home } });
+    const { run, askForPreset } = await setup({
+      preset: { kind: 'named', name: presetName() },
+      environment: { HOME: home },
+    });
     const command = vi.fn();
 
     const result = await run(command);
 
     expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(command).not.toHaveBeenCalled();
+    expect(askForPreset).not.toHaveBeenCalled();
+  });
+
+  it('opens the project config untouched when no preset is asked for', async () => {
+    const model = faker.word.noun();
+    const { run, cwd, askForPreset } = await setup();
+    await writeProjectReviewer(cwd, model);
+
+    const reviewer = (await run(async (app) => Result.ok(app.cradle.config.reviewer))).unwrap();
+
+    expect(reviewer).toEqual({ provider: 'claude', model });
+    expect(askForPreset).not.toHaveBeenCalled();
+  });
+
+  it('asks which of the presets found to use and swaps in the agents of the one picked', async () => {
+    const home = await tempDirectory('jig-with-app-home-');
+    const model = faker.word.noun();
+    const preset = presetName();
+    await writePreset(home, preset, { reviewer: { provider: 'claude', model } });
+    const { run, askForPreset } = await setup({
+      preset: { kind: 'ask' },
+      environment: { HOME: home },
+      pick: { kind: 'preset', name: preset },
+    });
+
+    const reviewer = (await run(async (app) => Result.ok(app.cradle.config.reviewer))).unwrap();
+
+    expect(reviewer).toEqual({ provider: 'claude', model });
+    expect(askForPreset.mock.calls[0]?.[0].map(({ name }: Preset) => name)).toEqual([preset]);
+  });
+
+  it('opens the project config untouched when the operator picks no preset', async () => {
+    const home = await tempDirectory('jig-with-app-home-');
+    const model = faker.word.noun();
+    await writePreset(home, presetName(), {
+      reviewer: { provider: 'codex', model: faker.word.noun() },
+    });
+    const { run, cwd } = await setup({
+      preset: { kind: 'ask' },
+      environment: { HOME: home },
+      pick: { kind: 'none' },
+    });
+    await writeProjectReviewer(cwd, model);
+
+    const reviewer = (await run(async (app) => Result.ok(app.cradle.config.reviewer))).unwrap();
+
+    expect(reviewer).toEqual({ provider: 'claude', model });
+  });
+
+  it('applies the picked preset over the config file it was given', async () => {
+    const home = await tempDirectory('jig-with-app-home-');
+    const model = faker.word.noun();
+    const preset = presetName();
+    const configFile = `${faker.word.noun()}.json`;
+    await writePreset(home, preset, { reviewer: { provider: 'claude', model } });
+    const { run, cwd } = await setup({
+      config: configFile,
+      preset: { kind: 'ask' },
+      environment: { HOME: home },
+      pick: { kind: 'preset', name: preset },
+    });
+    await writeFile(path.join(cwd, configFile), JSON.stringify({ mergeMode: 'auto' }));
+
+    const opened = (
+      await run(async (app) =>
+        Result.ok({ mergeMode: app.cradle.config.mergeMode, reviewer: app.cradle.config.reviewer }),
+      )
+    ).unwrap();
+
+    expect(opened).toEqual({ mergeMode: 'auto', reviewer: { provider: 'claude', model } });
+  });
+
+  it('refuses a preset nobody picked, before the command runs', async () => {
+    const home = await tempDirectory('jig-with-app-home-');
+    await writePreset(home, presetName(), {});
+    const { run } = await setup({
+      preset: { kind: 'ask' },
+      environment: { HOME: home },
+      pick: undefined,
+    });
+    const command = vi.fn();
+
+    const result = await run(command);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it('refuses to ask when there are no presets to pick from, before the command runs', async () => {
+    const home = await tempDirectory('jig-with-app-home-');
+    const { run, askForPreset } = await setup({
+      preset: { kind: 'ask' },
+      environment: { HOME: home },
+      pick: { kind: 'none' },
+    });
+    const command = vi.fn();
+
+    const result = await run(command);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(askForPreset).not.toHaveBeenCalled();
     expect(command).not.toHaveBeenCalled();
   });
 
@@ -139,10 +245,13 @@ describe('withApp', () => {
       belowRoot?: boolean;
       environment?: NodeJS.ProcessEnv;
       config?: string;
-      preset?: PresetName;
+      preset?: PresetSelection;
+      pick?: PresetPick;
     } = {},
   ) {
     const repo = await createTempRepo();
+    const askForPreset = vi.fn(async (_presets: Preset[]) => input.pick);
+    const builtinPresetsDirectory = await tempDirectory('jig-with-app-builtin-');
     const cwd = input.belowRoot ? path.join(repo.dir, faker.word.noun()) : repo.dir;
     await mkdir(cwd, { recursive: true });
     const disposed = vi.fn();
@@ -158,8 +267,20 @@ describe('withApp', () => {
           app.resolve('clock');
           return command(app);
         },
-        { cwd, environment: input.environment ?? {} },
+        { cwd, environment: input.environment ?? {}, askForPreset, builtinPresetsDirectory },
       );
-    return { run, disposed, cwd };
+    return { run, disposed, cwd, askForPreset };
   }
 });
+
+async function writePreset(home: string, name: PresetName, contents: object) {
+  await mkdir(path.join(home, '.jig', 'presets'), { recursive: true });
+  await writeFile(path.join(home, '.jig', 'presets', `${name}.json`), JSON.stringify(contents));
+}
+
+async function writeProjectReviewer(cwd: string, model: string) {
+  await writeFile(
+    path.join(cwd, 'jig.config.json'),
+    JSON.stringify({ reviewer: { provider: 'claude', model } }),
+  );
+}
