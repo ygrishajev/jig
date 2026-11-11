@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 
 import type { StepConfig } from '../../src/config/load-config.js';
+import { type Preset, type PresetName, presetNameSchema } from '../../src/config/presets.js';
 import { byRole } from '../../src/domain/agent-role.js';
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
@@ -230,4 +231,18 @@ export function codexLogin(): string {
     },
     last_refresh: faker.date.recent().toISOString(),
   });
+}
+
+export function presetName(): PresetName {
+  return presetNameSchema.parse(faker.string.alpha({ length: 8, casing: 'lower' }));
+}
+
+export function aPreset({
+  name = presetName(),
+  source = faker.helpers.arrayElement(['repository', 'home', 'xdg'] as const),
+  path = faker.system.filePath(),
+  description,
+  steps = {},
+}: Partial<Preset> = {}): Preset {
+  return { name, source, path, description, steps };
 }

@@ -8,7 +8,7 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { configFileFor, loadConfig } from './load-config.js';
 import {
-  applyPreset,
+  configWithPreset,
   discoverPresets,
   loadPreset,
   presetDirectories,
@@ -174,9 +174,57 @@ describe('presets', () => {
         path.join(locations.repoRoot, '.jig', 'presets'),
       );
     });
+
+    it('keeps a dangling repository preset winning over the home one of the same name', async () => {
+      const { locations, writePreset, linkDangling } = await setup({ xdgConfigHome: 'set' });
+      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
+      const winner = await linkDangling('repository', 'shared.json');
+
+      const presets = discoverPresets(locations);
+
+      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
+      expect(presets.isErr() && presets.error.message).toContain(winner);
+    });
+
+    it('refuses rather than skips a preset directory under a path that is not a directory', async () => {
+      const { locations, writePreset, makeHomeJigAFile } = await setup({ xdgConfigHome: 'set' });
+      await writePreset('xdg', 'shared', { planner: { provider: 'claude' } });
+      await makeHomeJigAFile();
+
+      const presets = discoverPresets(locations);
+
+      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
+      expect(presets.isErr() && presets.error.message).toContain(
+        path.join(locations.homeDirectory, '.jig', 'presets'),
+      );
+    });
   });
 
   describe('loadPreset', () => {
+    it('keeps a dangling repository preset winning over the home one of the same name', async () => {
+      const { locations, writePreset, linkDangling } = await setup({ xdgConfigHome: 'set' });
+      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
+      const winner = await linkDangling('repository', 'shared.json');
+
+      const preset = loadPreset(locations, presetName('shared'));
+
+      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
+      expect(preset.isErr() && preset.error.message).toContain(winner);
+    });
+
+    it('refuses rather than falls back to the XDG preset when the home preset sits under a file', async () => {
+      const { locations, writePreset, makeHomeJigAFile } = await setup({ xdgConfigHome: 'set' });
+      await writePreset('xdg', 'shared', { planner: { provider: 'claude' } });
+      await makeHomeJigAFile();
+
+      const preset = loadPreset(locations, presetName('shared'));
+
+      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
+      expect(preset.isErr() && preset.error.message).toContain(
+        path.join(locations.homeDirectory, '.jig', 'presets', 'shared.json'),
+      );
+    });
+
     it('loads a preset from the XDG config directory', async () => {
       const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
       const model = faker.word.noun();
@@ -293,7 +341,7 @@ describe('presets', () => {
     });
   });
 
-  describe('applyPreset', () => {
+  describe('configWithPreset', () => {
     it('replaces the steps the preset names and keeps the project settings and other steps', async () => {
       const { locations, writePreset, writeProjectConfig } = await setup({ xdgConfigHome: 'set' });
       const verifyCommand = `npm run ${faker.word.verb()}`;
@@ -309,7 +357,7 @@ describe('presets', () => {
       await writePreset('home', 'swap', { implementer: { provider: 'claude' } });
       const config = unwrap(loadConfig(configFileFor(locations.repoRoot)));
 
-      const applied = applyPreset(config, unwrap(loadPreset(locations, presetName('swap'))));
+      const applied = unwrap(configWithPreset(config, locations, presetName('swap')));
 
       expect(applied).toEqual({
         ...config,
@@ -330,10 +378,28 @@ describe('presets', () => {
       await writePreset('repository', 'add', { reviewer: { provider: 'claude', model } });
       const config = unwrap(loadConfig(configFileFor(locations.repoRoot)));
 
-      const applied = applyPreset(config, unwrap(loadPreset(locations, presetName('add'))));
+      const applied = unwrap(configWithPreset(config, locations, presetName('add')));
 
       expect(applied.reviewer).toEqual({ provider: 'claude', model });
       expect(applied.planner).toBeUndefined();
+    });
+
+    it("keeps the project's config as it is when no preset is named", async () => {
+      const { locations, writeProjectConfig } = await setup({ xdgConfigHome: 'set' });
+      await writeProjectConfig({ reviewer: { provider: 'claude', model: faker.word.noun() } });
+      const config = unwrap(loadConfig(configFileFor(locations.repoRoot)));
+
+      expect(unwrap(configWithPreset(config, locations, undefined))).toBe(config);
+    });
+
+    it('refuses rather than runs on the project agents when the named preset does not load', async () => {
+      const { locations, writeRaw } = await setup({ xdgConfigHome: 'set' });
+      await writeRaw('home', 'broken.json', '{ not json');
+      const config = unwrap(loadConfig(configFileFor(locations.repoRoot)));
+
+      const applied = configWithPreset(config, locations, presetName('broken'));
+
+      expect(applied.isErr() && applied.error).toBeInstanceOf(ConfigInvalid);
     });
   });
 
@@ -356,7 +422,22 @@ describe('presets', () => {
       writeFile(configFileFor(locations.repoRoot).path, JSON.stringify(contents));
     const makeRepositoryJigUnreachable = () =>
       symlink('.jig', path.join(locations.repoRoot, '.jig'));
-    return { locations, writePreset, writeRaw, writeProjectConfig, makeRepositoryJigUnreachable };
+    const linkDangling = async (source: PresetSource, fileName: string) => {
+      const link = path.join(directoryOf(source), fileName);
+      await mkdir(directoryOf(source), { recursive: true });
+      await symlink(path.join(directoryOf(source), faker.string.uuid()), link);
+      return link;
+    };
+    const makeHomeJigAFile = () => writeFile(path.join(locations.homeDirectory, '.jig'), '');
+    return {
+      locations,
+      writePreset,
+      writeRaw,
+      writeProjectConfig,
+      makeRepositoryJigUnreachable,
+      linkDangling,
+      makeHomeJigAFile,
+    };
   }
 });
 

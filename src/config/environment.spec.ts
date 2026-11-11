@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { homedir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import { unwrap } from '../../tests/support/unwrap.js';
@@ -14,6 +15,23 @@ describe('parseEnvironment', () => {
     );
 
     expect(environment).toMatchObject({ imageCache: 'gha', codexAuthDirectory: directory });
+  });
+
+  it('reads where presets live in the home and XDG config directories', () => {
+    const homeDirectory = faker.system.directoryPath();
+    const xdgConfigHome = faker.system.directoryPath();
+
+    const environment = unwrap(
+      parseEnvironment({ HOME: homeDirectory, XDG_CONFIG_HOME: xdgConfigHome }),
+    );
+
+    expect(environment).toMatchObject({ homeDirectory, xdgConfigHome });
+  });
+
+  it("falls back to the user's home directory when HOME is unset", () => {
+    const environment = unwrap(parseEnvironment({ HOME: '' }));
+
+    expect(environment.homeDirectory).toBe(homedir());
   });
 
   it.each(['OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT'])(

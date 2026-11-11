@@ -69,6 +69,7 @@ jig run request.md                  # plan, implement, review, verify, describe,
 | `jig build [--pull-agents]`        | Builds the sandbox image if the Dockerfile or the agents changed. `run` does this too. Needs every step's agent set.                                                                                                                                                                                                                                                                                                                                                                                 |
 | `jig run [request.md] [--id <id>]` | Starts a run from a request file, or resumes one by id. With both, it resumes only if the file is the request the run started with. Without `--id`, a new run is named after the request's first `# heading` (or its file name), e.g. `add-retry-backoff-3f9a1c2e`.                                                                                                                                                                                                                                  |
 | `jig status <id>`                  | Where a run is, its slices and feedback, and its cost so far.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `jig presets`                      | Lists the presets `--preset` can name, where each is read from, and its description.                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 `run` stops (exit 0) when the work is merged, waits for a manual merge, pauses at the design
 checkpoint, blocks, or gets stuck; `result.json` says which. Resume with `jig run --id <id>`.
@@ -116,6 +117,16 @@ expires after 30 seconds.
 Every command takes `--config <path>` to read another file instead, e.g. a preset per kind of
 run: `jig run request.md --config jig.config.cheap.json`. The path is relative to the
 repository root, and a named file must exist. Pass the same `--config` again when resuming.
+
+`jig run` and `jig build` also take `--preset <name>`, which swaps in another set of agents
+without editing the config: `jig run request.md --preset cheap`. A preset is `<name>.json` in
+`.jig/presets/` of the repository, `~/.jig/presets/`, or `$XDG_CONFIG_HOME/jig/presets/`
+(`~/.config` when unset), searched in that order; the first file with the name wins, even when it
+is broken. It holds only an optional `description` and any of `planner`, `implementer`,
+`reviewer` and `describer`; each step it names replaces the config's step whole, so a model never
+carries over to another provider, and every other setting stays the config's. Names are
+lowercase letters and digits joined by single hyphens. Pass the same `--preset` again when
+resuming.
 
 | Key                                               | Default                      |                                                                                                                                                                           |
 | ------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

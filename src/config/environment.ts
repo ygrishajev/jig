@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { homedir } from 'node:os';
 import { z } from 'zod';
 
 import { ConfigInvalid } from '../domain/errors.js';
@@ -12,6 +13,8 @@ import { describeIssues } from './describe-issues.js';
 export interface JigEnvironment {
   imageCache?: 'gha';
   codexAuthDirectory?: string;
+  homeDirectory: string;
+  xdgConfigHome?: string;
   telemetry?: TelemetrySettings;
   /** An agent credential by name; which names a step needs is the agent registry's to say. */
   credential(name: string): string | undefined;
@@ -38,6 +41,8 @@ export function parseEnvironment(raw: NodeJS.ProcessEnv): Result<JigEnvironment,
   return Result.ok({
     imageCache: known.JIG_IMAGE_CACHE,
     codexAuthDirectory: known.JIG_CODEX_AUTH_DIR,
+    homeDirectory: known.HOME ?? homedir(),
+    xdgConfigHome: known.XDG_CONFIG_HOME,
     telemetry:
       known.OTEL_EXPORTER_OTLP_ENDPOINT || known.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
         ? { serviceName: known.OTEL_SERVICE_NAME ?? 'jig', forwarded: otelVariables(variables) }
@@ -55,6 +60,8 @@ function setVariables(raw: NodeJS.ProcessEnv): Record<string, string> {
 const knownVariablesSchema = z.object({
   JIG_IMAGE_CACHE: z.enum(['gha']).optional(),
   JIG_CODEX_AUTH_DIR: z.string().optional(),
+  HOME: z.string().optional(),
+  XDG_CONFIG_HOME: z.string().optional(),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z.string().url().optional(),
   OTEL_SERVICE_NAME: z.string().optional(),

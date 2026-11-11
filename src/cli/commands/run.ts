@@ -5,7 +5,12 @@ import { z } from 'zod';
 import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, stuckSlice } from '../../domain/run-state.js';
-import { configInputSchema, configOption } from '../config-option.js';
+import {
+  configInputSchema,
+  configOption,
+  presetInputSchema,
+  presetOption,
+} from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
@@ -18,6 +23,7 @@ export function registerRunCommand(program: Command): void {
     .argument('[request]', 'markdown file describing what to build')
     .option('--id <id>', 'run id: resumes that run if it exists, otherwise names the new one')
     .addOption(configOption())
+    .addOption(presetOption())
     .addOption(logFormatOption())
     .action(
       withErrorHandling(
@@ -45,6 +51,7 @@ export function registerRunCommand(program: Command): void {
  */
 export const runInputSchema = logFormatInputSchema
   .merge(configInputSchema)
+  .merge(presetInputSchema)
   .extend({ request: z.string().optional(), id: runIdSchema.optional() })
   .transform(({ request, id, ...options }, context) => {
     const run = runToDo(request, id);

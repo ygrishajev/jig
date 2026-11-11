@@ -80,4 +80,12 @@ describe('runInputSchema', () => {
       runInputSchema.safeParse({ request: faker.system.filePath(), id: '../x', logFormat }).success,
     ).toBe(false);
   });
+
+  it('passes on the preset it was asked for and refuses a name that could leave the presets directory', () => {
+    const request = faker.system.filePath();
+    const preset = faker.string.alpha({ length: 8, casing: 'lower' });
+
+    expect(runInputSchema.parse({ request, preset, logFormat }).preset).toBe(preset);
+    expect(runInputSchema.safeParse({ request, preset: '../x', logFormat }).success).toBe(false);
+  });
 });

@@ -4,6 +4,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
+import { registerPresetsCommand } from './commands/presets.js';
 import { registerRunCommand } from './commands/run.js';
 import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';
@@ -17,6 +18,7 @@ export function buildCli(): Command {
   registerSandboxCommands(program);
   registerRunCommand(program);
   registerStatusCommand(program);
+  registerPresetsCommand(program);
   return program;
 }
 

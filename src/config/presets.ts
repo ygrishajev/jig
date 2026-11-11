@@ -1,5 +1,5 @@
 import { Result } from 'better-result';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -7,13 +7,12 @@ import { JIG_DIR } from '../adapters/local-store/run-paths.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { describeIssues } from './describe-issues.js';
+import type { JigEnvironment } from './environment.js';
 import { type JigConfig, type StepConfig, stepConfigSchema } from './load-config.js';
 
-export interface PresetLocations {
+/** The XDG config home is ignored unless absolute, as the XDG base directory spec requires. */
+export interface PresetLocations extends Pick<JigEnvironment, 'homeDirectory' | 'xdgConfigHome'> {
   repoRoot: string;
-  homeDirectory: string;
-  /** Ignored unless absolute, as the XDG base directory spec requires. */
-  xdgConfigHome?: string;
 }
 
 export interface Preset {
@@ -63,13 +62,20 @@ function presetFilesIn(directory: PresetDirectory): Result<PresetFile[], ConfigI
   });
 }
 
-/** Only a missing entry is absent; any other failure is reported, so an unreadable winner never yields to a lower-precedence preset. */
+/**
+ * lstat, so a dangling link is a present entry that then fails to read, and only ENOENT counts as
+ * absent: an unreadable or misplaced winner never yields to a lower-precedence preset.
+ */
 function existsAt(entryPath: string): Result<boolean, ConfigInvalid> {
-  return Result.try({
-    try: () => statSync(entryPath, { throwIfNoEntry: false }),
-    catch: (cause) =>
-      new ConfigInvalid({ message: `Cannot look for ${entryPath}: ${messageOf(cause)}` }),
-  }).map((stats) => stats !== undefined);
+  return Result.try({ try: () => lstatSync(entryPath), catch: (cause) => cause }).match({
+    ok: () => Result.ok(true),
+    err: (cause) =>
+      cause instanceof Error && 'code' in cause && cause.code === 'ENOENT'
+        ? Result.ok(false)
+        : Result.err(
+            new ConfigInvalid({ message: `Cannot look for ${entryPath}: ${messageOf(cause)}` }),
+          ),
+  });
 }
 
 function presetNamesAmong(entries: string[]): PresetName[] {
@@ -95,11 +101,11 @@ export const presetNameSchema = z
 export type PresetName = z.infer<typeof presetNameSchema>;
 
 function presetFileIn(directory: PresetDirectory, name: PresetName): PresetFile {
-  return { name, source: directory.source, path: path.join(directory.path, fileNameOf(name)) };
-}
-
-function fileNameOf(name: PresetName): string {
-  return `${name}${PRESET_EXTENSION}`;
+  return {
+    name,
+    source: directory.source,
+    path: path.join(directory.path, `${name}${PRESET_EXTENSION}`),
+  };
 }
 
 function shadowedRemoved(files: PresetFile[]): PresetFile[] {
@@ -174,6 +180,15 @@ const presetFileSchema = z
   })
   .strict();
 
+export function configWithPreset(
+  config: JigConfig,
+  locations: PresetLocations,
+  name: PresetName | undefined,
+): Result<JigConfig, ConfigInvalid> {
+  if (name === undefined) return Result.ok(config);
+  return loadPreset(locations, name).map((preset) => applyPreset(config, preset));
+}
+
 /** Reads only the files that could hold `name`, so a broken unrelated preset does not get in the way. */
 export function loadPreset(
   locations: PresetLocations,
@@ -208,6 +223,6 @@ function missingPreset(
 }
 
 /** The preset's steps replace the project's whole, so no model carries over to another provider. */
-export function applyPreset(config: JigConfig, preset: Preset): JigConfig {
+function applyPreset(config: JigConfig, preset: Preset): JigConfig {
   return { ...config, ...preset.steps };
 }

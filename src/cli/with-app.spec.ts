@@ -5,8 +5,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
+import { presetName } from '../../tests/support/builders.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import type { AppCradle } from '../app/container.js';
+import type { PresetName } from '../config/presets.js';
 import { ConfigInvalid, type JigError } from '../domain/errors.js';
 import { withApp } from './with-app.js';
 
@@ -94,6 +97,33 @@ describe('withApp', () => {
     expect(opened).toEqual({ file: path.join(cwd, preset), mergeMode: 'auto' });
   });
 
+  it("swaps in the agents of the preset it was given from the operator's home directory", async () => {
+    const home = await tempDirectory('jig-with-app-home-');
+    const model = faker.word.noun();
+    const preset = presetName();
+    await mkdir(path.join(home, '.jig', 'presets'), { recursive: true });
+    await writeFile(
+      path.join(home, '.jig', 'presets', `${preset}.json`),
+      JSON.stringify({ reviewer: { provider: 'claude', model } }),
+    );
+    const { run } = await setup({ preset, environment: { HOME: home } });
+
+    const reviewer = (await run(async (app) => Result.ok(app.cradle.config.reviewer))).unwrap();
+
+    expect(reviewer).toEqual({ provider: 'claude', model });
+  });
+
+  it('refuses a preset it cannot find, before the command runs', async () => {
+    const home = await tempDirectory('jig-with-app-home-');
+    const { run } = await setup({ preset: presetName(), environment: { HOME: home } });
+    const command = vi.fn();
+
+    const result = await run(command);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(command).not.toHaveBeenCalled();
+  });
+
   it('refuses to start below the repository root, before the command runs', async () => {
     const { run } = await setup({ belowRoot: true });
     const command = vi.fn();
@@ -105,7 +135,12 @@ describe('withApp', () => {
   });
 
   async function setup(
-    input: { belowRoot?: boolean; environment?: NodeJS.ProcessEnv; config?: string } = {},
+    input: {
+      belowRoot?: boolean;
+      environment?: NodeJS.ProcessEnv;
+      config?: string;
+      preset?: PresetName;
+    } = {},
   ) {
     const repo = await createTempRepo();
     const cwd = input.belowRoot ? path.join(repo.dir, faker.word.noun()) : repo.dir;
@@ -113,7 +148,7 @@ describe('withApp', () => {
     const disposed = vi.fn();
     const run = <T>(command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, JigError>>) =>
       withApp(
-        { logFormat: 'json', config: input.config },
+        { logFormat: 'json', config: input.config, preset: input.preset },
         async (app) => {
           app.register({
             clock: asFunction(() => ({ now: Date.now }))

@@ -1,0 +1,36 @@
+import { Result } from 'better-result';
+import { Command } from 'commander';
+
+import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
+import { discoverPresets, type Preset } from '../../config/presets.js';
+import { withApp } from '../with-app.js';
+import { withErrorHandling } from '../with-error-handling.js';
+
+export function registerPresetsCommand(program: Command): void {
+  program
+    .command('presets')
+    .description('List the presets --preset can name, and where each is read from')
+    .action(
+      withErrorHandling(async () => {
+        return withApp({ logFormat: defaultLogFormat() }, async (app) => {
+          const presets = discoverPresets({
+            repoRoot: app.cradle.repoRoot,
+            ...app.cradle.environment,
+          });
+          if (presets.isErr()) return Result.err(presets.error);
+          console.log(describePresets(presets.value));
+          return Result.ok();
+        });
+      }),
+    );
+}
+
+export function describePresets(presets: Preset[]): string {
+  if (presets.length === 0) return 'No presets found.';
+  return presets
+    .map(({ name, source, path, description }) => {
+      const line = `${name.padEnd(20)} ${source.padEnd(10)} ${path}`;
+      return description ? `${line}\n  ${description}` : line;
+    })
+    .join('\n');
+}

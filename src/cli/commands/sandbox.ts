@@ -4,7 +4,12 @@ import { z } from 'zod';
 
 import { type InitResult, initSandbox } from '../../app/init-sandbox.js';
 import { ensureSandboxImage } from '../../app/sandbox-image.js';
-import { configInputSchema, configOption } from '../config-option.js';
+import {
+  configInputSchema,
+  configOption,
+  presetInputSchema,
+  presetOption,
+} from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
@@ -36,6 +41,7 @@ export function registerSandboxCommands(program: Command): void {
     .description('Build the sandbox image if the Dockerfile or the agents changed')
     .option('--pull-agents', 'install the latest agent releases even if updates are off')
     .addOption(configOption())
+    .addOption(presetOption())
     .addOption(logFormatOption())
     .action(
       withErrorHandling(
@@ -75,4 +81,5 @@ const INIT_SUMMARY: Record<
 
 const buildInputSchema = logFormatInputSchema
   .merge(configInputSchema)
+  .merge(presetInputSchema)
   .extend({ pullAgents: z.boolean().optional() });
