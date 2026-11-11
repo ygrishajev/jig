@@ -3,11 +3,25 @@ import { asValue } from 'awilix';
 import { panic, Result } from 'better-result';
 import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { Logger } from 'pino';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, vi } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
-import { scriptWholeRun } from '../../tests/support/agent-scripts.js';
-import { aRunState, everyStepOn, runId } from '../../tests/support/builders.js';
+import {
+  aDescription,
+  approval,
+  fulfillment,
+  scriptPlanning,
+  scriptWholeRun,
+} from '../../tests/support/agent-scripts.js';
+import {
+  aPlannedSlice,
+  aRunState,
+  everyStepOn,
+  implementingPlanSteps,
+  runId,
+} from '../../tests/support/builders.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
@@ -16,12 +30,19 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
+import { DOCKERFILE, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor, loadConfig } from '../config/load-config.js';
+import {
+  configFileFor,
+  type JigConfig,
+  loadConfig,
+  validationWarnings,
+} from '../config/load-config.js';
 import {
   ConfigInvalid,
+  ImageBuildFailed,
   LocalStateUnwritable,
   RunInProgress,
   RunRequestInvalid,
@@ -30,6 +51,7 @@ import {
 } from '../domain/errors.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
+import type { SandboxImages } from '../ports/sandbox-images.js';
 import { createAppContainer } from './container.js';
 import { runJig } from './run-jig.js';
 
@@ -225,7 +247,93 @@ describe('runJig', () => {
     },
   );
 
-  async function setup(options: { managedImage?: boolean; environment?: NodeJS.ProcessEnv } = {}) {
+  it('warns about each configuration risk once per invocation, however many slices it runs', async () => {
+    const { app, writeRequest, agentFor, warnings } = await setup({
+      config: { mergeMode: 'auto', verifyCommand: undefined },
+    });
+    const id = runId();
+    scriptTwoSliceRun(agentFor(id));
+    const requestPath = await writeRequest();
+    const expected = validationWarnings(app.cradle.config);
+
+    const first = (await runJig(app, { start: requestPath, runId: id })).unwrap();
+
+    expect(first.state.slices).toHaveLength(2);
+    expect(expected).toHaveLength(2);
+    expect(warnings()).toEqual(expected);
+
+    (await runJig(app, { start: requestPath, runId: id })).unwrap();
+
+    expect(warnings()).toEqual([...expected, ...expected]);
+  });
+
+  it('warns about the configuration before preparing the sandbox image', async () => {
+    const { app, writeRequest, agentFor, repo, logger, images } = await setup({
+      managedImage: true,
+      config: { mergeMode: 'auto', verifyCommand: undefined },
+    });
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+    await mkdir(path.join(repo.dir, SANDBOX_DIRECTORY), { recursive: true });
+    await writeFile(
+      path.join(repo.dir, SANDBOX_DIRECTORY, DOCKERFILE),
+      `FROM ${faker.word.noun()}`,
+    );
+    images.labels.mockResolvedValue(
+      Result.err(
+        new ImageBuildFailed({ message: faker.lorem.sentence(), output: faker.lorem.sentence() }),
+      ),
+    );
+
+    const result = await runJig(app, { start: await writeRequest(), runId: id });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ImageBuildFailed);
+    expect(logger.warn).toHaveBeenCalledTimes(validationWarnings(app.cradle.config).length);
+    expect(logger.warn.mock.invocationCallOrder[0]).toBeLessThan(
+      images.labels.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('warns when reporting a finished run, without preparing an image or a sandbox', async () => {
+    const { app, repo, warnings, images, sessionsOpened } = await setup({
+      managedImage: true,
+      config: { mergeMode: 'auto', verifyCommand: undefined },
+    });
+    const state = aRunState({ phase: 'done' });
+    await new LocalRunStore(repo.dir).save(state);
+
+    (await runJig(app, { resume: state.runId })).unwrap();
+
+    expect(warnings()).toEqual(validationWarnings(app.cradle.config));
+    expect(warnings()).not.toEqual([]);
+    expect(images.labels).not.toHaveBeenCalled();
+    expect(sessionsOpened()).toBe(0);
+  });
+
+  it('warns about nothing when the configuration carries no risk', async () => {
+    const { app, writeRequest, agentFor, warnings } = await setup({
+      config: {
+        implementer: { provider: 'claude', model: 'sonnet' },
+        reviewer: { provider: 'claude', model: 'opus' },
+        mergeMode: 'manual',
+      },
+    });
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+
+    const report = (await runJig(app, { start: await writeRequest(), runId: id })).unwrap();
+
+    expect(report.status).toBe('halted');
+    expect(warnings()).toEqual([]);
+  });
+
+  async function setup(
+    options: {
+      managedImage?: boolean;
+      environment?: NodeJS.ProcessEnv;
+      config?: Partial<JigConfig>;
+    } = {},
+  ) {
     const repo = await createTempRepo();
     const requests = await tempDirectory('jig-request-');
 
@@ -272,10 +380,15 @@ describe('runJig', () => {
         ...unwrap(loadConfig(configFileFor(repo.dir))),
         ...everyStepOn(),
         sandboxImage,
+        ...options.config,
       }),
     });
+    const logger = mock<Logger>();
+    const images = mock<SandboxImages>();
     app.register({
       settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),
+      logger: asValue(logger),
+      images: asValue(images),
       openSession: asValue(async ({ run }: OpenSessionInput) => {
         sessionsOpened++;
         const failure = sessionFailures.shift();
@@ -304,9 +417,23 @@ describe('runJig', () => {
       holdNextSession,
       failNextSessions,
       sessionsOpened: () => sessionsOpened,
+      logger,
+      images,
+      warnings: () => logger.warn.mock.calls.map(([message]) => message),
     };
   }
 });
+
+function scriptTwoSliceRun(agent: FakeAgentSession) {
+  const slices = [1, 1].map((step) => aPlannedSlice({ description: implementingPlanSteps(step) }));
+  scriptPlanning(agent, slices);
+  agent.script(
+    'implementer',
+    ...slices.map((slice) => ({ files: { [`${slice.id}.txt`]: faker.lorem.sentence() } })),
+  );
+  agent.script('reviewer', approval(), approval(), fulfillment());
+  agent.script('describer', aDescription());
+}
 
 async function runBranchCommits(repoRoot: string, id: RunId) {
   const log = await simpleGit({ baseDir: repoRoot }).log([`main..${runBranchFor(id)}`]);

@@ -6,6 +6,7 @@ import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stepCredentials } from '../adapters/sandcastle/open-session.js';
 import { startTelemetry } from '../adapters/telemetry/open-telemetry.js';
+import { validationWarnings } from '../config/load-config.js';
 import {
   type JigError,
   type LocalStateUnwritable,
@@ -83,6 +84,7 @@ function runLocked(
   return Result.gen(async function* () {
     const store = yield* Result.await(openRunStore(app.cradle));
     const state = yield* Result.await(startOrResume(app.cradle, store, target));
+    for (const warning of validationWarnings(app.cradle.config)) app.cradle.logger.warn(warning);
     const finished = finalStatus(runFlow, state);
     const report = finished
       ? { state, status: finished }

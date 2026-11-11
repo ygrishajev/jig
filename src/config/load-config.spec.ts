@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { everyStepOn } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { DEFAULT_CLAUDE_MODEL } from '../adapters/sandcastle/agents.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS } from '../domain/settings.js';
 import {
@@ -16,7 +17,9 @@ import {
   type JigConfig,
   loadConfig,
   runSettingsFrom,
+  type StepConfig,
   stepsWithoutAgent,
+  validationWarnings,
 } from './load-config.js';
 
 describe('loadConfig', () => {
@@ -167,4 +170,110 @@ describe('runSettingsFrom', () => {
       retryDelayMs: RETRY_DELAY_MS,
     });
   });
+});
+
+describe('validationWarnings', () => {
+  it('warns about nothing when the reviewer differs and an automatic merge is verified', async () => {
+    const config = await setup({
+      implementer: { provider: 'claude', model: 'sonnet' },
+      reviewer: { provider: 'claude', model: 'opus' },
+      mergeMode: 'auto',
+      verifyCommand: `npm run ${faker.word.verb()}`,
+    });
+
+    expect(validationWarnings(config)).toEqual([]);
+  });
+
+  it('warns about nothing for the defaults, which pick no agent and merge by hand', async () => {
+    expect(validationWarnings(await setup({}))).toEqual([]);
+  });
+
+  it('warns once when the reviewer runs the same model as the implementer', async () => {
+    const step = { provider: 'opencode', model: `openrouter/${faker.word.noun()}` } as const;
+    const config = await setup({ implementer: step, reviewer: step });
+
+    const warnings = validationWarnings(config);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(step.model);
+  });
+
+  it('warns once when an automatic merge has no command to verify it', async () => {
+    const config = await setup({ mergeMode: 'auto' });
+
+    expect(validationWarnings(config)).toHaveLength(1);
+    expect(validationWarnings({ ...config, mergeMode: 'manual' })).toEqual([]);
+  });
+
+  it('names the shared model before the unverified merge when both apply', async () => {
+    const step = { provider: 'codex', model: faker.word.noun() } as const;
+    const config = await setup({ implementer: step, reviewer: step, mergeMode: 'auto' });
+
+    const warnings = validationWarnings(config);
+
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain(step.model);
+    expect(warnings[1]).not.toContain(step.model);
+  });
+
+  it.each<{ case: string; implementer: StepConfig; reviewer: StepConfig; shared: boolean }>([
+    {
+      case: "claude's default model and the same model named",
+      implementer: { provider: 'claude' },
+      reviewer: { provider: 'claude', model: DEFAULT_CLAUDE_MODEL },
+      shared: true,
+    },
+    {
+      case: "claude's default model on both",
+      implementer: { provider: 'claude' },
+      reviewer: { provider: 'claude' },
+      shared: true,
+    },
+    {
+      case: "claude's default model and another claude model",
+      implementer: { provider: 'claude' },
+      reviewer: { provider: 'claude', model: 'haiku' },
+      shared: false,
+    },
+    {
+      case: 'the same model name on different agents',
+      implementer: { provider: 'codex', model: 'gpt-6-luna' },
+      reviewer: { provider: 'opencode', model: 'gpt-6-luna' },
+      shared: false,
+    },
+    {
+      case: 'an agent with no default model and no model named',
+      implementer: { provider: 'opencode' },
+      reviewer: { provider: 'opencode' },
+      shared: false,
+    },
+    {
+      case: 'an agent with no default model and a model named on one side only',
+      implementer: { provider: 'codex' },
+      reviewer: { provider: 'codex', model: 'gpt-6-luna' },
+      shared: false,
+    },
+  ])(
+    'decides whether $case is a shared reviewer model',
+    async ({ implementer, reviewer, shared }) => {
+      const config = await setup({ implementer, reviewer });
+
+      expect(validationWarnings(config)).toHaveLength(shared ? 1 : 0);
+    },
+  );
+
+  it.each(['implementer', 'reviewer'] as const)(
+    'compares no models while the %s has no agent',
+    async (configured) => {
+      const config = await setup({ [configured]: { provider: 'claude' } });
+
+      expect(validationWarnings(config)).toEqual([]);
+    },
+  );
+
+  async function setup(contents: Record<string, unknown>) {
+    const repoRoot = await tempDirectory('jig-config-');
+    await writeFile(path.join(repoRoot, CONFIG_FILE), JSON.stringify(contents));
+    return unwrap(loadConfig(configFileFor(repoRoot)));
+  }
 });

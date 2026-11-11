@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
-import { AGENTS, isAgentName } from '../adapters/sandcastle/agents.js';
+import { AGENTS, DEFAULT_CLAUDE_MODEL, isAgentName } from '../adapters/sandcastle/agents.js';
 import { type AgentRole, agentRoleSchema, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
@@ -117,6 +117,30 @@ const requiredStepsSchema = z.object(byRole(() => stepConfigSchema));
 
 export function stepsWithoutAgent(config: JigConfig): AgentRole[] {
   return agentRoleSchema.options.filter((role) => !config[role]);
+}
+
+/** Risks a config can run with; jig names them on every start or resume and carries on. */
+export function validationWarnings(config: JigConfig): string[] {
+  return [reviewerSharesImplementerModel(config), autoMergeWithoutVerify(config)].filter(
+    (warning) => warning !== undefined,
+  );
+}
+
+function reviewerSharesImplementerModel({ implementer, reviewer }: JigConfig): string | undefined {
+  if (!implementer || !reviewer || implementer.provider !== reviewer.provider) return undefined;
+  const model = resolvedModel(implementer);
+  if (model === undefined || model !== resolvedModel(reviewer)) return undefined;
+  return `The reviewer runs the same agent and model as the implementer (${implementer.provider} ${model}), so it tends to miss the same mistakes — give the reviewer a different provider or model.`;
+}
+
+/** Only claude has a model of its own to fall back to; the others run without one only to fail. */
+function resolvedModel(step: StepConfig): string | undefined {
+  return step.model ?? (step.provider === 'claude' ? DEFAULT_CLAUDE_MODEL : undefined);
+}
+
+function autoMergeWithoutVerify({ mergeMode, verifyCommand }: JigConfig): string | undefined {
+  if (mergeMode !== 'auto' || verifyCommand !== undefined) return undefined;
+  return 'mergeMode is "auto" but no verifyCommand is set, so agent code lands on the base branch without any check passing — set verifyCommand, or use mergeMode "manual".';
 }
 
 /** The parts of the config that decide how a run moves, with the retry policy jig fixes. */
