@@ -116,14 +116,10 @@ describe('design review steps', () => {
     expect(outcome.isErr() && outcome.error).toBe(failure);
   });
 
-  it('continues once the re-review found nothing, and blocks on what it still found', async () => {
+  it('blocks on the findings the re-review still raised, without calling an agent', async () => {
     const outstanding = aDesignFinding();
     const { run, agent } = setup({});
 
-    const approved = await run(
-      resolveDesign,
-      aRunStateIn('resolvingDesign', { designReview: aRevisedDesignReview({ outstanding: [] }) }),
-    );
     const unresolved = await run(
       resolveDesign,
       aRunStateIn('resolvingDesign', {
@@ -131,7 +127,6 @@ describe('design review steps', () => {
       }),
     );
 
-    expect(approved.unwrap()).toEqual({ type: 'continue' });
     expect(unresolved.isErr() && unresolved.error).toBeInstanceOf(DesignUnresolved);
     expect(unresolved.isErr() && unresolved.error.message).toContain(outstanding.concern);
     expect(agent.calls).toHaveLength(0);

@@ -2,11 +2,17 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
-import { aRunState } from '../../../tests/support/builders.js';
+import {
+  aFirstDesignReview,
+  aRevisionAwaitingReReview,
+  aRunState,
+} from '../../../tests/support/builders.js';
 import { InMemoryRunStore } from '../../../tests/support/fakes.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import type { RunId } from '../../domain/run-id.js';
 import type { RunState } from '../../domain/run-state.js';
 import type { RunStore } from '../../ports/run-store.js';
+import { LocalRunStore } from '../local-store/local-run-store.js';
 import { CompositeRunStore } from './composite-run-store.js';
 
 describe('CompositeRunStore', () => {
@@ -81,10 +87,29 @@ describe('CompositeRunStore', () => {
     for (const each of stores) expect(each.load).not.toHaveBeenCalled();
   });
 
-  async function setup(input: { copies: (RunState | undefined)[] }) {
+  it('loads the design review evidence of the freshest copy from stores that serialize it', async () => {
+    const stale = aRunState({
+      phase: 'revisingDesign',
+      designReview: aFirstDesignReview(),
+      revision: 4,
+    });
+    const fresher = aRunState({
+      ...stale,
+      phase: 'reviewingDesign',
+      designReview: aRevisionAwaitingReReview(),
+      revision: 5,
+    });
+    const { store } = await setup({ copies: [stale, fresher], serialized: true });
+
+    expect((await store.load(stale.runId)).unwrap()).toEqual(fresher);
+  });
+
+  async function setup(input: { copies: (RunState | undefined)[]; serialized?: boolean }) {
     const stores = await Promise.all(
       input.copies.map(async (copy) => {
-        const memory = new InMemoryRunStore();
+        const memory = input.serialized
+          ? new LocalRunStore(await tempDirectory('jig-store-'))
+          : new InMemoryRunStore();
         if (copy) await memory.save(copy);
         return mock<RunStore>({
           load: vi.fn((runId: RunId) => memory.load(runId)),

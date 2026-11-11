@@ -4,7 +4,12 @@ import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
-import { aFeaturePlan, aRunState, aSlice } from '../../../tests/support/builders.js';
+import {
+  aFeaturePlan,
+  aRevisedDesignReview,
+  aRunState,
+  aSlice,
+} from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
@@ -32,6 +37,21 @@ describe('GitRemoteRunStore', () => {
     );
     expect(await refsUnder(origin, 'refs/jig')).toEqual([`refs/jig/${state.runId}`]);
     expect(await refsUnder(origin, 'refs/heads')).not.toContain(`refs/heads/jig/${state.runId}`);
+  });
+
+  it('lets another clone pick up the design review evidence a blocked run left', async () => {
+    const { cloneOf } = await setup();
+    const state = aRunState({
+      phase: 'resolvingDesign',
+      designReview: aRevisedDesignReview(),
+      blockedReason: faker.lorem.sentence(),
+    });
+
+    await new GitRemoteRunStore(await cloneOf()).save(state);
+
+    expect((await new GitRemoteRunStore(await cloneOf()).load(state.runId)).unwrap()).toEqual(
+      state,
+    );
   });
 
   it('keeps every save as history and loads the latest', async () => {

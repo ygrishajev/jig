@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 import {
   aContext,
   aFeaturePlan,
+  aFirstDesignReview,
+  anApprovedDesignReview,
+  aRevisedDesignReview,
+  aRevisionAwaitingReReview,
   aRunState,
   aSlice,
   designDocs,
@@ -71,6 +75,37 @@ describe('LocalRunStore', () => {
     const loaded = await store.load(state.runId);
 
     expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
+  });
+
+  it.each([
+    ['revisingDesign', aFirstDesignReview()],
+    ['reviewingDesign', aRevisionAwaitingReReview()],
+    ['resolvingDesign', aRevisedDesignReview()],
+    ['slicing', anApprovedDesignReview()],
+    ['paused', anApprovedDesignReview()],
+  ] as const)(
+    'loads back the design review evidence of a run saved in %s',
+    async (phase, designReview) => {
+      const { store } = await setup();
+      const state = aRunState({ phase, designReview });
+
+      await store.save(state);
+
+      expect((await store.load(state.runId)).unwrap()).toEqual(state);
+    },
+  );
+
+  it('refuses a saved run whose design review is not the one its phase needs, naming the file', async () => {
+    const { store, repoRoot } = await setup();
+    const state = aRunState({ phase: 'revisingDesign' });
+    await store.save(state);
+    const file = path.join(stateDirectory(repoRoot, state.runId), 'run.json');
+    await writeFile(file, JSON.stringify({ ...state, designReview: aRevisedDesignReview() }));
+
+    const loaded = await store.load(state.runId);
+
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
+    expect(loaded.isErr() && loaded.error.message).toContain(file);
   });
 
   async function setup() {

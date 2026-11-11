@@ -2,7 +2,7 @@ import { panic } from 'better-result';
 import { z } from 'zod';
 
 import { designDocsSchema } from './design-docs.js';
-import { designReviewProgressSchema } from './design-review.js';
+import { designReviewProgressAt, designReviewProgressSchema } from './design-review.js';
 import { type RunId, runIdSchema } from './run-id.js';
 import { type Slice, sliceSchema, slicesInOrder } from './slice.js';
 
@@ -100,9 +100,11 @@ const withPlan = withContext.extend({ plan: featurePlanSchema });
 
 const withDocs = withPlan.extend({ docs: designDocsSchema });
 
-const withDesignReview = withDocs.extend({ designReview: designReviewProgressSchema });
+const withSettledDesign = withDocs.extend({
+  designReview: designReviewProgressAt.settled.optional(),
+});
 
-const withDescription = withDocs.extend({ prDescription: z.string() });
+const withDescription = withSettledDesign.extend({ prDescription: z.string() });
 
 /**
  * A run as it is saved and loaded. Each phase guarantees what the phases before it produced, so
@@ -112,11 +114,19 @@ export const runStateSchema = z.discriminatedUnion('phase', [
   runFields.extend({ phase: runPhaseSchema.extract(['context']) }),
   withContext.extend({ phase: runPhaseSchema.extract(['planning']) }),
   withPlan.extend({ phase: runPhaseSchema.extract(['designing']) }),
-  withDocs.extend({ phase: runPhaseSchema.extract(['reviewingDesign']) }),
-  withDesignReview.extend({
-    phase: runPhaseSchema.extract(['revisingDesign', 'resolvingDesign']),
+  withDocs.extend({
+    phase: runPhaseSchema.extract(['reviewingDesign']),
+    designReview: designReviewProgressAt.reReview.optional(),
   }),
   withDocs.extend({
+    phase: runPhaseSchema.extract(['revisingDesign']),
+    designReview: designReviewProgressAt.revision,
+  }),
+  withDocs.extend({
+    phase: runPhaseSchema.extract(['resolvingDesign']),
+    designReview: designReviewProgressAt.resolution,
+  }),
+  withSettledDesign.extend({
     phase: runPhaseSchema.extract([
       'slicing',
       'gate',

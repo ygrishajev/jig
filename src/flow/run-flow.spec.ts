@@ -1,9 +1,10 @@
 import { faker } from '@faker-js/faker';
-import { Panic } from 'better-result';
+import { Panic, Result } from 'better-result';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
 import {
   aDescription,
@@ -23,7 +24,12 @@ import {
   aDesignFinding,
   aDisposition,
   aFeaturePlan,
+  aFirstDesignReview,
+  anApprovedDesignReview,
   aPlannedSlice,
+  aRevisedDesignReview,
+  aRevisionAwaitingReReview,
+  aRunState,
   aRunStateIn,
   aSlice,
   designDocs,
@@ -39,11 +45,12 @@ import {
   SteppingClock,
 } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
-import { SandboxUnavailable } from '../domain/errors.js';
+import { AgentRunFailed, RunStateConflict, SandboxUnavailable } from '../domain/errors.js';
 import { type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { PlannedSlice } from '../domain/slice.js';
 import type { ExecResult } from '../ports/agent-session.js';
+import type { RunStore } from '../ports/run-store.js';
 import { runEngine } from './engine.js';
 import { runFlow } from './run-flow.js';
 
@@ -851,14 +858,298 @@ describe('runFlow', () => {
     expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(5);
   });
 
+  it('resumes a run saved after the first review with the one revision and one re-review', async () => {
+    const finding = aDesignFinding();
+    const revised = designDocs();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start } = await setup({ settings: runSettings() });
+    const saved = aRunState({
+      runId: start.runId,
+      phase: 'revisingDesign',
+      designReview: aFirstDesignReview({ findings: [finding] }),
+    });
+    agent.script('planner', designRevision(revised, [aDisposition(finding)]), { output: [slice] });
+    agent.script('reviewer', designApproval());
+    scriptDelivery(agent, [slice]);
+
+    const { status, state } = await run(saved);
+
+    expect(status).toBe('done');
+    expect(state.docs).toEqual(revised);
+    expect(state.designReview?.reviews).toEqual([{ findings: [finding] }, { findings: [] }]);
+    expect(state.designReview?.revision?.reviewedDocs).toEqual(saved.docs);
+    const plannerCalls = agent.calls.filter((call) => call.role === 'planner');
+    expect(plannerCalls).toHaveLength(2);
+    expect(plannerCalls[0].prompt).toContain(finding.failureScenario);
+    expect(agent.calls.filter((call) => call.role === 'reviewer')[0].prompt).toContain(
+      revised.plan,
+    );
+  });
+
+  it('resumes a run saved after the revision with the re-review alone, slicing the revised documents', async () => {
+    const progress = aRevisionAwaitingReReview();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start } = await setup({ settings: runSettings() });
+    const saved = aRunState({
+      runId: start.runId,
+      phase: 'reviewingDesign',
+      designReview: progress,
+    });
+    agent.script('reviewer', designApproval());
+    agent.script('planner', { output: [slice] });
+    scriptDelivery(agent, [slice]);
+
+    const { status, state } = await run(saved);
+
+    expect(status).toBe('done');
+    expect(state.docs).toEqual(saved.docs);
+    expect(state.designReview).toEqual({
+      ...progress,
+      reviews: [...progress.reviews, { findings: [] }],
+    });
+    const [slicing] = agent.calls.filter((call) => call.role === 'planner');
+    expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(1);
+    expect(slicing.prompt).toContain(saved.docs?.plan);
+    expect(slicing.prompt).not.toContain(progress.revision?.reviewedDocs.plan);
+    const [reReview] = agent.calls.filter((call) => call.role === 'reviewer');
+    expect(reReview.prompt).toContain(progress.revision?.reviewedDocs.plan);
+  });
+
+  it.each([
+    ['its approved design review', anApprovedDesignReview()],
+    ['no design review, saved before there were any', undefined],
+  ])(
+    'slices a run saved at slicing with %s without reviewing the design',
+    async (_kind, progress) => {
+      const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+      const { agent, run, start } = await setup({ settings: runSettings() });
+      const saved = aRunState({ runId: start.runId, phase: 'slicing', designReview: progress });
+      agent.script('planner', { output: [slice] });
+      scriptDelivery(agent, [slice]);
+
+      const { status, state } = await run(saved);
+
+      expect(status).toBe('done');
+      expect(state.designReview).toEqual(progress);
+      expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(1);
+      expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(2);
+    },
+  );
+
+  it('stays blocked on an unresolved design however often it is resumed, calling no agent', async () => {
+    const progress = aRevisedDesignReview();
+    const { agent, run, start, store } = await setup({ settings: runSettings() });
+    const saved = aRunState({
+      runId: start.runId,
+      phase: 'resolvingDesign',
+      designReview: progress,
+    });
+
+    const first = await run(saved);
+    const second = await run(first.state);
+
+    for (const resumed of [first, second]) {
+      expect(resumed.status).toBe('blocked');
+      expect(resumed.state.phase).toBe('resolvingDesign');
+      expect(resumed.state.designReview).toEqual(progress);
+      for (const finding of progress.reviews[1].findings) {
+        expect(resumed.state.blockedReason).toContain(finding.id);
+      }
+    }
+    expect(agent.calls).toHaveLength(0);
+    expect((await store.load(start.runId)).unwrap()?.designReview).toEqual(progress);
+  });
+
+  it('retries a failed re-review call within the cap, since a failed call is not a completed review', async () => {
+    const finding = aDesignFinding();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start } = await setup({ settings: runSettings({ maxStepRetries: 1 }) });
+    scriptDesign(agent);
+    agent.script(
+      'reviewer',
+      designFindings(finding),
+      { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) },
+      designApproval(),
+    );
+    agent.script('planner', designRevision(designDocs(), [aDisposition(finding)]), {
+      output: [slice],
+    });
+    scriptDelivery(agent, [slice]);
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.designReview?.reviews).toEqual([{ findings: [finding] }, { findings: [] }]);
+    expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(5);
+  });
+
+  it('asks the planner again on resume for a revision whose call failed and was never saved', async () => {
+    const finding = aDesignFinding();
+    const revised = designDocs();
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start } = await setup({ settings: runSettings({ maxStepRetries: 0 }) });
+    scriptDesign(agent);
+    agent.script('reviewer', designFindings(finding));
+    agent.script('planner', { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) });
+    const blocked = await run(start);
+    expect(blocked).toMatchObject({ status: 'blocked', state: { phase: 'revisingDesign' } });
+    agent.script('planner', designRevision(revised, [aDisposition(finding)]), { output: [slice] });
+    agent.script('reviewer', designApproval());
+    scriptDelivery(agent, [slice]);
+
+    const { status, state } = await run(blocked.state);
+
+    expect(status).toBe('done');
+    expect(state.docs).toEqual(revised);
+    expect(state.designReview?.reviews).toEqual([{ findings: [finding] }, { findings: [] }]);
+  });
+
+  it('reviews the design again on resume when its review could not be saved', async () => {
+    const failure = new RunStateConflict({ message: faker.lorem.sentence() });
+    const memory = new InMemoryRunStore();
+    const failFirstSaveOfAReview = vi.fn(async (state: RunState) =>
+      state.designReview &&
+      failFirstSaveOfAReview.mock.calls.filter(([saved]) => saved.designReview).length === 1
+        ? Result.err(failure)
+        : memory.save(state),
+    );
+    const store = mock<RunStore>({ load: (id) => memory.load(id), save: failFirstSaveOfAReview });
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, invoke, run, start } = await setup({ settings: runSettings(), store });
+    scriptDesign(agent);
+    agent.script('reviewer', designFindings(aDesignFinding()));
+
+    const unsaved = await invoke(start);
+
+    expect(unsaved.isErr() && unsaved.error).toBe(failure);
+    const saved = (await memory.load(start.runId)).unwrap();
+    expect(saved).toMatchObject({ phase: 'reviewingDesign' });
+    expect(saved?.designReview).toBeUndefined();
+    agent.script('reviewer', designApproval());
+    agent.script('planner', { output: [slice] });
+    scriptDelivery(agent, [slice]);
+    const plannerCallsBeforeResume = agent.calls.filter((call) => call.role === 'planner').length;
+
+    const { status, state } = await run(saved ?? start);
+
+    expect(status).toBe('done');
+    expect(state.designReview).toEqual({ reviews: [{ findings: [] }] });
+    expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(
+      plannerCallsBeforeResume + 1,
+    );
+  });
+
+  it('checks the slices against the revised plan and takes their one coverage correction', async () => {
+    const progress = aRevisionAwaitingReReview();
+    const revised = designDocs({ plan: planWithSteps(1, 2) });
+    const partial = [aPlannedSlice({ description: implementingPlanSteps(1) })];
+    const corrected = [
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+      aPlannedSlice({ description: implementingPlanSteps(2) }),
+    ];
+    const { agent, run, start } = await setup({ settings: runSettings() });
+    const saved = aRunState({
+      runId: start.runId,
+      phase: 'reviewingDesign',
+      docs: revised,
+      designReview: progress,
+    });
+    agent.script('reviewer', designApproval());
+    agent.script('planner', { output: partial }, { output: corrected });
+    scriptDelivery(agent, corrected);
+
+    const { status, state } = await run(saved);
+
+    expect(status).toBe('done');
+    expect(state.slices.map((slice) => slice.id)).toEqual(corrected.map((slice) => slice.id));
+    expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(2);
+  });
+
+  it('writes and reviews the design of a run saved in designing before there were reviews, without planning again', async () => {
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start } = await setup({ settings: runSettings() });
+    const saved = aRunState({ runId: start.runId, phase: 'designing' });
+    agent.script('planner', { output: designDocs() }, { output: [slice] });
+    agent.script('reviewer', designApproval());
+    scriptDelivery(agent, [slice]);
+
+    const { status, state } = await run(saved);
+
+    expect(status).toBe('done');
+    expect(state).toMatchObject({ context: saved.context, plan: saved.plan });
+    expect(state.designReview).toEqual({ reviews: [{ findings: [] }] });
+    expect(agent.calls.filter((call) => call.role === 'planner')).toHaveLength(2);
+  });
+
+  it.each(['gate', 'paused', 'slices'] as const)(
+    'delivers the slices of a run saved in %s before there were design reviews, without planning or reviewing the design',
+    async (phase) => {
+      const slice = aSlice({ status: 'pending' });
+      const { agent, run, start } = await setup({ settings: runSettings() });
+      const saved = aRunState({ runId: start.runId, phase, slices: [slice] });
+      agent.script('implementer', { files: { [`${slice.id}.txt`]: faker.lorem.sentence() } });
+      agent.script('reviewer', approval(), fulfillment());
+      agent.script('describer', aDescription());
+
+      const { status, state } = await run(saved);
+
+      expect(status).toBe('done');
+      expect(state.designReview).toBeUndefined();
+      expect(state.slices.map((each) => [each.id, each.status])).toEqual([[slice.id, 'approved']]);
+      expect(agent.calls.some((call) => call.role === 'planner')).toBe(false);
+      expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(2);
+    },
+  );
+
+  it.each([
+    ['finalCheck', 1],
+    ['describing', 0],
+    ['merging', 0],
+    ['awaitingMerge', 0],
+  ] as const)(
+    'finishes a run saved in %s before there were design reviews, without planning or reviewing the design',
+    async (phase, finalChecks) => {
+      const { agent, run, start } = await setup({ settings: runSettings() });
+      const saved = aRunState({
+        runId: start.runId,
+        phase,
+        slices: [aSlice({ status: 'approved' })],
+      });
+      agent.script('reviewer', fulfillment());
+      agent.script('describer', aDescription());
+
+      const { status, state } = await run(saved);
+
+      expect(status).toBe('done');
+      expect(state.designReview).toBeUndefined();
+      expect(agent.calls.some((call) => call.role === 'planner')).toBe(false);
+      expect(agent.calls.filter((call) => call.role === 'reviewer')).toHaveLength(finalChecks);
+    },
+  );
+
+  it.each(['done', 'stuck'] as const)(
+    'leaves a run saved as %s before there were design reviews where it ended',
+    async (phase) => {
+      const { agent, run, start } = await setup({ settings: runSettings() });
+      const saved = aRunState({ runId: start.runId, phase });
+
+      const { status, state } = await run(saved);
+
+      expect(status).toBe(phase);
+      expect(state).toEqual({ ...saved, blockedReason: undefined });
+      expect(agent.calls).toHaveLength(0);
+    },
+  );
+
   async function setup(input: {
     settings: RunSettings;
     exec?: (command: string) => ExecResult | SandboxUnavailable;
+    store?: RunStore;
   }) {
     const id = runId();
     const { sandboxPath, workspace, git, runBranch, worktreePath } = await createRunWorktree(id);
     const agent = new FakeAgentSession(sandboxPath, input.exec);
-    const store = new InMemoryRunStore();
+    const store = input.store ?? new InMemoryRunStore();
     const dependencies = {
       ports: { agent, workspace },
       store,
@@ -867,10 +1158,11 @@ describe('runFlow', () => {
       settings: input.settings,
     };
     const start = startRun({ runId: id, baseBranch: 'main', request: faker.lorem.paragraph() });
-    const run = async (state: RunState) => (await runEngine(runFlow, state, dependencies)).unwrap();
+    const invoke = (state: RunState) => runEngine(runFlow, state, dependencies);
+    const run = async (state: RunState) => (await invoke(state)).unwrap();
     const runBranchHistory = () =>
       git.raw(['log', '--reverse', '--format=%s', '--patch', `main..${runBranch}`]);
-    return { agent, run, start, store, git, runBranch, worktreePath, runBranchHistory };
+    return { agent, invoke, run, start, store, git, runBranch, worktreePath, runBranchHistory };
   }
 });
 

@@ -221,18 +221,32 @@ export function aFirstDesignReview({
   return { reviews: [{ findings }] };
 }
 
+/** A design review whose findings the planner has revised, awaiting the re-review. */
+export function aRevisionAwaitingReReview({
+  findings = [aDesignFinding()],
+  reviewedDocs = designDocs(),
+}: { findings?: DesignFinding[]; reviewedDocs?: DesignDocs } = {}): DesignReviewProgress {
+  return {
+    reviews: [{ findings }],
+    revision: { reviewedDocs, dispositions: findings.map((finding) => aDisposition(finding)) },
+  };
+}
+
 /** A design review through its revision and re-review, with `outstanding` left standing. */
 export function aRevisedDesignReview({
   findings = [aDesignFinding()],
   outstanding = [aDesignFinding()],
 }: { findings?: DesignFinding[]; outstanding?: DesignFinding[] } = {}): DesignReviewProgress {
-  return {
-    reviews: [{ findings }, { findings: outstanding }],
-    revision: {
-      reviewedDocs: designDocs(),
-      dispositions: findings.map((finding) => aDisposition(finding)),
-    },
-  };
+  const revised = aRevisionAwaitingReReview({ findings });
+  return { ...revised, reviews: [...revised.reviews, { findings: outstanding }] };
+}
+
+/** A design review that approved the design, at the first review or at the re-review. */
+export function anApprovedDesignReview(): DesignReviewProgress {
+  return faker.helpers.arrayElement([
+    { reviews: [{ findings: [] }] },
+    aRevisedDesignReview({ outstanding: [] }),
+  ]);
 }
 
 export function runSettings({
