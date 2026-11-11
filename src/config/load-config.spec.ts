@@ -209,11 +209,13 @@ describe('validationWarnings', () => {
     const step = { provider: 'codex', model: faker.word.noun() } as const;
     const config = await setup({ implementer: step, reviewer: step, mergeMode: 'auto' });
 
+    const mergeOnlyWarnings = validationWarnings(await setup({ mergeMode: 'auto' }));
+
     const warnings = validationWarnings(config);
 
     expect(warnings).toHaveLength(2);
     expect(warnings[0]).toContain(step.model);
-    expect(warnings[1]).not.toContain(step.model);
+    expect(warnings.slice(1)).toEqual(mergeOnlyWarnings);
   });
 
   it.each<{ case: string; implementer: StepConfig; reviewer: StepConfig; shared: boolean }>([
