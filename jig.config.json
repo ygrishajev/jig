@@ -1,11 +1,11 @@
 {
   "planner": {
-    "provider": "claude",
-    "model": "opus"
+    "provider": "codex",
+    "model": "gpt-6-astra"
   },
   "implementer": {
-    "provider": "opencode",
-    "model": "openrouter/~z-ai/glm-flash-latest"
+    "provider": "claude",
+    "model": "opus"
   },
   "reviewer": {
     "provider": "codex",
@@ -13,7 +13,7 @@
   },
   "describer": {
     "provider": "claude",
-    "model": "sonnet"
+    "model": "haiku"
   },
   "setupCommand": "npm ci",
   "verifyCommand": "npm run validate -- --skip test:mutation"
