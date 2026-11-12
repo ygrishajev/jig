@@ -2,8 +2,9 @@
 
 An agentic SDLC orchestrator: a CLI that turns a markdown request into planned slices, has an agent
 implement and another review each one inside a sandbox, and lands them on one run branch.
-`README.md` has the commands and configuration; `docs/superpowers/specs/` has the design
-decisions — read the newest spec before changing anything structural.
+[`README.md`](README.md) is the entry point; [`docs/README.md`](docs/README.md) links the
+commands and configuration. Review the [architecture map](docs/architecture.html) and
+current implementation before changing anything structural.
 
 ## House rules
 
@@ -43,7 +44,9 @@ write-file-atomic, pino, zod, simple-git, execa, commander.
 - **Credentials never land in a file jig writes, a log line, or the image.** They come from the
   environment or `.jig/.env` and go into the container as env vars. The one exception: when the
   operator agrees at `jig init`'s prompt, jig saves a credential to `.jig/.env`, owner-only and
-  ignored by `.jig/.gitignore`. Only credentials are read from that file. Every `.env` is
-  git-ignored; keep it that way.
+  ignored by `.jig/.gitignore`. Only credentials are read from that file. Codex uses a private copy of an explicitly selected
+  login cache; valid refreshed credentials are written back when the sandbox closes. See
+  [Codex authentication](docs/authentication.md#codex-authentication). Every `.env` is git-ignored;
+  keep it that way.
 - **Tags publish.** Pushing a `v*.*.*` tag runs `.github/workflows/publish.yml`, which publishes
   the package to GitHub Packages. Bump the version in a commit first; never push a tag casually.

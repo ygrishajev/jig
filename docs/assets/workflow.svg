@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="380" viewBox="0 0 1040 380" role="img" aria-labelledby="title description">
+  <title id="title">From a request to a reviewed run branch</title>
+  <desc id="description">A Markdown request enters a Docker sandbox. Agents plan and review the design, then implement, verify, and review each slice, repeating when changes are needed. A final check allows one repair. Implementation commits become a single run branch with a pull request description for you to review and merge.</desc>
+  <defs>
+    <style>
+      svg { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .ink { fill: #1f2937; }
+      .muted { fill: #526173; }
+      .card { fill: #fff; stroke: #b8c5d3; }
+      .sandbox { fill: #f3f8fc; stroke: #93afc7; stroke-dasharray: 5 5; }
+      .agent { fill: #e8f5f1; stroke: #409582; }
+      .output { fill: #eef0ff; stroke: #818bc9; }
+      .line { fill: none; stroke: #60758a; stroke-width: 1.7; }
+      .arrow { fill: #60758a; }
+      .label { font-size: 17px; font-weight: 600; }
+      .small { font-size: 14px; }
+      .caption { font-size: 15px; }
+      @media (prefers-color-scheme: dark) {
+        .ink { fill: #edf2f7; }
+        .muted { fill: #b4c2d1; }
+        .card { fill: #18222e; stroke: #64768b; }
+        .sandbox { fill: #111f2d; stroke: #6c93b2; }
+        .agent { fill: #15382f; stroke: #66bca5; }
+        .output { fill: #252944; stroke: #969fe0; }
+        .line { stroke: #a2b6cb; }
+        .arrow { fill: #a2b6cb; }
+      }
+    </style>
+    <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path class="arrow" d="M0 0 7 3.5 0 7Z"/>
+    </marker>
+  </defs>
+
+  <rect class="sandbox" x="198" y="38" width="622" height="276" rx="18"/>
+  <text class="muted small" x="222" y="67" font-weight="600" letter-spacing="1.4">DOCKER SANDBOX</text>
+  <text class="muted small" x="798" y="67" text-anchor="end">Claude Code · OpenCode · Codex</text>
+
+  <path class="line" d="M171 179H227" marker-end="url(#arrow)"/>
+  <path class="line" d="M373 179H387V138H417" marker-end="url(#arrow)"/>
+  <path class="line" d="M589 254H620V179H638" marker-end="url(#arrow)"/>
+  <path class="line" d="M787 179H855" marker-end="url(#arrow)"/>
+
+  <rect class="card" x="12" y="136" width="158" height="86" rx="12"/>
+  <path class="line" d="M34 154H48L54 160V180H34Z M48 154V161H54 M39 168H49 M39 173H47"/>
+  <text class="ink label" x="91" y="182" text-anchor="middle">Request</text>
+  <text class="muted small" x="91" y="204" text-anchor="middle">Markdown in</text>
+
+  <rect class="agent" x="228" y="131" width="145" height="96" rx="12"/>
+  <text class="ink label" x="300" y="165" text-anchor="middle">Plan</text>
+  <text class="muted small" x="300" y="190" text-anchor="middle">+ design review</text>
+  <text class="muted small" x="300" y="211" text-anchor="middle">before coding</text>
+
+  <text class="muted small" x="504" y="102" text-anchor="middle" font-weight="600">FOR EACH SLICE</text>
+  <rect class="agent" x="419" y="117" width="170" height="42" rx="9"/>
+  <text class="ink label" x="504" y="144" text-anchor="middle">Implement</text>
+  <path class="line" d="M504 159V173" marker-end="url(#arrow)"/>
+  <rect class="card" x="419" y="175" width="170" height="42" rx="9"/>
+  <text class="ink label" x="504" y="202" text-anchor="middle">Verify</text>
+  <path class="line" d="M504 217V231" marker-end="url(#arrow)"/>
+  <rect class="agent" x="419" y="233" width="170" height="42" rx="9"/>
+  <text class="ink label" x="504" y="260" text-anchor="middle">Review</text>
+  <path class="line" d="M419 254H405V138H417" marker-end="url(#arrow)"/>
+  <text class="muted small" x="504" y="298" text-anchor="middle">Repeat until approved</text>
+
+  <rect class="agent" x="640" y="131" width="147" height="96" rx="12"/>
+  <text class="ink label" x="713" y="165" text-anchor="middle">Final check</text>
+  <text class="muted small" x="713" y="190" text-anchor="middle">Whole request</text>
+  <text class="muted small" x="713" y="211" text-anchor="middle">One repair allowed</text>
+
+  <rect class="output" x="857" y="122" width="171" height="114" rx="12"/>
+  <text class="ink label" x="942" y="153" text-anchor="middle">One run branch</text>
+  <text class="muted small" x="942" y="178" text-anchor="middle">Reviewed commits</text>
+  <text class="muted small" x="942" y="199" text-anchor="middle">+ PR description</text>
+  <text class="ink small" x="942" y="222" text-anchor="middle" font-weight="600">You review and merge</text>
+
+  <text class="muted caption" x="520" y="353" text-anchor="middle">Private clone inside the sandbox. Implementation commits imported to the host.</text>
+</svg>
