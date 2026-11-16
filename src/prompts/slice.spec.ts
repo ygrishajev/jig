@@ -55,6 +55,15 @@ describe('implementPrompt', () => {
     const prompt = implementPrompt(aSlice(), verifyCommand);
 
     expect(prompt).toContain(`running \`${verifyCommand}\` once you finish`);
+    expect(prompt).toContain('never a broader one');
+  });
+
+  it('ends with the verify command so the implementer reads it last', () => {
+    const verifyCommand = `npm run ${faker.lorem.slug()}`;
+
+    const prompt = implementPrompt(aSlice(), verifyCommand);
+
+    expect(prompt.lastIndexOf(verifyCommand)).toBeGreaterThan(prompt.indexOf('commitMessage'));
   });
 
   it('asks the implementer to run the project checks itself when no verify command is configured', () => {

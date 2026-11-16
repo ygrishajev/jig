@@ -16,14 +16,14 @@ export function implementPrompt(slice: Slice, verifyCommand?: string): string {
     '',
     ...checkAgainstHouseRulesLast(),
     '',
-    ...verifyBeforeFinishing(verifyCommand),
-    '',
     ...commitMessageReply(),
     '',
     'Before writing a script to re-derive something a tool already reported (e.g. parsing a',
     "mutation-testing or coverage tool's own output by hand), re-read what it already printed.",
     'Before re-running a slow check, check whether a later, more specific step already covers it',
     '(e.g. a full test-suite run right before a tool that re-runs the same suite itself).',
+    '',
+    ...verifyBeforeFinishing(verifyCommand),
   ].join('\n');
 }
 
@@ -88,6 +88,15 @@ function checkAgainstHouseRulesLast(): string[] {
   ];
 }
 
+function commitMessageReply(): string[] {
+  return [
+    'When you are done, reply with { "commitMessage": string }: the commit message for your',
+    'change. Whatever you leave uncommitted is committed with it, so write it in this',
+    "repository's commit convention (its history and any commit-message lint config show it): a",
+    'one-line header that says what changed, then a body that says why.',
+  ];
+}
+
 /** The implementer runs the check jig will run, not a slower one it guesses at. */
 function verifyBeforeFinishing(verifyCommand?: string): string[] {
   if (!verifyCommand) {
@@ -97,17 +106,10 @@ function verifyBeforeFinishing(verifyCommand?: string): string[] {
   }
   return [
     `jig verifies this slice by running \`${verifyCommand}\` once you finish. Run that exact`,
-    'command before finishing and make it pass. It is the check that counts: do not run checks',
-    'it leaves out.',
-  ];
-}
-
-function commitMessageReply(): string[] {
-  return [
-    'When you are done, reply with { "commitMessage": string }: the commit message for your',
-    'change. Whatever you leave uncommitted is committed with it, so write it in this',
-    "repository's commit convention (its history and any commit-message lint config show it): a",
-    'one-line header that says what changed, then a body that says why.',
+    'command, with every argument it has, before finishing and make it pass. It is the only full',
+    'check you run: never a broader one, such as the same script without its arguments or a',
+    'suite it skips, even if the README, a contributing guide or the script itself suggests it.',
+    'Run narrower checks (one spec file, lint on one file) freely while you work.',
   ];
 }
 
