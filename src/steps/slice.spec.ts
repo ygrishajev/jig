@@ -549,14 +549,21 @@ describe('slice steps', () => {
     );
   });
 
-  it('tells the reviewer to run the checks itself when no verify result is recorded', async () => {
-    const { run, agent } = await setup({ reviewer: [approval()] });
+  it('changes reviewer guidance when a verification result becomes available', async () => {
+    const command = `npm run ${faker.lorem.slug()}`;
+    const slice = aSlice({ status: 'in_review', verification: undefined });
+    const { run, agent } = await setup({ reviewer: [approval(), approval()] });
 
-    await run(reviewSlice, aSlice({ status: 'in_review', verification: undefined }));
+    await run(reviewSlice, slice);
+    const withoutResult = agent.calls.at(-1)?.prompt ?? '';
+    await run(reviewSlice, { ...slice, verification: { command } });
+    const withResult = agent.calls.at(-1)?.prompt ?? '';
+    const absentGuidance = withoutResult.split('\n').filter((line) => !withResult.includes(line));
 
-    expect(agent.calls.at(-1)?.prompt).toContain(
-      "no verify result is recorded (no verify command is configured) — run the project's tests and lint yourself before approving",
-    );
+    expect(absentGuidance.length).toBeGreaterThan(0);
+    expect(withoutResult).not.toContain(command);
+    expect(withResult).toContain(command);
+    for (const line of absentGuidance) expect(withResult).not.toContain(line);
   });
 
   it('still tells the reviewer to reject a slice that is only scaffolding', async () => {
