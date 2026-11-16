@@ -38,6 +38,24 @@ describe('finalCheckPrompt', () => {
     expect(prompt).not.toContain(head.slice(0, 500));
   });
 
+  it.each([true, false])(
+    'replaces absent verification guidance for a recorded result: %s',
+    (passed) => {
+      const command = `npm run ${faker.lorem.slug()}`;
+      const output = faker.lorem.paragraph();
+      const input = setup({});
+      const absent = finalCheckPrompt(input);
+      const recorded = finalCheckPrompt({ ...input, verification: { command, passed, output } });
+      const absentGuidance = absent.split('\n').filter((line) => !recorded.includes(line));
+
+      expect(absentGuidance.length).toBeGreaterThan(0);
+      expect(absent).not.toContain(command);
+      expect(recorded).toContain(command);
+      expect(recorded.includes(output)).toBe(!passed);
+      for (const line of absentGuidance) expect(recorded).not.toContain(line);
+    },
+  );
+
   function setup(input: {
     request?: string;
     plan?: string;

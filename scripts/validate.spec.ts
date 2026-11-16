@@ -40,8 +40,17 @@ describe('validation command', () => {
       const { run } = await setup();
       const result = await run(args);
       expect(result.exitCode).toBe(0);
-      expect(result.all).toContain('secretlint:end');
-      expect(result.all).toContain('test:coverage:end');
+      for (const check of [
+        'build',
+        'typecheck',
+        'lint',
+        'lint:duplication',
+        'format:check',
+        'test:coverage',
+        'secretlint',
+      ]) {
+        expect(result.all).toContain(`${check}:end`);
+      }
       expect(result.all).not.toContain('test:mutation:start');
     },
   );

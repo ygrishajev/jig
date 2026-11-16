@@ -32,6 +32,7 @@ export function implementPrompt(slice: Slice, verifyCommand?: string): string {
     '(e.g. a full test-suite run right before a tool that re-runs the same suite itself).',
     '',
     ...verificationGuidance(verifyCommand),
+    'Do not run mutation testing as a side effect of implementation or review.',
   ].join('\n');
 }
 
@@ -108,7 +109,8 @@ function commitMessageReply(): string[] {
 function verificationGuidance(verifyCommand?: string): string[] {
   if (!verifyCommand) {
     return [
-      "No verify command is configured: run the project's tests and lint yourself before finishing.",
+      'No verify command is configured: use focused tests and lint for the changed files before finishing.',
+      'Report what you checked and any remaining verification gaps.',
     ];
   }
   return [
@@ -176,15 +178,16 @@ function sliceReviewSections(
     '',
     slice.verification
       ? `\`${slice.verification.command}\` passed in the sandbox for the commits in \`${range}\``
-      : "no verify result is recorded (no verify command is configured) — run the project's tests and lint yourself before approving",
+      : 'No verify result is recorded (no verify command is configured). Use focused tests and lint',
     ...(slice.verification
       ? [
           'jig owns full verification. Do not rerun the verify command or run a broader check',
-          '(including the same script without its arguments), even when the request or repository',
+          '(including the same script without its arguments or a suite it skips), even when the request or repository',
           'instructions ask for it. Judge this recorded result alongside the diff; use focused',
           'checks to investigate a specific concern and report any remaining verification gaps.',
         ]
-      : []),
+      : ['for the changed files and report what you checked and any remaining verification gaps.']),
+    'Do not run mutation testing as a side effect of review.',
     ...protectedChangesSection(protectedChanges),
     '',
     'Decide whether this slice is ready to merge as-is.',

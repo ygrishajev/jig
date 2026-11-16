@@ -34,6 +34,7 @@ export function finalCheckPrompt(input: FinalCheckPromptInput): string {
     '--- PLAN END ---',
     '',
     ...verificationSection(verification, range),
+    'Do not run mutation testing as a side effect of review.',
     '',
     'Report every requirement of the request or the plan that the run leaves unmet, incomplete',
     'or broken — a gap — in one pass, not only the first or the most serious. Use focused',
@@ -50,13 +51,16 @@ function verificationSection(
   range: string,
 ): string[] {
   if (verification?.command === undefined) {
-    return ["No verify command is configured: run the project's checks yourself before deciding."];
+    return [
+      'No verify command is configured: use focused checks for the changed files before deciding.',
+      'Report what you checked and any remaining verification gaps.',
+    ];
   }
   if (verification.passed) {
     return [
       `The verify command \`${verification.command}\` passed in the sandbox for \`${range}\`.`,
       'jig owns full verification. Do not rerun the verify command or run a broader check',
-      '(including the same script without its arguments), even when the request or repository',
+      '(including the same script without its arguments or a suite it skips), even when the request or repository',
       'instructions ask for it. Use focused checks to investigate a specific concern.',
     ];
   }
@@ -64,7 +68,8 @@ function verificationSection(
     `The verify command \`${verification.command}\` failed in the sandbox for \`${range}\`. Its output:`,
     keepTail(verification.output ?? '', FINAL_CHECK_OUTPUT_TAIL),
     'jig owns full verification. Do not rerun the verify command or run a broader check',
-    '(including the same script without its arguments). Use focused checks to investigate the failure.',
+    '(including the same script without its arguments or a suite it skips), even when the request or',
+    'repository instructions ask for it. Use focused checks to investigate the recorded failure.',
   ];
 }
 

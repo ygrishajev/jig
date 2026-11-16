@@ -58,6 +58,11 @@ settings. The `agents` setting below pins CLI versions, not models.
 See [the pipeline](commands.md#pipeline) for review limits and
 [merging and signing](sandbox.md#merging-and-signing) for merge behavior.
 
+jig owns configured full verification. Implementers and reviewers use recorded results and
+focused checks for specific concerns rather than rerunning the command or a broader suite.
+Without a verification command, agents use focused tests and lint and report remaining gaps.
+Mutation testing is not an implementation or review side effect; select it explicitly when needed.
+
 ## Sandbox and agent CLIs
 
 | Key                       | Default  | Behavior                                                                                 |

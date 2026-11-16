@@ -7,6 +7,7 @@ import {
   EARLIER_FEEDBACK_LIMIT,
   implementPrompt,
   reviewPrompt,
+  verifyFailedFeedback,
 } from './slice.js';
 
 describe('implementPrompt', () => {
@@ -82,6 +83,18 @@ describe('implementPrompt', () => {
     expect(withCommand).toContain(command);
   });
 
+  it('carries a recorded verification failure into configured implementation feedback', () => {
+    const command = `npm run ${faker.lorem.slug()}`;
+    const output = faker.lorem.paragraph();
+    const feedback = verifyFailedFeedback(command, output);
+    const slice = aSlice({ lastFeedback: feedback, feedbackHistory: [feedback] });
+
+    const prompt = implementPrompt(slice, command);
+
+    expect(prompt).toContain(feedback);
+    expect(prompt).toContain(output);
+  });
+
   function setup(input: { rounds: string[] }) {
     const slice = aSlice({
       lastFeedback: input.rounds[input.rounds.length - 1],
@@ -118,6 +131,20 @@ describe('reviewPrompt', () => {
     expect(reviewPrompt(aSlice({ verification: undefined }), reviewedRange, [])).not.toContain(
       command,
     );
+  });
+
+  it('replaces absent verification guidance with the recorded result', () => {
+    const slice = aSlice({ verification: undefined });
+    const reviewedRange = range();
+    const command = `npm run ${faker.lorem.slug()}`;
+    const withoutResult = reviewPrompt(slice, reviewedRange, []);
+    const withResult = reviewPrompt({ ...slice, verification: { command } }, reviewedRange, []);
+    const absentGuidance = withoutResult.split('\n').filter((line) => !withResult.includes(line));
+
+    expect(absentGuidance.length).toBeGreaterThan(0);
+    expect(withoutResult).not.toContain(command);
+    expect(withResult).toContain(command);
+    for (const line of absentGuidance) expect(withResult).not.toContain(line);
   });
 
   it('adds nothing about protected files when none were touched', () => {

@@ -17,10 +17,13 @@ changes are needed. Modify only `summary.mjs`. Never change `summary.test.mjs` o
 request, configuration, package manifest, or ignore files. The reviewer must reject
 changes to these files. Do not inspect credentials or environment variables.
 
-Verify from the repository root:
+The configured verification command runs from the repository root; jig runs it and records
+the result for review:
 
 ```sh
 node --test --test-reporter=tap summary.test.mjs
 ```
+
+Use focused checks while implementing rather than rerunning full verification.
 
 Done when all six tests pass and only `summary.mjs` has changed.
