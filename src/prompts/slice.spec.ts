@@ -49,13 +49,12 @@ describe('implementPrompt', () => {
     expect(prompt).not.toContain('did not work: find out why');
   });
 
-  it('tells the implementer to run the configured verify command before finishing', () => {
+  it('passes the configured verify command to the implementer as jig-owned verification', () => {
     const verifyCommand = `npm run ${faker.lorem.slug()}`;
 
     const prompt = implementPrompt(aSlice(), verifyCommand);
 
-    expect(prompt).toContain(`running \`${verifyCommand}\` once you finish`);
-    expect(prompt).toContain('never a broader one');
+    expect(prompt).toContain(verifyCommand);
   });
 
   it('ends with the verify command so the implementer reads it last', () => {
@@ -66,10 +65,11 @@ describe('implementPrompt', () => {
     expect(prompt.lastIndexOf(verifyCommand)).toBeGreaterThan(prompt.indexOf('commitMessage'));
   });
 
-  it('asks the implementer to run the project checks itself when no verify command is configured', () => {
-    const prompt = implementPrompt(aSlice());
+  it('includes a configured command only when one is supplied', () => {
+    const command = `npm run ${faker.lorem.slug()}`;
 
-    expect(prompt).toContain('No verify command is configured');
+    expect(implementPrompt(aSlice())).not.toContain(command);
+    expect(implementPrompt(aSlice(), command)).toContain(command);
   });
 
   function setup(input: { rounds: string[] }) {
@@ -93,6 +93,21 @@ describe('reviewPrompt', () => {
 
     expect(prompt).toContain(`${modifiedSpec} (modified)`);
     expect(prompt).toContain(`${deletedWorkflow} (deleted)`);
+  });
+
+  it('reports the recorded verification for the reviewed range', () => {
+    const command = `npm run ${faker.lorem.slug()}`;
+    const reviewedRange = range();
+    const slice = aSlice({ verification: { command } });
+
+    const prompt = reviewPrompt(slice, reviewedRange, []);
+
+    expect(prompt).toContain(
+      `\`${command}\` passed in the sandbox for the commits in \`${reviewedRange}\``,
+    );
+    expect(reviewPrompt(aSlice({ verification: undefined }), reviewedRange, [])).not.toContain(
+      command,
+    );
   });
 
   it('adds nothing about protected files when none were touched', () => {

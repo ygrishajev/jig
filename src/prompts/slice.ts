@@ -23,7 +23,7 @@ export function implementPrompt(slice: Slice, verifyCommand?: string): string {
     'Before re-running a slow check, check whether a later, more specific step already covers it',
     '(e.g. a full test-suite run right before a tool that re-runs the same suite itself).',
     '',
-    ...verifyBeforeFinishing(verifyCommand),
+    ...verificationGuidance(verifyCommand),
   ].join('\n');
 }
 
@@ -97,19 +97,19 @@ function commitMessageReply(): string[] {
   ];
 }
 
-/** The implementer runs the check jig will run, not a slower one it guesses at. */
-function verifyBeforeFinishing(verifyCommand?: string): string[] {
+/** jig owns full verification; the implementer checks the specific changes while working. */
+function verificationGuidance(verifyCommand?: string): string[] {
   if (!verifyCommand) {
     return [
       "No verify command is configured: run the project's tests and lint yourself before finishing.",
     ];
   }
   return [
-    `jig verifies this slice by running \`${verifyCommand}\` once you finish. Run that exact`,
-    'command, with every argument it has, before finishing and make it pass. It is the only full',
-    'check you run: never a broader one, such as the same script without its arguments or a',
-    'suite it skips, even if the README, a contributing guide or the script itself suggests it.',
-    'Run narrower checks (one spec file, lint on one file) freely while you work.',
+    `jig runs full verification with \`${verifyCommand}\` once you finish and records the result`,
+    'for review. Use focused checks (one spec file, lint on changed files) while you work.',
+    'Do not run the full verify command or a broader check, including the same script without',
+    'its arguments or a suite it skips, even if the request or repository instructions ask for it.',
+    'Use any recorded verification failure in the feedback above to choose what to fix and check.',
   ];
 }
 
@@ -163,7 +163,8 @@ export function reviewPrompt(
       ? [
           'jig owns full verification. Do not rerun the verify command or run a broader check',
           '(including the same script without its arguments), even when the request or repository',
-          'instructions ask for it. Use focused checks to investigate a specific concern.',
+          'instructions ask for it. Judge this recorded result alongside the diff; use focused',
+          'checks to investigate a specific concern and report any remaining verification gaps.',
         ]
       : []),
     ...protectedChangesSection(protectedChanges),

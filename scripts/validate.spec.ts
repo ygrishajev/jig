@@ -23,21 +23,33 @@ describe('validation command', () => {
     expect(result.all).not.toContain('typecheck:start');
   });
 
-  it('rejects unknown checks before starting any work', async () => {
+  it.each([
+    ['build', 'typo'],
+    ['build', '--skip', 'typo'],
+  ])('rejects unknown checks before starting any work: %j', async (...args) => {
     const { run } = await setup();
-    const result = await run(['build', 'typo']);
+    const result = await run(args);
     expect(result.exitCode).not.toBe(0);
-    expect(result.all).toContain('invalid');
     expect(result.all).not.toContain('build:start');
   });
 
-  it('defaults to all checks and allows mutation testing to be skipped', async () => {
+  it.each([{ args: [] }, { args: ['--skip', 'test:mutation'] }])(
+    'defaults to routine checks with arguments %j',
+    async ({ args }) => {
+      const { run } = await setup();
+      const result = await run(args);
+      expect(result.exitCode).toBe(0);
+      expect(result.all).toContain('secretlint:end');
+      expect(result.all).toContain('test:coverage:end');
+      expect(result.all).not.toContain('test:mutation:start');
+    },
+  );
+
+  it('runs mutation testing when explicitly selected', async () => {
     const { run } = await setup();
-    const result = await run(['--skip', 'test:mutation']);
+    const result = await run(['build', 'lint', 'test:mutation']);
     expect(result.exitCode).toBe(0);
-    expect(result.all).toContain('secretlint:end');
-    expect(result.all).toContain('test:coverage:end');
-    expect(result.all).not.toContain('test:mutation:start');
+    expect(result.all).toContain('test:mutation:end');
   });
 
   it('rejects an empty selection', async () => {

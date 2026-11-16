@@ -1,6 +1,6 @@
 name: CI
 
-# Every check `npm run validate` runs except mutation testing, on a runner that has only the
+# Every routine check `npm run validate` runs, on a runner that has only the
 # repository, its lockfile and the pinned Node — the proof that nothing depends on a developer's
 # machine.
 
@@ -26,4 +26,4 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run validate -- --skip test:mutation
+      - run: npm run validate

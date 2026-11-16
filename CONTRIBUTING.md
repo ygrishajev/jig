@@ -24,15 +24,17 @@ a built package globally.
 
 Use the development Node version pinned in `package.json` through Volta.
 
-Run all validations concurrently, with each check's stdout and stderr printed together
+Run routine validations concurrently, with each check's stdout and stderr printed together
 when it finishes. Failed checks do not cancel the others; any failure makes the command fail.
-The default includes coverage (which runs the test suite) and the slow mutation check.
+The default includes build, typecheck, lint, duplication, formatting, coverage (which runs
+the test suite), and secret scanning. Mutation testing is omitted and reported as such;
+run `npm run test:mutation` separately when needed. The legacy `--skip test:mutation`
+option remains accepted, but is unnecessary. Explicit check names can opt into mutation testing.
 
 ```bash
 npm run validate
-npm run validate -- --skip test:mutation
 npm run validate -- lint typecheck
-npm run validate -- --skip test:mutation test:coverage
+npm run validate -- --skip test:coverage
 npm run validate -- --help
 ```
 

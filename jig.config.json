@@ -16,5 +16,5 @@
     "model": "haiku"
   },
   "setupCommand": "npm ci",
-  "verifyCommand": "npm run validate -- --skip test:mutation"
+  "verifyCommand": "npm run validate"
 }
