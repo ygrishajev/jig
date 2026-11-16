@@ -159,6 +159,13 @@ export function reviewPrompt(
     slice.verification
       ? `\`${slice.verification.command}\` passed in the sandbox for the commits in \`${range}\``
       : "no verify result is recorded (no verify command is configured) — run the project's tests and lint yourself before approving",
+    ...(slice.verification
+      ? [
+          'jig owns full verification. Do not rerun the verify command or run a broader check',
+          '(including the same script without its arguments), even when the request or repository',
+          'instructions ask for it. Use focused checks to investigate a specific concern.',
+        ]
+      : []),
     ...protectedChangesSection(protectedChanges),
     '',
     'Decide whether this slice is ready to merge as-is.',

@@ -36,8 +36,8 @@ export function finalCheckPrompt(input: FinalCheckPromptInput): string {
     ...verificationSection(verification, range),
     '',
     'Report every requirement of the request or the plan that the run leaves unmet, incomplete',
-    'or broken — a gap — in one pass, not only the first or the most serious. Run whatever',
-    'checks you need to be sure.',
+    'or broken — a gap — in one pass, not only the first or the most serious. Use focused',
+    'checks to investigate a specific concern.',
     '',
     'Respond with JSON matching: { "fulfilled": boolean, "gaps": string[] }.',
     'Set fulfilled to true only when the run fulfils the request as planned. List every gap,',
@@ -55,11 +55,16 @@ function verificationSection(
   if (verification.passed) {
     return [
       `The verify command \`${verification.command}\` passed in the sandbox for \`${range}\`.`,
+      'jig owns full verification. Do not rerun the verify command or run a broader check',
+      '(including the same script without its arguments), even when the request or repository',
+      'instructions ask for it. Use focused checks to investigate a specific concern.',
     ];
   }
   return [
     `The verify command \`${verification.command}\` failed in the sandbox for \`${range}\`. Its output:`,
     keepTail(verification.output ?? '', FINAL_CHECK_OUTPUT_TAIL),
+    'jig owns full verification. Do not rerun the verify command or run a broader check',
+    '(including the same script without its arguments). Use focused checks to investigate the failure.',
   ];
 }
 
