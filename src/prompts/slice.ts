@@ -97,7 +97,6 @@ function commitMessageReply(): string[] {
   ];
 }
 
-/** jig owns full verification; the implementer checks the specific changes while working. */
 function verificationGuidance(verifyCommand?: string): string[] {
   if (!verifyCommand) {
     return [

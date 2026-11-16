@@ -30,6 +30,7 @@ describe('validation command', () => {
     const { run } = await setup();
     const result = await run(args);
     expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(args[args.length - 1]);
     expect(result.all).not.toContain('build:start');
   });
 

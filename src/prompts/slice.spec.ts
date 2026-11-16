@@ -65,11 +65,16 @@ describe('implementPrompt', () => {
     expect(prompt.lastIndexOf(verifyCommand)).toBeGreaterThan(prompt.indexOf('commitMessage'));
   });
 
-  it('includes a configured command only when one is supplied', () => {
+  it('replaces fallback guidance when a verify command is supplied', () => {
     const command = `npm run ${faker.lorem.slug()}`;
+    const slice = aSlice();
+    const withoutCommand = implementPrompt(slice);
+    const fallback = withoutCommand.slice(withoutCommand.lastIndexOf('\n\n') + 2).trim();
+    const withCommand = implementPrompt(slice, command);
 
-    expect(implementPrompt(aSlice())).not.toContain(command);
-    expect(implementPrompt(aSlice(), command)).toContain(command);
+    expect(fallback).not.toBe('');
+    expect(withCommand).not.toContain(fallback);
+    expect(withCommand).toContain(command);
   });
 
   function setup(input: { rounds: string[] }) {
