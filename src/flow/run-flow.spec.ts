@@ -49,7 +49,7 @@ import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { AgentRunFailed, RunStateConflict, SandboxUnavailable } from '../domain/errors.js';
-import { type RunState, startRun } from '../domain/run-state.js';
+import { enterPhase, type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { PlannedSlice } from '../domain/slice.js';
 import type { ExecResult } from '../ports/agent-session.js';
@@ -687,7 +687,9 @@ describe('runFlow', () => {
       });
       scriptReusedRun(agent);
       const halted = await run(start);
-      const saved = await reload({ ...halted.state, phase, request: faker.lorem.paragraph() });
+      const saved = await reload(
+        enterPhase({ ...halted.state, request: faker.lorem.paragraph() }, phase),
+      );
       const callsBefore = agent.calls.length;
 
       const { status, state } = await run(saved);
@@ -742,6 +744,7 @@ describe('runFlow', () => {
       });
       scriptReusedRun(agent);
       const halted = await run(start);
+      if (halted.state.phase !== 'awaitingMerge') panic('The run never reached its manual merge');
       const saved = store.saved.find(
         (state) => state.phase === phase && state.completionReuseAuthorized,
       );
