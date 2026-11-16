@@ -1,6 +1,5 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
-import { readFile } from 'node:fs/promises';
 
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
@@ -10,7 +9,6 @@ import { validationWarnings } from '../config/load-config.js';
 import {
   type JigError,
   type LocalStateUnwritable,
-  messageOf,
   type MetricsLogCorrupt,
   RunRequestInvalid,
 } from '../domain/errors.js';
@@ -26,11 +24,14 @@ import { openRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 
 /**
- * Start a run from a request file — named `runId`, or a fresh id — or resume the run `resume`.
- * Starting with the id of an existing run resumes it only when the file is the request it was
+ * Start a run from a request — named `runId`, or a fresh id — or resume the run `resume`.
+ * Starting with the id of an existing run resumes it only when the text is the request it was
  * started with, so a retried CI job resumes safely and a new request is never attached to an old run.
  */
-export type RunJigInput = { start: string; runId?: RunId } | { resume: RunId };
+export type RunJigInput = { start: StartRequest; runId?: RunId } | { resume: RunId };
+
+/** The text of a request and, when it came from one, the file it was read from. */
+export type StartRequest = { text: string; file?: string };
 
 export type RunReport = EngineResult;
 
@@ -46,35 +47,20 @@ export async function runJig(
   app: AwilixContainer<AppCradle>,
   input: RunJigInput,
 ): Promise<Result<RunReport, JigError>> {
-  const target = await targetOf(input);
-  if (target.isErr()) return Result.err(target.error);
-  const releaseLock = await lockRun(app.cradle.repoRoot, target.value.runId);
+  const target = targetOf(input);
+  const releaseLock = await lockRun(app.cradle.repoRoot, target.runId);
   if (releaseLock.isErr()) return Result.err(releaseLock.error);
   try {
-    return await runLocked(app, target.value);
+    return await runLocked(app, target);
   } finally {
     await releaseLock.value();
   }
 }
 
-/** A fresh id is named after the request, so the request is read before the run is locked. */
-async function targetOf(input: RunJigInput): Promise<Result<RunTarget, RunRequestInvalid>> {
-  if ('resume' in input) return Result.ok({ runId: input.resume });
-  const request = await readRequest(input.start);
-  return request.map((text) => ({
-    request: text,
-    runId: input.runId ?? newRunId({ file: input.start, request: text }),
-  }));
-}
-
-function readRequest(file: string): Promise<Result<string, RunRequestInvalid>> {
-  return Result.tryPromise({
-    try: () => readFile(file, 'utf-8'),
-    catch: (error) =>
-      new RunRequestInvalid({
-        message: `Cannot read the request file "${file}": ${messageOf(error)}`,
-      }),
-  });
+function targetOf(input: RunJigInput): RunTarget {
+  if ('resume' in input) return { runId: input.resume };
+  const { start } = input;
+  return { request: start.text, runId: input.runId ?? newRunId(start) };
 }
 
 function runLocked(

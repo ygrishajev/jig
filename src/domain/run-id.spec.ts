@@ -18,33 +18,48 @@ describe('runIdSchema', () => {
 
 describe('newRunId', () => {
   it("names the run after the request's first heading", () => {
-    const id = newRunId({ file: 'request.md', request: '# Add Retry Backoff!\n\nBody' });
+    const [first, second] = faker.helpers.multiple(() => lowerWord(), { count: 2 });
 
-    expect(id).toMatch(/^add-retry-backoff-[0-9a-f]{8}$/);
+    const id = newRunId({ file: `${lowerWord()}.md`, text: `# ${first} ${second}!\n\nBody` });
+
+    expect(id).toMatch(new RegExp(`^${first}-${second}-[0-9a-f]{8}$`));
   });
 
   it('skips text before the heading and a deeper heading', () => {
-    const id = newRunId({ file: 'request.md', request: 'intro\n## Deeper\n# Fix the lock\n' });
+    const heading = lowerWord();
 
-    expect(id).toMatch(/^fix-the-lock-[0-9a-f]{8}$/);
+    const id = newRunId({
+      file: `${lowerWord()}.md`,
+      text: `${faker.lorem.sentence()}\n## ${lowerWord()}\n# ${heading}\n`,
+    });
+
+    expect(id).toMatch(new RegExp(`^${heading}-[0-9a-f]{8}$`));
   });
 
   it('names the run after the request file when it has no heading', () => {
-    const id = newRunId({ file: '/tmp/requests/Issue_42.md', request: 'no heading' });
+    const name = lowerWord();
 
-    expect(id).toMatch(/^issue-42-[0-9a-f]{8}$/);
+    const id = newRunId({ file: `/tmp/requests/${name}.md`, text: faker.lorem.sentence() });
+
+    expect(id).toMatch(new RegExp(`^${name}-[0-9a-f]{8}$`));
   });
 
   it('drops accents and keeps the letters under them', () => {
-    const id = newRunId({ file: 'request.md', request: '# Café crème' });
+    const id = newRunId({ file: `${lowerWord()}.md`, text: '# Café crème' });
 
     expect(id).toMatch(/^cafe-creme-[0-9a-f]{8}$/);
   });
 
-  it('is only the random part when neither heading nor file name has a letter or digit', () => {
-    const id = newRunId({ file: '/tmp/__.md', request: '# 🚀' });
+  it('is named stdin when neither heading nor file name has a letter or digit', () => {
+    const id = newRunId({ file: '/tmp/__.md', text: '# 🚀' });
 
-    expect(id).toMatch(/^[0-9a-f]{8}$/);
+    expect(id).toMatch(/^stdin-[0-9a-f]{8}$/);
+  });
+
+  it('is named stdin when the request has no heading and no file', () => {
+    const id = newRunId({ text: faker.lorem.paragraph() });
+
+    expect(id).toMatch(/^stdin-[0-9a-f]{8}$/);
   });
 
   it('cuts a long name at a word boundary', () => {
@@ -52,7 +67,7 @@ describe('newRunId', () => {
       count: 12,
     });
 
-    const id = newRunId({ file: 'request.md', request: `# ${words.join(' ')}` });
+    const id = newRunId({ file: `${lowerWord()}.md`, text: `# ${words.join(' ')}` });
 
     const name = id.replace(/-[0-9a-f]{8}$/, '');
     expect(name.length).toBeLessThanOrEqual(40);
@@ -62,20 +77,24 @@ describe('newRunId', () => {
   it('cuts a single long word at the limit', () => {
     const word = faker.string.alpha({ length: 60, casing: 'lower' });
 
-    const id = newRunId({ file: 'request.md', request: `# ${word}` });
+    const id = newRunId({ file: `${lowerWord()}.md`, text: `# ${word}` });
 
     expect(id).toBe(`${word.slice(0, 40)}-${id.slice(-8)}`);
   });
 
   it('gives two runs of the same request different ids', () => {
-    const request = { file: 'request.md', request: `# ${faker.lorem.words()}` };
+    const request = { file: `${lowerWord()}.md`, text: `# ${faker.lorem.words()}` };
 
     expect(newRunId(request)).not.toBe(newRunId(request));
   });
 
   it('always produces an id the schema accepts', () => {
-    const id = newRunId({ file: faker.system.filePath(), request: `# ${faker.lorem.sentence()}` });
+    const id = newRunId({ file: faker.system.filePath(), text: `# ${faker.lorem.sentence()}` });
 
     expect(runIdSchema.safeParse(id).success).toBe(true);
   });
 });
+
+function lowerWord() {
+  return faker.string.alpha({ length: 6, casing: 'lower' });
+}

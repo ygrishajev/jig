@@ -5,12 +5,12 @@ import { z } from 'zod';
 /**
  * `<name>-<random>`: the name, from the request's first `# heading` or else its file name, lets a
  * person tell runs apart in branches and worktrees; the random part keeps two runs of the same
- * request apart.
+ * request apart. A request with no heading and no file is named `stdin-<random>`.
  */
-export function newRunId({ file, request }: { file: string; request: string }): RunId {
-  const name = slugOf(firstHeading(request) ?? '') || slugOf(path.parse(file).name);
-  const unique = randomBytes(4).toString('hex');
-  return runIdSchema.parse(name ? `${name}-${unique}` : unique);
+export function newRunId({ text, file }: { text: string; file?: string }): RunId {
+  const name =
+    slugOf(firstHeading(text) ?? '') || slugOf(file ? path.parse(file).name : '') || 'stdin';
+  return runIdSchema.parse(`${name}-${randomBytes(4).toString('hex')}`);
 }
 
 function slugOf(text: string): string {

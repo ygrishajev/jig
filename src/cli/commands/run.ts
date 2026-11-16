@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { z } from 'zod';
 
 import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
+import type { RunRequestInvalid } from '../../domain/errors.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, runStopReason } from '../../domain/run-state.js';
 import { appAction, type CommandIo } from '../app-action.js';
@@ -13,6 +14,9 @@ import {
   presetOption,
 } from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
+import { readRequest } from '../read-request.js';
+
+type RunToDo = { start: string; runId?: RunId } | { resume: RunId };
 
 export function registerRunCommand(program: Command, io?: CommandIo): void {
   program
@@ -27,7 +31,9 @@ export function registerRunCommand(program: Command, io?: CommandIo): void {
       appAction(
         runInputSchema,
         async ({ run }, app) => {
-          const report = await runJig(app, run);
+          const input = await inputFor(run);
+          if (input.isErr()) return Result.err(input.error);
+          const report = await runJig(app, input.value);
           if (report.isErr()) return Result.err(report.error);
           app.cradle.logger.info(
             { runId: report.value.state.runId, branch: runBranchFor(report.value.state.runId) },
@@ -58,10 +64,19 @@ export const runInputSchema = logFormatInputSchema
     return z.NEVER;
   });
 
-function runToDo(request: string | undefined, id: RunId | undefined): RunJigInput | undefined {
+function runToDo(request: string | undefined, id: RunId | undefined): RunToDo | undefined {
   if (request !== undefined) return id ? { start: request, runId: id } : { start: request };
   if (id) return { resume: id };
   return undefined;
+}
+
+async function inputFor(run: RunToDo): Promise<Result<RunJigInput, RunRequestInvalid>> {
+  if ('resume' in run) return Result.ok(run);
+  const text = await readRequest(run.start);
+  return text.map((read) => {
+    const start = { text: read, file: run.start };
+    return run.runId ? { start, runId: run.runId } : { start };
+  });
 }
 
 /** What the operator does next, for where the run stopped. */
