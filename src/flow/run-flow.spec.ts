@@ -726,6 +726,29 @@ describe('runFlow', () => {
     expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
   });
 
+  it('runs an ordinary final check on a reloaded legacy run whose completion evidence recorded no review scope', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const store = new InMemoryRunStore();
+    const { agent, run, reload, start } = await setup({
+      settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+      store,
+    });
+    scriptReusedRun(agent);
+    await run(start);
+    const deciding = store.saved.find((saved) => saved.phase === 'checkingReuse');
+    if (!deciding?.completionReuse) panic('The run never saved evidence before deciding on reuse');
+    const { scope: _unrecorded, ...evidenceWithoutScope } = deciding.completionReuse;
+    const legacy = { ...deciding, completionReuse: evidenceWithoutScope } as RunState;
+    agent.script('reviewer', fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(await reload(legacy));
+
+    expect(status).toBe('halted');
+    expect(state.completionReuseAuthorized).toBeUndefined();
+    expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
+  });
+
   it.each(['describing', 'merging'] as const)(
     'finishes a reloaded run saved before %s on its reused completion without repeating any work',
     async (phase) => {

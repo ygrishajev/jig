@@ -71,8 +71,11 @@ const runFields = z.object({
   designReview: designReviewProgressSchema.optional(),
   slices: z.array(sliceSchema),
   finalCheck: finalCheckResultSchema.optional(),
-  /** What an eligible slice review recorded about the whole request, bound to the work it saw. */
-  completionReuse: completionEvidenceSchema.optional(),
+  /**
+   * What an eligible slice review recorded about the whole request, bound to the work it saw.
+   * Evidence saved before it carried its review scope loads as none, so the run declines reuse.
+   */
+  completionReuse: completionEvidenceSchema.optional().catch(undefined),
   /**
    * Set once the run was found fit to finish on `completionReuse` instead of a final check;
    * cleared when finishing finds that evidence no longer holds.
