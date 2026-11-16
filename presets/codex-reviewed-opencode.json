@@ -1,0 +1,7 @@
+{
+  "description": "Codex plans and reviews; OpenCode implements and describes",
+  "planner": { "provider": "codex", "model": "gpt-6-astra" },
+  "implementer": { "provider": "opencode", "model": "openrouter/z-ai/glm-5.3" },
+  "reviewer": { "provider": "codex", "model": "gpt-6.1-sol" },
+  "describer": { "provider": "opencode", "model": "openrouter/deepseek/deepseek-v4.1-flash" }
+}

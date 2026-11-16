@@ -41,6 +41,7 @@ Each starter configures all four roles:
 - `codex-only` — Codex handles all roles.
 - `claude-only` — Claude handles all roles.
 - `cheap-volume` — OpenCode implements and describes; Codex plans and Claude reviews.
+- `codex-reviewed-opencode` — OpenCode implements and describes; Codex plans and reviews.
 - `open-weight` — OpenCode handles all roles through OpenRouter.
 
 The [starter files](../presets/) show the exact models. If a model is unavailable to your account,

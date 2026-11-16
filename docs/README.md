@@ -29,6 +29,11 @@ run a request, and review the resulting branch.
 
 ## Documentation sources
 
+Planned specifications describe future behavior, not current functionality:
+
+- [GitHub Actions issue and PR workflow](specs/github-actions-workflow.md)
+- [Run retrospectives and improvement proposals](specs/run-retrospectives.md)
+
 The guides describe the current implementation. When changing behavior, update its
 guide in the same change. Keep detailed explanations in the relevant guide and link
 to them from the README rather than duplicating them.
