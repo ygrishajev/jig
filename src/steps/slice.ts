@@ -20,13 +20,13 @@ import {
   verifyFailedFeedback,
 } from '../prompts/slice.js';
 
-export const implementSlice: SliceStep = ({ state, slice, ports }) =>
+export const implementSlice: SliceStep = ({ state, slice, settings, ports }) =>
   Result.gen(async function* () {
     const { workspace } = ports;
     const attemptStart = yield* Result.await(workspace.headCommit());
     const reply = await ports.agent.runForOutput({
       role: 'implementer',
-      prompt: implementPrompt(slice),
+      prompt: implementPrompt(slice, settings.verifyCommand),
       schema: implementerReplySchema,
     });
     const message = yield* commitMessageOf(reply, slice);

@@ -49,6 +49,20 @@ describe('implementPrompt', () => {
     expect(prompt).not.toContain('did not work: find out why');
   });
 
+  it('tells the implementer to run the configured verify command before finishing', () => {
+    const verifyCommand = `npm run ${faker.lorem.slug()}`;
+
+    const prompt = implementPrompt(aSlice(), verifyCommand);
+
+    expect(prompt).toContain(`running \`${verifyCommand}\` once you finish`);
+  });
+
+  it('asks the implementer to run the project checks itself when no verify command is configured', () => {
+    const prompt = implementPrompt(aSlice());
+
+    expect(prompt).toContain('No verify command is configured');
+  });
+
   function setup(input: { rounds: string[] }) {
     const slice = aSlice({
       lastFeedback: input.rounds[input.rounds.length - 1],

@@ -1,7 +1,7 @@
 import type { ChangedFile } from '../domain/protected-paths.js';
 import { earlierFeedback, type Slice } from '../domain/slice.js';
 
-export function implementPrompt(slice: Slice): string {
+export function implementPrompt(slice: Slice, verifyCommand?: string): string {
   return [
     'You are implementing one slice of a larger, already-planned feature.',
     '',
@@ -15,6 +15,8 @@ export function implementPrompt(slice: Slice): string {
     'Do not rebase, amend or otherwise rewrite the commits already on this branch.',
     '',
     ...checkAgainstHouseRulesLast(),
+    '',
+    ...verifyBeforeFinishing(verifyCommand),
     '',
     ...commitMessageReply(),
     '',
@@ -83,6 +85,20 @@ function checkAgainstHouseRulesLast(): string[] {
     'Before you finish, review your own change the way the reviewer will: read your whole diff',
     '(your commits on this branch and anything uncommitted) and, for each rule file that covers a',
     'changed file, go through it rule by rule. Fix every place your change breaks one.',
+  ];
+}
+
+/** The implementer runs the check jig will run, not a slower one it guesses at. */
+function verifyBeforeFinishing(verifyCommand?: string): string[] {
+  if (!verifyCommand) {
+    return [
+      "No verify command is configured: run the project's tests and lint yourself before finishing.",
+    ];
+  }
+  return [
+    `jig verifies this slice by running \`${verifyCommand}\` once you finish. Run that exact`,
+    'command before finishing and make it pass. It is the check that counts: do not run checks',
+    'it leaves out.',
   ];
 }
 
