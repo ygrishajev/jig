@@ -24,7 +24,12 @@ export type Outcome = OfKnownType<
   | { type: 'approved'; completion?: CompletionEvidence }
   | { type: 'changesRequested'; feedback: string; completion?: CompletionEvidence }
   | { type: 'hookRejected'; feedback: string }
-  | { type: 'verificationFailed'; feedback: string }
+  | {
+      type: 'verificationFailed';
+      feedback: string;
+      command?: string;
+      observed?: WorkObservations;
+    }
   | { type: 'nothingChanged'; feedback: string }
   | { type: 'rulesFixRequested'; feedback: string; completion?: CompletionEvidence }
   | { type: 'verified'; command?: string; observed?: WorkObservations }

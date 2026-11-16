@@ -228,6 +228,39 @@ describe('applyOutcome', () => {
     expect(slices[0].verification).toEqual({ command, observed });
   });
 
+  it('records the command and the work around a verification that failed, beside its counter', () => {
+    const command = `npm run ${faker.word.verb()}`;
+    const observed = workObservations();
+    const feedback = faker.lorem.sentence();
+    const slice = aSlice({ order: 0, verificationFailures: 1 });
+
+    const state = applyOutcome(aRunState({ slices: [slice] }), {
+      type: 'verificationFailed',
+      feedback,
+      command,
+      observed,
+    });
+
+    expect(state.slices[0].failedVerification).toEqual({ command, observed });
+    expect(state.slices[0].verificationFailures).toBe(2);
+    expect(state.slices[0].lastFeedback).toBe(feedback);
+  });
+
+  it('keeps the failed verification an earlier round recorded when a later one is sent back for other reasons', () => {
+    const failedVerification = {
+      command: `npm run ${faker.word.verb()}`,
+      observed: workObservations(),
+    };
+    const slice = aSlice({ order: 0, failedVerification });
+
+    const state = applyOutcome(aRunState({ slices: [slice] }), {
+      type: 'changesRequested',
+      feedback: faker.lorem.sentence(),
+    });
+
+    expect(state.slices[0].failedVerification).toEqual(failedVerification);
+  });
+
   it("keeps the whole-request evidence an approving review leaves as the run's completion record", () => {
     const completion = aCompletionEvidence();
 

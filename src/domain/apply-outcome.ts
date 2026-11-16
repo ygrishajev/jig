@@ -43,6 +43,7 @@ function sendSliceBack(state: RunState, outcome: SendBack): RunState {
       lastFeedback: outcome.feedback,
       feedbackHistory: [...slice.feedbackHistory, outcome.feedback],
       verification: undefined,
+      failedVerification: failedVerificationOf(outcome, slice),
     })),
     outcome.completion,
   );
@@ -63,6 +64,18 @@ export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Sl
     ...state,
     slices: state.slices.map((slice) => (slice.id === target.id ? update(slice) : slice)),
   };
+}
+
+/**
+ * The facts of the verification that just failed, beside the counter it spent; a failure that
+ * recorded none leaves whatever earlier failure the slice already holds.
+ */
+function failedVerificationOf(outcome: SendBack, slice: Slice): Slice['failedVerification'] {
+  if (outcome.type !== 'verificationFailed') return slice.failedVerification;
+  const { command, observed } = outcome;
+  return command !== undefined && observed !== undefined
+    ? { command, observed }
+    : slice.failedVerification;
 }
 
 function isDesignOutcome(outcome: Outcome): outcome is DesignOutcome {

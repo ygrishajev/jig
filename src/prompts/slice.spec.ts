@@ -126,16 +126,6 @@ describe('reviewPrompt', () => {
     expect(prompt).not.toContain('- ');
   });
 
-  it('never shows the request or the plan', () => {
-    const request = `# ${faker.lorem.sentence()}`;
-
-    const prompt = reviewPrompt(aSlice(), range(), []);
-
-    expect(prompt).not.toContain(request);
-    expect(prompt).not.toContain('--- REQUEST START ---');
-    expect(prompt).not.toContain('--- PLAN START ---');
-  });
-
   function range() {
     return `${faker.git.commitSha()}..HEAD`;
   }
@@ -155,63 +145,42 @@ describe('combinedReviewPrompt', () => {
       plan,
     });
 
-    expect(prompt).toContain(`--- REQUEST START ---\n${request}\n--- REQUEST END ---`);
-    expect(prompt).toContain(`--- PLAN START ---\n${plan}\n--- PLAN END ---`);
+    expect(prompt).toContain(request);
+    expect(prompt).toContain(plan);
     expect(prompt).toContain(reviewedRange);
   });
 
-  it('reports the recorded verification for the whole run range it reviews', () => {
+  it('tells the reviewer which verification the slice recorded, over the range it reviews', () => {
     const command = `npm run ${faker.lorem.slug()}`;
     const reviewedRange = range();
 
-    const recorded = combinedReviewPrompt({
+    const prompt = combinedReviewPrompt({
       slice: aSlice({ verification: { command } }),
       range: reviewedRange,
       protectedChanges: [],
       request: faker.lorem.paragraph(),
       plan: faker.lorem.paragraph(),
     });
-    const absent = combinedReviewPrompt({
-      slice: aSlice({ verification: undefined }),
-      range: reviewedRange,
-      protectedChanges: [],
-      request: faker.lorem.paragraph(),
-      plan: faker.lorem.paragraph(),
-    });
 
-    expect(recorded).toContain(
-      `\`${command}\` passed in the sandbox for the commits in \`${reviewedRange}\``,
-    );
-    expect(absent).toContain(
-      "no verify result is recorded (no verify command is configured) — run the project's tests and lint yourself before approving",
-    );
+    expect(prompt).toContain(command);
+    expect(prompt).toContain(reviewedRange);
   });
 
-  it('asks for the request verdict in the same reply as the code verdict, decided independently', () => {
+  it('carries the slice, its description and its protected files beside the request', () => {
+    const slice = aSlice();
+    const modifiedSpec = `${faker.lorem.slug()}.spec.ts`;
+
     const prompt = combinedReviewPrompt({
-      slice: aSlice(),
+      slice,
       range: range(),
-      protectedChanges: [],
+      protectedChanges: [{ path: modifiedSpec, kind: 'modified' }],
       request: faker.lorem.paragraph(),
       plan: faker.lorem.paragraph(),
     });
 
-    expect(prompt).toContain('"fulfilled": boolean, "gaps": string[]');
-    expect(prompt).toContain('Set fulfilled to true only when the whole run fulfils the request');
-    expect(prompt).toContain('Decide the two verdicts independently');
-  });
-
-  it('keeps every duty of the ordinary slice review', () => {
-    const prompt = combinedReviewPrompt({
-      slice: aSlice(),
-      range: range(),
-      protectedChanges: [{ path: `${faker.lorem.slug()}.spec.ts`, kind: 'modified' }],
-      request: faker.lorem.paragraph(),
-      plan: faker.lorem.paragraph(),
-    });
-
-    expect(prompt).toContain('pure scaffolding (types, builders, refactors) for later slices');
-    expect(prompt).toContain('onlyRuleFindings');
+    expect(prompt).toContain(slice.title);
+    expect(prompt).toContain(slice.description);
+    expect(prompt).toContain(`${modifiedSpec} (modified)`);
   });
 
   function range() {

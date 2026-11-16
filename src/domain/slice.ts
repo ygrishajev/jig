@@ -25,6 +25,15 @@ export const verificationRecordSchema = z.object({
   observed: workObservationsSchema.optional(),
 });
 
+/**
+ * What a slice's last failed verification ran and left behind: a failing command can change the
+ * work it failed on, so the facts around it are recorded for the audit.
+ */
+export const failedVerificationSchema = z.object({
+  command: z.string().min(1),
+  observed: workObservationsSchema,
+});
+
 export const sliceSchema = plannedSliceSchema.extend({
   order: z.number().int().nonnegative(),
   status: sliceStatusSchema,
@@ -37,6 +46,7 @@ export const sliceSchema = plannedSliceSchema.extend({
   feedbackHistory: z.array(z.string()).default([]),
   commit: z.string().optional(),
   verification: verificationRecordSchema.optional(),
+  failedVerification: failedVerificationSchema.optional(),
 });
 
 export type Slice = z.infer<typeof sliceSchema>;

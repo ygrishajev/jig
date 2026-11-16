@@ -59,8 +59,9 @@ a lock left by a crashed process expires after 30 seconds.
    and the reviewer checks the changes. Rejections return to implementation.
    Changes to existing tests or validation settings are flagged for the reviewer.
    A single-slice run's review also judges the whole request against its plan; the
-   verdict is recorded bound to the exact work, sources and settings it saw. The
-   final check still runs for every run.
+   verdict is recorded bound to the exact work, verification, sources and settings
+   it saw, with the facts observed around both. The final check still runs for
+   every run.
 5. After all slices pass, jig runs verification again and asks the reviewer whether
    the whole request is fulfilled. A failure gets one repair slice through the same
    implementation, verification, and review loop, followed by a second final check.

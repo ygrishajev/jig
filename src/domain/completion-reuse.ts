@@ -4,7 +4,9 @@ import { z } from 'zod';
 import { type FulfillmentVerdict, fulfillmentVerdictSchema } from './final-check.js';
 import type { RunState } from './run-state.js';
 import type { RunSettings } from './settings.js';
+import { type Slice, verificationRecordSchema } from './slice.js';
 import {
+  type CheckedWork,
   checkedWorkSchema,
   type WorkFacts,
   type WorkObservations,
@@ -15,19 +17,6 @@ import {
 export interface WholeRequest {
   request: string;
   plan: string;
-}
-
-/**
- * The whole request this run's slice review can also judge, when its single slice is the run's
- * whole work. Undefined for any other run: one whose final check already ran, whose review would
- * cover a repair, or whose plan never reached it.
- */
-export function wholeRequestOf(state: RunState): WholeRequest | undefined {
-  if (state.slices.length !== 1) return undefined;
-  if (state.finalCheck !== undefined) return undefined;
-  const docs = state.docs;
-  if (docs === undefined) return undefined;
-  return { request: state.request, plan: docs.plan };
 }
 
 /**
@@ -43,8 +32,8 @@ const digestSchema = z.string().regex(/^[0-9a-f]{64}$/);
 export const completionEvidenceSchema = z.object({
   /** The reviewer's judgement of the whole request: whether the run fulfils it, and every gap. */
   verdict: fulfillmentVerdictSchema,
-  /** The verify command the recorded verification ran; undefined when none is configured. */
-  command: z.string().min(1).optional(),
+  /** The complete verification the reviewed work passed under; undefined when none is recorded. */
+  verification: verificationRecordSchema.optional(),
   /** Digest of the settings the review ran under; a different digest means the evidence no longer applies. */
   settingsIdentity: digestSchema,
   /** The exact resulting work the review vouches for: the run branch's commit and its tree. */
@@ -55,7 +44,7 @@ export const completionEvidenceSchema = z.object({
   scope: z.object({
     request: digestSchema,
     plan: digestSchema,
-    range: z.string().min(1),
+    range: z.object({ start: z.string().min(1), end: z.string().min(1) }),
   }),
 });
 
@@ -63,20 +52,21 @@ export type CompletionEvidence = z.infer<typeof completionEvidenceSchema>;
 
 /**
  * The evidence a combined review leaves, bound to what it actually saw: the resulting work, the
- * digests of the request and plan it judged, and the settings it ran under.
+ * verification that passed under it, the digests of the request and plan it judged, and the
+ * settings it ran under.
  */
 export function completionEvidenceOf(input: {
   reviewed: WholeRequest;
   settings: RunSettings;
-  command: string | undefined;
+  verification: Slice['verification'];
   verdict: FulfillmentVerdict;
   observed: WorkObservations;
-  range: string;
+  range: { start: string; end: string };
 }): CompletionEvidence {
-  const { reviewed, settings, command, verdict, observed, range } = input;
+  const { reviewed, settings, verification, verdict, observed, range } = input;
   return {
     verdict,
-    command,
+    verification,
     settingsIdentity: settingsIdentityOf(settings),
     checked: {
       commit: observed.after.host.commit,
@@ -110,29 +100,63 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
- * Whether the recorded whole-request review still stands for the work the run now holds: the same
- * commit and tree, clean on both sides, judged against the same request, plan and settings, with
- * nothing left unfulfilled and nothing mutated since. Anything else asks for a fresh final check.
+ * Whether the recorded whole-request review still stands for the work the run now holds: the run
+ * is still the eligible single approved slice the review judged, the verification the work passed
+ * still matches the configured command and the checked work, the review ran on both repositories
+ * clean and unmoving at exactly that work, and the work the run holds is still that work. Anything
+ * else asks for a fresh final check.
  */
 export function completionStillReusable(
   state: RunState,
   observed: WorkFacts,
   settings: RunSettings,
+  forkPoint: string,
 ): boolean {
   const evidence = state.completionReuse;
   if (evidence === undefined) return false;
   return (
+    reviewStillEligible(state) &&
     verdictStands(evidence.verdict) &&
-    evidence.settingsIdentity === settingsIdentityOf(settings) &&
-    sourcesStillHold(evidence, state) &&
-    workStillHolds(evidence, observed) &&
-    observedCleanly(evidence.observed)
+    settingsStillHold(evidence, state, settings) &&
+    scopeStillHolds(evidence, forkPoint) &&
+    verificationStillHolds(evidence, settings) &&
+    factsVouchFor(observed, evidence.checked) &&
+    observationsVouchFor(evidence.observed, evidence.checked)
   );
+}
+
+/** The run is still what a combined review can vouch for: one slice, no final check yet, that slice approved. */
+function reviewStillEligible(state: RunState): boolean {
+  return wholeRequestOf(state) !== undefined && state.slices[0].status === 'approved';
+}
+
+/**
+ * The whole request this run's slice review can also judge, when its single slice is the run's
+ * whole work. Undefined for any other run: one whose final check already ran, whose review would
+ * cover a repair, or whose plan never reached it.
+ */
+export function wholeRequestOf(state: RunState): WholeRequest | undefined {
+  if (state.slices.length !== 1) return undefined;
+  if (state.finalCheck !== undefined) return undefined;
+  const docs = state.docs;
+  if (docs === undefined) return undefined;
+  return { request: state.request, plan: docs.plan };
 }
 
 /** The recorded verdict must have found the request fulfilled, with no gap left open. */
 function verdictStands(verdict: FulfillmentVerdict): boolean {
   return verdict.fulfilled && verdict.gaps.length === 0;
+}
+
+/** The settings and the sources the review judged are still the ones the run holds. */
+function settingsStillHold(
+  evidence: CompletionEvidence,
+  state: RunState,
+  settings: RunSettings,
+): boolean {
+  return (
+    evidence.settingsIdentity === settingsIdentityOf(settings) && sourcesStillHold(evidence, state)
+  );
 }
 
 /** The sources the review judged are still the ones the run holds. */
@@ -144,26 +168,48 @@ function sourcesStillHold(evidence: CompletionEvidence, state: RunState): boolea
   );
 }
 
-/** The work the review vouched for is the work the run still holds, clean on both sides of it. */
-function workStillHolds(evidence: CompletionEvidence, observed: WorkFacts): boolean {
+/** The recorded range is still the run's whole range: it starts where the run was cut and ends at the checked work. */
+function scopeStillHolds(evidence: CompletionEvidence, forkPoint: string): boolean {
   return (
-    evidence.checked.commit === observed.host.commit &&
-    evidence.checked.tree === observed.host.tree &&
-    observed.sandbox.commit === observed.host.commit &&
-    observed.host.clean &&
-    observed.sandbox.clean
+    evidence.scope.range.start === forkPoint && evidence.scope.range.end === evidence.checked.commit
   );
 }
 
-/** The review must have run on clean work that stayed exactly where it was until it ended. */
-function observedCleanly(observed: WorkObservations): boolean {
-  const { before, after } = observed;
+/**
+ * The verification the review relied on: the now-configured command is the one that passed, and
+ * the work it ran on is exactly the work the review checked, clean and unmoving on both sides.
+ */
+function verificationStillHolds(evidence: CompletionEvidence, settings: RunSettings): boolean {
+  const verification = evidence.verification;
   return (
-    factsIdentity(before) === factsIdentity(after) && before.host.clean && before.sandbox.clean
+    verification !== undefined &&
+    verification.command === settings.verifyCommand &&
+    verification.observed !== undefined &&
+    observationsVouchFor(verification.observed, evidence.checked)
+  );
+}
+
+/** Both sides of the recorded work stood exactly at the checked work, clean, before an operation as after it. */
+function observationsVouchFor(observed: WorkObservations, checked: CheckedWork): boolean {
+  return (
+    factsIdentity(observed.before) === factsIdentity(observed.after) &&
+    factsVouchFor(observed.before, checked)
   );
 }
 
 /** Where the work stood, as one comparable value: key order cannot make two facts look different. */
 function factsIdentity(facts: WorkFacts): string {
   return canonicalJson(facts);
+}
+
+/** A repository pair vouches for the checked work when both hold exactly that commit and tree, clean. */
+function factsVouchFor(facts: WorkFacts, checked: CheckedWork): boolean {
+  return (
+    facts.host.commit === checked.commit &&
+    facts.host.tree === checked.tree &&
+    facts.sandbox.commit === checked.commit &&
+    facts.sandbox.tree === checked.tree &&
+    facts.host.clean &&
+    facts.sandbox.clean
+  );
 }

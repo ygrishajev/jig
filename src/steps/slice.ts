@@ -142,10 +142,10 @@ async function reviewTheWholeRequest(
   const completion = completionEvidenceOf({
     reviewed: whole,
     settings,
-    command: slice.verification?.command,
+    verification: slice.verification,
     verdict: { fulfilled: verdict.value.fulfilled, gaps: verdict.value.gaps },
     observed: { before: before.value, after: after.value },
-    range: `${start}..${after.value.host.commit}`,
+    range: { start, end: after.value.host.commit },
   });
   return Result.ok<Outcome>({ ...outcomeOfReview(verdict.value), completion });
 }
@@ -189,18 +189,17 @@ export const verifySlice: SliceStep = async ({ settings, ports }) => {
   if (before.isErr()) return Result.err(before.error);
   const ran = await ports.agent.exec(command);
   if (ran.isErr()) return Result.err(ran.error);
+  const after = await ports.workspace.collectFacts();
+  if (after.isErr()) return Result.err(after.error);
+  const observed = { before: before.value, after: after.value };
   const { exitCode, output } = ran.value;
   if (exitCode !== 0) {
     return Result.ok({
       type: 'verificationFailed',
       feedback: verifyFailedFeedback(command, output),
+      command,
+      observed,
     });
   }
-  const after = await ports.workspace.collectFacts();
-  if (after.isErr()) return Result.err(after.error);
-  return Result.ok<Outcome>({
-    type: 'verified',
-    command,
-    observed: { before: before.value, after: after.value },
-  });
+  return Result.ok<Outcome>({ type: 'verified', command, observed });
 };

@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aSlice } from '../../tests/support/builders.js';
+import { aSlice, workObservations } from '../../tests/support/builders.js';
 import { earlierFeedback, sliceSchema, slicesInOrder } from './slice.js';
 
 describe('slicesInOrder', () => {
@@ -50,6 +50,17 @@ describe('sliceSchema', () => {
     expect(sliceSchema.parse({ ...aSlice(), verification: { command } }).verification).toEqual({
       command,
     });
+  });
+
+  it('loads the failed verification a slice recorded with the work around it', () => {
+    const failedVerification = {
+      command: `npm run ${faker.word.verb()}`,
+      observed: workObservations(),
+    };
+
+    const parsed = sliceSchema.parse({ ...aSlice(), failedVerification });
+
+    expect(parsed.failedVerification).toEqual(failedVerification);
   });
 
   function setup() {

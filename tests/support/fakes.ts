@@ -28,11 +28,18 @@ import { tokenUsage } from './builders.js';
 
 /**
  * What the fake agent does for one call: write files into the worktree, return structured output,
- * fail the way a real agent does (a value), or crash the way a bug does (a throw).
+ * fail the way a real agent does (a value), or crash the way a bug does (a throw). A turn may also
+ * be the last its sandbox survives.
  */
 export type AgentScript =
-  | { files: Record<string, string>; deletes?: string[]; commitMessage?: string; output?: unknown }
-  | { output: unknown }
+  | {
+      files: Record<string, string>;
+      deletes?: string[];
+      commitMessage?: string;
+      output?: unknown;
+      takesSandboxDown?: SandboxUnavailable;
+    }
+  | { output: unknown; takesSandboxDown?: SandboxUnavailable }
   | { fail: AgentRunFailed }
   | { crash: Error };
 
@@ -55,10 +62,18 @@ export class FakeAgentSession implements AgentSession {
   private readonly queues = new Map<AgentRole, AgentScript[]>();
   private usageReport?: { events: EventSink; runId: RunId };
 
+  private sandboxDown?: SandboxUnavailable;
+
   constructor(
     private readonly sandboxPath: string,
-    /** A `SandboxUnavailable` plays a sandbox that could not run the command at all. */
-    private readonly execResult: (command: string) => ExecResult | SandboxUnavailable = () => ({
+    /**
+     * A `SandboxUnavailable` plays a sandbox that could not run the command at all; the session is
+     * handed back so a command can take its own container down as it ends.
+     */
+    private readonly execResult: (
+      command: string,
+      session: FakeAgentSession,
+    ) => ExecResult | SandboxUnavailable | Promise<ExecResult | SandboxUnavailable> = () => ({
       exitCode: 0,
       output: '',
     }),
@@ -83,6 +98,7 @@ export class FakeAgentSession implements AgentSession {
     if ('crash' in turn) throw turn.crash;
     if ('fail' in turn) return Result.err(turn.fail);
     if ('files' in turn) await this.work(turn);
+    this.takeSandboxDownWith(turn);
     return Result.ok();
   }
 
@@ -99,6 +115,7 @@ export class FakeAgentSession implements AgentSession {
         return Result.err(new AgentOutputInvalid({ message: 'The reply tagged no output' }));
       }
     }
+    this.takeSandboxDownWith(turn);
     if (!('output' in turn)) throw new Error(`The ${input.role} turn has no output scripted`);
     const parsed = input.schema.safeParse(turn.output);
     return parsed.success
@@ -106,14 +123,26 @@ export class FakeAgentSession implements AgentSession {
       : Result.err(new AgentOutputInvalid({ message: parsed.error.message }));
   }
 
+  /** The sandbox this session stands in for is gone: a dead container runs neither git nor commands. */
+  takeSandboxDown(failure: SandboxUnavailable): void {
+    this.sandboxDown = failure;
+  }
+
+  /** A turn that ends its container: everything the sandbox is asked after it fails. */
+  private takeSandboxDownWith(turn: { takesSandboxDown?: SandboxUnavailable }): void {
+    if (turn.takesSandboxDown) this.takeSandboxDown(turn.takesSandboxDown);
+  }
+
   async exec(command: string): Promise<Result<ExecResult, SandboxUnavailable>> {
+    if (this.sandboxDown) return Result.err(this.sandboxDown);
     this.commands.push(command);
-    const result = this.execResult(command);
+    const result = await this.execResult(command, this);
     return result instanceof SandboxUnavailable ? Result.err(result) : Result.ok(result);
   }
 
   /** Git in the fake's clone is real, the way it is in the real sandbox; only the agent is fake. */
   async execGit(args: string[]): Promise<Result<ExecResult, SandboxUnavailable>> {
+    if (this.sandboxDown) return Result.err(this.sandboxDown);
     const { exitCode, stdout, stderr } = await execa('git', args, {
       cwd: this.sandboxPath,
       reject: false,

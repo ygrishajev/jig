@@ -83,6 +83,7 @@ export function aSlice({
   feedbackHistory = [],
   commit,
   verification,
+  failedVerification,
 }: Partial<Slice> = {}): Slice {
   return {
     id,
@@ -99,6 +100,7 @@ export function aSlice({
     feedbackHistory,
     commit,
     verification,
+    failedVerification,
   };
 }
 
@@ -148,13 +150,17 @@ export function checkedWork({
 /** What a combined slice review recorded about the whole request, generated to satisfy the schema. */
 export function aCompletionEvidence({
   verdict = { fulfilled: true, gaps: [] },
-  command,
+  verification,
   settingsIdentity = sha256(),
   checked = checkedWork(),
   observed = workObservations(),
-  scope = { request: sha256(), plan: sha256(), range: `${faker.git.commitSha()}..HEAD` },
+  scope = {
+    request: sha256(),
+    plan: sha256(),
+    range: { start: faker.git.commitSha(), end: checked.commit },
+  },
 }: Partial<CompletionEvidence> = {}): CompletionEvidence {
-  return { verdict, command, settingsIdentity, checked, observed, scope };
+  return { verdict, verification, settingsIdentity, checked, observed, scope };
 }
 
 export function aContext({

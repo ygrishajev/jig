@@ -71,6 +71,10 @@ describe('LocalRunStore', () => {
         aSlice({
           status: 'in_review',
           verification: { command: `npm run ${faker.word.verb()}`, observed: workObservations() },
+          failedVerification: {
+            command: `npm run ${faker.word.verb()}`,
+            observed: workObservations(),
+          },
         }),
       ],
       completionReuse: aCompletionEvidence(),
