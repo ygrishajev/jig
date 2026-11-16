@@ -66,12 +66,12 @@ describe('independent failure caps', () => {
     [3, true, true],
     [4, true, true],
   ] as const)('enforces each independent cap at %i failures', (failures, failureCap, reviewCap) => {
-    const slice = aSlice({
+    const { slice, settings } = setup({
       hookFailures: failures,
       verificationFailures: failures,
       reviewCycles: failures,
+      reviewCycleCap: 2,
     });
-    const settings = runSettings({ reviewCycleCap: 2 });
 
     expect(hookFailureCapReached(slice)).toBe(failureCap);
     expect(verificationFailureCapReached(slice)).toBe(failureCap);
@@ -81,18 +81,32 @@ describe('independent failure caps', () => {
   it.each(['hookFailures', 'verificationFailures', 'reviewCycles'] as const)(
     'does not spend other budgets when %s is exhausted',
     (counter) => {
-      const slice = aSlice({
+      const { slice, settings } = setup({
         hookFailures: 0,
         verificationFailures: 0,
         reviewCycles: 0,
         [counter]: 3,
+        reviewCycleCap: 3,
       });
 
       expect(hookFailureCapReached(slice)).toBe(counter === 'hookFailures');
       expect(verificationFailureCapReached(slice)).toBe(counter === 'verificationFailures');
-      expect(reviewCapReached(slice, runSettings({ reviewCycleCap: 3 }))).toBe(
-        counter === 'reviewCycles',
-      );
+      expect(reviewCapReached(slice, settings)).toBe(counter === 'reviewCycles');
     },
   );
+
+  function setup(input: {
+    hookFailures: number;
+    verificationFailures: number;
+    reviewCycles: number;
+    reviewCycleCap: number;
+  }) {
+    const slice = aSlice({
+      hookFailures: input.hookFailures,
+      verificationFailures: input.verificationFailures,
+      reviewCycles: input.reviewCycles,
+    });
+    const settings = runSettings({ reviewCycleCap: input.reviewCycleCap });
+    return { slice, settings };
+  }
 });
