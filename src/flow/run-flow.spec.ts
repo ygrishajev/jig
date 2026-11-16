@@ -259,6 +259,10 @@ describe('runFlow', () => {
         [counter]: 3,
         reviewCycles: 0,
       });
+      expect(resumed.state.slices[0].lastFeedback).toBeTruthy();
+      for (const line of resumed.state.slices[0].lastFeedback?.split('\n') ?? []) {
+        expect(resumed.state.prDescription).toContain(line);
+      }
     },
   );
 
@@ -414,14 +418,20 @@ describe('runFlow', () => {
     expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
     expect(reviewerCallsWhenCommandRan).toEqual([0, 0]);
     expect(reviewsAfterDesign(agent)).toHaveLength(1);
-    expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(failure);
+    const retryPrompt = agent.calls.filter((call) => call.role === 'implementer')[1].prompt;
+    expect(retryPrompt).toContain(failure);
+    expect(retryPrompt).toContain(verifyCommand);
+    expect(state.slices[0]).toMatchObject({ hookFailures: 0, emptyAttempts: 0, ruleFixCycles: 0 });
+    expect(state.completionReuseAuthorized).toBe(true);
+    expect(state.finalCheck).toBeUndefined();
   });
 
   it('leaves a slice stuck after three verification failures independently of the review cap', async () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;
+    const failure = faker.lorem.sentence();
     const { agent, run, start } = await setup({
       settings: runSettings({ reviewCycleCap: 1, verifyCommand }),
-      exec: () => ({ exitCode: 1, output: faker.lorem.sentence() }),
+      exec: () => ({ exitCode: 1, output: failure }),
     });
     scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     agent.script(
@@ -437,7 +447,19 @@ describe('runFlow', () => {
       status: 'stuck',
       reviewCycles: 0,
       verificationFailures: 3,
+      hookFailures: 0,
+      emptyAttempts: 0,
+      ruleFixCycles: 0,
     });
+    expect(state.slices[0].lastFeedback).toContain(verifyCommand);
+    expect(state.slices[0].lastFeedback).toContain(failure);
+    expect(state.slices[0].feedbackHistory).toHaveLength(3);
+    expect(state.prDescription).toContain(verifyCommand);
+    expect(state.prDescription).toContain(failure);
+    for (const call of agent.calls.filter((call) => call.role === 'implementer').slice(1)) {
+      expect(call.prompt).toContain(verifyCommand);
+      expect(call.prompt).toContain(failure);
+    }
     expect(reviewsAfterDesign(agent)).toHaveLength(0);
     expect(agent.commands).toEqual([verifyCommand, verifyCommand, verifyCommand]);
   });

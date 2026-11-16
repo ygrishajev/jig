@@ -766,6 +766,7 @@ describe('slice steps', () => {
     expect(agent.commands).toEqual([verifyCommand]);
     expect(outcome).toMatchObject({ type: 'verificationFailed' });
     expect(outcome.type === 'verificationFailed' && outcome.feedback).toContain(failure);
+    expect(outcome.type === 'verificationFailed' && outcome.feedback).toContain(verifyCommand);
   });
 
   it('records the work a failing verify command changed, as the facts around its failure', async () => {
