@@ -139,14 +139,17 @@ async function reviewTheWholeRequest(
       }),
     );
     const after = yield* Result.await(ports.workspace.collectFacts());
-    const completion = completionEvidenceOf({
-      reviewed: whole,
-      settings,
-      verification: slice.verification,
-      verdict: { fulfilled: verdict.fulfilled, gaps: verdict.gaps },
-      observed: { before, after },
-      range: { start, end: after.host.commit },
-    });
+    const fulfillment = fulfillmentVerdictSchema.safeParse(verdict);
+    const completion = fulfillment.success
+      ? completionEvidenceOf({
+          reviewed: whole,
+          settings,
+          verification: slice.verification,
+          verdict: fulfillment.data,
+          observed: { before, after },
+          range: { start, end: after.host.commit },
+        })
+      : undefined;
     return Result.ok<Outcome>({ ...outcomeOfReview(verdict), completion });
   });
 }
@@ -158,7 +161,10 @@ const reviewVerdictSchema = z.object({
 });
 
 /** One reply answering both questions: the code verdict, and the request verdict beside it. */
-const wholeRequestVerdictSchema = reviewVerdictSchema.extend(fulfillmentVerdictSchema.shape);
+const wholeRequestVerdictSchema = reviewVerdictSchema.extend({
+  fulfilled: z.unknown().optional(),
+  gaps: z.unknown().optional(),
+});
 
 function outcomeOfReview(verdict: z.infer<typeof reviewVerdictSchema>): ReviewOutcome {
   if (verdict.approved) return { type: 'approved' };

@@ -749,6 +749,60 @@ describe('runFlow', () => {
     expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
   });
 
+  it.each(['describing', 'merging', 'awaitingMerge'] as const)(
+    'runs a final check before %s when authorized legacy evidence has no review scope',
+    async (phase) => {
+      const verifyCommand = `npm run ${faker.word.verb()}`;
+      const staleDescription = faker.lorem.paragraph();
+      const store = new InMemoryRunStore();
+      const { agent, run, reload, start } = await setup({
+        settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+        store,
+      });
+      scriptReusedRun(agent);
+      const halted = await run(start);
+      const saved =
+        phase === 'awaitingMerge'
+          ? halted.state
+          : store.saved.find((state) => state.phase === phase && state.completionReuseAuthorized);
+      if (!saved?.completionReuse) panic(`The run never saved evidence before ${phase}`);
+      const { scope: _missing, ...legacyEvidence } = saved.completionReuse;
+      const legacy = {
+        ...saved,
+        completionReuse: legacyEvidence,
+        prDescription: staleDescription,
+      } as RunState;
+      agent.script('reviewer', fulfillment());
+      agent.script('describer', aDescription());
+
+      const { status, state } = await run(await reload(legacy));
+
+      expect(status).toBe('halted');
+      expect(state.phase).toBe('awaitingMerge');
+      expect(state.completionReuseAuthorized).toBeUndefined();
+      expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
+      expect(state.prDescription).not.toBe(staleDescription);
+      expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
+    },
+  );
+
+  it('checks the whole run when the combined review approves code without a fulfillment verdict', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { agent, run, start } = await setup({ settings: runSettings({ verifyCommand }) });
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script('reviewer', { output: { approved: true, feedback: '' } }, fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.slices[0]).toMatchObject({ status: 'approved', reviewCycles: 0 });
+    expect(state.completionReuse).toBeUndefined();
+    expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
+  });
+
   it.each(['describing', 'merging'] as const)(
     'finishes a reloaded run saved before %s on its reused completion without repeating any work',
     async (phase) => {

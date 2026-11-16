@@ -2,8 +2,8 @@ import { Result } from 'better-result';
 
 import {
   completionReuseInPlay,
+  completionReuseWasAuthorized,
   completionStillReusable,
-  reusedCompletion,
 } from '../domain/completion-reuse.js';
 import type { GitCommandFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
@@ -44,7 +44,7 @@ export function completionInvalidated(
   context: RunStepContext,
 ): Promise<Result<boolean, ObservationFailure>> {
   return Result.gen(async function* () {
-    if (reusedCompletion(context.state) === undefined) return Result.ok(false);
+    if (!completionReuseWasAuthorized(context.state)) return Result.ok(false);
     return Result.ok(!(yield* Result.await(evidenceStillHolds(context))));
   });
 }

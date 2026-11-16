@@ -56,7 +56,8 @@ function withCompletionEvidence(
   state: RunState,
   completion: CompletionEvidence | undefined,
 ): RunState {
-  return completion === undefined ? state : { ...state, completionReuse: completion };
+  if (completion === undefined && state.completionReuse === undefined) return state;
+  return { ...state, completionReuse: completion };
 }
 
 export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Slice): RunState {

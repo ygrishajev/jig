@@ -20,7 +20,7 @@ import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
 import { completionStillReusable, settingsIdentityOf } from '../domain/completion-reuse.js';
-import { AgentOutputInvalid, AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
+import { AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunPhase, RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -459,17 +459,22 @@ describe('slice steps', () => {
     });
   });
 
-  it('refuses a whole-request reply that leaves the request verdict out', async () => {
-    const { attempt } = await setup({
-      reviewer: [{ output: { approved: true, feedback: '' } }],
-      state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
-    });
+  it.each([
+    ['missing', { approved: true, feedback: '' }],
+    ['invalid', { approved: true, feedback: '', fulfilled: 'unknown', gaps: [] }],
+  ])(
+    'approves code without completion evidence when the request verdict is %s',
+    async (_kind, output) => {
+      const { run } = await setup({
+        reviewer: [{ output }],
+        state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
+      });
 
-    const result = await attempt(reviewSlice, aSlice({ status: 'in_review' }));
+      const outcome = await run(reviewSlice, aSlice({ status: 'in_review' }));
 
-    expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error instanceof AgentOutputInvalid).toBe(true);
-  });
+      expect(outcome).toEqual({ type: 'approved' });
+    },
+  );
 
   it('fails an eligible review that cannot observe the work before it, without asking the reviewer', async () => {
     const failure = new SandboxUnavailable({ message: faker.lorem.sentence() });

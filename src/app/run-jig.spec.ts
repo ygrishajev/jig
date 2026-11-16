@@ -220,8 +220,8 @@ describe('runJig', () => {
     const failed = await runJig(app, { resume: id });
 
     expect(failed.isErr() && failed.error).toBeInstanceOf(RunRequestInvalid);
-    const lock = await lockRun(repo.dir, id);
-    expect(lock.isOk()).toBe(true);
+    const release = (await lockRun(repo.dir, id)).unwrap();
+    await release();
   });
 
   it('names a run started without an id after the heading of its request', async () => {

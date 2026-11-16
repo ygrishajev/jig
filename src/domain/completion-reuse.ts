@@ -223,6 +223,10 @@ export function reusedCompletion(state: RunState): CompletionEvidence | undefine
   return state.completionReuseAuthorized ? state.completionReuse : undefined;
 }
 
+export function completionReuseWasAuthorized(state: RunState): boolean {
+  return state.completionReuseAuthorized === true;
+}
+
 /** How jig states a reused completion: what the combined review decided, and the verification it relied on. */
 export function reusedCompletionReport(evidence: CompletionEvidence): string[] {
   const verification = evidence.verification;

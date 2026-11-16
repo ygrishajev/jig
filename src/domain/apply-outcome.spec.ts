@@ -272,6 +272,14 @@ describe('applyOutcome', () => {
     expect(state.completionReuse).toBe(completion);
   });
 
+  it('clears earlier completion evidence when the latest approval has no fulfillment verdict', () => {
+    const state = aRunState({ completionReuse: aCompletionEvidence() });
+
+    const applied = applyOutcome(state, { type: 'approved' });
+
+    expect(applied.completionReuse).toBeUndefined();
+  });
+
   it('keeps the whole-request evidence of a review that requests changes, beside its counter', () => {
     const completion = aCompletionEvidence();
     const current = aSlice({ order: 0, reviewCycles: 1 });
