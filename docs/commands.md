@@ -2,13 +2,13 @@
 
 [Documentation](README.md) · [Project home](../README.md)
 
-| Command                            | Purpose                                                         |
-| ---------------------------------- | --------------------------------------------------------------- |
-| `jig init [--no-agent]`            | Create and check the sandbox Dockerfile and config.             |
-| `jig build [--pull-agents]`        | Build the image; optionally refresh unpinned agent CLIs.        |
-| `jig run [request.md] [--id <id>]` | Start a run or resume a saved one.                              |
-| `jig status <id>`                  | Show the phase, branch, documents, slice feedback, and metrics. |
-| `jig presets`                      | List available presets, sources, and descriptions.              |
+| Command                                 | Purpose                                                         |
+| --------------------------------------- | --------------------------------------------------------------- |
+| `jig init [--no-agent]`                 | Create and check the sandbox Dockerfile and config.             |
+| `jig build [--pull-agents]`             | Build the image; optionally refresh unpinned agent CLIs.        |
+| `jig run [request.md \| -] [--id <id>]` | Start a run or resume a saved one.                              |
+| `jig status <id>`                       | Show the phase, branch, documents, slice feedback, and metrics. |
+| `jig presets`                           | List available presets, sources, and descriptions.              |
 
 Use `jig <command> --help` for flags. `init`, `build`, `run`, and `status` accept
 `--config <path>`. `build` and `run` accept `--preset [name]`. `init`, `build`, and
@@ -36,11 +36,16 @@ jig run request.md
 jig run request.md --id add-search
 jig status add-search
 jig run --id add-search
+gh issue view 7 --json title,body -q '"# \(.title)\n\n\(.body)"' | jig run - --id issue-7
 ```
 
 Without `--id`, jig names a new run after the request's first `# heading`, or its file
 name, plus a random suffix. With a request and an existing id, it resumes only if the
 request matches the saved one. An id without a request must identify a saved run.
+Pass `-` instead of a file to read the request from standard input. A piped request
+without a `# heading` is named `stdin-<random>`. jig refuses empty input, and refuses
+to read when standard input is a terminal. Resuming a piped run needs the same piped
+text with the same `--id`.
 Ids may contain lowercase letters, digits, and hyphens.
 Use the same `--config` and `--preset` when resuming.
 

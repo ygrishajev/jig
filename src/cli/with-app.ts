@@ -4,6 +4,7 @@ import { Result } from 'better-result';
 import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import type { LogFormat } from '../adapters/logging/create-logger.js';
 import { askForPreset, type PresetPick } from '../adapters/terminal/ask-for-preset.js';
+import { processStandardInput, type StandardInput } from '../adapters/terminal/standard-input.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
 import { parseEnvironment, withCredentials } from '../config/environment.js';
 import { configFileFor, loadConfig } from '../config/load-config.js';
@@ -24,6 +25,7 @@ export interface Invocation {
   environment: NodeJS.ProcessEnv;
   askForPreset: (presets: Preset[]) => Promise<PresetPick | undefined>;
   createAppContainer: typeof createAppContainer;
+  standardInput: StandardInput;
   /** The starters' folder; the package's own unless a spec points elsewhere. */
   builtinPresetsDirectory?: string;
 }
@@ -50,8 +52,14 @@ export async function withApp<T>(
   }
 }
 
-function processInvocation(): Invocation {
-  return { cwd: process.cwd(), environment: process.env, askForPreset, createAppContainer };
+export function processInvocation(): Invocation {
+  return {
+    cwd: process.cwd(),
+    environment: process.env,
+    askForPreset,
+    createAppContainer,
+    standardInput: processStandardInput(),
+  };
 }
 
 function openApp(

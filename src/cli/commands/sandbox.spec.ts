@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { presetName } from '../../../tests/support/builders.js';
+import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { createAppContainer } from '../../app/container.js';
@@ -108,6 +109,7 @@ describe('build --preset', () => {
         environment: { HOME: home },
         askForPreset,
         createAppContainer: createApp,
+        standardInput: fakeStandardInput(),
         builtinPresetsDirectory,
       },
       failureOutput,

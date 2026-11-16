@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { presetName } from '../../tests/support/builders.js';
+import { fakeStandardInput } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
@@ -281,6 +282,7 @@ describe('withApp', () => {
           environment: input.environment ?? {},
           askForPreset,
           createAppContainer: createApp,
+          standardInput: fakeStandardInput(),
           builtinPresetsDirectory,
         },
       );

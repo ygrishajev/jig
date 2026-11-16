@@ -50,7 +50,8 @@ git commit -m "chore: set up jig"
 Create a Markdown request with the change you need, why it matters, relevant context,
 constraints, and verifiable acceptance criteria. Linked conversations are not part
 of the agent's input. Save the file outside the target repository, for example as
-`../request.md`, or commit it before running jig.
+`../request.md`, or commit it before running jig. To pipe a request instead, pass `-`
+in place of the file, for example `gh issue view 7 … | jig run -`.
 
 To review the plan before implementation, set `"designGate": "checkpoint"` in
 `jig.config.json` and commit the change before starting.

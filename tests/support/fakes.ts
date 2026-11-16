@@ -4,8 +4,10 @@ import { execa } from 'execa';
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
+import { vi } from 'vitest';
 import type { ZodType } from 'zod';
 
+import type { StandardInput } from '../../src/adapters/terminal/standard-input.js';
 import {
   AgentOutputInvalid,
   type AgentRunFailed,
@@ -257,4 +259,11 @@ export class SteppingClock implements Clock {
     this.current += this.stepMs;
     return this.current;
   }
+}
+
+export function fakeStandardInput({
+  text = faker.lorem.paragraph(),
+  isTerminal = false,
+}: { text?: string; isTerminal?: boolean } = {}): StandardInput {
+  return { isTerminal, readAll: vi.fn(async () => text) };
 }

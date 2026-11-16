@@ -6,8 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { aRunState, aSlice, presetName, runId } from '../../../tests/support/builders.js';
+import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
+import type { StandardInput } from '../../adapters/terminal/standard-input.js';
 import { createAppContainer } from '../../app/container.js';
 import type { Preset, PresetName } from '../../config/presets.js';
 import { runBranchFor, runStopReason } from '../../domain/run-state.js';
@@ -84,10 +86,16 @@ describe('runInputSchema', () => {
     const request = faker.system.filePath();
     const id = runId();
 
-    expect(runInputSchema.parse({ request, logFormat }).run).toEqual({ start: request });
+    expect(runInputSchema.parse({ request, logFormat }).run).toEqual({ start: { file: request } });
     expect(runInputSchema.parse({ request, id, logFormat }).run).toEqual({
-      start: request,
+      start: { file: request },
       runId: id,
+    });
+  });
+
+  it('reads the request from standard input when the request is -', () => {
+    expect(runInputSchema.parse({ request: '-', logFormat }).run).toEqual({
+      start: { stdin: true },
     });
   });
 
@@ -126,14 +134,59 @@ describe('runInputSchema', () => {
   });
 });
 
+describe('run -', () => {
+  it('refuses a terminal before opening the app', async () => {
+    const standardInput = fakeStandardInput({ isTerminal: true });
+    const { parse, createApp, failureOutput } = await setup({ standardInput });
+
+    await parse(['run', '-', '--log-format', 'json']);
+
+    expect(standardInput.readAll).not.toHaveBeenCalled();
+    expect(createApp).not.toHaveBeenCalled();
+    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  it('refuses blank piped text before opening the app', async () => {
+    const standardInput = fakeStandardInput({ text: ' \n\t\n' });
+    const { parse, createApp, failureOutput } = await setup({ standardInput });
+
+    await parse(['run', '-', '--log-format', 'json']);
+
+    expect(createApp).not.toHaveBeenCalled();
+    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  async function setup(input: { standardInput: StandardInput }) {
+    const repo = await createTempRepo();
+    const home = await tempDirectory('jig-run-home-');
+    const createApp = vi.fn(createAppContainer);
+    const failureOutput = mock<FailureOutput>();
+    const program = new Command();
+    registerRunCommand(program, {
+      invocation: {
+        cwd: repo.dir,
+        environment: { HOME: home },
+        askForPreset: vi.fn(async (_presets: Preset[]) => undefined),
+        createAppContainer: createApp,
+        standardInput: input.standardInput,
+      },
+      failureOutput,
+    });
+    const parse = async (argv: string[]) => {
+      await program.parseAsync(argv, { from: 'user' });
+    };
+    return { parse, createApp, failureOutput };
+  }
+});
+
 describe('run --preset', () => {
   it('asks which preset to use on a bare --preset and stops before opening the app when nobody answers', async () => {
     const preset = presetName();
-    const { parse, askForPreset, createApp, failureOutput } = await setup({
+    const { parse, request, askForPreset, createApp, failureOutput } = await setup({
       builtinPresets: [preset],
     });
 
-    await parse(['run', faker.system.filePath(), '--preset', '--log-format', 'json']);
+    await parse(['run', request, '--preset', '--log-format', 'json']);
 
     expect(askForPreset.mock.calls[0]?.[0].map(({ name }: Preset) => name)).toEqual([preset]);
     expect(createApp).not.toHaveBeenCalled();
@@ -141,11 +194,11 @@ describe('run --preset', () => {
   });
 
   it('looks up a named preset without asking and stops before opening the app when it is missing', async () => {
-    const { parse, askForPreset, createApp, failureOutput } = await setup({
+    const { parse, request, askForPreset, createApp, failureOutput } = await setup({
       builtinPresets: [presetName()],
     });
 
-    await parse(['run', faker.system.filePath(), '--preset', presetName(), '--log-format', 'json']);
+    await parse(['run', request, '--preset', presetName(), '--log-format', 'json']);
 
     expect(askForPreset).not.toHaveBeenCalled();
     expect(createApp).not.toHaveBeenCalled();
@@ -154,6 +207,8 @@ describe('run --preset', () => {
 
   async function setup(input: { builtinPresets: PresetName[] }) {
     const repo = await createTempRepo();
+    const request = path.join(repo.dir, 'request.md');
+    await writeFile(request, faker.lorem.paragraph());
     const home = await tempDirectory('jig-run-home-');
     const builtinPresetsDirectory = await tempDirectory('jig-run-builtin-');
     for (const name of input.builtinPresets) {
@@ -169,6 +224,7 @@ describe('run --preset', () => {
         environment: { HOME: home },
         askForPreset,
         createAppContainer: createApp,
+        standardInput: fakeStandardInput(),
         builtinPresetsDirectory,
       },
       failureOutput,
@@ -176,6 +232,6 @@ describe('run --preset', () => {
     const parse = async (argv: string[]) => {
       await program.parseAsync(argv, { from: 'user' });
     };
-    return { parse, askForPreset, createApp, failureOutput };
+    return { parse, request, askForPreset, createApp, failureOutput };
   }
 });
