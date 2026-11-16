@@ -46,6 +46,7 @@ import {
   SteppingClock,
 } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { AgentRunFailed, RunStateConflict, SandboxUnavailable } from '../domain/errors.js';
 import { type RunState, startRun } from '../domain/run-state.js';
@@ -633,6 +634,263 @@ describe('runFlow', () => {
     expect(state.slices.map((slice) => slice.status)).toEqual(['approved', 'approved']);
     expect(state.finalCheck).toMatchObject({ fulfilled: false, round: 2 });
     expect((await git.log(['main'])).all).toHaveLength(1);
+  });
+
+  it('resumes a reloaded run waiting for its merge on the same reused completion, repeating no verification, review or description', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { agent, run, reload, start } = await setup({
+      settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+    });
+    scriptReusedRun(agent);
+    const halted = await run(start);
+    const callsBefore = agent.calls.length;
+
+    const resumed = await run(await reload(halted.state));
+
+    expect(resumed.state).toMatchObject({
+      phase: 'awaitingMerge',
+      completionReuse: halted.state.completionReuse,
+      completionReuseAuthorized: true,
+      prDescription: halted.state.prDescription,
+    });
+    expect(agent.calls).toHaveLength(callsBefore);
+    expect(agent.commands).toEqual([verifyCommand]);
+  });
+
+  it.each([
+    ['request', (state: RunState) => ({ ...state, request: faker.lorem.paragraph() })],
+    [
+      'plan',
+      (state: RunState) => ({
+        ...state,
+        docs: { ...designDocs(), plan: faker.lorem.paragraph() },
+      }),
+    ],
+    [
+      'range',
+      (state: RunState) => ({
+        ...state,
+        completionReuse: state.completionReuse && {
+          ...state.completionReuse,
+          scope: {
+            ...state.completionReuse.scope,
+            range: { ...state.completionReuse.scope.range, start: faker.git.commitSha() },
+          },
+        },
+      }),
+    ],
+  ])(
+    'runs an ordinary final check on a reloaded run whose saved %s changed, keeping the evidence and the one repair',
+    async (_changed, change) => {
+      const verifyCommand = `npm run ${faker.word.verb()}`;
+      const { agent, run, reload, start } = await setup({
+        settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+      });
+      scriptReusedRun(agent);
+      const halted = await run(start);
+      const changed = change(halted.state);
+      agent.script('reviewer', fulfillment());
+      agent.script('describer', aDescription());
+
+      const resumed = await run(await reload(changed));
+
+      expect(resumed.status).toBe('halted');
+      expect(resumed.state.completionReuse).toEqual(changed.completionReuse);
+      expect(resumed.state.completionReuseAuthorized).toBeUndefined();
+      expect(resumed.state.prDescription).not.toBe(halted.state.prDescription);
+      expect(resumed.state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
+      expect(resumed.state.slices).toHaveLength(1);
+      expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
+    },
+  );
+
+  it('runs an ordinary final check on a reloaded legacy run that never recorded completion evidence', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const store = new InMemoryRunStore();
+    const { agent, run, reload, start } = await setup({
+      settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+      store,
+    });
+    scriptReusedRun(agent);
+    await run(start);
+    const deciding = store.saved.find((saved) => saved.phase === 'checkingReuse');
+    if (!deciding) panic('The run never saved the phase that decides on reuse');
+    const { completionReuse: _unrecorded, ...legacy } = deciding;
+    agent.script('reviewer', fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(await reload(legacy));
+
+    expect(status).toBe('halted');
+    expect(state.completionReuseAuthorized).toBeUndefined();
+    expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
+  });
+
+  it.each(['describing', 'merging'] as const)(
+    'finishes a reloaded run saved before %s on its reused completion without repeating any work',
+    async (phase) => {
+      const verifyCommand = `npm run ${faker.word.verb()}`;
+      const store = new InMemoryRunStore();
+      const { agent, run, reload, start } = await setup({
+        settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+        store,
+      });
+      scriptReusedRun(agent);
+      await run(start);
+      const saved = store.saved.find((s) => s.phase === phase && s.completionReuseAuthorized);
+      if (!saved) panic(`The run never saved its reused completion before ${phase}`);
+      agent.script('describer', aDescription());
+      const callsBefore = agent.calls.length;
+      const describersNeeded = phase === 'describing' ? 1 : 0;
+
+      const { status, state } = await run(await reload(saved));
+
+      expect(status).toBe('halted');
+      expect(state).toMatchObject({ phase: 'awaitingMerge', completionReuseAuthorized: true });
+      expect(state.finalCheck).toBeUndefined();
+      expect(agent.commands).toEqual([verifyCommand]);
+      expect(agent.calls.length - callsBefore).toBe(describersNeeded);
+    },
+  );
+
+  it('runs an ordinary final check for a reloaded run whose evidence breaks before it merges', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const store = new InMemoryRunStore();
+    const { agent, run, reload, start, sandboxPath } = await setup({
+      settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+      store,
+    });
+    scriptReusedRun(agent);
+    await run(start);
+    const merging = store.saved.find((s) => s.phase === 'merging' && s.completionReuseAuthorized);
+    if (!merging) panic('The run never saved its reused completion before merging');
+    await writeFile(path.join(sandboxPath, `${faker.string.uuid()}.txt`), faker.lorem.sentence());
+    agent.script('reviewer', fulfillment());
+    agent.script('describer', aDescription());
+
+    const { state } = await run(await reload(merging));
+
+    expect(state.completionReuseAuthorized).toBeUndefined();
+    expect(state.finalCheck).toMatchObject({ round: 1 });
+    expect(state.slices).toHaveLength(1);
+  });
+
+  it('runs the final check when the verify command changed after the review', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const changedCommand = `${verifyCommand} ${faker.word.noun()}`;
+    const { agent, run, runUnder, reload, start } = await setup({
+      settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+    });
+    scriptReusedRun(agent);
+    const halted = await run(start);
+    agent.script('reviewer', fulfillment());
+    agent.script('describer', aDescription());
+
+    const resumed = await runUnder(
+      runSettings({ verifyCommand: changedCommand, mergeMode: 'manual' }),
+      await reload(halted.state),
+    );
+
+    expect(resumed.state.completionReuseAuthorized).toBeUndefined();
+    expect(resumed.state.finalCheck).toMatchObject({ verified: true, round: 1 });
+    expect(agent.commands).toEqual([verifyCommand, changedCommand]);
+  });
+
+  it('runs the final check when the run branch gained a commit after the review', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { agent, run, reload, start, worktreePath } = await setup({
+      settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+    });
+    scriptReusedRun(agent);
+    const halted = await run(start);
+    await writeFile(path.join(worktreePath, `${faker.string.uuid()}.txt`), faker.lorem.sentence());
+    const host = simpleGit({ baseDir: worktreePath });
+    await host.add('.');
+    await host.commit(faker.lorem.sentence());
+    agent.script('reviewer', fulfillment());
+    agent.script('describer', aDescription());
+
+    const resumed = await run(await reload(halted.state));
+
+    expect(resumed.state.completionReuseAuthorized).toBeUndefined();
+    expect(resumed.state.finalCheck).toMatchObject({ round: 1 });
+  });
+
+  it('runs the final check when the host work tree is dirty', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { agent, run, reload, start, worktreePath } = await setup({
+      settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+    });
+    scriptReusedRun(agent);
+    const halted = await run(start);
+    await writeFile(path.join(worktreePath, `${faker.string.uuid()}.txt`), faker.lorem.sentence());
+    agent.script('reviewer', fulfillment());
+    agent.script('describer', aDescription());
+
+    const resumed = await run(await reload(halted.state));
+
+    expect(resumed.state.completionReuseAuthorized).toBeUndefined();
+    expect(resumed.state.finalCheck).toMatchObject({ round: 1 });
+  });
+
+  it('runs the final check when the combined review approved the slice but left a gap', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { agent, run, start } = await setup({ settings: runSettings({ verifyCommand }) });
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script('reviewer', approvalLeavingGaps(), fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.completionReuseAuthorized).toBeUndefined();
+    expect(state.finalCheck).toMatchObject({ fulfilled: true, round: 1 });
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
+    expect(reviewsAfterDesign(agent)).toHaveLength(2);
+  });
+
+  it('reuses the review of a slice whose verification failed once and then passed, on the passing verification', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const exitCodes = [1, 0];
+    const { agent, run, start } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => ({ exitCode: exitCodes.shift() ?? 0, output: faker.lorem.sentence() }),
+    });
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+    agent.script(
+      'implementer',
+      { files: { 'a.txt': faker.lorem.sentence() } },
+      { files: { 'b.txt': faker.lorem.sentence() } },
+    );
+    agent.script('reviewer', approval());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand]);
+    expect(reviewsAfterDesign(agent)).toHaveLength(1);
+    expect(state.completionReuseAuthorized).toBe(true);
+    expect(state.completionReuse?.verification?.command).toBe(verifyCommand);
+  });
+
+  it('runs the final check for a run of several slices, recording no completion evidence', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const slices = [
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+      aPlannedSlice({ description: implementingPlanSteps(1) }),
+    ];
+    const { agent, run, start } = await setup({ settings: runSettings({ verifyCommand }) });
+    scriptPlanning(agent, slices);
+    scriptDelivery(agent, slices);
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.completionReuse).toBeUndefined();
+    expect(state.completionReuseAuthorized).toBeUndefined();
+    expect(state.finalCheck).toMatchObject({ fulfilled: true, round: 1 });
   });
 
   it('gives a failed final check one repair and merges when the repair fulfils the request', async () => {
@@ -1393,6 +1651,15 @@ describe('runFlow', () => {
     };
     const start = startRun({ runId: id, baseBranch: 'main', request: faker.lorem.paragraph() });
     const invoke = (state: RunState) => runEngine(runFlow, state, dependencies);
+    const runUnder = async (settings: RunSettings, state: RunState) =>
+      (await runEngine(runFlow, state, { ...dependencies, settings })).unwrap();
+    const serialized = new LocalRunStore(await tempDirectory());
+    const reload = async (state: RunState) => {
+      (await serialized.save(state)).unwrap();
+      const loaded = (await serialized.load(state.runId)).unwrap();
+      if (!loaded) panic('The saved run is missing');
+      return loaded;
+    };
     const run = async (state: RunState) => (await invoke(state)).unwrap();
     const runBranchHistory = () =>
       git.raw(['log', '--reverse', '--format=%s', '--patch', `main..${runBranch}`]);
@@ -1401,6 +1668,8 @@ describe('runFlow', () => {
       events,
       invoke,
       run,
+      runUnder,
+      reload,
       start,
       store,
       git,

@@ -76,6 +76,10 @@ a lock left by a crashed process expires after 30 seconds.
    describing, merging, and waiting for a merge, including on resume, jig checks the
    reused review still holds. If it does not, jig drops the reuse and its description
    and runs the ordinary final check, which still allows its one repair.
+   Invalidation keeps the saved evidence, spends no repair round, and applies equally to a
+   resumed run reloaded from saved state: a changed request, plan, settings, run range,
+   commit or tree, or a dirty work tree, sends it to the final check. A run saved before
+   evidence was recorded has none to reuse and always takes the final check.
 
 `reviewCycleCap` limits reviewer rejections only (three by default).
 Commit-hook failures and verification failures each have an independent cap of three
