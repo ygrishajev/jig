@@ -8,6 +8,7 @@ import {
   presetNameSchema,
 } from '../../src/config/presets.js';
 import { byRole } from '../../src/domain/agent-role.js';
+import type { CompletionEvidence } from '../../src/domain/completion-reuse.js';
 import type { DesignDocs } from '../../src/domain/design-docs.js';
 import {
   type DesignFinding,
@@ -31,6 +32,12 @@ import {
 import type { RunSettings } from '../../src/domain/settings.js';
 import type { PlannedSlice, Slice } from '../../src/domain/slice.js';
 import type { CommitSummary, TokenUsage } from '../../src/domain/usage.js';
+import type {
+  CheckedWork,
+  GitFacts,
+  WorkFacts,
+  WorkObservations,
+} from '../../src/domain/work-facts.js';
 import type { MetricsSummary } from '../../src/observers/metrics.js';
 
 export function everyStepOn(step: StepConfig = { provider: 'claude' }) {
@@ -103,6 +110,51 @@ export function aFinalCheckResult({
   round = faker.number.int({ min: 1, max: 2 }),
 }: Partial<FinalCheckResult> = {}): FinalCheckResult {
   return { verified, command, fulfilled, gaps, round };
+}
+
+export function gitFacts({
+  commit = faker.git.commitSha(),
+  tree = faker.git.commitSha(),
+  clean = true,
+}: Partial<GitFacts> = {}): GitFacts {
+  return { commit, tree, clean };
+}
+
+export function workFacts({
+  host = gitFacts(),
+  sandbox = gitFacts(),
+}: Partial<WorkFacts> = {}): WorkFacts {
+  return { host, sandbox };
+}
+
+export function workObservations({
+  before = workFacts(),
+  after = workFacts(),
+}: Partial<WorkObservations> = {}): WorkObservations {
+  return { before, after };
+}
+
+function sha256() {
+  return faker.string.hexadecimal({ length: 64, casing: 'lower', prefix: '' });
+}
+
+export function checkedWork({
+  commit = faker.git.commitSha(),
+  tree = faker.git.commitSha(),
+}: Partial<CheckedWork> = {}): CheckedWork {
+  return { commit, tree };
+}
+
+/** What a combined slice review recorded about the whole request, generated to satisfy the schema. */
+export function aCompletionEvidence({
+  verdict = { fulfilled: true, gaps: [] },
+  command,
+  settingsIdentity = sha256(),
+  checked = checkedWork(),
+  observed = workObservations(),
+  scope = { request: sha256(), plan: sha256(), range: `${faker.git.commitSha()}..HEAD` },
+}: Partial<CompletionEvidence> = {}): CompletionEvidence {
+  return { verdict, command, settingsIdentity, checked, observed, scope };
 }
 
 export function aContext({

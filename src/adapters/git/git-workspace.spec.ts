@@ -21,6 +21,49 @@ import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { type CommitSigning, GitWorkspace } from './git-workspace.js';
 
 describe('GitWorkspace', () => {
+  it('reports where the run branch and the sandbox clone stand once work is saved, both clean', async () => {
+    const { workspace, git, inSandbox, runBranch, writeInSandbox, save } = await setup();
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+
+    const facts = (await workspace.collectFacts()).unwrap();
+
+    expect(facts.host).toEqual({
+      commit: await git.revparse([runBranch]),
+      tree: await git.revparse([`${runBranch}^{tree}`]),
+      clean: true,
+    });
+    expect(facts.sandbox).toEqual({
+      commit: await inSandbox.revparse(['HEAD']),
+      tree: await inSandbox.revparse(['HEAD^{tree}']),
+      clean: true,
+    });
+    expect(facts.sandbox.commit).toBe(facts.host.commit);
+  });
+
+  it('reports a sandbox that holds uncommitted work as not clean, and the host as it stands', async () => {
+    const { workspace, writeInSandbox, save } = await setup();
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    (await save()).unwrap();
+    await writeInSandbox('leftover.txt', faker.lorem.sentence());
+
+    const facts = (await workspace.collectFacts()).unwrap();
+
+    expect(facts.sandbox.clean).toBe(false);
+    expect(facts.host.clean).toBe(true);
+  });
+
+  it('reports a host worktree that holds uncommitted work as not clean', async () => {
+    const { workspace, worktreePath, save } = await setup();
+    (await save()).unwrap();
+    await writeFile(path.join(worktreePath, 'stray.txt'), faker.lorem.sentence());
+
+    const facts = (await workspace.collectFacts()).unwrap();
+
+    expect(facts.host.clean).toBe(false);
+    expect(facts.sandbox.clean).toBe(true);
+  });
+
   it("measures the run branch's commits since a point, by files and lines", async () => {
     const { workspace, writeInSandbox: writeInWorktree, save } = await setup();
     const since = (await workspace.forkPoint()).unwrap();
@@ -454,6 +497,7 @@ describe('GitWorkspace', () => {
     return {
       workspace,
       workspaceOn,
+      worktreePath,
       repo: repo.dir,
       git,
       runBranch,

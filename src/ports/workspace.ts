@@ -11,6 +11,7 @@ import type {
 } from '../domain/errors.js';
 import type { ChangedFile } from '../domain/protected-paths.js';
 import type { CommitSummary } from '../domain/usage.js';
+import type { WorkFacts } from '../domain/work-facts.js';
 
 /** The run's branch, seen from the host, and how the sandbox's work reaches it. */
 export interface Workspace {
@@ -27,6 +28,8 @@ export interface Workspace {
   summariseCommitsSince(since: string): Promise<Result<CommitSummary, GitCommandFailed>>;
   /** The files the run branch changed since `start`, and how each changed. */
   changedFilesSince(start: string): Promise<Result<ChangedFile[], GitCommandFailed>>;
+  /** Where the run's work stands right now: the host's run branch and the sandbox clone beside it. */
+  collectFacts(): Promise<Result<WorkFacts, GitCommandFailed | SandboxUnavailable>>;
   /** Reads a file from the operator's repository, relative to its root; undefined when absent. */
   readRepoFile(relativePath: string): Promise<string | undefined>;
   /**

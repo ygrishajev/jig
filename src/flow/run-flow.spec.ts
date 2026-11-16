@@ -94,7 +94,7 @@ describe('runFlow', () => {
       { files: { 'a.txt': faker.lorem.sentence() } },
       { files: { 'b.txt': faker.lorem.sentence() } },
     );
-    agent.script('reviewer', { output: { approved: false, feedback } }, approval(), fulfillment());
+    agent.script('reviewer', rejection(feedback), approval(), fulfillment());
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
@@ -502,6 +502,25 @@ describe('runFlow', () => {
     expect(status).toBe('done');
     expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
     expect(agent.calls.at(-2)?.prompt).toContain(state.request);
+  });
+
+  it('records the whole-request evidence of an eligible slice review and still runs the final check', async () => {
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start } = await setup({ settings: runSettings() });
+    scriptPlanning(agent, [slice]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script('reviewer', approval(), fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    expect(state.completionReuse).toMatchObject({ verdict: { fulfilled: true, gaps: [] } });
+    const [sliceReview, finalCheck] = reviewsAfterDesign(agent);
+    expect(sliceReview.prompt).toContain(state.request);
+    expect(sliceReview.prompt).toContain(state.docs?.plan);
+    expect(finalCheck.prompt).toContain(state.request);
+    expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 1 });
   });
 
   it('gives a failed final check one repair and merges when the repair fulfils the request', async () => {

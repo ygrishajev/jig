@@ -1,6 +1,7 @@
 import { panic } from 'better-result';
 import { z } from 'zod';
 
+import { completionEvidenceSchema } from './completion-reuse.js';
 import { designDocsSchema } from './design-docs.js';
 import { designReviewProgressAt, designReviewProgressSchema } from './design-review.js';
 import { finalCheckFailed } from './final-check.js';
@@ -70,6 +71,11 @@ const runFields = z.object({
   designReview: designReviewProgressSchema.optional(),
   slices: z.array(sliceSchema),
   finalCheck: finalCheckResultSchema.optional(),
+  /**
+   * What an eligible slice review recorded about the whole request, bound to the work it saw.
+   * Reuse of it as the completion check is not wired yet; ordinary final checking still runs.
+   */
+  completionReuse: completionEvidenceSchema.optional(),
   prDescription: z.string().optional(),
   /** Why the last invocation stopped short; cleared when the run is resumed. */
   blockedReason: z.string().optional(),

@@ -1,18 +1,33 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
+import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
 import { approval, ruleFindings } from '../../tests/support/agent-scripts.js';
-import { aRunState, aSlice, runId, runSettings } from '../../tests/support/builders.js';
+import {
+  aFinalCheckResult,
+  aRunState,
+  aSlice,
+  designDocs,
+  runId,
+  runSettings,
+} from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { applyOutcome } from '../domain/apply-outcome.js';
+import { completionStillReusable, settingsIdentityOf } from '../domain/completion-reuse.js';
 import { AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
+import type { RunPhase, RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
 import type { SliceStep } from '../flow/define-flow.js';
 import type { ExecResult } from '../ports/agent-session.js';
+import type { SandboxGit } from '../ports/sandbox-git.js';
 import { implementSlice, reviewSlice, verifySlice } from './slice.js';
 
 describe('slice steps', () => {
@@ -193,6 +208,248 @@ describe('slice steps', () => {
     expect(await run(reviewSlice, aSlice())).toEqual({ type: 'rulesFixRequested', feedback });
   });
 
+  it('judges the whole request within the review of a run whose single slice is its whole work', async () => {
+    const request = `# ${faker.lorem.sentence()}\n\n${faker.lorem.paragraph()}`;
+    const docs = designDocs();
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const slice = aSlice({ status: 'in_review', verification: { command: verifyCommand } });
+    const { run, agent, git, runBranch, settings } = await setup({
+      reviewer: [{ output: { approved: true, feedback: '', fulfilled: true, gaps: [] } }],
+      settings: runSettings({ verifyCommand }),
+      state: { phase: 'slices', request, docs },
+    });
+    const forkPoint = await git.revparse([runBranch]);
+
+    const outcome = await run(reviewSlice, slice);
+
+    const prompt = agent.calls.at(-1)?.prompt ?? '';
+    expect(prompt).toContain(request);
+    expect(prompt).toContain(docs.plan);
+    const head = await git.revparse([runBranch]);
+    const completion = outcome.type === 'approved' ? outcome.completion : undefined;
+    expect(completion).toEqual({
+      verdict: { fulfilled: true, gaps: [] },
+      command: verifyCommand,
+      settingsIdentity: settingsIdentityOf(settings),
+      checked: { commit: head, tree: await git.revparse([`${runBranch}^{tree}`]) },
+      observed: expect.anything(),
+      scope: {
+        request: digestOf(request),
+        plan: digestOf(docs.plan),
+        range: `${forkPoint}..${head}`,
+      },
+    });
+  });
+
+  it('binds the whole-request evidence to work that can still be reused as the completion check', async () => {
+    const request = `# ${faker.lorem.sentence()}`;
+    const docs = designDocs();
+    const { run, workspace, settings, state } = await setup({
+      reviewer: [{ output: { approved: true, feedback: '', fulfilled: true, gaps: [] } }],
+      state: { phase: 'slices', request, docs },
+    });
+    const slice = aSlice({ status: 'in_review' });
+
+    const outcome = await run(reviewSlice, slice);
+
+    const applied = applyOutcome({ ...state, slices: [slice] }, outcome);
+    const facts = (await workspace.collectFacts()).unwrap();
+    expect(completionStillReusable(applied, facts, settings)).toBe(true);
+  });
+
+  it('keeps the request verdict when the review approves the code but not the request', async () => {
+    const gap = faker.lorem.sentence();
+    const { run } = await setup({
+      reviewer: [{ output: { approved: true, feedback: '', fulfilled: false, gaps: [gap] } }],
+      state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
+    });
+
+    const outcome = await run(reviewSlice, aSlice({ status: 'in_review' }));
+
+    expect(outcome).toMatchObject({
+      type: 'approved',
+      completion: { verdict: { fulfilled: false, gaps: [gap] } },
+    });
+  });
+
+  it('keeps the request verdict when the review rejects the code', async () => {
+    const feedback = faker.lorem.sentence();
+    const { run } = await setup({
+      reviewer: [{ output: { approved: false, feedback, fulfilled: true, gaps: [] } }],
+      state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
+    });
+
+    const outcome = await run(reviewSlice, aSlice({ status: 'in_review' }));
+
+    expect(outcome).toMatchObject({
+      type: 'changesRequested',
+      feedback,
+      completion: { verdict: { fulfilled: true, gaps: [] } },
+    });
+  });
+
+  it('records the mutation a reviewer leaves in the sandbox, so its evidence cannot stand', async () => {
+    const { run, workspace, settings, state, sandboxPath } = await setup({
+      reviewer: [
+        {
+          files: { [`${faker.lorem.slug()}.txt`]: faker.lorem.sentence() },
+          output: { approved: true, feedback: '', fulfilled: true, gaps: [] },
+        },
+      ],
+      state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
+    });
+    const slice = aSlice({ status: 'in_review' });
+
+    const outcome = await run(reviewSlice, slice);
+
+    const completion = 'completion' in outcome ? outcome.completion : undefined;
+    expect(completion?.observed.before.sandbox.clean).toBe(true);
+    expect(completion?.observed.after.sandbox.clean).toBe(false);
+    expect((await simpleGit({ baseDir: sandboxPath }).status()).isClean()).toBe(false);
+    const applied = applyOutcome({ ...state, slices: [slice] }, outcome);
+    const facts = (await workspace.collectFacts()).unwrap();
+    expect(completionStillReusable(applied, facts, settings)).toBe(false);
+  });
+
+  it('reviews a multi-slice run as an ordinary slice review, without the request', async () => {
+    const request = `# ${faker.lorem.sentence()}`;
+    const { run, agent, git, runBranch } = await setup({
+      reviewer: [approval()],
+      state: { phase: 'slices', request, docs: designDocs() },
+    });
+    const earlier = aSlice({
+      order: 0,
+      status: 'approved',
+      commit: await git.revparse([runBranch]),
+    });
+    const current = aSlice({ order: 1, status: 'in_review' });
+
+    const outcome = await run(reviewSlice, current, [earlier]);
+
+    const prompt = agent.calls.at(-1)?.prompt ?? '';
+    expect(prompt).not.toContain(request);
+    expect(prompt).not.toContain('--- REQUEST START ---');
+    expect('completion' in outcome ? outcome.completion : undefined).toBeUndefined();
+  });
+
+  it('reviews a run whose final check already ran as an ordinary slice review', async () => {
+    const { run, agent } = await setup({
+      reviewer: [approval()],
+      state: {
+        phase: 'slices',
+        request: `# ${faker.lorem.sentence()}`,
+        docs: designDocs(),
+        finalCheck: aFinalCheckResult({ round: 1, verified: true, fulfilled: false }),
+      },
+    });
+
+    const outcome = await run(reviewSlice, aSlice({ status: 'in_review' }));
+
+    expect(agent.calls.at(-1)?.prompt).not.toContain('--- REQUEST START ---');
+    expect('completion' in outcome ? outcome.completion : undefined).toBeUndefined();
+  });
+
+  it('reviews a run the plan never reached as an ordinary slice review', async () => {
+    const { run, agent } = await setup({ reviewer: [approval()] });
+
+    const outcome = await run(reviewSlice, aSlice({ status: 'in_review' }));
+
+    expect(agent.calls.at(-1)?.prompt).not.toContain('--- REQUEST START ---');
+    expect('completion' in outcome ? outcome.completion : undefined).toBeUndefined();
+  });
+
+  it('records no verification command in the evidence when none is configured', async () => {
+    const { run } = await setup({
+      reviewer: [{ output: { approved: true, feedback: '', fulfilled: true, gaps: [] } }],
+      settings: runSettings({ verifyCommand: undefined }),
+      state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
+    });
+
+    const outcome = await run(
+      reviewSlice,
+      aSlice({ status: 'in_review', verification: undefined }),
+    );
+
+    expect(outcome).toMatchObject({
+      type: 'approved',
+      completion: { command: undefined, verdict: { fulfilled: true, gaps: [] } },
+    });
+  });
+
+  it('records the evidence of a review after an earlier verification attempt failed', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const slice = aSlice({
+      status: 'in_review',
+      verificationFailures: 1,
+      verification: { command: verifyCommand },
+    });
+    const { run } = await setup({
+      reviewer: [{ output: { approved: true, feedback: '', fulfilled: true, gaps: [] } }],
+      state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
+    });
+
+    const outcome = await run(reviewSlice, slice);
+
+    expect(outcome).toMatchObject({
+      type: 'approved',
+      completion: { command: verifyCommand, verdict: { fulfilled: true, gaps: [] } },
+    });
+  });
+
+  it('fails an eligible review that cannot observe the work before it, without asking the reviewer', async () => {
+    const failure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    const { attempt, agent } = await setup({
+      reviewer: [approval()],
+      state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
+      sandbox: sandboxFailingAfter(0, failure),
+    });
+
+    const result = await attempt(reviewSlice, aSlice({ status: 'in_review' }));
+
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(agent.calls).toHaveLength(0);
+  });
+
+  it('fails an eligible review that cannot observe the resulting work after it, recording nothing', async () => {
+    const failure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    const { attempt, agent } = await setup({
+      reviewer: [approval()],
+      state: { phase: 'slices', request: `# ${faker.lorem.sentence()}`, docs: designDocs() },
+      sandbox: sandboxFailingAfter(3, failure),
+    });
+
+    const result = await attempt(reviewSlice, aSlice({ status: 'in_review' }));
+
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(agent.calls).toHaveLength(1);
+  });
+
+  it('fails a verification that cannot observe the work it is about to run on', async () => {
+    const failure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    const { attempt, agent } = await setup({
+      settings: runSettings({ verifyCommand: `npm run ${faker.word.verb()}` }),
+      sandbox: sandboxFailingAfter(0, failure),
+    });
+
+    const result = await attempt(verifySlice, aSlice({ status: 'verifying' }));
+
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(agent.commands).toEqual([]);
+  });
+
+  it('fails a verification that cannot observe the work its command left behind', async () => {
+    const failure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    const { attempt } = await setup({
+      settings: runSettings({ verifyCommand: `npm run ${faker.word.verb()}` }),
+      exec: () => ({ exitCode: 0, output: faker.lorem.sentence() }),
+      sandbox: sandboxFailingAfter(3, failure),
+    });
+
+    const result = await attempt(verifySlice, aSlice({ status: 'verifying' }));
+
+    expect(result.isErr() && result.error).toBe(failure);
+  });
+
   it('tells the reviewer the verify command that passed in the sandbox for the commits under review', async () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const { run, agent, git, runBranch } = await setup({ reviewer: [approval()] });
@@ -359,15 +616,38 @@ describe('slice steps', () => {
     expect(agent.commands).toEqual([]);
   });
 
-  it('records the verify command it ran when the slice passes', async () => {
+  it('records the verify command it ran, with the work it observed around it', async () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const output = faker.lorem.sentence();
-    const { run } = await setup({
+    const { run, git, runBranch, sandboxPath } = await setup({
       settings: runSettings({ verifyCommand }),
       exec: () => ({ exitCode: 0, output }),
     });
+    const head = await git.revparse([runBranch]);
+    const inSandbox = simpleGit({ baseDir: sandboxPath });
 
-    expect(await run(verifySlice, aSlice())).toEqual({ type: 'verified', command: verifyCommand });
+    const outcome = await run(verifySlice, aSlice());
+
+    expect(outcome).toMatchObject({ type: 'verified', command: verifyCommand });
+    const observed = outcome.type === 'verified' ? outcome.observed : undefined;
+    expect(observed).toEqual({
+      before: {
+        host: { commit: head, tree: await git.revparse([`${runBranch}^{tree}`]), clean: true },
+        sandbox: {
+          commit: head,
+          tree: await inSandbox.revparse(['HEAD^{tree}']),
+          clean: true,
+        },
+      },
+      after: {
+        host: { commit: head, tree: await git.revparse([`${runBranch}^{tree}`]), clean: true },
+        sandbox: {
+          commit: head,
+          tree: await inSandbox.revparse(['HEAD^{tree}']),
+          clean: true,
+        },
+      },
+    });
   });
 
   it('clears the verification a slice passed once changes are requested on it', async () => {
@@ -380,7 +660,7 @@ describe('slice steps', () => {
     const verified = await run(verifySlice, slice);
     let state = applyOutcome(aRunState({ slices: [slice] }), verified);
 
-    expect(state.slices[0].verification).toEqual({ command: verifyCommand });
+    expect(state.slices[0].verification).toMatchObject({ command: verifyCommand });
 
     state = applyOutcome(state, { type: 'changesRequested', feedback: faker.lorem.sentence() });
 
@@ -436,20 +716,32 @@ describe('slice steps', () => {
     reviewer?: AgentScript[];
     settings?: RunSettings;
     exec?: (command: string) => ExecResult | SandboxUnavailable;
+    state?: Partial<Omit<RunState, 'phase' | 'runId'>> & { phase?: RunPhase };
+    sandbox?: SandboxGit;
   }) {
     const id = runId();
     const created = await createRunWorktree(id);
-    const { workspace } = created;
+    const workspace = input.sandbox
+      ? new GitWorkspace({
+          repoRoot: created.repo.dir,
+          worktreePath: created.worktreePath,
+          runId: id,
+          baseBranch: 'main',
+          sandbox: input.sandbox,
+          signing: 'skip',
+        })
+      : created.workspace;
     const agent = new FakeAgentSession(created.sandboxPath, input.exec);
     agent.script('implementer', ...(input.implementer ?? []));
     agent.script('reviewer', ...(input.reviewer ?? []));
-    const state = aRunState({ runId: id });
+    const state = aRunState({ runId: id, ...input.state });
+    const settings = input.settings ?? runSettings();
     const attempt = (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>
       step({
         state: { ...state, slices: [...earlierSlices, slice] },
         slice,
         ports: { agent, workspace },
-        settings: input.settings ?? runSettings(),
+        settings,
       });
     const run = async (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>
       (await attempt(step, slice, earlierSlices)).unwrap();
@@ -458,6 +750,8 @@ describe('slice steps', () => {
       attempt,
       agent,
       workspace,
+      settings,
+      state,
       sandboxPath: created.sandboxPath,
       git: created.git,
       runBranch: created.runBranch,
@@ -465,3 +759,22 @@ describe('slice steps', () => {
     };
   }
 });
+
+function digestOf(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+/**
+ * A sandbox whose git answers the first `working` calls and fails with `failure` after, so a
+ * step can be observed losing its facts before or after the work it does with them.
+ */
+function sandboxFailingAfter(working: number, failure: SandboxUnavailable) {
+  let called = 0;
+  return mock<SandboxGit>({
+    execGit: async () =>
+      ++called <= working
+        ? Result.ok({ exitCode: 0, output: faker.lorem.word() })
+        : Result.err(failure),
+    copyOut: async () => Result.ok(),
+  });
+}

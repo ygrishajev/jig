@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  aCompletionEvidence,
   aContext,
   aFeaturePlan,
   aFirstDesignReview,
@@ -13,6 +14,7 @@ import {
   aRunState,
   aSlice,
   designDocs,
+  workObservations,
 } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { ConfigInvalid } from '../../domain/errors.js';
@@ -58,6 +60,44 @@ describe('LocalRunStore', () => {
     const loaded = (await store.load(state.runId)).unwrap();
 
     expect(loaded?.slices[0]).toEqual({ ...legacySlice, hookFailures: 0, verificationFailures: 0 });
+  });
+
+  it('loads back the completion evidence of a combined slice review and the work it observed', async () => {
+    const { store } = await setup();
+    const state = aRunState({
+      phase: 'slices',
+      docs: designDocs(),
+      slices: [
+        aSlice({
+          status: 'in_review',
+          verification: { command: `npm run ${faker.word.verb()}`, observed: workObservations() },
+        }),
+      ],
+      completionReuse: aCompletionEvidence(),
+    });
+
+    await store.save(state);
+
+    expect((await store.load(state.runId)).unwrap()).toEqual(state);
+  });
+
+  it('loads a run saved before combined reviews recorded any completion evidence', async () => {
+    const { store, repoRoot } = await setup();
+    const state = aRunState({
+      phase: 'slices',
+      slices: [aSlice()],
+      completionReuse: aCompletionEvidence(),
+    });
+    (await store.save(state)).unwrap();
+    const { completionReuse: _neverSaved, ...legacy } = state;
+    await writeFile(
+      path.join(stateDirectory(repoRoot, state.runId), 'run.json'),
+      JSON.stringify(legacy),
+    );
+
+    const loaded = (await store.load(state.runId)).unwrap();
+
+    expect(loaded).toEqual(legacy);
   });
 
   it('peeks at the run it saved', async () => {

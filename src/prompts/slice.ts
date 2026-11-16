@@ -1,6 +1,14 @@
 import type { ChangedFile } from '../domain/protected-paths.js';
 import { earlierFeedback, type Slice } from '../domain/slice.js';
 
+export interface CombinedReviewInput {
+  slice: Slice;
+  range: string;
+  protectedChanges: readonly ChangedFile[];
+  request: string;
+  plan: string;
+}
+
 export function implementPrompt(slice: Slice, verifyCommand?: string): string {
   return [
     'You are implementing one slice of a larger, already-planned feature.',
@@ -145,6 +153,17 @@ export function reviewPrompt(
   range: string,
   protectedChanges: readonly ChangedFile[],
 ): string {
+  return [...sliceReviewSections(slice, range, protectedChanges), ...reviewReplyFormat()].join(
+    '\n',
+  );
+}
+
+/** What every slice review covers, shared by the ordinary one and the combined one. */
+function sliceReviewSections(
+  slice: Slice,
+  range: string,
+  protectedChanges: readonly ChangedFile[],
+): string[] {
   return [
     'You are the review step of an automated SDLC pipeline.',
     `This slice's change is exactly the commits in \`${range}\` — review all of them together`,
@@ -182,16 +201,7 @@ export function reviewPrompt(
     'the most serious: each rejection costs the slice one of a few attempts, so a problem you',
     'leave for the next round may be the one it runs out on. On a later round, check the whole',
     'range again, not only what the last feedback named.',
-    '',
-    'Respond with JSON matching:',
-    '{ "approved": boolean, "feedback": string, "onlyRuleFindings": boolean }.',
-    'If approved is false, feedback must list every needed change as a numbered list, each item',
-    'naming the file and line and saying exactly what must change.',
-    'Set onlyRuleFindings to true only when the slice already does everything its description',
-    "asks, correctly, and every needed change is a fix to follow the repository's rules (style,",
-    'naming, test conventions, error handling conventions). Set it to false when anything is',
-    'missing, wrong in behaviour, or untested, and whenever you approve.',
-  ].join('\n');
+  ];
 }
 
 function protectedChangesSection(changes: readonly ChangedFile[]): string[] {
@@ -206,5 +216,74 @@ function protectedChangesSection(changes: readonly ChangedFile[]): string[] {
     'does not weaken a check: removed or skipped tests, loosened assertions, disabled or relaxed',
     'rules, a narrower verify script or CI. If either confirmation fails for a file, reject the',
     'slice with feedback naming that file.',
+  ];
+}
+
+function reviewReplyFormat(): string[] {
+  return [
+    '',
+    'Respond with JSON matching:',
+    '{ "approved": boolean, "feedback": string, "onlyRuleFindings": boolean }.',
+    ...codeVerdictInstructions(),
+  ];
+}
+
+function codeVerdictInstructions(): string[] {
+  return [
+    'If approved is false, feedback must list every needed change as a numbered list, each item',
+    'naming the file and line and saying exactly what must change.',
+    'Set onlyRuleFindings to true only when the slice already does everything its description',
+    "asks, correctly, and every needed change is a fix to follow the repository's rules (style,",
+    'naming, test conventions, error handling conventions). Set it to false when anything is',
+    'missing, wrong in behaviour, or untested, and whenever you approve.',
+  ];
+}
+
+/**
+ * The review of a run whose single slice is its whole change: everything the slice review asks,
+ * plus the original request and its plan, so one review can vouch for the whole run.
+ */
+export function combinedReviewPrompt(input: CombinedReviewInput): string {
+  return [
+    ...sliceReviewSections(input.slice, input.range, input.protectedChanges),
+    ...wholeRequestSections(input),
+    ...combinedReplyFormat(),
+  ].join('\n');
+}
+
+/** The whole request a combined review also judges, with the plan it was planned against. */
+function wholeRequestSections({ request, plan }: CombinedReviewInput): string[] {
+  return [
+    '',
+    "This slice is the run's only slice, so those same commits are the whole run's change: also",
+    'decide whether the whole run fulfils the original request, so its branch can be merged.',
+    'Judge the whole change against the request and the plan below, not only against the slice',
+    'description.',
+    '',
+    '--- REQUEST START ---',
+    request,
+    '--- REQUEST END ---',
+    '',
+    '--- PLAN START ---',
+    plan,
+    '--- PLAN END ---',
+    '',
+    'Report every requirement of the request or the plan that the run leaves unmet, incomplete',
+    'or broken — a gap — in the same pass, not only the first or the most serious. Use focused',
+    'checks to investigate a specific concern.',
+  ];
+}
+
+function combinedReplyFormat(): string[] {
+  return [
+    '',
+    'Respond with JSON matching:',
+    '{ "approved": boolean, "feedback": string, "onlyRuleFindings": boolean,',
+    '  "fulfilled": boolean, "gaps": string[] }.',
+    ...codeVerdictInstructions(),
+    'Set fulfilled to true only when the whole run fulfils the request as planned. List every',
+    'gap, each saying exactly what is unmet or wrong; use an empty list when nothing is.',
+    'Decide the two verdicts independently: report the request and its gaps whatever you decide',
+    'about the code, and judge the code whatever the request still misses.',
   ];
 }

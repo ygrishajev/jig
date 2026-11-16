@@ -1,10 +1,12 @@
 import { z } from 'zod';
 
+import type { CompletionEvidence } from './completion-reuse.js';
 import type { DesignDocs } from './design-docs.js';
 import type { DesignReview, DesignRevision } from './design-review.js';
 import type { FeaturePlan, RunContext } from './run-state.js';
 import type { PlannedSlice } from './slice.js';
 import type { CommitSummary } from './usage.js';
+import type { WorkObservations } from './work-facts.js';
 
 export type OutcomeType = Outcome['type'];
 
@@ -19,13 +21,13 @@ export type Outcome = OfKnownType<
   | { type: 'continue' }
   | { type: 'pause' }
   | { type: 'implemented'; commit: CommitSummary }
-  | { type: 'approved' }
-  | { type: 'changesRequested'; feedback: string }
+  | { type: 'approved'; completion?: CompletionEvidence }
+  | { type: 'changesRequested'; feedback: string; completion?: CompletionEvidence }
   | { type: 'hookRejected'; feedback: string }
   | { type: 'verificationFailed'; feedback: string }
   | { type: 'nothingChanged'; feedback: string }
-  | { type: 'rulesFixRequested'; feedback: string }
-  | { type: 'verified'; command?: string }
+  | { type: 'rulesFixRequested'; feedback: string; completion?: CompletionEvidence }
+  | { type: 'verified'; command?: string; observed?: WorkObservations }
   | {
       type: 'finalChecked';
       verified: boolean;

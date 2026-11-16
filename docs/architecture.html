@@ -318,6 +318,7 @@ svg text{font-family:var(--sans)}
   ], { h: 70, gap: 20 });
   var cFReview = flowCv("sr", "Review a slice", "reviewSlice in src/steps/slice.ts; follows verification.", [
     ["Review the slice range", "From the previous approved commit (or fork point) to HEAD; flag changed tests and validation settings.", "infra"],
+    ["Whole-request evidence", "A single-slice run's review also judges the request and plan; the verdict is recorded bound to the exact work, sources and settings.", "domain"],
     ["approved", "Approve, or verify again if the configured verification record is missing.", "domain"],
     ["changesRequested", "Return feedback to implementation and count an ordinary review cycle.", "fail"],
     ["rulesFixRequested", "Only house-rule findings: use the separate rule-fix cap of 2.", "fail"],

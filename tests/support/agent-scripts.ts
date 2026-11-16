@@ -53,8 +53,12 @@ export function scriptWholeRun(
   agent.script('describer', aDescription());
 }
 
+/**
+ * A slice review's approval. Eligible reviews are combined, so the reply also settles the whole
+ * request; an ordinary review reads the same reply and ignores what it does not ask.
+ */
 export function approval() {
-  return { output: { approved: true, feedback: '' } };
+  return { output: { approved: true, feedback: '', fulfilled: true, gaps: [] } };
 }
 
 /** The final check's verdict: the whole run fulfils its request. */
@@ -67,12 +71,15 @@ export function unfulfilled(...gaps: string[]) {
   return { output: { fulfilled: false, gaps } };
 }
 
+/** A slice review's rejection, still settling the whole request the way a combined one would. */
 export function rejection(feedback = faker.lorem.sentence()) {
-  return { output: { approved: false, feedback } };
+  return { output: { approved: false, feedback, fulfilled: true, gaps: [] } };
 }
 
 export function ruleFindings(feedback = faker.lorem.sentence()) {
-  return { output: { approved: false, feedback, onlyRuleFindings: true } };
+  return {
+    output: { approved: false, feedback, onlyRuleFindings: true, fulfilled: true, gaps: [] },
+  };
 }
 
 export function aDescription() {

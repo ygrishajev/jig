@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  aCompletionEvidence,
   aFirstDesignReview,
   anApprovedDesignReview,
   aRevisedDesignReview,
@@ -120,6 +121,26 @@ describe('runStateSchema', () => {
     const state = aRunState({ phase: 'slices', slices: [aSlice({ status })] });
 
     expect(runStateSchema.parse(state)).toEqual(state);
+  });
+
+  it('loads a run carrying the completion evidence of its combined slice review', () => {
+    const state = aRunState({
+      phase: 'slices',
+      slices: [aSlice()],
+      completionReuse: aCompletionEvidence(),
+    });
+
+    expect(runStateSchema.parse(JSON.parse(JSON.stringify(state)))).toEqual(state);
+  });
+
+  it('loads a run saved before combined reviews recorded any completion evidence', () => {
+    const { completionReuse: _neverSaved, ...legacy } = aRunState({
+      phase: 'slices',
+      slices: [aSlice()],
+      completionReuse: aCompletionEvidence(),
+    });
+
+    expect(runStateSchema.parse(legacy)).toEqual(legacy);
   });
 });
 

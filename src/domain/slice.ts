@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { workObservationsSchema } from './work-facts.js';
+
 /** Slice ids become lookup keys in state and log lines, so they are restricted to safe characters. */
 export const SLICE_ID_PATTERN = /^[a-z0-9-]+$/;
 
@@ -17,6 +19,12 @@ export const sliceStatusSchema = z.enum(['pending', 'in_review', 'verifying', 'a
 
 export type SliceStatus = z.infer<typeof sliceStatusSchema>;
 
+/** What a slice's verification recorded: the command that passed, and where the work stood around it. */
+export const verificationRecordSchema = z.object({
+  command: z.string().min(1),
+  observed: workObservationsSchema.optional(),
+});
+
 export const sliceSchema = plannedSliceSchema.extend({
   order: z.number().int().nonnegative(),
   status: sliceStatusSchema,
@@ -28,7 +36,7 @@ export const sliceSchema = plannedSliceSchema.extend({
   lastFeedback: z.string().optional(),
   feedbackHistory: z.array(z.string()).default([]),
   commit: z.string().optional(),
-  verification: z.object({ command: z.string() }).optional(),
+  verification: verificationRecordSchema.optional(),
 });
 
 export type Slice = z.infer<typeof sliceSchema>;

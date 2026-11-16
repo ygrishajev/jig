@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   aCommit,
+  aCompletionEvidence,
   aContext,
   aDesignFinding,
   aDisposition,
@@ -13,6 +14,7 @@ import {
   aRunState,
   aSlice,
   designDocs,
+  workObservations,
 } from '../../tests/support/builders.js';
 import { applyOutcome } from './apply-outcome.js';
 import type { Outcome } from './outcome.js';
@@ -210,6 +212,46 @@ describe('applyOutcome', () => {
     const { slices } = applyOutcome(aRunState({ slices: [slice] }), { type: 'verified', command });
 
     expect(slices[0].verification).toEqual({ command });
+  });
+
+  it('records where the work stood around the verification a slice passed', () => {
+    const command = `npm run ${faker.word.verb()}`;
+    const observed = workObservations();
+    const slice = aSlice({ order: 0, status: 'verifying' });
+
+    const { slices } = applyOutcome(aRunState({ slices: [slice] }), {
+      type: 'verified',
+      command,
+      observed,
+    });
+
+    expect(slices[0].verification).toEqual({ command, observed });
+  });
+
+  it("keeps the whole-request evidence an approving review leaves as the run's completion record", () => {
+    const completion = aCompletionEvidence();
+
+    const state = applyOutcome(aRunState({ slices: [aSlice()] }), {
+      type: 'approved',
+      completion,
+    });
+
+    expect(state.completionReuse).toBe(completion);
+  });
+
+  it('keeps the whole-request evidence of a review that requests changes, beside its counter', () => {
+    const completion = aCompletionEvidence();
+    const current = aSlice({ order: 0, reviewCycles: 1 });
+    const feedback = faker.lorem.sentence();
+
+    const state = applyOutcome(aRunState({ slices: [current] }), {
+      type: 'changesRequested',
+      feedback,
+      completion,
+    });
+
+    expect(state.completionReuse).toBe(completion);
+    expect(state.slices[0]).toMatchObject({ reviewCycles: 2, lastFeedback: feedback });
   });
 
   it('records no verification when a slice is verified without a command', () => {

@@ -18,8 +18,14 @@ import type { ChangedFile, ChangeKind } from '../../domain/protected-paths.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type { CommitSummary } from '../../domain/usage.js';
+import type { GitFacts, WorkFacts } from '../../domain/work-facts.js';
 import { isBranchMergedInto, mergeBranchInto } from '../../git/merge.js';
-import { gitCommand, openRepo, openRepoWithoutHooks } from '../../git/repository.js';
+import {
+  gitCommand,
+  isWorkingTreeClean,
+  openRepo,
+  openRepoWithoutHooks,
+} from '../../git/repository.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import type { SaveWorkFailure, Workspace } from '../../ports/workspace.js';
 
@@ -224,6 +230,42 @@ export class GitWorkspace implements Workspace {
     } catch {
       return undefined;
     }
+  }
+
+  collectFacts(): Promise<Result<WorkFacts, GitCommandFailed | SandboxUnavailable>> {
+    return Result.gen(async function* (this: GitWorkspace) {
+      return Result.ok({
+        host: yield* Result.await(this.hostFacts()),
+        sandbox: yield* Result.await(this.sandboxFacts()),
+      });
+    }, this);
+  }
+
+  /** The run branch as the host holds it: its tip, the content that tip holds, and whether its worktree is clean. */
+  private hostFacts(): Promise<Result<GitFacts, GitCommandFailed>> {
+    return Result.gen(async function* (this: GitWorkspace) {
+      const commit = yield* Result.await(
+        gitCommand('rev-parse', () => openRepo(this.options.repoRoot).revparse([this.runBranch])),
+      );
+      const tree = yield* Result.await(
+        gitCommand('rev-parse', () =>
+          openRepo(this.options.repoRoot).revparse([`${this.runBranch}^{tree}`]),
+        ),
+      );
+      const clean = yield* Result.await(isWorkingTreeClean(this.options.worktreePath));
+      return Result.ok({ commit: commit.trim(), tree: tree.trim(), clean });
+    }, this);
+  }
+
+  /** The sandbox clone as it stands: its head, the content that head holds, and whether it is clean. */
+  private async sandboxFacts(): Promise<Result<GitFacts, GitCommandFailed | SandboxUnavailable>> {
+    const commit = await this.sandboxGit(['rev-parse', 'HEAD']);
+    if (commit.isErr()) return commit;
+    const tree = await this.sandboxGit(['rev-parse', 'HEAD^{tree}']);
+    if (tree.isErr()) return tree;
+    const status = await this.sandboxGit(['status', '--porcelain']);
+    if (status.isErr()) return status;
+    return Result.ok({ commit: commit.value, tree: tree.value, clean: status.value === '' });
   }
 
   async mergeRunBranch({

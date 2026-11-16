@@ -1,5 +1,6 @@
 import { panic } from 'better-result';
 
+import type { CompletionEvidence } from './completion-reuse.js';
 import { recordDesignReview, recordDesignRevision } from './design-review.js';
 import { recordFinalCheck } from './final-check.js';
 import type { Outcome } from './outcome.js';
@@ -13,31 +14,7 @@ import { type Slice, sliceFromPlan } from './slice.js';
 export function applyOutcome(state: RunState, outcome: Outcome): RunState {
   if (isSendBack(outcome)) return sendSliceBack(state, outcome);
   if (isDesignOutcome(outcome)) return applyDesignOutcome(state, outcome);
-  switch (outcome.type) {
-    case 'contextBuilt':
-      return { ...state, context: outcome.context };
-    case 'featurePlanned':
-      return { ...state, plan: outcome.plan };
-    case 'sliced':
-      return { ...state, slices: outcome.slices.map(sliceFromPlan) };
-    case 'implemented':
-      return updateCurrentSlice(state, (slice) => ({
-        ...slice,
-        commit: outcome.commit.sha,
-      }));
-    case 'verified':
-      return updateCurrentSlice(state, (slice) => ({
-        ...slice,
-        lastFeedback: undefined,
-        verification: outcome.command ? { command: outcome.command } : undefined,
-      }));
-    case 'finalChecked':
-      return recordFinalCheck(state, outcome);
-    case 'described':
-      return { ...state, prDescription: outcome.body };
-    default:
-      return state;
-  }
+  return foldStepData(state, outcome);
 }
 
 function isSendBack(outcome: Outcome): outcome is SendBack {
@@ -53,17 +30,30 @@ const ATTEMPT_COUNTER_OF = {
   rulesFixRequested: 'ruleFixCycles',
 } as const satisfies Partial<Record<Outcome['type'], keyof Slice>>;
 
-type SendBack = Extract<Outcome, { type: keyof typeof ATTEMPT_COUNTER_OF }>;
+type SendBack = Extract<Outcome, { type: keyof typeof ATTEMPT_COUNTER_OF }> & {
+  completion?: CompletionEvidence;
+};
 
 function sendSliceBack(state: RunState, outcome: SendBack): RunState {
   const counter = ATTEMPT_COUNTER_OF[outcome.type];
-  return updateCurrentSlice(state, (slice) => ({
-    ...slice,
-    [counter]: slice[counter] + 1,
-    lastFeedback: outcome.feedback,
-    feedbackHistory: [...slice.feedbackHistory, outcome.feedback],
-    verification: undefined,
-  }));
+  return withCompletionEvidence(
+    updateCurrentSlice(state, (slice) => ({
+      ...slice,
+      [counter]: slice[counter] + 1,
+      lastFeedback: outcome.feedback,
+      feedbackHistory: [...slice.feedbackHistory, outcome.feedback],
+      verification: undefined,
+    })),
+    outcome.completion,
+  );
+}
+
+/** The whole-request evidence a review leaves, kept as the run's record of its latest one. */
+function withCompletionEvidence(
+  state: RunState,
+  completion: CompletionEvidence | undefined,
+): RunState {
+  return completion === undefined ? state : { ...state, completionReuse: completion };
 }
 
 export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Slice): RunState {
@@ -97,4 +87,41 @@ function applyDesignOutcome(state: RunState, outcome: DesignOutcome): RunState {
     case 'designRevised':
       return recordDesignRevision(state, outcome.revision);
   }
+}
+
+function foldStepData(state: RunState, outcome: Outcome): RunState {
+  switch (outcome.type) {
+    case 'contextBuilt':
+      return { ...state, context: outcome.context };
+    case 'featurePlanned':
+      return { ...state, plan: outcome.plan };
+    case 'sliced':
+      return { ...state, slices: outcome.slices.map(sliceFromPlan) };
+    case 'implemented':
+      return updateCurrentSlice(state, (slice) => ({
+        ...slice,
+        commit: outcome.commit.sha,
+      }));
+    case 'verified':
+      return updateCurrentSlice(state, (slice) => verifiedSlice(slice, outcome));
+    case 'approved':
+      return withCompletionEvidence(state, outcome.completion);
+    case 'finalChecked':
+      return recordFinalCheck(state, outcome);
+    case 'described':
+      return { ...state, prDescription: outcome.body };
+    default:
+      return state;
+  }
+}
+
+/** What a passed verification leaves on the slice: its command, the work it ran on, and no feedback left to address. */
+function verifiedSlice(slice: Slice, outcome: Extract<Outcome, { type: 'verified' }>): Slice {
+  return {
+    ...slice,
+    lastFeedback: undefined,
+    verification: outcome.command
+      ? { command: outcome.command, observed: outcome.observed }
+      : undefined,
+  };
 }

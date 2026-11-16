@@ -44,6 +44,14 @@ describe('sliceSchema', () => {
     expect(sliceSchema.parse(saved)).toMatchObject({ feedbackHistory: [] });
   });
 
+  it('loads a verification saved before observations were recorded as one without them', () => {
+    const command = `npm run ${faker.word.verb()}`;
+
+    expect(sliceSchema.parse({ ...aSlice(), verification: { command } }).verification).toEqual({
+      command,
+    });
+  });
+
   function setup() {
     const { feedbackHistory: _neverSaved, ...saved } = aSlice();
     return { saved };
