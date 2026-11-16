@@ -3,7 +3,9 @@ import { z } from 'zod';
 
 import { designDocsSchema } from './design-docs.js';
 import { designReviewProgressAt, designReviewProgressSchema } from './design-review.js';
+import { finalCheckFailed } from './final-check.js';
 import { type RunId, runIdSchema } from './run-id.js';
+import { sliceStopReason } from './settings.js';
 import { type Slice, sliceSchema, slicesInOrder } from './slice.js';
 
 /** Which run a sandbox or scope belongs to, and the branch its work started from. */
@@ -148,12 +150,21 @@ export function runBranchFor(runId: RunId): string {
   return `jig/run/${runId}`;
 }
 
-/** The slice that hit the review cap; once there is one, the run ends and a person takes over. */
-export function stuckSlice(state: RunState): Slice | undefined {
-  return state.slices.find((slice) => slice.status === 'stuck');
-}
-
 /** The first slice, by order, that has not been approved — a stuck slice stays current. */
 export function currentSlice(state: RunState): Slice | undefined {
   return slicesInOrder(state.slices).find((slice) => slice.status !== 'approved');
+}
+
+export function runStopReason(state: RunState): string | undefined {
+  const slice = stuckSlice(state);
+  if (slice) return `slice "${slice.id}": ${sliceStopReason(slice)}`;
+  if (state.phase === 'stuck' && finalCheckFailed(state)) {
+    return 'the whole-run final check failed after repair';
+  }
+  return undefined;
+}
+
+/** The slice that exhausted an attempt budget; once there is one, the run ends and a person takes over. */
+export function stuckSlice(state: RunState): Slice | undefined {
+  return state.slices.find((slice) => slice.status === 'stuck');
 }

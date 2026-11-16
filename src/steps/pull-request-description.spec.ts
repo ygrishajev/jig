@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { aFinalCheckResult, aRunStateIn, aSlice } from '../../tests/support/builders.js';
 import type { FinalCheckResult } from '../domain/run-state.js';
+import { sliceStopReason } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
 import { renderPullRequest } from './pull-request-description.js';
 
@@ -21,6 +22,20 @@ describe('renderPullRequest', () => {
     expect(body).toContain('No verify command is configured, so jig ran no checks.');
     expect(body).not.toContain('passed in the sandbox');
   });
+
+  it.each(['hookFailures', 'verificationFailures'] as const)(
+    'reports the exhausted %s budget with its recorded feedback',
+    (counter) => {
+      const feedback = faker.lorem.sentence();
+      const slice = aSlice({ status: 'stuck', [counter]: 3, lastFeedback: feedback });
+      const { render } = setup({ slices: [slice] });
+
+      const body = render();
+
+      expect(body).toContain(sliceStopReason(slice));
+      expect(body).toContain(feedback);
+    },
+  );
 
   it('reports the one command every approved slice passed in the sandbox', () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;

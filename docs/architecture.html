@@ -284,8 +284,8 @@ svg text{font-family:var(--sans)}
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]
   ]);
   var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/flow/run-flow.ts; slices run in order.", [
-    ["pending → implement", "implemented → verifying; nothingChanged retries up to 2 empty attempts.", "step"],
-    ["verifying → verify", "verified → in_review; failure returns to pending or reaches the review cap.", "step"],
+    ["pending → implement", "implemented → verifying; hookRejected has its own cap of 3; nothingChanged allows 2 empty attempts.", "step"],
+    ["verifying → verify", "verified → in_review; verificationFailed returns to pending with its own cap of 3.", "step"],
     ["in_review → review", "approved → approved, or verifying if a verification record is still owed.", "step"],
     ["Review feedback", "changesRequested spends reviewCycleCap (default 3); rulesFixRequested has its own cap of 2.", "fail"],
     ["All approved", "Continue to finalCheck; its one repair slice uses this same loop.", "domain"],
@@ -310,7 +310,7 @@ svg text{font-family:var(--sans)}
   ], { h: 68, gap: 16 });
   var cFImpl = flowCv("si", "Implement and import", "implementSlice \u2192 Workspace.saveWork \u2192 commitInSandbox and importCommits.", [
     ["Implement the slice", "runForOutput returns a commitMessage; invalid output falls back to the slice title.", "step"],
-    ["Commit inside the sandbox", "Commit remaining changes with repository hooks; hook rejection returns changesRequested.", "infra"],
+    ["Commit inside the sandbox", "Commit remaining changes with repository hooks; hook rejection returns hookRejected.", "infra"],
     ["Export and fetch a bundle", "Only implementation imports commits. The host fetches with object validation and hooks disabled.", "infra"],
     ["Check the boundary", "Fetched HEAD must match the reported head and descend from the last approved commit.", "domain"],
     ["Move the host run branch", "Unapproved work may be amended; approved history cannot be rewritten.", "infra"],
@@ -327,7 +327,7 @@ svg text{font-family:var(--sans)}
     ["No verifyCommand", "verified straight away.", "step"],
     ["Run it in the sandbox", "AgentSession.exec, in the same warm container.", "infra"],
     ["Exit 0", "verified.", "domain"],
-    ["Anything else", "changesRequested with the tail of the output.", "fail"]
+    ["Anything else", "verificationFailed with the tail of the output; an independent cap of 3.", "fail"]
   ]);
   var cFDescribe = flowCv("sd", "Final check and description", "src/steps/final-check.ts and src/steps/finishing.ts.", [
     ["checkWholeRun", "Run verification again, then review the full change against the request, even if verification failed.", "step"],

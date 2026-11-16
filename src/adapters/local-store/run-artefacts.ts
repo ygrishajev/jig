@@ -7,7 +7,7 @@ import writeFileAtomic from 'write-file-atomic';
 import { designReviewReport } from '../../domain/design-review-report.js';
 import type { LocalStateUnwritable } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
-import { type RunPhase, type RunState, stuckSlice } from '../../domain/run-state.js';
+import { type RunPhase, type RunState, runStopReason } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
@@ -79,14 +79,9 @@ function resultFor(state: RunState, status: string, metrics: MetricsSummary): Ru
     status,
     phase: state.phase,
     complete: status === 'done',
-    blockedReason: state.blockedReason ?? stuckSliceReason(state),
+    blockedReason: state.blockedReason ?? runStopReason(state),
     metrics,
   };
-}
-
-function stuckSliceReason(state: RunState): string | undefined {
-  const stuck = stuckSlice(state);
-  return stuck ? `slice "${stuck.id}" is stuck — needs human intervention` : undefined;
 }
 
 function documentContents(

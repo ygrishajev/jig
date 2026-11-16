@@ -10,7 +10,7 @@ import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { createAppContainer } from '../../app/container.js';
 import type { Preset, PresetName } from '../../config/presets.js';
-import { runBranchFor } from '../../domain/run-state.js';
+import { runBranchFor, runStopReason } from '../../domain/run-state.js';
 import type { FailureOutput } from '../with-error-handling.js';
 import { nextStep, registerRunCommand, runInputSchema } from './run.js';
 
@@ -48,6 +48,21 @@ describe('nextStep', () => {
     expect(step).toContain(reason);
     expect(step).toContain(`jig run --id ${state.runId}`);
   });
+
+  it.each(['hookFailures', 'verificationFailures'] as const)(
+    'reports an exhausted %s budget and points to its feedback',
+    (counter) => {
+      const state = aRunState({
+        phase: 'stuck',
+        slices: [aSlice({ status: 'stuck', [counter]: 3 })],
+      });
+
+      const step = nextStep({ state, status: 'stuck' });
+
+      expect(step).toContain(runStopReason(state));
+      expect(step).toContain(`jig status ${state.runId}`);
+    },
+  );
 
   it('names the stuck slice and its branch, and points to status rather than a resume', () => {
     const stuck = aSlice({ status: 'stuck' });

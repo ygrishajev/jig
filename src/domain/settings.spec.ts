@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { aSlice, runSettings } from '../../tests/support/builders.js';
-import { sliceNeedsVerification } from './settings.js';
+import { sliceNeedsVerification, sliceStopReason } from './settings.js';
 
 describe('sliceNeedsVerification', () => {
   it('does not hold a slice back when no verify command is configured', () => {
@@ -32,4 +32,22 @@ describe('sliceNeedsVerification', () => {
     });
     return { slice, settings };
   }
+});
+
+describe('sliceStopReason', () => {
+  it.each([
+    ['hookFailures', 'commit hooks failed'],
+    ['verificationFailures', 'verification failed'],
+    ['emptyAttempts', 'implementation changed nothing'],
+    ['ruleFixCycles', 'house-rule fixes reached the cap'],
+    ['reviewCycles', 'review rejections reached the review cap'],
+  ] as const)('identifies an exhausted %s budget with its failure count', (counter, reason) => {
+    const failures = faker.number.int({ min: 3, max: 10 });
+    const slice = aSlice({ [counter]: failures });
+
+    const reported = sliceStopReason(slice);
+
+    expect(reported).toContain(reason);
+    expect(reported).toContain(String(failures));
+  });
 });

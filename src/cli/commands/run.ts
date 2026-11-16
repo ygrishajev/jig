@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
-import { runBranchFor, type RunState, stuckSlice } from '../../domain/run-state.js';
+import { runBranchFor, type RunState, runStopReason } from '../../domain/run-state.js';
 import { appAction, type CommandIo } from '../app-action.js';
 import {
   configInputSchema,
@@ -83,8 +83,8 @@ export function nextStep(report: RunReport): string {
 
 function stuckMessage(state: RunState): string {
   return (
-    `Stuck: slice "${stuckSlice(state)?.id}" hit the review cap, so jig has ended this run and will not resume it. ` +
+    `Stuck: ${runStopReason(state) ?? 'the run exhausted its attempts'}, so jig has ended this run and will not resume it. ` +
     `Finish that slice and the rest by hand on "${runBranchFor(state.runId)}" (its pull request description is in .jig/${state.runId}/state/PR_DESCRIPTION.md), ` +
-    `or start a new run with a sharper request. The reviewer's feedback: jig status ${state.runId}`
+    `or start a new run with a sharper request. The failure feedback: jig status ${state.runId}`
   );
 }

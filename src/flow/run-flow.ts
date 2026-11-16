@@ -3,9 +3,11 @@ import { finalCheckFailed, finalCheckNeedsRepair } from '../domain/final-check.j
 import { stuckSlice } from '../domain/run-state.js';
 import {
   emptyAttemptCapReached,
+  hookFailureCapReached,
   reviewCapReached,
   ruleFixCapReached,
   sliceNeedsVerification,
+  verificationFailureCapReached,
 } from '../domain/settings.js';
 import { resolveDesign, reviewDesign, reviseDesign } from '../steps/design-review.js';
 import { checkWholeRun } from '../steps/final-check.js';
@@ -24,13 +26,8 @@ const designPassedReview: Guard = ({ state }) => designApproved(state);
 
 const designOwesRevision: Guard = ({ state }) => designNeedsRevision(state);
 
-const sliceReachedReviewCap: Guard = ({ slice, settings }) =>
-  slice !== undefined && reviewCapReached(slice, settings);
-
-const backToImplementUnlessCapped = [
-  { to: 'stuck', when: sliceReachedReviewCap },
-  { to: 'pending' },
-] as const;
+const sliceReachedHookFailureCap: Guard = ({ slice }) =>
+  slice !== undefined && hookFailureCapReached(slice);
 
 const sliceReachedEmptyAttemptCap: Guard = ({ slice }) =>
   slice !== undefined && emptyAttemptCapReached(slice);
@@ -40,8 +37,19 @@ const retryUnlessEmptyAttemptsCapped = [
   { to: 'pending' },
 ] as const;
 
+const sliceReachedVerificationFailureCap: Guard = ({ slice }) =>
+  slice !== undefined && verificationFailureCapReached(slice);
+
 const sliceAwaitsVerification: Guard = ({ slice, settings }) =>
   slice !== undefined && sliceNeedsVerification(slice, settings);
+
+const sliceReachedReviewCap: Guard = ({ slice, settings }) =>
+  slice !== undefined && reviewCapReached(slice, settings);
+
+const backToImplementUnlessCapped = [
+  { to: 'stuck', when: sliceReachedReviewCap },
+  { to: 'pending' },
+] as const;
 
 const sliceReachedRuleFixCap: Guard = ({ slice }) =>
   slice !== undefined && ruleFixCapReached(slice);
@@ -57,13 +65,19 @@ export const sliceFlow = defineSliceFlow({
     step: implementSlice,
     on: {
       implemented: 'verifying',
-      changesRequested: backToImplementUnlessCapped,
+      hookRejected: [{ to: 'stuck', when: sliceReachedHookFailureCap }, { to: 'pending' }],
       nothingChanged: retryUnlessEmptyAttemptsCapped,
     },
   },
   verifying: {
     step: verifySlice,
-    on: { verified: 'in_review', changesRequested: backToImplementUnlessCapped },
+    on: {
+      verified: 'in_review',
+      verificationFailed: [
+        { to: 'stuck', when: sliceReachedVerificationFailureCap },
+        { to: 'pending' },
+      ],
+    },
   },
   in_review: {
     step: reviewSlice,

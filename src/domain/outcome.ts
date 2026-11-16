@@ -21,6 +21,8 @@ export type Outcome = OfKnownType<
   | { type: 'implemented'; commit: CommitSummary }
   | { type: 'approved' }
   | { type: 'changesRequested'; feedback: string }
+  | { type: 'hookRejected'; feedback: string }
+  | { type: 'verificationFailed'; feedback: string }
   | { type: 'nothingChanged'; feedback: string }
   | { type: 'rulesFixRequested'; feedback: string }
   | { type: 'verified'; command?: string }
@@ -49,6 +51,8 @@ export const outcomeTypeSchema = z.enum([
   'implemented',
   'approved',
   'changesRequested',
+  'hookRejected',
+  'verificationFailed',
   'nothingChanged',
   'rulesFixRequested',
   'verified',

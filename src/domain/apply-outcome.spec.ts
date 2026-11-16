@@ -72,6 +72,8 @@ describe('applyOutcome', () => {
         order: 0,
         status: 'pending',
         reviewCycles: 0,
+        hookFailures: 0,
+        verificationFailures: 0,
         emptyAttempts: 0,
         ruleFixCycles: 0,
         feedbackHistory: [],
@@ -81,6 +83,8 @@ describe('applyOutcome', () => {
         order: 1,
         status: 'pending',
         reviewCycles: 0,
+        hookFailures: 0,
+        verificationFailures: 0,
         emptyAttempts: 0,
         ruleFixCycles: 0,
         feedbackHistory: [],
@@ -104,6 +108,34 @@ describe('applyOutcome', () => {
     });
     expect(slices.find((slice) => slice.id === later.id)).toEqual(later);
   });
+
+  it.each([
+    ['hookRejected', 'hookFailures'],
+    ['verificationFailed', 'verificationFailures'],
+  ] as const)(
+    'counts %s independently and records feedback while invalidating verification',
+    (type, counter) => {
+      const slice = aSlice({
+        reviewCycles: 2,
+        hookFailures: 1,
+        verificationFailures: 1,
+        emptyAttempts: 1,
+        ruleFixCycles: 1,
+        verification: { command: faker.lorem.word() },
+      });
+      const feedback = faker.lorem.sentence();
+
+      const state = applyOutcome(aRunState({ slices: [slice] }), { type, feedback });
+
+      expect(state.slices[0]).toEqual({
+        ...slice,
+        [counter]: 2,
+        lastFeedback: feedback,
+        feedbackHistory: [...slice.feedbackHistory, feedback],
+        verification: undefined,
+      });
+    },
+  );
 
   it('counts an empty attempt, not a review cycle, when the implementation changed nothing', () => {
     const current = aSlice({ order: 0, reviewCycles: 1, emptyAttempts: 0 });

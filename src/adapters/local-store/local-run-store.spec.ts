@@ -41,6 +41,25 @@ describe('LocalRunStore', () => {
     expect((await store.load(state.runId)).unwrap()).toEqual(state);
   });
 
+  it('loads zero implementation failure counts from a legacy snapshot', async () => {
+    const { store, repoRoot } = await setup();
+    const state = aRunState({ slices: [aSlice({ hookFailures: 2, verificationFailures: 1 })] });
+    (await store.save(state)).unwrap();
+    const {
+      hookFailures: _hooks,
+      verificationFailures: _verification,
+      ...legacySlice
+    } = state.slices[0];
+    await writeFile(
+      path.join(stateDirectory(repoRoot, state.runId), 'run.json'),
+      JSON.stringify({ ...state, slices: [legacySlice] }),
+    );
+
+    const loaded = (await store.load(state.runId)).unwrap();
+
+    expect(loaded?.slices[0]).toEqual({ ...legacySlice, hookFailures: 0, verificationFailures: 0 });
+  });
+
   it('peeks at the run it saved', async () => {
     const { store } = await setup();
     const state = aRunState();

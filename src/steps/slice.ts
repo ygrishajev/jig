@@ -34,7 +34,7 @@ export const implementSlice: SliceStep = ({ state, slice, settings, ports }) =>
     const saved = await workspace.saveWork(message, { approved });
     if (saved.isErr() && CommitRejected.is(saved.error)) {
       return Result.ok<Outcome>({
-        type: 'changesRequested',
+        type: 'hookRejected',
         feedback: commitRejectedFeedback(saved.error.output),
       });
     }
@@ -114,5 +114,5 @@ export const verifySlice: SliceStep = async ({ settings, ports }) => {
   if (ran.isErr()) return Result.err(ran.error);
   const { exitCode, output } = ran.value;
   if (exitCode === 0) return Result.ok<Outcome>({ type: 'verified', command });
-  return Result.ok({ type: 'changesRequested', feedback: verifyFailedFeedback(command, output) });
+  return Result.ok({ type: 'verificationFailed', feedback: verifyFailedFeedback(command, output) });
 };

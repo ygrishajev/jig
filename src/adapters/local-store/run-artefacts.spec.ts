@@ -16,6 +16,7 @@ import {
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { designReviewReport } from '../../domain/design-review-report.js';
 import type { RunId } from '../../domain/run-id.js';
+import { runStopReason } from '../../domain/run-state.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { LocalRunStore } from './local-run-store.js';
 import { RunArtefacts } from './run-artefacts.js';
@@ -36,6 +37,26 @@ describe('RunArtefacts', () => {
       { name: 'design.md', path: path.join(directory, 'design.md') },
       { name: 'plan.md', path: path.join(directory, 'plan.md') },
     ]);
+  });
+
+  it.each([
+    'hookFailures',
+    'verificationFailures',
+    'emptyAttempts',
+    'ruleFixCycles',
+    'reviewCycles',
+  ] as const)('saves the exhausted %s budget as the terminal reason', async (counter) => {
+    const { artefacts, read } = await setup();
+    const state = aRunState({
+      phase: 'stuck',
+      slices: [aSlice({ status: 'stuck', [counter]: 3 })],
+    });
+
+    (await artefacts.write(state, 'stuck', aMetricsSummary())).unwrap();
+
+    expect(JSON.parse(await read(state.runId, 'result.json')).blockedReason).toBe(
+      runStopReason(state),
+    );
   });
 
   it('closes the pull request description with the run so far', async () => {
@@ -128,7 +149,7 @@ describe('RunArtefacts', () => {
       status: 'stuck',
       phase: 'stuck',
       complete: false,
-      blockedReason: `slice "${stuck.id}" is stuck — needs human intervention`,
+      blockedReason: runStopReason(state),
       metrics,
     });
   });

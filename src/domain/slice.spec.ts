@@ -22,9 +22,20 @@ describe('slicesInOrder', () => {
 
 describe('sliceSchema', () => {
   it('loads a slice saved before empty attempts and rule fixes were counted as having none', () => {
-    const { emptyAttempts: _empty, ruleFixCycles: _ruleFixes, ...saved } = aSlice();
+    const {
+      emptyAttempts: _empty,
+      ruleFixCycles: _ruleFixes,
+      hookFailures: _hooks,
+      verificationFailures: _verification,
+      ...saved
+    } = aSlice();
 
-    expect(sliceSchema.parse(saved)).toMatchObject({ emptyAttempts: 0, ruleFixCycles: 0 });
+    expect(sliceSchema.parse(saved)).toMatchObject({
+      emptyAttempts: 0,
+      ruleFixCycles: 0,
+      hookFailures: 0,
+      verificationFailures: 0,
+    });
   });
 
   it('loads a slice saved before feedback was kept as a history with none', () => {

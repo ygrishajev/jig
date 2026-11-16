@@ -64,7 +64,9 @@ a lock left by a crashed process expires after 30 seconds.
 6. jig writes `PR_DESCRIPTION.md`, then waits for a manual merge or merges automatically.
    It writes a description; it does not open a pull request.
 
-`reviewCycleCap` limits ordinary slice rejections, including verification failures.
+`reviewCycleCap` limits reviewer rejections only (three by default).
+Commit-hook failures and verification failures each have an independent cap of three
+per slice, accumulated across attempts. These counters persist across resume; older snapshots start them at zero.
 Empty implementation attempts and fixes limited to house rules each have a separate
 cap of two. A stuck slice skips the final check. If the second final check fails,
 the run is described and ends as stuck without merging.

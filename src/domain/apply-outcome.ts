@@ -47,6 +47,8 @@ function isSendBack(outcome: Outcome): outcome is SendBack {
 /** Each way a slice goes back to its implementer counts against its own cap. */
 const ATTEMPT_COUNTER_OF = {
   changesRequested: 'reviewCycles',
+  hookRejected: 'hookFailures',
+  verificationFailed: 'verificationFailures',
   nothingChanged: 'emptyAttempts',
   rulesFixRequested: 'ruleFixCycles',
 } as const satisfies Partial<Record<Outcome['type'], keyof Slice>>;

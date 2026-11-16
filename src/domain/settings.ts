@@ -21,6 +21,35 @@ export function reviewCapReached(slice: Slice, settings: RunSettings): boolean {
   return slice.reviewCycles >= settings.reviewCycleCap;
 }
 
+/** A slice still owes its verification record when a verify command is configured and it has none. */
+export function sliceNeedsVerification(slice: Slice, settings: RunSettings): boolean {
+  return Boolean(settings.verifyCommand) && slice.verification === undefined;
+}
+
+export function sliceStopReason(slice: Slice): string {
+  if (hookFailureCapReached(slice)) return `commit hooks failed ${slice.hookFailures} times`;
+  if (verificationFailureCapReached(slice))
+    return `verification failed ${slice.verificationFailures} times`;
+  if (emptyAttemptCapReached(slice))
+    return `implementation changed nothing ${slice.emptyAttempts} times`;
+  if (ruleFixCapReached(slice)) return `house-rule fixes reached the cap (${slice.ruleFixCycles})`;
+  return `review rejections reached the review cap (${slice.reviewCycles})`;
+}
+
+export function hookFailureCapReached(slice: Slice): boolean {
+  return slice.hookFailures >= HOOK_FAILURE_CAP;
+}
+
+/** Hook failures cannot consume the allowance reserved for reviewer findings. */
+export const HOOK_FAILURE_CAP = 3;
+
+export function verificationFailureCapReached(slice: Slice): boolean {
+  return slice.verificationFailures >= VERIFICATION_FAILURE_CAP;
+}
+
+/** Verification failures cannot consume the allowance reserved for reviewer findings. */
+export const VERIFICATION_FAILURE_CAP = 3;
+
 export function emptyAttemptCapReached(slice: Slice): boolean {
   return slice.emptyAttempts >= EMPTY_ATTEMPT_CAP;
 }
@@ -41,8 +70,3 @@ export function ruleFixCapReached(slice: Slice): boolean {
  * the slice gets stuck — but not forever.
  */
 export const RULE_FIX_CAP = 2;
-
-/** A slice still owes its verification record when a verify command is configured and it has none. */
-export function sliceNeedsVerification(slice: Slice, settings: RunSettings): boolean {
-  return Boolean(settings.verifyCommand) && slice.verification === undefined;
-}

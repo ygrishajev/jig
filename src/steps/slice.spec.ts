@@ -79,7 +79,7 @@ describe('slice steps', () => {
     const outcome = await run(implementSlice, aSlice());
 
     expect(outcome).toMatchObject({
-      type: 'changesRequested',
+      type: 'hookRejected',
       feedback: expect.stringContaining(hookOutput),
     });
   });
@@ -398,8 +398,8 @@ describe('slice steps', () => {
     const outcome = await run(verifySlice, aSlice());
 
     expect(agent.commands).toEqual([verifyCommand]);
-    expect(outcome).toMatchObject({ type: 'changesRequested' });
-    expect(outcome.type === 'changesRequested' && outcome.feedback).toContain(failure);
+    expect(outcome).toMatchObject({ type: 'verificationFailed' });
+    expect(outcome.type === 'verificationFailed' && outcome.feedback).toContain(failure);
   });
 
   it("gives the implementer the tail of a failing verify's output, not its head", async () => {
@@ -413,7 +413,7 @@ describe('slice steps', () => {
 
     const outcome = await run(verifySlice, aSlice());
 
-    const feedback = outcome.type === 'changesRequested' && outcome.feedback;
+    const feedback = outcome.type === 'verificationFailed' && outcome.feedback;
     expect(feedback).toContain(tail);
     expect(feedback).toContain(verifyCommand);
     expect(feedback).not.toContain(head);

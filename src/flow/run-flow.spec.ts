@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
-import { Panic, Result } from 'better-result';
-import { writeFile } from 'node:fs/promises';
+import { Panic, panic, Result } from 'better-result';
+import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, vi } from 'vitest';
@@ -45,6 +45,7 @@ import {
   SteppingClock,
 } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { AgentRunFailed, RunStateConflict, SandboxUnavailable } from '../domain/errors.js';
 import { type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -204,6 +205,98 @@ describe('runFlow', () => {
     expect(state.slices[0]).toMatchObject({ reviewCycles: 0, ruleFixCycles: 1 });
   });
 
+  it.each([
+    ['hookFailures', 1],
+    ['hookFailures', 2],
+    ['verificationFailures', 1],
+    ['verificationFailures', 2],
+  ] as const)(
+    'persists %s across resume and stops on the third failure from %i',
+    async (counter, failures) => {
+      const { agent, run, start, sandboxPath, rejectCommitsInSandbox } = await setup({
+        settings: runSettings({ reviewCycleCap: 1, maxStepRetries: 0, verifyCommand: 'npm test' }),
+        exec: () => ({ exitCode: 1, output: faker.lorem.sentence() }),
+      });
+      const store = new LocalRunStore(sandboxPath);
+      const slice = aSlice({
+        status: 'pending',
+        hookFailures: 1,
+        verificationFailures: 1,
+        [counter]: failures,
+        reviewCycles: 0,
+      });
+      if (counter === 'hookFailures') await rejectCommitsInSandbox(faker.lorem.words(4));
+      agent.script('implementer', { files: { 'feature.txt': faker.lorem.sentence() } });
+      if (failures === 1) {
+        agent.script('implementer', {
+          fail: new AgentRunFailed({ message: faker.lorem.sentence() }),
+        });
+      }
+      agent.script('describer', aDescription());
+
+      const first = await run(aRunStateIn('slices', { runId: start.runId, slices: [slice] }));
+      expect(first.state.slices[0]).toMatchObject({
+        hookFailures: 1,
+        verificationFailures: 1,
+        [counter]: failures + 1,
+        reviewCycles: 0,
+        status: failures === 1 ? 'pending' : 'stuck',
+      });
+      expect(first.status).toBe(failures === 1 ? 'blocked' : 'stuck');
+      (await store.save(first.state)).unwrap();
+      const loaded = (await store.load(start.runId)).unwrap();
+      expect(loaded).toEqual(first.state);
+      if (!loaded) panic('The saved run is missing');
+      agent.script('implementer', { files: { 'feature.txt': faker.lorem.sentence() } });
+
+      const resumed = await run(loaded);
+      expect(resumed.status).toBe('stuck');
+      expect(resumed.state.slices[0]).toMatchObject({
+        hookFailures: 1,
+        verificationFailures: 1,
+        [counter]: 3,
+        reviewCycles: 0,
+      });
+    },
+  );
+
+  it('keeps the three-review allowance after a hook rejection followed by two reviewer rejections', async () => {
+    const { agent, run, start, sandboxPath, rejectCommitsInSandbox } = await setup({
+      settings: runSettings({ reviewCycleCap: 3, maxStepRetries: 0 }),
+    });
+    const output = faker.lorem.words(4);
+    await rejectCommitsInSandbox(output);
+    agent.script(
+      'implementer',
+      { files: { 'feature.txt': faker.lorem.sentence() } },
+      { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) },
+    );
+    const slice = aSlice({ status: 'pending', reviewCycles: 0, hookFailures: 0 });
+    const blocked = await run(aRunStateIn('slices', { runId: start.runId, slices: [slice] }));
+    expect(blocked.state.slices[0]).toMatchObject({
+      hookFailures: 1,
+      reviewCycles: 0,
+      status: 'pending',
+    });
+    expect(blocked.state.slices[0].lastFeedback).toContain(output);
+    await rm(path.join(sandboxPath, '.git', 'hooks', 'commit-msg'));
+    agent.script(
+      'implementer',
+      ...Array.from({ length: 3 }, () => ({ files: { 'feature.txt': faker.lorem.sentence() } })),
+    );
+    agent.script('reviewer', rejection(), rejection(), approval(), fulfillment());
+    agent.script('describer', aDescription());
+
+    const resumed = await run(blocked.state);
+
+    expect(resumed.status).toBe('done');
+    expect(resumed.state.slices[0]).toMatchObject({
+      hookFailures: 1,
+      reviewCycles: 2,
+      status: 'approved',
+    });
+  });
+
   it('stops for a person after planning when the design gate is a checkpoint, then continues on resume', async () => {
     const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
     const { agent, run, start } = await setup({
@@ -310,7 +403,8 @@ describe('runFlow', () => {
     expect(status).toBe('done');
     expect(state.slices[0]).toMatchObject({
       status: 'approved',
-      reviewCycles: 1,
+      reviewCycles: 0,
+      verificationFailures: 1,
       verification: { command: verifyCommand },
     });
     expect(agent.commands).toEqual([verifyCommand, verifyCommand, verifyCommand]);
@@ -319,22 +413,29 @@ describe('runFlow', () => {
     expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(failure);
   });
 
-  it('leaves a slice stuck when its verify fails with the review cycle cap reached', async () => {
+  it('leaves a slice stuck after three verification failures independently of the review cap', async () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const { agent, run, start } = await setup({
       settings: runSettings({ reviewCycleCap: 1, verifyCommand }),
       exec: () => ({ exitCode: 1, output: faker.lorem.sentence() }),
     });
     scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
-    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script(
+      'implementer',
+      ...Array.from({ length: 3 }, () => ({ files: { 'a.txt': faker.lorem.sentence() } })),
+    );
     agent.script('describer', aDescription());
 
     const { status, state } = await run(start);
 
     expect(status).toBe('stuck');
-    expect(state.slices[0]).toMatchObject({ status: 'stuck', reviewCycles: 1 });
+    expect(state.slices[0]).toMatchObject({
+      status: 'stuck',
+      reviewCycles: 0,
+      verificationFailures: 3,
+    });
     expect(reviewsAfterDesign(agent)).toHaveLength(0);
-    expect(agent.commands).toEqual([verifyCommand]);
+    expect(agent.commands).toEqual([verifyCommand, verifyCommand, verifyCommand]);
   });
 
   it('verifies a resumed slice the reviewer approved before it counts as approved', async () => {
@@ -1147,7 +1248,8 @@ describe('runFlow', () => {
     store?: RunStore;
   }) {
     const id = runId();
-    const { sandboxPath, workspace, git, runBranch, worktreePath } = await createRunWorktree(id);
+    const { sandboxPath, workspace, git, runBranch, worktreePath, rejectCommitsInSandbox } =
+      await createRunWorktree(id);
     const agent = new FakeAgentSession(sandboxPath, input.exec);
     const store = input.store ?? new InMemoryRunStore();
     const dependencies = {
@@ -1162,7 +1264,19 @@ describe('runFlow', () => {
     const run = async (state: RunState) => (await invoke(state)).unwrap();
     const runBranchHistory = () =>
       git.raw(['log', '--reverse', '--format=%s', '--patch', `main..${runBranch}`]);
-    return { agent, invoke, run, start, store, git, runBranch, worktreePath, runBranchHistory };
+    return {
+      agent,
+      invoke,
+      run,
+      start,
+      store,
+      git,
+      runBranch,
+      worktreePath,
+      runBranchHistory,
+      sandboxPath,
+      rejectCommitsInSandbox,
+    };
   }
 });
 

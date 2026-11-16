@@ -4,6 +4,7 @@ import {
   wholeRunVerification,
 } from '../domain/final-check.js';
 import type { FinalCheckResult, RunStateIn } from '../domain/run-state.js';
+import { sliceStopReason } from '../domain/settings.js';
 import { type Slice, slicesInOrder } from '../domain/slice.js';
 
 export const DEFAULT_PR_TEMPLATE = [
@@ -115,12 +116,14 @@ function agentRun({ plan, slices }: RunStateIn<'describing'>): string {
 function sliceChecklist(slices: Slice[]): string {
   const lines = slicesInOrder(slices).flatMap((slice) => {
     const line = `- [${slice.status === 'approved' ? 'x' : ' '}] ${slice.id} — ${slice.description.split('\n')[0]}`;
-    if (!slice.lastFeedback) return [line];
+    const reason = slice.status === 'stuck' ? `  Stopped: ${sliceStopReason(slice)}.` : undefined;
+    const entry = reason ? [line, reason] : [line];
+    if (!slice.lastFeedback) return entry;
     const quoted = slice.lastFeedback
       .split('\n')
       .map((feedbackLine) => `  > ${feedbackLine}`)
       .join('\n');
-    return [line, `  **[${slice.status}]** reviewer feedback:`, quoted];
+    return [...entry, `  **[${slice.status}]** feedback:`, quoted];
   });
   return ['### Slices', '', ...lines].join('\n');
 }
