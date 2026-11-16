@@ -4,7 +4,7 @@ import type { CompletionEvidence } from './completion-reuse.js';
 import { recordDesignReview, recordDesignRevision } from './design-review.js';
 import { recordFinalCheck } from './final-check.js';
 import type { Outcome } from './outcome.js';
-import { currentSlice, type RunState } from './run-state.js';
+import { currentSlice, enterPhase, type RunState } from './run-state.js';
 import { type Slice, sliceFromPlan } from './slice.js';
 
 /**
@@ -14,6 +14,8 @@ import { type Slice, sliceFromPlan } from './slice.js';
 export function applyOutcome(state: RunState, outcome: Outcome): RunState {
   if (isSendBack(outcome)) return sendSliceBack(state, outcome);
   if (isDesignOutcome(outcome)) return applyDesignOutcome(state, outcome);
+  if (outcome.type === 'completionReused') return { ...state, completionReuseAuthorized: true };
+  if (outcome.type === 'completionInvalidated') return revokeCompletionReuse(state);
   return foldStepData(state, outcome);
 }
 
@@ -100,6 +102,16 @@ function applyDesignOutcome(state: RunState, outcome: DesignOutcome): RunState {
     case 'designRevised':
       return recordDesignRevision(state, outcome.revision);
   }
+}
+
+/**
+ * Withdraws the run's authority to finish on its evidence, with the description written from it,
+ * and puts the run back in its final check, which still owes its one repair. The run leaves
+ * finishing here because a phase past describing cannot hold a run without its description.
+ */
+function revokeCompletionReuse(state: RunState): RunState {
+  const { completionReuseAuthorized: _authorized, prDescription: _described, ...revoked } = state;
+  return enterPhase(revoked, 'finalCheck');
 }
 
 function foldStepData(state: RunState, outcome: Outcome): RunState {

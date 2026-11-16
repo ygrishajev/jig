@@ -1,7 +1,13 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aFeaturePlan, aFinalCheckResult, aSlice } from '../../tests/support/builders.js';
+import {
+  aCompletionEvidence,
+  aFeaturePlan,
+  aFinalCheckResult,
+  aSlice,
+} from '../../tests/support/builders.js';
+import type { CompletionEvidence } from '../domain/completion-reuse.js';
 import type { FinalCheckResult } from '../domain/run-state.js';
 import type { Slice } from '../domain/slice.js';
 import { pullRequestPrompt } from './pull-request.js';
@@ -82,6 +88,16 @@ describe('pullRequestPrompt', () => {
     expect(prompt()).toContain(`1. ${gap}`);
   });
 
+  it('states the verification a reused completion rests on in place of a final check', () => {
+    const command = `npm run ${faker.word.verb()}`;
+    const { prompt } = setup({
+      reusedCompletion: aCompletionEvidence({ verification: { command } }),
+    });
+
+    expect(prompt()).toContain(`\`${command}\``);
+    expect(prompt()).not.toContain('The whole-run final check did not run.');
+  });
+
   it('says the whole-run check did not run when no result is persisted', () => {
     const { prompt } = setup();
 
@@ -93,6 +109,7 @@ describe('pullRequestPrompt', () => {
       slices?: Slice[];
       verifyCommand?: string;
       finalCheck?: FinalCheckResult;
+      reusedCompletion?: CompletionEvidence;
     } = {},
   ) {
     const prompt = () =>
@@ -102,6 +119,7 @@ describe('pullRequestPrompt', () => {
         slices: input.slices ?? [],
         verifyCommand: input.verifyCommand,
         finalCheck: input.finalCheck,
+        reusedCompletion: input.reusedCompletion,
       });
     return { prompt };
   }

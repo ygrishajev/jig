@@ -41,6 +41,9 @@ export type Outcome = OfKnownType<
       fulfilled: boolean;
       gaps: string[];
     }
+  | { type: 'completionReused' }
+  | { type: 'completionDeclined' }
+  | { type: 'completionInvalidated' }
   | { type: 'described'; body: string }
   | { type: 'merged' }
   | { type: 'awaitingManualMerge' }
@@ -64,6 +67,9 @@ export const outcomeTypeSchema = z.enum([
   'rulesFixRequested',
   'verified',
   'finalChecked',
+  'completionReused',
+  'completionDeclined',
+  'completionInvalidated',
   'described',
   'merged',
   'awaitingManualMerge',

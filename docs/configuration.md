@@ -47,13 +47,13 @@ settings. The `agents` setting below pins CLI versions, not models.
 
 ## Verification and run policy
 
-| Key              | Default    | Behavior                                                                     |
-| ---------------- | ---------- | ---------------------------------------------------------------------------- |
-| `verifyCommand`  | Not set    | Runs before slice review and during the final check; must pass for approval. |
-| `mergeMode`      | `"manual"` | `manual` waits for you to merge; `auto` merges the run branch.               |
-| `designGate`     | `"auto"`   | `checkpoint` pauses after design review and slicing, before implementation.  |
-| `reviewCycleCap` | `3`        | Positive integer; ordinary rejections before a slice is stuck.               |
-| `commitSigning`  | `"skip"`   | `repo` re-signs the run branch during automatic merging.                     |
+| Key              | Default    | Behavior                                                                                                       |
+| ---------------- | ---------- | -------------------------------------------------------------------------------------------------------------- |
+| `verifyCommand`  | Not set    | Runs before slice review and during the final check; must pass for approval. Required to skip the final check. |
+| `mergeMode`      | `"manual"` | `manual` waits for you to merge; `auto` merges the run branch.                                                 |
+| `designGate`     | `"auto"`   | `checkpoint` pauses after design review and slicing, before implementation.                                    |
+| `reviewCycleCap` | `3`        | Positive integer; ordinary rejections before a slice is stuck.                                                 |
+| `commitSigning`  | `"skip"`   | `repo` re-signs the run branch during automatic merging.                                                       |
 
 See [the pipeline](commands.md#pipeline) for review limits and
 [merging and signing](sandbox.md#merging-and-signing) for merge behavior.

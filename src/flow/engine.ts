@@ -113,9 +113,10 @@ class Engine {
     return (await this.d.store.save(next)).map(() => next);
   }
 
-  private changePhase(state: RunState, to: RunPhase): RunState {
-    if (to !== state.phase) {
-      this.d.events.publish({ type: 'phaseChanged', runId: state.runId, from: state.phase, to });
+  /** `from` is where the run stood before its outcome applied, which may already have moved it. */
+  private changePhase(state: RunState, to: RunPhase, from: RunPhase = state.phase): RunState {
+    if (to !== from) {
+      this.d.events.publish({ type: 'phaseChanged', runId: state.runId, from, to });
     }
     return enterPhase(state, to);
   }
@@ -266,7 +267,7 @@ class Engine {
       const { outcome } = attempted;
       const applied = applyOutcome(state, outcome);
       const next = this.resolve(node.on, outcome, { state: applied, settings: this.d.settings });
-      return Result.ok({ state: this.changePhase(applied, next) });
+      return Result.ok({ state: this.changePhase(applied, next, state.phase) });
     }, this);
   }
 

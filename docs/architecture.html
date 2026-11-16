@@ -288,7 +288,7 @@ svg text{font-family:var(--sans)}
     ["verifying → verify", "verified → in_review; verificationFailed returns to pending with its own cap of 3.", "step"],
     ["in_review → review", "approved → approved, or verifying if a verification record is still owed.", "step"],
     ["Review feedback", "changesRequested spends reviewCycleCap (default 3); rulesFixRequested has its own cap of 2.", "fail"],
-    ["All approved", "Continue to finalCheck; its one repair slice uses this same loop.", "domain"],
+    ["All approved", "Continue to checkingReuse, then describing or finalCheck; its one repair slice uses this same loop.", "domain"],
     ["A slice is stuck", "Skip finalCheck, write the description, and end stuck without merging.", "fail"]
   ], { h: 70, gap: 20 });
   var cFHalt = flowCv("eh", "Halts and recovery", "Run outcomes are saved; reported outcomes exit 0, command errors exit nonzero.", [
@@ -334,13 +334,13 @@ svg text{font-family:var(--sans)}
     ["checkWholeRun", "Run verification again, then review the full change against the request, even if verification failed.", "step"],
     ["One repair", "A failed final check adds one repair slice; it goes through implement, verify, and review.", "domain"],
     ["Check again", "A second failure ends stuck after description. A stuck slice bypasses the final check.", "fail"],
-    ["describePullRequest", "Fill the repository PR template or the default; include planning docs and outcome details.", "step"],
+    ["describePullRequest", "Re-check reused evidence (broken → finalCheck), then fill the PR template; include planning docs and outcome details.", "step"],
     ["Description fallback", "If the describer fails, build the description from saved run state.", "fail"],
     ["Finish", "Write PR_DESCRIPTION.md; only a successful run continues to merging. No PR is opened.", "domain"]
   ], { h: 70, gap: 20 });
   var cFMerge = flowCv("sm", "Merge", "mergeRunBranch in src/steps/finishing.ts; GitWorkspace guards the automatic merge.", [
     ["Already merged?", "Detect plain, squash, and rebase merges, including on the remote base branch.", "step"],
-    ["Manual mode (default)", "Halt at awaitingMerge. After the operator merges, resume to record completion.", "domain"],
+    ["Manual mode (default)", "Re-check reused evidence, then halt at awaitingMerge. After the operator merges, resume to record completion.", "domain"],
     ["Automatic merge guard", "The run branch tree must match the last approved commit.", "domain"],
     ["Signing", "skip by default; repo re-signs the run branch using the operator signing setup.", "infra"],
     ["Merge on the host", "Requires a clean operator tree; hooks are disabled. repo signs the merge; skip disables signing.", "infra"],
@@ -422,7 +422,7 @@ svg text{font-family:var(--sans)}
     ["reviewingDesign", "Approved → slicing; otherwise one revisingDesign and re-review, then resolvingDesign.", "domain"],
     ["slicing → gate", "checkpoint → paused; resume continues to slices.", "step"],
     ["slices", "pending → verifying → in_review → approved; capped failures become stuck.", "domain"],
-    ["finalCheck", "Pass → describing; first failure → repair slice; second failure → describing then stuck.", "domain"],
+    ["checkingReuse → finalCheck", "Still-valid single-slice evidence → describing; else pass → describing, first failure → repair, second → stuck.", "domain"],
     ["describing → merging", "Manual mode → awaitingMerge; automatic or detected merge → done.", "domain"]
   ], { h: 70, gap: 20 });
   var cCKinds = flowCv("ck", "Failure kinds", "What the engine does with an error.", [

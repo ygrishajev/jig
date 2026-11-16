@@ -105,15 +105,27 @@ export function completionStillReusable(
   forkPoint: string,
 ): boolean {
   const evidence = state.completionReuse;
-  if (evidence === undefined) return false;
+  if (evidence === undefined || !completionReuseInPlay(state, settings)) return false;
   return (
+    scopeStillHolds(evidence, forkPoint) &&
+    factsVouchFor(observed, evidence.checked) &&
+    observationsVouchFor(evidence.observed, evidence.checked)
+  );
+}
+
+/**
+ * Whether the run's own record still offers its evidence for reuse, before the work is observed:
+ * an eligible approved run, a standing verdict, unchanged sources and settings, and a verification
+ * that passed at the checked work. A run that offers none needs no observation to be declined.
+ */
+export function completionReuseInPlay(state: RunState, settings: RunSettings): boolean {
+  const evidence = state.completionReuse;
+  return (
+    evidence !== undefined &&
     reviewStillEligible(state) &&
     verdictStands(evidence.verdict) &&
     settingsStillHold(evidence, state, settings) &&
-    scopeStillHolds(evidence, forkPoint) &&
-    verificationStillHolds(evidence, settings) &&
-    factsVouchFor(observed, evidence.checked) &&
-    observationsVouchFor(evidence.observed, evidence.checked)
+    verificationStillHolds(evidence, settings)
   );
 }
 
@@ -160,13 +172,6 @@ function sourcesStillHold(evidence: CompletionEvidence, state: RunState): boolea
   );
 }
 
-/** The recorded range is still the run's whole range: it starts where the run was cut and ends at the checked work. */
-function scopeStillHolds(evidence: CompletionEvidence, forkPoint: string): boolean {
-  return (
-    evidence.scope.range.start === forkPoint && evidence.scope.range.end === evidence.checked.commit
-  );
-}
-
 /**
  * The verification the review relied on: the now-configured command is the one that passed, and
  * the work it ran on is exactly the work the review checked, clean and unmoving on both sides.
@@ -204,4 +209,29 @@ function factsVouchFor(facts: WorkFacts, checked: CheckedWork): boolean {
     facts.host.clean &&
     facts.sandbox.clean
   );
+}
+
+/** The recorded range is still the run's whole range: it starts where the run was cut and ends at the checked work. */
+function scopeStillHolds(evidence: CompletionEvidence, forkPoint: string): boolean {
+  return (
+    evidence.scope.range.start === forkPoint && evidence.scope.range.end === evidence.checked.commit
+  );
+}
+
+/** The evidence the run was authorized to finish on in place of a final check; undefined when it finishes otherwise. */
+export function reusedCompletion(state: RunState): CompletionEvidence | undefined {
+  return state.completionReuseAuthorized ? state.completionReuse : undefined;
+}
+
+/** How jig states a reused completion: what the combined review decided, and the verification it relied on. */
+export function reusedCompletionReport(evidence: CompletionEvidence): string[] {
+  const verification = evidence.verification;
+  return [
+    "jig ran no separate final check: the review of the run's single slice judged the whole request against its plan and reported it fulfilled.",
+    ...(verification === undefined
+      ? []
+      : [
+          `The verify command \`${verification.command}\` passed in the sandbox on exactly the reviewed work.`,
+        ]),
+  ];
 }

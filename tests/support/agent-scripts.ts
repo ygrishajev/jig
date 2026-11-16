@@ -61,6 +61,13 @@ export function approval() {
   return { output: { approved: true, feedback: '', fulfilled: true, gaps: [] } };
 }
 
+/** A slice review's approval of the code whose whole-request verdict still names gaps, so the run owes a final check. */
+export function approvalLeavingGaps() {
+  return {
+    output: { approved: true, feedback: '', fulfilled: false, gaps: [faker.lorem.sentence()] },
+  };
+}
+
 /** The final check's verdict: the whole run fulfils its request. */
 export function fulfillment() {
   return { output: { fulfilled: true, gaps: [] } };

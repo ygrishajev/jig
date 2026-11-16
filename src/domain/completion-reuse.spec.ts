@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
+  aCompletionEvidence,
   aFinalCheckResult,
   aRunState,
   aSlice,
@@ -16,7 +17,10 @@ import {
   type CompletionEvidence,
   completionEvidenceOf,
   completionEvidenceSchema,
+  completionReuseInPlay,
   completionStillReusable,
+  reusedCompletion,
+  reusedCompletionReport,
   settingsIdentityOf,
   wholeRequestOf,
 } from './completion-reuse.js';
@@ -385,6 +389,18 @@ describe('completionStillReusable', () => {
     ).toBe(false);
   });
 
+  it('declines from the run record alone when the evidence it offers cannot stand', () => {
+    const { state, settings } = setup({ verdict: { fulfilled: false, gaps: [] } });
+
+    expect(completionReuseInPlay(state, settings)).toBe(false);
+  });
+
+  it('offers evidence whose run record still stands for the work to be observed', () => {
+    const { state, settings } = setup();
+
+    expect(completionReuseInPlay(state, settings)).toBe(true);
+  });
+
   function setup(
     input: {
       verdict?: FulfillmentVerdict;
@@ -443,3 +459,32 @@ function coherentWork(): WorkFacts {
 function digestOf(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
+
+describe('reusedCompletion', () => {
+  it('gives the evidence a run was authorized to finish on', () => {
+    const evidence = aCompletionEvidence();
+    const state = aRunState({ completionReuse: evidence, completionReuseAuthorized: true });
+
+    expect(reusedCompletion(state)).toEqual(evidence);
+  });
+
+  it('gives nothing for evidence the run only recorded', () => {
+    const state = aRunState({ completionReuse: aCompletionEvidence() });
+
+    expect(reusedCompletion(state)).toBeUndefined();
+  });
+});
+
+describe('reusedCompletionReport', () => {
+  it('names the verification the reused review relied on', () => {
+    const command = `npm run ${faker.word.verb()}`;
+
+    const report = reusedCompletionReport(aCompletionEvidence({ verification: { command } }));
+
+    expect(report.join('\n')).toContain(`\`${command}\``);
+  });
+
+  it('claims no verification when none was recorded', () => {
+    expect(reusedCompletionReport(aCompletionEvidence())).toHaveLength(1);
+  });
+});

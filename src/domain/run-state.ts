@@ -23,7 +23,7 @@ export function startRun(input: { runId: RunId; baseBranch: string; request: str
 }
 
 /** Moves a run into `phase`, checking it carries everything `phase` guarantees. */
-export function enterPhase(state: RunState, phase: RunPhase): RunState {
+export function enterPhase(state: Omit<RunState, 'phase'>, phase: RunPhase): RunState {
   const entered = runStateSchema.safeParse({ ...state, phase });
   if (!entered.success) {
     panic(`Run ${state.runId} cannot enter "${phase}": ${entered.error.message}`);
@@ -71,11 +71,13 @@ const runFields = z.object({
   designReview: designReviewProgressSchema.optional(),
   slices: z.array(sliceSchema),
   finalCheck: finalCheckResultSchema.optional(),
-  /**
-   * What an eligible slice review recorded about the whole request, bound to the work it saw.
-   * Reuse of it as the completion check is not wired yet; ordinary final checking still runs.
-   */
+  /** What an eligible slice review recorded about the whole request, bound to the work it saw. */
   completionReuse: completionEvidenceSchema.optional(),
+  /**
+   * Set once the run was found fit to finish on `completionReuse` instead of a final check;
+   * cleared when finishing finds that evidence no longer holds.
+   */
+  completionReuseAuthorized: z.literal(true).optional(),
   prDescription: z.string().optional(),
   /** Why the last invocation stopped short; cleared when the run is resumed. */
   blockedReason: z.string().optional(),
@@ -92,6 +94,7 @@ export const runPhaseSchema = z.enum([
   'gate',
   'paused',
   'slices',
+  'checkingReuse',
   'finalCheck',
   'describing',
   'merging',
@@ -140,6 +143,7 @@ export const runStateSchema = z.discriminatedUnion('phase', [
       'gate',
       'paused',
       'slices',
+      'checkingReuse',
       'finalCheck',
       'describing',
     ]),

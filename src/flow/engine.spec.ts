@@ -622,6 +622,7 @@ function flowWith(nodes: Partial<RunFlow>): RunFlow {
     gate: filler,
     paused: filler,
     slices: filler,
+    checkingReuse: filler,
     finalCheck: filler,
     describing: filler,
     merging: filler,

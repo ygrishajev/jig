@@ -1,3 +1,4 @@
+import { type CompletionEvidence, reusedCompletionReport } from '../domain/completion-reuse.js';
 import {
   unmetRequirements,
   wholeRunFulfillment,
@@ -13,10 +14,12 @@ export interface PullRequestPromptInput {
   design?: string;
   verifyCommand?: string;
   finalCheck?: FinalCheckResult;
+  /** The combined review's evidence the run finished on instead of a final check, if it did. */
+  reusedCompletion?: CompletionEvidence;
 }
 
 export function pullRequestPrompt(input: PullRequestPromptInput): string {
-  const { template, plan, slices, design, verifyCommand, finalCheck } = input;
+  const { template, plan, slices, design, verifyCommand, finalCheck, reusedCompletion } = input;
   return [
     'You are the pull-request-description step of an automated SDLC pipeline.',
     'The work is done and committed in the current directory. Fill in the pull request',
@@ -34,7 +37,7 @@ export function pullRequestPrompt(input: PullRequestPromptInput): string {
     ...sliceLines(slices),
     '',
     '--- FINAL CHECK ---',
-    ...finalCheckLines(finalCheck),
+    ...finalCheckLines(finalCheck, reusedCompletion),
     ...(design ? ['', '--- DESIGN ---', design] : []),
     '',
     'Rules:',
@@ -67,7 +70,13 @@ function sliceLines(slices: Slice[]): string[] {
 }
 
 /** The whole-run check's recorded facts, for the describer to state as fact rather than judge. */
-function finalCheckLines(finalCheck?: FinalCheckResult): string[] {
+function finalCheckLines(
+  finalCheck?: FinalCheckResult,
+  reusedCompletion?: CompletionEvidence,
+): string[] {
+  if (reusedCompletion !== undefined) {
+    return reusedCompletionReport(reusedCompletion);
+  }
   if (finalCheck === undefined) return ['The whole-run final check did not run.'];
   return [
     `Round completed: ${finalCheck.round}`,

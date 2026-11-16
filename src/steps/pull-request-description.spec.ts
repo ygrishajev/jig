@@ -1,10 +1,15 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aFinalCheckResult, aRunStateIn, aSlice } from '../../tests/support/builders.js';
-import type { FinalCheckResult } from '../domain/run-state.js';
+import {
+  aCompletionEvidence,
+  aFinalCheckResult,
+  aRunStateIn,
+  aSlice,
+  workObservations,
+} from '../../tests/support/builders.js';
+import type { RunState } from '../domain/run-state.js';
 import { sliceStopReason } from '../domain/settings.js';
-import type { Slice } from '../domain/slice.js';
 import { renderPullRequest } from './pull-request-description.js';
 
 describe('renderPullRequest', () => {
@@ -156,6 +161,36 @@ describe('renderPullRequest', () => {
     expect(body).not.toContain('### Deviations by jig');
   });
 
+  it('reports a reused completion with links to the range, work and verification it rests on', () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const verification = { command: verifyCommand, observed: workObservations() };
+    const evidence = aCompletionEvidence({ verification });
+    const { render } = setup({
+      slices: [aSlice({ status: 'approved', verification })],
+      completionReuse: evidence,
+      completionReuseAuthorized: true,
+    });
+
+    const body = render({ verifyCommand });
+
+    expect(body).toContain(`${evidence.scope.range.start}...${evidence.scope.range.end}`);
+    expect(body).toContain(`commit ${evidence.checked.commit}`);
+    expect(body).toContain(evidence.checked.tree);
+    expect(body).toContain(`passed at commit ${verification.observed.after.host.commit}`);
+    expect(body).not.toContain('The whole-run final check did not run.');
+    expect(body).not.toContain('### Deviations by jig');
+  });
+
+  it('reports recorded evidence the run never finished on as a final check that did not run', () => {
+    const evidence = aCompletionEvidence();
+    const { render } = setup({ slices: [aSlice({ status: 'stuck' })], completionReuse: evidence });
+
+    const body = render();
+
+    expect(body).toContain('The whole-run final check did not run.');
+    expect(body).not.toContain(evidence.checked.commit);
+  });
+
   it('reports a failed whole-run verification under the deviations jig owns', () => {
     const command = `npm run ${faker.word.verb()}`;
     const { render } = setup({
@@ -288,8 +323,13 @@ describe('renderPullRequest', () => {
     expect(deviations).toBeLessThan(body.indexOf('<details>'));
   });
 
-  function setup(input: { slices?: Slice[]; finalCheck?: FinalCheckResult } = {}) {
-    const state = aRunStateIn('describing', { slices: input.slices, finalCheck: input.finalCheck });
+  function setup(
+    input: Pick<
+      Partial<RunState>,
+      'slices' | 'finalCheck' | 'completionReuse' | 'completionReuseAuthorized'
+    > = {},
+  ) {
+    const state = aRunStateIn('describing', input);
     const render = (lead: { filled?: string; template?: string; verifyCommand?: string } = {}) =>
       renderPullRequest(state, lead);
     return { render, state };

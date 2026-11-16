@@ -9,6 +9,7 @@ import {
   sliceNeedsVerification,
   verificationFailureCapReached,
 } from '../domain/settings.js';
+import { decideCompletionReuse } from '../steps/completion-reuse.js';
 import { resolveDesign, reviewDesign, reviseDesign } from '../steps/design-review.js';
 import { checkWholeRun } from '../steps/final-check.js';
 import { describePullRequest, mergeRunBranch } from '../steps/finishing.js';
@@ -102,7 +103,10 @@ const theFinalCheckFailed: Guard = ({ state }) => finalCheckFailed(state);
  * when the review finds problems, blocking on any left standing — then deliver it slice by
  * slice, check the whole request is fulfilled, describe it, merge it. A stuck slice bypasses the final check; a failed one sends its one
  * repair back through the slices before the run is described and, still failing, stops for a
- * person — so the feedback reaches whoever picks it up.
+ * person — so the feedback reaches whoever picks it up. A single-slice run whose combined review
+ * still vouches for its work finishes on that review instead of a final check; should the
+ * evidence stop holding before the run merges or waits for a merge, the run falls back to an
+ * ordinary final check with its repair still owed.
  */
 export const runFlow = defineRunFlow({
   context: { step: buildContext, on: { contextBuilt: 'planning' } },
@@ -123,7 +127,14 @@ export const runFlow = defineRunFlow({
   slicing: { step: sliceThePlan, on: { sliced: 'gate' } },
   gate: { step: applyDesignGate, on: { continue: 'slices', pause: 'paused' } },
   paused: { halt: true, resumeAt: 'slices' },
-  slices: { forEachSlice: sliceFlow, on: { allApproved: 'finalCheck', sliceStuck: 'describing' } },
+  slices: {
+    forEachSlice: sliceFlow,
+    on: { allApproved: 'checkingReuse', sliceStuck: 'describing' },
+  },
+  checkingReuse: {
+    step: decideCompletionReuse,
+    on: { completionReused: 'describing', completionDeclined: 'finalCheck' },
+  },
   finalCheck: {
     step: checkWholeRun,
     on: { finalChecked: [{ to: 'slices', when: repairStillOwed }, { to: 'describing' }] },
@@ -131,6 +142,7 @@ export const runFlow = defineRunFlow({
   describing: {
     step: describePullRequest,
     on: {
+      completionInvalidated: 'finalCheck',
       described: [
         { to: 'stuck', when: someSliceStuck },
         { to: 'stuck', when: theFinalCheckFailed },
@@ -138,7 +150,14 @@ export const runFlow = defineRunFlow({
       ],
     },
   },
-  merging: { step: mergeRunBranch, on: { merged: 'done', awaitingManualMerge: 'awaitingMerge' } },
+  merging: {
+    step: mergeRunBranch,
+    on: {
+      merged: 'done',
+      awaitingManualMerge: 'awaitingMerge',
+      completionInvalidated: 'finalCheck',
+    },
+  },
   awaitingMerge: { halt: true, resumeAt: 'merging' },
   done: { final: 'done' },
   stuck: { final: 'stuck' },

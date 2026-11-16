@@ -329,6 +329,43 @@ describe('applyOutcome', () => {
     expect(slices[1].reviewCycles).toBe(1);
   });
 
+  it('authorizes a run to finish on its recorded completion evidence', () => {
+    const state = aRunState({ phase: 'checkingReuse', completionReuse: aCompletionEvidence() });
+
+    const applied = applyOutcome(state, { type: 'completionReused' });
+
+    expect(applied.completionReuseAuthorized).toBe(true);
+    expect(applied.completionReuse).toEqual(state.completionReuse);
+  });
+
+  it('leaves a declined candidate unauthorized', () => {
+    const state = aRunState({ phase: 'checkingReuse', completionReuse: aCompletionEvidence() });
+
+    expect(applyOutcome(state, { type: 'completionDeclined' })).toBe(state);
+  });
+
+  it.each(['describing', 'merging', 'awaitingMerge'] as const)(
+    'withdraws the authorization and the description derived from it when %s finds the evidence broken',
+    (phase) => {
+      const state = aRunState({
+        phase,
+        prDescription: faker.lorem.paragraph(),
+        completionReuse: aCompletionEvidence(),
+        completionReuseAuthorized: true,
+      });
+
+      const applied = applyOutcome(state, { type: 'completionInvalidated' });
+
+      expect(applied).toMatchObject({
+        phase: 'finalCheck',
+        completionReuse: state.completionReuse,
+      });
+      expect(applied.completionReuseAuthorized).toBeUndefined();
+      expect(applied.prDescription).toBeUndefined();
+      expect(applied.finalCheck).toBeUndefined();
+    },
+  );
+
   it('keeps the pull request description', () => {
     const body = faker.lorem.paragraphs();
 

@@ -60,13 +60,22 @@ a lock left by a crashed process expires after 30 seconds.
    Changes to existing tests or validation settings are flagged for the reviewer.
    A single-slice run's review also judges the whole request against its plan; the
    verdict is recorded bound to the exact work, verification, sources and settings
-   it saw, with the facts observed around both. The final check still runs for
-   every run.
-5. After all slices pass, jig runs verification again and asks the reviewer whether
-   the whole request is fulfilled. A failure gets one repair slice through the same
+   it saw, with the facts observed around both.
+5. After all slices pass, jig decides whether the run can finish on that recorded
+   review. It can when the run has one approved slice and no final check yet, the
+   review found the request fulfilled with no gaps, a verify command is configured
+   and passed on exactly the reviewed work, the request, plan and settings are
+   unchanged, and the run branch and sandbox are both clean at that work. Such a run
+   skips the final check: verification and review each ran once. Any other run gets
+   the final check: jig runs verification again and asks the reviewer whether the
+   whole request is fulfilled. A failure gets one repair slice through the same
    implementation, verification, and review loop, followed by a second final check.
 6. jig writes `PR_DESCRIPTION.md`, then waits for a manual merge or merges automatically.
-   It writes a description; it does not open a pull request.
+   It writes a description; it does not open a pull request. A reused review is
+   reported with the reviewed range, commit and verification it rests on. Before
+   describing, merging, and waiting for a merge, including on resume, jig checks the
+   reused review still holds. If it does not, jig drops the reuse and its description
+   and runs the ordinary final check, which still allows its one repair.
 
 `reviewCycleCap` limits reviewer rejections only (three by default).
 Commit-hook failures and verification failures each have an independent cap of three

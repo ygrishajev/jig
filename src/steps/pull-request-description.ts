@@ -1,4 +1,9 @@
 import {
+  type CompletionEvidence,
+  reusedCompletion,
+  reusedCompletionReport,
+} from '../domain/completion-reuse.js';
+import {
   unresolvedFindings,
   wholeRunFulfillment,
   wholeRunVerification,
@@ -43,7 +48,7 @@ export function renderPullRequest(
   return [
     lead,
     verificationBlock(state.slices, input.verifyCommand),
-    wholeRunBlock(state.finalCheck),
+    wholeRunBlock(state),
     ...deviationsBlock(state.finalCheck),
     collapsed('Agent run', agentRun(state)),
     ...planningDocs(state),
@@ -81,10 +86,40 @@ function verificationReport(slices: Slice[], verifyCommand?: string): string {
 }
 
 /**
- * What the whole-run final check decided, from the recorded result; a run without one — a legacy
- * save or a slice that got stuck before the check — reports it as not run.
+ * What the whole-run final check decided, from the recorded result; a run that finished on its
+ * combined review's evidence reports that evidence instead, and a run with neither — a legacy save
+ * or a slice that got stuck before the check — reports the check as not run.
  */
-function wholeRunBlock(finalCheck?: FinalCheckResult): string {
+function wholeRunBlock(state: RunStateIn<'describing'>): string {
+  const reused = reusedCompletion(state);
+  if (reused !== undefined) return reusedCompletionBlock(reused);
+  return finalCheckBlock(state.finalCheck);
+}
+
+/**
+ * A reused completion with its source evidence. Commits and ranges are written bare, so the forge
+ * links each to the commit or comparison it names.
+ */
+function reusedCompletionBlock(evidence: CompletionEvidence): string {
+  return [
+    '### Whole-run final check (reused from the slice review)',
+    '',
+    ...reusedCompletionReport(evidence),
+    '',
+    'Source evidence:',
+    `- Reviewed range: ${evidence.scope.range.start}...${evidence.scope.range.end}`,
+    `- Reviewed work: commit ${evidence.checked.commit}, tree \`${evidence.checked.tree}\``,
+    ...verificationSource(evidence.verification),
+  ].join('\n');
+}
+
+function verificationSource(verification: CompletionEvidence['verification']): string[] {
+  const at = verification?.observed?.after.host.commit;
+  if (verification === undefined || at === undefined) return [];
+  return [`- Verification: \`${verification.command}\` passed at commit ${at}`];
+}
+
+function finalCheckBlock(finalCheck?: FinalCheckResult): string {
   const heading =
     finalCheck === undefined
       ? '### Whole-run final check'
