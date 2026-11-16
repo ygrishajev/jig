@@ -258,14 +258,13 @@ export class GitWorkspace implements Workspace {
   }
 
   /** The sandbox clone as it stands: its head, the content that head holds, and whether it is clean. */
-  private async sandboxFacts(): Promise<Result<GitFacts, GitCommandFailed | SandboxUnavailable>> {
-    const commit = await this.sandboxGit(['rev-parse', 'HEAD']);
-    if (commit.isErr()) return commit;
-    const tree = await this.sandboxGit(['rev-parse', 'HEAD^{tree}']);
-    if (tree.isErr()) return tree;
-    const status = await this.sandboxGit(['status', '--porcelain']);
-    if (status.isErr()) return status;
-    return Result.ok({ commit: commit.value, tree: tree.value, clean: status.value === '' });
+  private sandboxFacts(): Promise<Result<GitFacts, GitCommandFailed | SandboxUnavailable>> {
+    return Result.gen(async function* (this: GitWorkspace) {
+      const commit = yield* Result.await(this.sandboxGit(['rev-parse', 'HEAD']));
+      const tree = yield* Result.await(this.sandboxGit(['rev-parse', 'HEAD^{tree}']));
+      const status = yield* Result.await(this.sandboxGit(['status', '--porcelain']));
+      return Result.ok({ commit, tree, clean: status === '' });
+    }, this);
   }
 
   async mergeRunBranch({

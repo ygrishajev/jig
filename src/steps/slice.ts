@@ -123,31 +123,32 @@ async function reviewTheWholeRequest(
 ): Promise<
   Result<Outcome, AgentRunFailed | AgentOutputInvalid | GitCommandFailed | SandboxUnavailable>
 > {
-  const before = await ports.workspace.collectFacts();
-  if (before.isErr()) return Result.err(before.error);
-  const verdict = await ports.agent.runForOutput({
-    role: 'reviewer',
-    prompt: combinedReviewPrompt({
-      slice,
-      range: `${start}..HEAD`,
-      protectedChanges: protectedChanges(changed),
-      request: whole.request,
-      plan: whole.plan,
-    }),
-    schema: wholeRequestVerdictSchema,
+  return Result.gen(async function* () {
+    const before = yield* Result.await(ports.workspace.collectFacts());
+    const verdict = yield* Result.await(
+      ports.agent.runForOutput({
+        role: 'reviewer',
+        prompt: combinedReviewPrompt({
+          slice,
+          range: `${start}..HEAD`,
+          protectedChanges: protectedChanges(changed),
+          request: whole.request,
+          plan: whole.plan,
+        }),
+        schema: wholeRequestVerdictSchema,
+      }),
+    );
+    const after = yield* Result.await(ports.workspace.collectFacts());
+    const completion = completionEvidenceOf({
+      reviewed: whole,
+      settings,
+      verification: slice.verification,
+      verdict: { fulfilled: verdict.fulfilled, gaps: verdict.gaps },
+      observed: { before, after },
+      range: { start, end: after.host.commit },
+    });
+    return Result.ok<Outcome>({ ...outcomeOfReview(verdict), completion });
   });
-  if (verdict.isErr()) return Result.err(verdict.error);
-  const after = await ports.workspace.collectFacts();
-  if (after.isErr()) return Result.err(after.error);
-  const completion = completionEvidenceOf({
-    reviewed: whole,
-    settings,
-    verification: slice.verification,
-    verdict: { fulfilled: verdict.value.fulfilled, gaps: verdict.value.gaps },
-    observed: { before: before.value, after: after.value },
-    range: { start, end: after.value.host.commit },
-  });
-  return Result.ok<Outcome>({ ...outcomeOfReview(verdict.value), completion });
 }
 
 const reviewVerdictSchema = z.object({
@@ -181,25 +182,22 @@ async function reviewTheSlice(
   return verdict.map(outcomeOfReview);
 }
 
-export const verifySlice: SliceStep = async ({ settings, ports }) => {
+export const verifySlice: SliceStep = ({ settings, ports }) => {
   const command = settings.verifyCommand;
-  if (!command) return Result.ok<Outcome>({ type: 'verified' });
-
-  const before = await ports.workspace.collectFacts();
-  if (before.isErr()) return Result.err(before.error);
-  const ran = await ports.agent.exec(command);
-  if (ran.isErr()) return Result.err(ran.error);
-  const after = await ports.workspace.collectFacts();
-  if (after.isErr()) return Result.err(after.error);
-  const observed = { before: before.value, after: after.value };
-  const { exitCode, output } = ran.value;
-  if (exitCode !== 0) {
-    return Result.ok({
-      type: 'verificationFailed',
-      feedback: verifyFailedFeedback(command, output),
-      command,
-      observed,
-    });
-  }
-  return Result.ok<Outcome>({ type: 'verified', command, observed });
+  if (!command) return Promise.resolve(Result.ok<Outcome>({ type: 'verified' }));
+  return Result.gen(async function* () {
+    const before = yield* Result.await(ports.workspace.collectFacts());
+    const { exitCode, output } = yield* Result.await(ports.agent.exec(command));
+    const after = yield* Result.await(ports.workspace.collectFacts());
+    const observed = { before, after };
+    if (exitCode !== 0) {
+      return Result.ok<Outcome>({
+        type: 'verificationFailed',
+        feedback: verifyFailedFeedback(command, output),
+        command,
+        observed,
+      });
+    }
+    return Result.ok<Outcome>({ type: 'verified', command, observed });
+  });
 };

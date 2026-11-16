@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import stringify from 'safe-stable-stringify';
 import { z } from 'zod';
 
 import { type FulfillmentVerdict, fulfillmentVerdictSchema } from './final-check.js';
@@ -83,20 +84,11 @@ export function completionEvidenceOf(input: {
 
 /** How the settings a review ran under are identified, so a later check can see they did not change. */
 export function settingsIdentityOf(settings: RunSettings): string {
-  return digestOf(canonicalJson(settings));
+  return digestOf(stringify(settings));
 }
 
 function digestOf(value: string): string {
   return createHash('sha256').update(value).digest('hex');
-}
-
-/** JSON with recursively sorted keys, so the same value always serializes the same way. */
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-    a < b ? -1 : 1,
-  );
-  return `{${entries.map(([key, val]) => `${JSON.stringify(key)}:${canonicalJson(val)}`).join(',')}}`;
 }
 
 /**
@@ -199,7 +191,7 @@ function observationsVouchFor(observed: WorkObservations, checked: CheckedWork):
 
 /** Where the work stood, as one comparable value: key order cannot make two facts look different. */
 function factsIdentity(facts: WorkFacts): string {
-  return canonicalJson(facts);
+  return stringify(facts);
 }
 
 /** A repository pair vouches for the checked work when both hold exactly that commit and tree, clean. */
