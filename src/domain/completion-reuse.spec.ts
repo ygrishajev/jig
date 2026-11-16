@@ -381,6 +381,27 @@ describe('completionStillReusable', () => {
     expect(completionStillReusable(editedPlan, observed, settings, forkPoint)).toBe(false);
   });
 
+  it('falls when the request changes even though the plan and work still match', () => {
+    const { state, settings, observed, forkPoint } = setup();
+    const changed = { ...state, request: faker.lorem.paragraph() };
+
+    expect(completionReuseInPlay(changed, settings)).toBe(false);
+    expect(completionStillReusable(changed, observed, settings, forkPoint)).toBe(false);
+  });
+
+  it('falls when verification is absent even though a verify command remains configured', () => {
+    const { state, settings, observed, forkPoint } = setup();
+    const changed = {
+      ...state,
+      completionReuse: state.completionReuse && {
+        ...state.completionReuse,
+        verification: undefined,
+      },
+    };
+
+    expect(completionStillReusable(changed, observed, settings, forkPoint)).toBe(false);
+  });
+
   it('falls when nothing was ever recorded', () => {
     const state = aRunState({ phase: 'slices', slices: [aSlice()] });
 

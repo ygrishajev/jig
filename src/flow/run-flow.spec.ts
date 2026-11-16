@@ -657,43 +657,109 @@ describe('runFlow', () => {
     expect(agent.commands).toEqual([verifyCommand]);
   });
 
-  it.each([
-    ['request', (state: RunState) => ({ ...state, request: faker.lorem.paragraph() })],
-    [
-      'plan',
-      (state: RunState) => ({
-        ...state,
-        docs: { ...designDocs(), plan: faker.lorem.paragraph() },
-      }),
-    ],
-    [
-      'range',
-      (state: RunState) => ({
-        ...state,
-        completionReuse: state.completionReuse && {
-          ...state.completionReuse,
-          scope: {
-            ...state.completionReuse.scope,
-            range: { ...state.completionReuse.scope.range, start: faker.git.commitSha() },
-          },
-        },
-      }),
-    ],
-  ])(
-    'runs an ordinary final check on a reloaded run whose saved %s changed, keeping the evidence and the one repair',
-    async (_changed, change) => {
+  it('records an already merged reused run as done even when its sources have changed', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const { agent, run, reload, start, git, runBranch } = await setup({
+      settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+    });
+    scriptReusedRun(agent);
+    const halted = await run(start);
+    await git.merge([runBranch, '--no-edit']);
+    const callsBefore = agent.calls.length;
+
+    const { status, state } = await run(
+      await reload({ ...halted.state, request: faker.lorem.paragraph() }),
+    );
+
+    expect(status).toBe('done');
+    expect(state.completionReuse).toEqual(halted.state.completionReuse);
+    expect(state.finalCheck).toBeUndefined();
+    expect(agent.calls).toHaveLength(callsBefore);
+    expect(agent.commands).toEqual([verifyCommand]);
+  });
+
+  it.each(['done', 'stuck'] as const)(
+    'preserves a serialized %s run carrying stale authorized completion evidence',
+    async (phase) => {
       const verifyCommand = `npm run ${faker.word.verb()}`;
       const { agent, run, reload, start } = await setup({
         settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
       });
       scriptReusedRun(agent);
       const halted = await run(start);
-      const changed = change(halted.state);
+      const saved = await reload({ ...halted.state, phase, request: faker.lorem.paragraph() });
+      const callsBefore = agent.calls.length;
+
+      const { status, state } = await run(saved);
+
+      expect(status).toBe(phase);
+      expect(state).toEqual({ ...saved, blockedReason: undefined });
+      expect(agent.calls).toHaveLength(callsBefore);
+      expect(agent.commands).toEqual([verifyCommand]);
+    },
+  );
+
+  it.each(
+    (
+      [
+        ['request', (state: RunState) => ({ ...state, request: faker.lorem.paragraph() })],
+        [
+          'plan',
+          (state: RunState) => ({
+            ...state,
+            docs: { ...designDocs(), plan: faker.lorem.paragraph() },
+          }),
+        ],
+        [
+          'range',
+          (state: RunState) => ({
+            ...state,
+            completionReuse: state.completionReuse && {
+              ...state.completionReuse,
+              scope: {
+                ...state.completionReuse.scope,
+                range: { ...state.completionReuse.scope.range, start: faker.git.commitSha() },
+              },
+            },
+          }),
+        ],
+      ] as const
+    ).flatMap(([source, change]) =>
+      (['describing', 'merging', 'awaitingMerge'] as const).map((phase) => ({
+        source,
+        change,
+        phase,
+      })),
+    ),
+  )(
+    'runs a final check when $source changes before $phase, retaining evidence and the repair allowance',
+    async ({ change, phase }) => {
+      const verifyCommand = `npm run ${faker.word.verb()}`;
+      const store = new InMemoryRunStore();
+      const { agent, run, reload, start } = await setup({
+        settings: runSettings({ verifyCommand, mergeMode: 'manual' }),
+        store,
+      });
+      scriptReusedRun(agent);
+      const halted = await run(start);
+      const saved = store.saved.find(
+        (state) => state.phase === phase && state.completionReuseAuthorized,
+      );
+      if (!saved) panic(`The run never saved authorized evidence before ${phase}`);
+      const changed = change({ ...saved, prDescription: halted.state.prDescription });
+      const savesBefore = store.saved.length;
       agent.script('reviewer', fulfillment());
       agent.script('describer', aDescription());
 
       const resumed = await run(await reload(changed));
 
+      const invalidated = store.saved
+        .slice(savesBefore)
+        .find((state) => state.phase === 'finalCheck');
+      expect(invalidated).toMatchObject({ completionReuse: changed.completionReuse });
+      expect(invalidated?.completionReuseAuthorized).toBeUndefined();
+      expect(invalidated?.prDescription).toBeUndefined();
+      expect(invalidated?.finalCheck).toBeUndefined();
       expect(resumed.status).toBe('halted');
       expect(resumed.state.completionReuse).toEqual(changed.completionReuse);
       expect(resumed.state.completionReuseAuthorized).toBeUndefined();
@@ -825,6 +891,7 @@ describe('runFlow', () => {
       expect(status).toBe('halted');
       expect(state).toMatchObject({ phase: 'awaitingMerge', completionReuseAuthorized: true });
       expect(state.finalCheck).toBeUndefined();
+      expect(state.completionReuse).toEqual(saved.completionReuse);
       expect(agent.commands).toEqual([verifyCommand]);
       expect(agent.calls.length - callsBefore).toBe(describersNeeded);
     },
