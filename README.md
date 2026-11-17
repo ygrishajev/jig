@@ -8,14 +8,12 @@ branch, and waits for you to merge. Automatic merging is optional.
 
 ## Why jig
 
-jig gives agents a repeatable plan → review → implement → review loop. It reviews
-the design before implementation, then verifies and reviews each slice, sending work
-back with feedback when needed. A final check evaluates the complete request.
-
-Agents work unattended in isolated Docker containers with private repository clones,
-so they can run tools without permission prompts inside the sandbox. By default,
-the finished run branch waits for your review and merge. You decide what lands;
-automatic merging is an explicit opt-in.
+jig gives agents a repeatable plan → review → implement → review loop, reviewing
+the design before implementation, verifying and reviewing each slice, and checking
+the complete request at the end. Agents work unattended in isolated Docker
+containers with private repository clones, running tools without permission prompts
+inside the sandbox. By default, the finished run branch waits for your review and
+merge; automatic merging is an explicit opt-in.
 
 ### Built with jig
 
@@ -129,4 +127,4 @@ a signing setup that works without prompts. See [sandbox boundaries](docs/sandbo
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+MIT — see [LICENSE](LICENSE).
