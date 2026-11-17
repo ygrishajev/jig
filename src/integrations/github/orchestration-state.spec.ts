@@ -5,6 +5,7 @@ import { runId } from '../../../tests/support/builders.js';
 import {
   acceptedRequest,
   acceptRequest,
+  type CommentIdentity,
   commentReceipt,
   emptyOrchestration,
   pullRequestReceipt,
@@ -31,7 +32,11 @@ describe('orchestration state', () => {
   it('records PRs independently from comments for each outcome and revision', () => {
     const { state, key, request } = setup();
     const pr = { number: faker.number.int({ min: 1 }), url: faker.internet.url() };
-    const identity = { runId: request.runId, outcome: 'stuck', revision: faker.git.commitSha() };
+    const identity: CommentIdentity = {
+      runId: request.runId,
+      outcome: 'stuck',
+      revision: faker.git.commitSha(),
+    };
     expect(commentReceipt(state, identity)).toBeUndefined();
     const published = withPullRequest(state, key, pr);
     expect(pullRequestReceipt(published, key)).toEqual(pr);

@@ -13,7 +13,7 @@ import { logFormatInputSchema, logFormatOption } from '../../cli/log-format-opti
 import type { Invocation } from '../../cli/with-app.js';
 import { GithubSetupInvalid } from './errors.js';
 import type { GithubPort, RepositoryIdentity } from './github-port.js';
-import { implementIssue } from './implement-issue.js';
+import { implementIssue, type IssueOutcome } from './implement-issue.js';
 import { OctokitGithub } from './octokit-github.js';
 import { repositoryIdentity } from './repository-identity.js';
 
@@ -37,11 +37,7 @@ export function registerGithubCommands(
         async ({ issue }, app, { token, repository }) => {
           const result = await implementIssue(app, githubFor(token), repository, issue);
           return result.map((outcome) => {
-            console.log(
-              outcome.kind === 'pullRequest'
-                ? `${outcome.reused ? 'Reused PR' : 'PR'}: ${outcome.url}`
-                : `${outcome.outcome}: ${outcome.url}`,
-            );
+            console.log(describeIssueOutcome(outcome));
           });
         },
         io,
@@ -54,6 +50,11 @@ const githubInputSchema = logFormatInputSchema
   .merge(configInputSchema)
   .merge(presetInputSchema)
   .extend({ issue: z.coerce.number().int().positive() });
+
+export function describeIssueOutcome(outcome: IssueOutcome): string {
+  if (outcome.kind === 'commented') return `${outcome.outcome}: ${outcome.url}`;
+  return `${outcome.reused ? 'Reused PR' : 'PR'}: ${outcome.url}`;
+}
 
 function prepare(
   _input: z.output<typeof githubInputSchema>,

@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
 import { runIdSchema } from '../../domain/run-id.js';
+import type { EngineStatus } from '../../flow/engine.js';
 
 export interface CommentIdentity {
   runId: AcceptedRequest['runId'];
-  outcome: string;
+  outcome: EngineStatus;
   revision: string;
 }
 

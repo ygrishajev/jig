@@ -75,7 +75,7 @@ export function implementIssue(
       return Result.ok(yield* Result.await(publish(store, github, repository, key, publication)));
     return Result.ok(
       yield* Result.await(
-        publishComment(store, github, repository, issueNumber, { report, revision, changes }),
+        publishComment(store, github, repository, issueNumber, { report, revision }),
       ),
     );
   });
@@ -148,24 +148,36 @@ function publishComment(
   github: GithubPort,
   repository: RepositoryIdentity,
   issueNumber: number,
-  { report, revision, changes }: { report: RunReport; revision: string; changes: boolean },
+  { report, revision }: { report: RunReport; revision: string },
 ): Promise<Result<IssueOutcome, GithubFailure | StoreFailure>> {
   return Result.gen(async function* () {
     const identity = { runId: report.state.runId, outcome: report.status, revision };
     const state = yield* Result.await(store.read());
     let url = commentReceipt(state, identity);
     if (!url) {
-      const reason =
-        report.status === 'blocked'
-          ? report.reason
-          : report.status === 'halted'
-            ? 'Paused at the design checkpoint.'
-            : runStopReason(report.state);
-      const body = `Run ${report.state.runId}: ${report.status}. ${reason ?? (changes ? 'Run paused before completion.' : 'No changes were committed.')}`;
+      const body = statusCommentBody(report);
       const postedUrl = yield* Result.await(github.commentOnIssue(repository, issueNumber, body));
       yield* Result.await(store.update((state) => withComment(state, identity, postedUrl)));
       url = postedUrl;
     }
     return Result.ok<IssueOutcome>({ kind: 'commented', outcome: report.status, url });
   });
+}
+
+function statusCommentBody(report: RunReport): string {
+  return `Run ${report.state.runId}: ${report.status}. ${statusCommentReason(report)}`;
+}
+
+function statusCommentReason(report: RunReport): string {
+  switch (report.status) {
+    case 'blocked':
+      return report.reason;
+    case 'halted':
+      return 'Paused at the design checkpoint.';
+    case 'stuck':
+      return runStopReason(report.state) ?? 'The run exhausted its attempts.';
+    case 'completed':
+    case 'done':
+      return 'No changes were committed.';
+  }
 }

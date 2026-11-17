@@ -15,9 +15,32 @@ import { createAppContainer } from '../../app/container.js';
 import type { Invocation } from '../../cli/with-app.js';
 import type { FailureOutput } from '../../cli/with-error-handling.js';
 import { buildJigCli } from './cli.js';
+import { describeIssueOutcome } from './command.js';
 import { GithubRefused } from './errors.js';
 
 describe('github implement command', () => {
+  it('describes a newly opened PR with its URL', () => {
+    const outcome = { kind: 'pullRequest', url: faker.internet.url(), reused: false } as const;
+    expect(describeIssueOutcome(outcome)).toContain(outcome.url);
+  });
+
+  it('distinguishes a reused PR from a newly opened PR with the same URL', () => {
+    const outcome = { kind: 'pullRequest', url: faker.internet.url(), reused: true } as const;
+    const description = describeIssueOutcome(outcome);
+    expect(description).toContain(outcome.url);
+    expect(description).not.toBe(describeIssueOutcome({ ...outcome, reused: false }));
+  });
+
+  it.each(['completed', 'stuck', 'blocked', 'halted'] as const)(
+    'describes a %s comment with its status and URL',
+    (status) => {
+      const outcome = { kind: 'commented', outcome: status, url: faker.internet.url() } as const;
+      const description = describeIssueOutcome(outcome);
+      expect(description).toContain(outcome.outcome);
+      expect(description).toContain(outcome.url);
+    },
+  );
+
   it('refuses a missing token before opening the app', async () => {
     const { run, output, createApp } = await setup();
     await run(['--issue', '1']);

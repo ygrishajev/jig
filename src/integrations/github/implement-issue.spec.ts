@@ -63,6 +63,16 @@ describe('implementIssue', () => {
     expect(unwrap(await new GitRemoteRunStore(dir).load(id))?.phase).toBe('completed');
   });
 
+  it('never passes the GitHub tokens to the sandbox session', async () => {
+    const { implement, sessionCredentials } = await setup();
+    unwrap(await implement());
+    expect(sessionCredentials.length).toBeGreaterThan(0);
+    for (const credentials of sessionCredentials) {
+      expect(credentials).not.toHaveProperty('GITHUB_TOKEN');
+      expect(credentials).not.toHaveProperty('GH_TOKEN');
+    }
+  });
+
   it('reuses its accepted snapshot after the issue changes', async () => {
     const { implement, github, issue, store, key } = await setup();
     unwrap(await implement());
@@ -248,18 +258,19 @@ describe('implementIssue', () => {
       }
       agent.script('describer', aDescription());
     } else scriptWholeRun(agent);
+    const sessionCredentials: Record<string, string>[] = [];
     app.register({
       openSession: asValue(async (input: Parameters<typeof app.cradle.openSession>[0]) => {
         const { run, events } = input;
         const options = unwrap(sandcastleSessionOptions({ ...app.cradle, imageName }, input));
-        expect(options.credentials).not.toHaveProperty('GITHUB_TOKEN');
-        expect(options.credentials).not.toHaveProperty('GH_TOKEN');
+        sessionCredentials.push(options.credentials);
         await openRunWorktree({ repoRoot: dir, ...run });
         return Result.ok(agent.reportUsageTo(events, run.runId));
       }),
     });
     return {
       dir,
+      sessionCredentials,
       id,
       issue,
       key,
