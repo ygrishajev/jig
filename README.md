@@ -40,11 +40,14 @@ npm install --global @ygrishajev/jig
 jig --help
 ```
 
-For a repository-local installation:
+Install from a checkout:
 
 ```bash
-npm install --save-dev @ygrishajev/jig
-npx jig --help
+git clone https://github.com/ygrishajev/jig.git
+cd jig
+npm ci
+npm run install:local
+jig --help
 ```
 
 See [package installation](docs/installation.md) for usage and source installation.
