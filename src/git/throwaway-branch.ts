@@ -1,5 +1,10 @@
+import { Result } from 'better-result';
 import { execaSync } from 'execa';
 import { constants } from 'node:os';
+
+import type { GitCommandFailed } from '../domain/errors.js';
+import { deleteBranch } from './branch.js';
+import { gitCommand, openRepo } from './repository.js';
 
 /** The part of `process` that ends it: its exit and signal events, and `exit`. */
 export interface ExitingProcess {
@@ -14,7 +19,7 @@ export interface ExitingProcess {
  * Runs `use`, and removes `branch` and any worktree on it if the process exits first. A signal
  * otherwise ends the process without running `finally`, and sandcastle keeps the worktree on
  * purpose, for a run that can resume; a throwaway branch has nothing to resume. Removing them once
- * `use` finishes stays the caller's job, where a failure can be reported.
+ * `use` finishes is the caller's job (`discardBranch`), where a failure can be reported.
  */
 export async function discardBranchOnExit<T>(
   cwd: string,
@@ -56,3 +61,29 @@ function worktreesOn(porcelain: string, branch: string): string[] {
  * sandcastle registers one would kill the process without it.
  */
 const EXIT_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
+
+/**
+ * Removes `branch` with any worktree still on it: closing a sandbox stops its container but
+ * leaves the host worktree sandcastle gave it, and git refuses to delete a branch a worktree
+ * is on.
+ */
+export async function discardBranch(
+  cwd: string,
+  branch: string,
+): Promise<Result<void, GitCommandFailed>> {
+  const removed = await removeWorktreesOn(cwd, branch);
+  if (removed.isErr()) return removed;
+  return deleteBranch(cwd, branch);
+}
+
+async function removeWorktreesOn(
+  cwd: string,
+  branch: string,
+): Promise<Result<void, GitCommandFailed>> {
+  return gitCommand('worktree remove', async () => {
+    const listed = String(await openRepo(cwd).raw(['worktree', 'list', '--porcelain']));
+    for (const worktree of worktreesOn(listed, branch)) {
+      await openRepo(cwd).raw(['worktree', 'remove', '--force', worktree]);
+    }
+  });
+}

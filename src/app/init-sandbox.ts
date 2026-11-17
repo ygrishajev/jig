@@ -40,8 +40,9 @@ import {
   SetupCommandFailed,
 } from '../domain/errors.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
-import { type AppCradle, type RunSession, withThrowawaySandbox } from './container.js';
+import { type AppCradle, type RunSession } from './container.js';
 import { ensureSandboxImage, readSandboxDockerfile } from './sandbox-image.js';
+import { withThrowawaySandbox } from './throwaway-sandbox.js';
 
 export type InitResult =
   | { status: 'verified'; attempts: number }

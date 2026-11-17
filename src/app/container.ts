@@ -1,7 +1,6 @@
 import type { Tracer } from '@opentelemetry/api';
 import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMode } from 'awilix';
 import { Result } from 'better-result';
-import { randomBytes } from 'node:crypto';
 import type { Logger } from 'pino';
 
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
@@ -32,18 +31,13 @@ import {
 import type { JigEnvironment } from '../config/environment.js';
 import { type ConfigFile, type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
-import { type GitCommandFailed, type JigError } from '../domain/errors.js';
-import type { RunEvent } from '../domain/events.js';
 import { retryResult, transientRetryPolicy } from '../domain/retry.js';
-import { runIdSchema } from '../domain/run-id.js';
-import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
+import { type RunIdentity } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
-import { deleteBranch, getCurrentBranch } from '../git/branch.js';
-import { discardBranchOnExit } from '../git/throwaway-branch.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import { MetricsObserver } from '../observers/metrics.js';
-import { observe, RunEvents } from '../observers/run-events.js';
+import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Clock } from '../ports/observability.js';
@@ -51,6 +45,8 @@ import type { RunStore } from '../ports/run-store.js';
 import type { SandboxGit } from '../ports/sandbox-git.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
+import { observedEvents } from './observed-events.js';
+import { reportCleanup } from './report-cleanup.js';
 import { sandboxImageName } from './sandbox-image.js';
 
 /** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
@@ -225,17 +221,6 @@ async function openRunScope(
   return Result.ok(scope);
 }
 
-/** Events the given observers hear; one that fails is logged, and the others still hear the event. */
-function observedEvents(logger: Logger, observers: { handle(event: RunEvent): void }[]): RunEvents {
-  const events = new RunEvents();
-  const onObserverError = (error: unknown): void =>
-    logger.warn({ err: error }, 'an observer failed');
-  for (const observer of observers) {
-    observe(events, (event) => observer.handle(event), onObserverError);
-  }
-  return events;
-}
-
 /**
  * A sandbox that failed to start for a reason that may pass — Docker, the network under the
  * setup command — gets the same bounded retries as a step; a configuration problem does not.
@@ -263,66 +248,4 @@ async function closeRunScope(
   } finally {
     await scope.dispose();
   }
-}
-
-/** A failed cleanup is the outcome only when the work itself succeeded; otherwise it is logged. */
-function reportCleanup<T, E, C extends JigError>(
-  used: Result<T, E>,
-  cleanup: Result<void, C>,
-  logger: Logger,
-): Result<T, E | C> {
-  if (cleanup.isOk()) return used;
-  if (used.isOk()) return Result.err(cleanup.error);
-  logger.warn({ err: cleanup.error }, 'cleanup failed after the run failed');
-  return used;
-}
-
-/**
- * A sandbox for a one-off check, on a branch of its own that is removed afterwards, even when the
- * process is interrupted; its events are logged to the console. It is never retried: a setup command that fails is the answer the
- * caller is waiting for, not a hiccup.
- */
-export async function withThrowawaySandbox<T, E>(
-  app: AwilixContainer<AppCradle>,
-  setupCommand: string | null,
-  use: (session: RunSession) => Promise<Result<T, E>>,
-): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
-  const { repoRoot } = app.cradle;
-  const baseBranch = await getCurrentBranch(repoRoot);
-  if (baseBranch.isErr()) return Result.err(baseBranch.error);
-  const run: RunIdentity = {
-    runId: runIdSchema.parse(`init-${randomBytes(3).toString('hex')}`),
-    baseBranch: baseBranch.value,
-  };
-  return discardBranchOnExit(repoRoot, runBranchFor(run.runId), () =>
-    useThrowawaySandbox(app, run, setupCommand, use),
-  );
-}
-
-async function useThrowawaySandbox<T, E>(
-  app: AwilixContainer<AppCradle>,
-  run: RunIdentity,
-  setupCommand: string | null,
-  use: (session: RunSession) => Promise<Result<T, E>>,
-): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
-  const { repoRoot, logger, openSession } = app.cradle;
-  const events = observedEvents(logger, [new LoggingObserver(logger)]);
-  const session = await openSession({ run, events, setupCommand });
-  if (session.isErr()) return Result.err(session.error);
-  let used: Result<T, E>;
-  let closed: Result<void, SessionCloseFailure>;
-  let deleted: Result<void, GitCommandFailed>;
-  try {
-    used = await use(session.value);
-  } finally {
-    closed = await session.value.close();
-    deleted = await deleteBranch(repoRoot, runBranchFor(run.runId));
-  }
-  if (closed.isErr() && deleted.isErr()) {
-    logger.warn({ err: deleted.error }, 'removing the throwaway branch failed as well');
-  }
-  const cleaned: Result<void, SessionCloseFailure | GitCommandFailed> = closed.isErr()
-    ? closed
-    : deleted;
-  return reportCleanup(used, cleaned, logger);
 }
