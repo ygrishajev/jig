@@ -18,7 +18,7 @@ run a request, and review the resulting branch.
 
 ## Operate and understand
 
-- [Architecture map](architecture.html) — interactive module and flow map. Download and open the HTML file in a browser; GitHub shows its source.
+- [Architecture map](https://ygrishajev.github.io/jig/architecture.html) — interactive module and flow map ([source](architecture.html)).
 - [Sandbox boundaries](sandbox.md) — images, setup, repository access, merging, and signing.
 - [Operations](operations.md) — run artifacts, CI outcomes, remote state, logs, and tracing.
 

@@ -108,16 +108,17 @@ to choose the next action.
 
 Start with the [documentation index](docs/README.md), or go directly to a task:
 
-| I want to…                              | Guide                                      |
-| --------------------------------------- | ------------------------------------------ |
-| Install jig                             | [Installation](docs/installation.md)       |
-| Start, inspect, or resume a run         | [Commands and lifecycle](docs/commands.md) |
-| Set up agent access                     | [Authentication](docs/authentication.md)   |
-| Choose agents and models                | [Agent presets](docs/presets.md)           |
-| Look up settings and defaults           | [Configuration](docs/configuration.md)     |
-| Understand container and merge behavior | [Sandbox boundaries](docs/sandbox.md)      |
-| Automate runs or inspect artifacts      | [Operations](docs/operations.md)           |
-| Develop jig                             | [Contributing](CONTRIBUTING.md)            |
+| I want to…                              | Guide                                                                 |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| Install jig                             | [Installation](docs/installation.md)                                  |
+| Start, inspect, or resume a run         | [Commands and lifecycle](docs/commands.md)                            |
+| Set up agent access                     | [Authentication](docs/authentication.md)                              |
+| Choose agents and models                | [Agent presets](docs/presets.md)                                      |
+| Look up settings and defaults           | [Configuration](docs/configuration.md)                                |
+| Explore jig's architecture              | [Interactive map](https://ygrishajev.github.io/jig/architecture.html) |
+| Understand container and merge behavior | [Sandbox boundaries](docs/sandbox.md)                                 |
+| Automate runs or inspect artifacts      | [Operations](docs/operations.md)                                      |
+| Develop jig                             | [Contributing](CONTRIBUTING.md)                                       |
 
 ## Sandbox boundaries
 
