@@ -1,6 +1,6 @@
 import { designApproved, designNeedsRevision } from '../domain/design-review.js';
 import { finalCheckFailed, finalCheckNeedsRepair } from '../domain/final-check.js';
-import { stuckSlice } from '../domain/run-state.js';
+import { runMerges, stuckSlice } from '../domain/run-state.js';
 import {
   emptyAttemptCapReached,
   hookFailureCapReached,
@@ -98,10 +98,13 @@ const someSliceStuck: Guard = ({ state }) => stuckSlice(state) !== undefined;
 
 const theFinalCheckFailed: Guard = ({ state }) => finalCheckFailed(state);
 
+const runSkipsMerge: Guard = ({ state }) => !runMerges(state);
+
 /**
  * A whole run: plan the work, have the design reviewed — with one revision and one re-review
  * when the review finds problems, blocking on any left standing — then deliver it slice by
- * slice, check the whole request is fulfilled, describe it, merge it. A stuck slice bypasses the final check; a failed one sends its one
+ * slice, check the whole request is fulfilled, describe it, merge it — or, for a run that skips
+ * the merge, finish as `completed` with its branch left for review. A stuck slice bypasses the final check; a failed one sends its one
  * repair back through the slices before the run is described and, still failing, stops for a
  * person — so the feedback reaches whoever picks it up. A single-slice run whose combined review
  * still vouches for its work finishes on that review instead of a final check; should the
@@ -146,6 +149,7 @@ export const runFlow = defineRunFlow({
       described: [
         { to: 'stuck', when: someSliceStuck },
         { to: 'stuck', when: theFinalCheckFailed },
+        { to: 'completed', when: runSkipsMerge },
         { to: 'merging' },
       ],
     },
@@ -159,6 +163,7 @@ export const runFlow = defineRunFlow({
     },
   },
   awaitingMerge: { halt: true, resumeAt: 'merging' },
+  completed: { final: 'completed' },
   done: { final: 'done' },
   stuck: { final: 'stuck' },
 });

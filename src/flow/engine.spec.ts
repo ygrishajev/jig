@@ -188,6 +188,25 @@ describe('runEngine', () => {
     expect(events.ofType('runFinished')).toEqual([{ type: 'runFinished', runId, phase: 'done' }]);
   });
 
+  it('finishes a run that reaches a completed final node as completed', async () => {
+    const { settle, events } = setup({
+      flow: flowWith({
+        context: {
+          step: async () => Result.ok({ type: 'contextBuilt', context: aContext() }),
+          on: { contextBuilt: 'completed' },
+        },
+      }),
+    });
+    const initial = aDescribedRun({ phase: 'context' });
+
+    const result = await settle(initial);
+
+    expect(result.status).toBe('completed');
+    expect(events.ofType('runFinished')).toEqual([
+      { type: 'runFinished', runId: initial.runId, phase: 'completed' },
+    ]);
+  });
+
   it('reports a run that stops at a halt or blocks, with where and why', async () => {
     const reason = faker.lorem.sentence();
     const halting = setup({
@@ -627,6 +646,7 @@ function flowWith(nodes: Partial<RunFlow>): RunFlow {
     describing: filler,
     merging: filler,
     awaitingMerge: filler,
+    completed: { final: 'completed' },
     done: { final: 'done' },
     stuck: { final: 'stuck' },
     ...nodes,

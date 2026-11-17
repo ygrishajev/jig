@@ -40,6 +40,9 @@ export function describeRun({ state, documents, metrics }: RunStatus): string {
   return [
     `Run ${state.runId} — ${state.phase} (base: ${state.baseBranch})`,
     ...(state.blockedReason ? [`Blocked: ${state.blockedReason}`] : []),
+    ...(state.phase === 'completed'
+      ? [`Finished without merging — "${runBranchFor(state.runId)}" is ready for review.`]
+      : []),
     `${'branch'.padEnd(18)} ${runBranchFor(state.runId)}`,
     ...documents.map((document) => `${document.name.padEnd(18)} ${document.path}`),
     ...(slices.length > 0 ? ['Slices:', ...slices] : []),

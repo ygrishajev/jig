@@ -1,3 +1,4 @@
+import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,7 +11,16 @@ import {
   aSlice,
 } from '../../tests/support/builders.js';
 import type { DesignReviewProgress } from './design-review.js';
-import { type RunPhase, runPhaseSchema, runStateSchema, stuckSlice } from './run-state.js';
+import { runIdSchema } from './run-id.js';
+import {
+  enterPhase,
+  runMerges,
+  type RunPhase,
+  runPhaseSchema,
+  runStateSchema,
+  startRun,
+  stuckSlice,
+} from './run-state.js';
 import { sliceStatusSchema } from './slice.js';
 
 /** The phases a run reaches once its design review is settled, or saved before there was one. */
@@ -23,6 +33,7 @@ const PHASES_PAST_DESIGN_REVIEW = [
   'describing',
   'merging',
   'awaitingMerge',
+  'completed',
   'done',
   'stuck',
 ] as const satisfies readonly RunPhase[];
@@ -42,6 +53,7 @@ describe('runStateSchema', () => {
     ['resolvingDesign', 'designReview'],
     ['describing', 'docs'],
     ['done', 'prDescription'],
+    ['completed', 'prDescription'],
   ] as const)('refuses a run saved in %s without its %s', (phase, missing) => {
     const { [missing]: _dropped, ...saved } = aRunState({ phase });
 
@@ -111,6 +123,30 @@ describe('runStateSchema', () => {
     expect(parsed.error?.issues.map((issue) => issue.path)).toEqual([['designReview']]);
   });
 
+  it('loads a run saved before the merge choice as one that merges', () => {
+    const { merge: _neverSaved, ...legacy } = aRunState();
+
+    expect(runStateSchema.parse(legacy).merge).toBe(true);
+  });
+
+  it('starts a run that merges unless told otherwise', () => {
+    const started = startRun(aStart());
+
+    expect(runMerges(started)).toBe(true);
+  });
+
+  it('keeps the choice not to merge from the start', () => {
+    const started = startRun({ ...aStart(), merge: false });
+
+    expect(runMerges(started)).toBe(false);
+  });
+
+  it('panics entering completed without a pull request description', () => {
+    const { prDescription: _missing, ...undescribed } = aRunState({ phase: 'describing' });
+
+    expect(() => enterPhase(undescribed, 'completed')).toThrow(/cannot enter "completed"/);
+  });
+
   it('loads a run saved in describing with what the earlier phases produced', () => {
     const state = aRunState({ phase: 'describing' });
 
@@ -159,3 +195,11 @@ describe('stuckSlice', () => {
     expect(stuckSlice(state)).toBeUndefined();
   });
 });
+
+function aStart() {
+  return {
+    runId: runIdSchema.parse(`run-${faker.string.alphanumeric({ length: 8, casing: 'lower' })}`),
+    baseBranch: 'main',
+    request: faker.lorem.paragraph(),
+  };
+}

@@ -26,6 +26,19 @@ describe('describeRun', () => {
     expect(lines.some((line) => line.endsWith(runBranchFor(state.runId)))).toBe(true);
   });
 
+  it('says a run that finished without merging is ready for review on its branch', () => {
+    const state = aRunState({ phase: 'completed', merge: false });
+
+    const lines = describeRun(aStatus({ state })).split('\n');
+
+    expect(lines[0]).toContain('completed');
+    expect(
+      lines.some(
+        (line) => line.includes('without merging') && line.includes(runBranchFor(state.runId)),
+      ),
+    ).toBe(true);
+  });
+
   it('lists the slices in order with their status and the feedback the last attempt got', () => {
     const lastFeedback = faker.lorem.sentence();
     const first = aSlice({ order: 0, status: 'approved' });

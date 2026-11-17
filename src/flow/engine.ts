@@ -17,6 +17,7 @@ import type { RunSettings } from '../domain/settings.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
 import type {
+  FinalOutcome,
   ForEachSliceNode,
   GuardContext,
   RunFlow,
@@ -45,9 +46,14 @@ export type EngineResult =
   | { state: RunState; status: Exclude<EngineStatus, 'blocked'> }
   | { state: RunState; status: 'blocked'; reason: string };
 
-export type EngineStatus = 'done' | 'stuck' | 'halted' | 'blocked';
+export type EngineStatus = 'done' | 'completed' | 'stuck' | 'halted' | 'blocked';
 
 type Advance = { state: RunState } | { blockedReason: string };
+
+/** Whether an invocation that ended in `status` finished the run's work, merged or not. */
+export function outcomeIsComplete(status: EngineStatus): boolean {
+  return status === 'done' || status === 'completed';
+}
 
 /**
  * Drives a run through `flow` from its saved phase until it finishes, halts, or blocks. A `fatal`
@@ -143,7 +149,7 @@ class Engine {
     return (await this.block(state, advanced.value.blockedReason)).map((result) => ({ result }));
   }
 
-  private finish(state: RunState, final: 'done' | 'stuck'): EngineResult {
+  private finish(state: RunState, final: FinalOutcome): EngineResult {
     this.dependencies.events.publish({
       type: 'runFinished',
       runId: state.runId,

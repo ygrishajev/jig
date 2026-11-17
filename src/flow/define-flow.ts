@@ -12,7 +12,7 @@ import type { Workspace } from '../ports/workspace.js';
 export type RunFlow = { [P in RunPhase]: RunFlowNode<P> };
 
 export type RunFlowNode<P extends RunPhase = RunPhase> =
-  StepNode<RunPhase, RunStep<P>> | FinalNode | HaltNode<RunPhase> | ForEachSliceNode<RunPhase>;
+  StepNode<RunPhase, RunStep<P>> | RunFinalNode | HaltNode<RunPhase> | ForEachSliceNode<RunPhase>;
 
 export interface StepNode<S extends string, Step> {
   step: Step;
@@ -48,10 +48,13 @@ export interface StepPorts {
   workspace: Workspace;
 }
 
-/** The run ends here: `done` when it succeeded, `stuck` when a person has to step in. */
-export interface FinalNode {
-  final: 'done' | 'stuck';
+/** The run ends here with `final`. */
+export interface RunFinalNode {
+  final: FinalOutcome;
 }
+
+/** How a run ends: merged (`done`), left for a person (`stuck`), or finished without merging (`completed`). */
+export type FinalOutcome = 'done' | 'stuck' | 'completed';
 
 /** The engine stops here; the next invocation carries on from `resumeAt`. */
 export interface HaltNode<S extends string> {
@@ -66,12 +69,17 @@ export interface ForEachSliceNode<S extends string> {
 
 export type SliceFlow = Record<SliceStatus, SliceFlowNode>;
 
-export type SliceFlowNode = StepNode<SliceStatus, SliceStep> | FinalNode;
+export type SliceFlowNode = StepNode<SliceStatus, SliceStep> | SliceFinalNode;
 
 export type SliceStep = (context: SliceStepContext) => Promise<Result<Outcome, JigError>>;
 
 export interface SliceStepContext extends RunStepContext {
   slice: Slice;
+}
+
+/** A slice ends here: `done` when it succeeded, `stuck` when a person has to step in. */
+export interface SliceFinalNode {
+  final: 'done' | 'stuck';
 }
 
 export function defineSliceFlow(flow: SliceFlow): SliceFlow {
@@ -83,7 +91,7 @@ export function defineRunFlow(flow: RunFlow): RunFlow {
 }
 
 /** How the run ended, when its phase is one it never leaves; undefined while it can still move. */
-export function finalStatus(flow: RunFlow, state: RunState): 'stuck' | 'done' | undefined {
+export function finalStatus(flow: RunFlow, state: RunState): FinalOutcome | undefined {
   const node = flow[state.phase];
   return 'final' in node ? node.final : undefined;
 }

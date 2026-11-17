@@ -54,6 +54,7 @@ import type { RunSettings } from '../domain/settings.js';
 import type { PlannedSlice } from '../domain/slice.js';
 import type { ExecResult } from '../ports/agent-session.js';
 import type { RunStore } from '../ports/run-store.js';
+import { finalStatus } from './define-flow.js';
 import { runEngine } from './engine.js';
 import { runFlow } from './run-flow.js';
 
@@ -84,6 +85,74 @@ describe('runFlow', () => {
     expect(merged.all.map((commit) => commit.message)).toEqual(
       expect.arrayContaining(slices.map((slice) => slice.title)),
     );
+  });
+
+  it('ends a run that skips the merge as completed, with its commits on the run branch only', async () => {
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start, git, runBranch, workspace } = await setup({
+      settings: runSettings({ mergeMode: 'auto' }),
+    });
+    const merge = vi.spyOn(workspace, 'mergeRunBranch');
+    scriptPlanning(agent, [slice]);
+    scriptDelivery(agent, [slice]);
+
+    const { status, state } = await run({ ...start, merge: false });
+
+    expect(status).toBe('completed');
+    expect(state.phase).toBe('completed');
+    expect(merge).not.toHaveBeenCalled();
+    const onRunBranch = await git.raw(['log', '--format=%s', `main..${runBranch}`]);
+    expect(onRunBranch).toContain(slice.title);
+    expect(await git.raw(['log', '--format=%s', 'main'])).not.toContain(slice.title);
+  });
+
+  it('ends a run that skips the merge as completed even when merges are manual', async () => {
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start, events } = await setup({
+      settings: runSettings({ mergeMode: 'manual' }),
+    });
+    scriptPlanning(agent, [slice]);
+    scriptDelivery(agent, [slice]);
+
+    const { status } = await run({ ...start, merge: false });
+
+    expect(status).toBe('completed');
+    expect(events.ofType('phaseChanged').filter((change) => change.to === 'awaitingMerge')).toEqual(
+      [],
+    );
+  });
+
+  it('ends a run that skips the merge as stuck when a slice runs out of review cycles', async () => {
+    const { agent, run, start } = await setup({ settings: runSettings({ reviewCycleCap: 1 }) });
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+    agent.script('implementer', { files: { 'a.txt': faker.lorem.sentence() } });
+    agent.script('reviewer', rejection());
+    agent.script('describer', aDescription());
+
+    const { status } = await run({ ...start, merge: false });
+
+    expect(status).toBe('stuck');
+  });
+
+  it('halts a run that skips the merge at the design checkpoint and completes it on resume', async () => {
+    const slice = aPlannedSlice({ description: implementingPlanSteps(1) });
+    const { agent, run, start } = await setup({
+      settings: runSettings({ designGate: 'checkpoint' }),
+    });
+    scriptPlanning(agent, [slice]);
+
+    const paused = await run({ ...start, merge: false });
+    expect(paused).toMatchObject({ status: 'halted', state: { phase: 'paused' } });
+
+    scriptDelivery(agent, [slice]);
+    const resumed = await run(paused.state);
+    expect(resumed.status).toBe('completed');
+  });
+
+  it('reads a run in the completed phase as finished as completed', () => {
+    const completed = aRunState({ phase: 'completed' });
+
+    expect(finalStatus(runFlow, completed)).toBe('completed');
   });
 
   it('sends a slice back with the reviewer feedback and gets it approved on the next attempt', async () => {
@@ -1842,6 +1911,7 @@ describe('runFlow', () => {
       start,
       store,
       git,
+      workspace,
       runBranch,
       worktreePath,
       runBranchHistory,
