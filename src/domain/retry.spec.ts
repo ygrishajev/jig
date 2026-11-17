@@ -106,13 +106,13 @@ describe('transientRetryPolicy', () => {
     const maxStepRetries = faker.number.int({ min: 0, max: 5 });
     const retryDelayMs = faker.number.int({ min: 6000, max: 60_000 });
 
-    const policy = transientRetryPolicy(runSettings({ maxStepRetries, retryDelayMs }));
+    const policy = setup({ maxStepRetries, retryDelayMs });
 
     expect(policy).toMatchObject({ retries: maxStepRetries, delayMs: retryDelayMs });
   });
 
   it('accepts a failure worth another attempt and refuses one that needs a person', () => {
-    const policy = transientRetryPolicy(runSettings());
+    const policy = setup();
 
     expect(policy.shouldRetry(new AgentRunFailed({ message: faker.lorem.sentence() }))).toBe(true);
     expect(policy.shouldRetry(new MergeFailed({ message: faker.lorem.sentence() }))).toBe(false);
@@ -123,12 +123,13 @@ describe('transientRetryPolicy', () => {
     const failure = new AgentRunFailed({ message: faker.lorem.sentence() });
     const operation = vi.fn(async (): Promise<Result<string, JigError>> => Result.err(failure));
 
-    const result = await retryResult(
-      operation,
-      transientRetryPolicy(runSettings({ maxStepRetries, retryDelayMs: 0 })),
-    );
+    const result = await retryResult(operation, setup({ maxStepRetries, retryDelayMs: 0 }));
 
     expect(result.isErr() && result.error).toBe(failure);
     expect(operation).toHaveBeenCalledTimes(maxStepRetries + 1);
   });
+
+  function setup(input: { maxStepRetries?: number; retryDelayMs?: number } = {}) {
+    return transientRetryPolicy(runSettings(input));
+  }
 });

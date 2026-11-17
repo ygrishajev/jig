@@ -4,10 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { isTransient, type JigError } from './errors.js';
 import type { RunSettings } from './settings.js';
 
-/**
- * The retry decisions every transient failure in a run shares: how often to try again, how far
- * apart, and which failures are worth another attempt. Each caller adds its own onFailedAttempt.
- */
+/** Each caller supplies its own onFailedAttempt, so the shared policy leaves it out. */
 export type TransientRetryPolicy = Omit<RetryPolicy<JigError>, 'onFailedAttempt'>;
 
 export interface RetryPolicy<E> {
@@ -33,7 +30,6 @@ export async function retryResult<T, E>(
   }
 }
 
-/** One policy for everything that retries a transient failure: a step, or a sandbox that did not start. */
 export function transientRetryPolicy(settings: RunSettings): TransientRetryPolicy {
   return {
     retries: settings.maxStepRetries,
