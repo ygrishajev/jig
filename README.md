@@ -6,6 +6,29 @@ branch, and waits for you to merge. Automatic merging is optional.
 
 ![A Markdown request becomes a reviewed plan, verified and reviewed slices, and a final check inside a Docker sandbox, producing one run branch and a pull request description for you to review and merge.](docs/assets/workflow.svg)
 
+## Why jig
+
+jig gives agents a repeatable plan → review → implement → review loop. It reviews
+the design before implementation, then verifies and reviews each slice, sending work
+back with feedback when needed. A final check evaluates the complete request.
+
+Agents work unattended in isolated Docker containers with private repository clones,
+so they can run tools without permission prompts inside the sandbox. By default,
+the finished run branch waits for your review and merge. You decide what lands;
+automatic merging is an explicit opt-in.
+
+### Built with jig
+
+jig is used to develop itself. As of
+[`83f185b`](https://github.com/ygrishajev/jig/commit/83f185b), the complete repository
+history contains 354 commits, including 64 authored by `jig <jig@users.noreply.invalid>`.
+These are examples of jig-authored work, not a claim that the entire project was
+built autonomously:
+
+- [`10d4886`](https://github.com/ygrishajev/jig/commit/10d4886ce87b689c4c280efceeb488a46497e0c4) — `feat(flow): review designs before slicing with one revision`
+- [`4711bca`](https://github.com/ygrishajev/jig/commit/4711bca1664ed8fcc0624e58786c92cc7cbeeae3) — `feat(flow): verify each slice before review, never approve unverified`
+- [`84beed8`](https://github.com/ygrishajev/jig/commit/84beed87913179c05f9659a3e911ea73966764d8) — `feat(flow): check whole-run fulfillment with one repair attempt`
+
 ## Install
 
 Requires Node **20.17 or newer**, Git **2.38 or newer**, and a running Docker daemon.
@@ -103,3 +126,7 @@ Agent review does not replace your review. Automatic merging (`"mergeMode": "aut
 lands agent code without a human checkpoint. Agent commits are unsigned by default;
 `"commitSigning": "repo"` re-signs the run branch during an automatic merge and requires
 a signing setup that works without prompts. See [sandbox boundaries](docs/sandbox.md#merging-and-signing) for details.
+
+## License
+
+Licensed under the [MIT License](LICENSE).
