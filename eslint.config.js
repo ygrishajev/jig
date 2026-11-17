@@ -143,13 +143,18 @@ export default tseslint.config(
   },
   {
     files: ['src/**/*.ts'],
-    ignores: ['src/app/**', 'src/**/*.spec.ts'],
+    ignores: ['src/app/**', 'src/**/*.spec.ts', 'src/integrations/github/**'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
         { paths: [awilixOnlyInApp], patterns: [githubOnlyInIntegration] },
       ],
     },
+  },
+  {
+    files: ['src/integrations/github/**/*.ts'],
+    ignores: ['src/**/*.spec.ts'],
+    rules: { '@typescript-eslint/no-restricted-imports': ['error', { paths: [awilixOnlyInApp] }] },
   },
   {
     files: ['src/domain/**/*.ts', 'src/flow/**/*.ts', 'src/steps/**/*.ts'],
