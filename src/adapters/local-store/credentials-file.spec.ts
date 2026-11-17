@@ -17,6 +17,25 @@ describe('credentials file', () => {
     expect(unwrap(readCredentialsFile(repoRoot))).toEqual({});
   });
 
+  it('reads credentials the operator wrote by hand', async () => {
+    const { repoRoot, file } = await setup();
+    const [token, key] = [faker.string.alphanumeric(20), faker.string.alphanumeric(20)];
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, `# saved by hand\nTOKEN=${token}\nexport KEY='${key}'\n`);
+
+    expect(unwrap(readCredentialsFile(repoRoot))).toEqual({ TOKEN: token, KEY: key });
+  });
+
+  it('refuses a credentials path it cannot read as a file, naming it', async () => {
+    const { repoRoot, file } = await setup();
+    await mkdir(file, { recursive: true });
+
+    const read = readCredentialsFile(repoRoot);
+
+    expect(read.isErr() && read.error).toBeInstanceOf(ConfigInvalid);
+    expect(read.isErr() && read.error.message).toContain(CREDENTIALS_FILE);
+  });
+
   it('reads back what it saved, keeping the other credentials', async () => {
     const { repoRoot } = await setup();
     const [first, second] = [faker.string.alphanumeric(20), faker.string.alphanumeric(20)];
