@@ -132,13 +132,14 @@ function publish(
   return Result.gen(async function* () {
     const state = yield* Result.await(store.read());
     const receipt = pullRequestReceipt(state, key);
-    if (receipt) return Result.ok({ kind: 'pullRequest', url: receipt.url, reused: true });
+    if (receipt)
+      return Result.ok<IssueOutcome>({ kind: 'pullRequest', url: receipt.url, reused: true });
     const found = yield* Result.await(
       github.findOpenPullRequestByHead(repository, publication.head),
     );
     const pr = found ?? (yield* Result.await(github.openPullRequest(repository, publication)));
     yield* Result.await(store.update((state) => withPullRequest(state, key, pr)));
-    return Result.ok({ kind: 'pullRequest', url: pr.url, reused: !!found });
+    return Result.ok<IssueOutcome>({ kind: 'pullRequest', url: pr.url, reused: !!found });
   });
 }
 
@@ -165,6 +166,6 @@ function publishComment(
       yield* Result.await(store.update((state) => withComment(state, identity, postedUrl)));
       url = postedUrl;
     }
-    return Result.ok({ kind: 'commented', outcome: report.status, url });
+    return Result.ok<IssueOutcome>({ kind: 'commented', outcome: report.status, url });
   });
 }
