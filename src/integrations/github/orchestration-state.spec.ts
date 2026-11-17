@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { runId } from '../../../tests/support/builders.js';
 import {
+  acceptedRequest,
   acceptRequest,
   emptyOrchestration,
   hasCommented,
@@ -12,6 +13,12 @@ import {
 } from './orchestration-state.js';
 
 describe('orchestration state', () => {
+  it('finds a request only after it is accepted', () => {
+    const { state, key, request } = setup();
+    expect(acceptedRequest(state, key)).toBeUndefined();
+    expect(acceptedRequest(acceptRequest(state, key, request), key)).toEqual(request);
+  });
+
   it('keeps the first accepted request', () => {
     const { state, key, request } = setup();
     const accepted = acceptRequest(state, key, request);

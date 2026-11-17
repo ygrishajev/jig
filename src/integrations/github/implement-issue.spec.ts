@@ -33,11 +33,12 @@ import { OrchestrationStore } from './orchestration-store.js';
 
 describe('implementIssue', () => {
   it('publishes a completed run without merging the operator branch', async () => {
-    const { implement, github, dir, id } = await setup();
+    const { implement, github, dir, id, issue } = await setup();
     const before = await simpleGit(dir).revparse(['HEAD']);
     unwrap(await implement());
     const pr = github.pullRequests.get(runBranchFor(id));
-    expect(pr).toMatchObject({ draft: false, base: 'main' });
+    expect(pr).toMatchObject({ draft: false, base: github.defaultBranch });
+    expect(pr?.body).toContain(`Closes #${issue.number}`);
     expect(github.commentsMade).toBe(1);
     expect(await simpleGit(dir).revparse(['HEAD'])).toBe(before);
     expect(await simpleGit(dir).listRemote(['origin', `refs/jig/${id}`])).not.toBe('');
@@ -110,7 +111,7 @@ describe('implementIssue', () => {
     unwrap(await implement());
     const pr = github.pullRequests.get(runBranchFor(id));
     expect(pr?.draft).toBe(true);
-    expect(pr?.body).toContain(`#${issue.number}`);
+    expect(pr?.body).toContain(`Refs #${issue.number}`);
   });
 
   it('leaves an exhausted run without changes unpublished', async () => {
@@ -131,9 +132,10 @@ describe('implementIssue', () => {
   });
 
   it('publishes a blocked run with changes as a draft', async () => {
-    const { implement, github, id } = await setup({ blocked: true });
+    const { implement, github, id, issue } = await setup({ blocked: true });
     unwrap(await implement());
     expect(github.pullRequests.get(runBranchFor(id))?.draft).toBe(true);
+    expect(github.pullRequests.get(runBranchFor(id))?.body).toContain(`Refs #${issue.number}`);
     expect(github.commentsMade).toBe(1);
   });
 

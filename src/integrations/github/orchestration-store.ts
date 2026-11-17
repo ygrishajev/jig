@@ -16,7 +16,7 @@ import {
   orchestrationSchema,
 } from './orchestration-state.js';
 
-type StoreFailure =
+export type StoreFailure =
   GitCommandFailed | RemoteUnavailable | RunStateConflict | OrchestrationStateInvalid;
 
 export class OrchestrationStore {

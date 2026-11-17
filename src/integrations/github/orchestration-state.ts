@@ -21,6 +21,10 @@ export function emptyOrchestration(): Orchestration {
   return { version: 1, requests: {}, receipts: {} };
 }
 
+export function acceptedRequest(state: Orchestration, key: string): AcceptedRequest | undefined {
+  return state.requests[key];
+}
+
 export function acceptRequest(
   state: Orchestration,
   key: string,
