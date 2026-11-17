@@ -72,6 +72,7 @@ export class FakeGithub implements GithubPort {
     return this.perform('commentOnIssue', () => {
       this.commentsMade++;
       this.comments.push({ number, body });
+      return faker.internet.url();
     });
   }
 }

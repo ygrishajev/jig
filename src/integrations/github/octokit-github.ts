@@ -20,7 +20,7 @@ export interface GithubClient {
     ): Promise<{ data: { number: number; title: string; body?: string | null; html_url: string } }>;
     createComment(
       input: RepositoryIdentity & Record<string, unknown> & { issue_number: number; body: string },
-    ): Promise<unknown>;
+    ): Promise<{ data: { html_url: string } }>;
   };
   repos: {
     get(
@@ -103,11 +103,16 @@ export class OctokitGithub implements GithubPort {
     repository: RepositoryIdentity,
     number: number,
     body: string,
-  ): Promise<Result<void, GithubFailure>> {
+  ): Promise<Result<string, GithubFailure>> {
     return this.call(
       `commentOnIssue ${repository.owner}/${repository.repo}#${number}`,
       async () => {
-        await this.client.issues.createComment({ ...repository, issue_number: number, body });
+        const { data } = await this.client.issues.createComment({
+          ...repository,
+          issue_number: number,
+          body,
+        });
+        return data.html_url;
       },
     );
   }

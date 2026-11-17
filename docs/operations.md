@@ -94,5 +94,8 @@ A per-run lock protects local execution; schedule one job per issue to avoid con
 GitHub publication. A crash after sending a comment but before saving its receipt can
 cause that comment to be repeated. A PR created before a crash is recovered by its head.
 
-Review and merge completed PRs yourself. Draft PRs record unfinished runs. A run with
-no branch changes or paused at the design checkpoint produces no PR.
+Review and merge completed PRs yourself. Completed runs without changes and halted,
+stuck or blocked runs post an issue comment with their status and reason, without
+opening a PR. Comments are recorded per run, outcome and branch revision; a receipt
+for one revision does not suppress a comment for another. Completed PRs do not add
+a separate issue comment.

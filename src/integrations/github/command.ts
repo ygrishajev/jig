@@ -34,8 +34,16 @@ export function registerGithubCommands(
     .action(
       appAction(
         githubInputSchema,
-        async ({ issue }, app, { token, repository }) =>
-          implementIssue(app, githubFor(token), repository, issue),
+        async ({ issue }, app, { token, repository }) => {
+          const result = await implementIssue(app, githubFor(token), repository, issue);
+          return result.map((outcome) => {
+            console.log(
+              outcome.kind === 'pullRequest'
+                ? `${outcome.reused ? 'Reused PR' : 'PR'}: ${outcome.url}`
+                : `${outcome.outcome}: ${outcome.url}`,
+            );
+          });
+        },
         io,
         prepare,
       ),

@@ -47,13 +47,13 @@ settings. The `agents` setting below pins CLI versions, not models.
 
 ## Verification and run policy
 
-| Key              | Default    | Behavior                                                                                                       |
-| ---------------- | ---------- | -------------------------------------------------------------------------------------------------------------- |
-| `verifyCommand`  | Not set    | Runs before slice review and during the final check; must pass for approval. Required to skip the final check. |
-| `mergeMode`      | `"manual"` | `manual` waits for you to merge; `auto` merges the run branch. Does not apply to `--no-merge` runs.            |
-| `designGate`     | `"auto"`   | `checkpoint` pauses after design review and slicing, before implementation.                                    |
-| `reviewCycleCap` | `3`        | Positive integer; ordinary rejections before a slice is stuck.                                                 |
-| `commitSigning`  | `"skip"`   | `repo` re-signs the run branch during automatic merging.                                                       |
+| Key              | Default    | Behavior                                                                                                                      |
+| ---------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `verifyCommand`  | Not set    | Runs before slice review and during the final check; must pass for approval. Required to skip the final check.                |
+| `mergeMode`      | `"manual"` | `manual` waits for you to merge; `auto` merges the run branch. Does not apply to `--no-merge` or `jig github implement` runs. |
+| `designGate`     | `"auto"`   | `checkpoint` pauses after design review and slicing, before implementation.                                                   |
+| `reviewCycleCap` | `3`        | Positive integer; ordinary rejections before a slice is stuck.                                                                |
+| `commitSigning`  | `"skip"`   | `repo` re-signs the run branch during automatic merging.                                                                      |
 
 See [the pipeline](commands.md#pipeline) for review limits and
 [merging and signing](sandbox.md#merging-and-signing) for merge behavior.
@@ -89,6 +89,7 @@ custom store module. See [saved state and remote resume](operations.md#saved-sta
 `GH_TOKEN`. It reads `GITHUB_REPOSITORY` as `owner/repo`, or infers that identity from
 the GitHub `origin` URL. These values are read only by the GitHub command; `jig run`
 needs no GitHub environment variables. Tokens are passed directly to the API client,
-never saved in run state or included in errors. Configure Git authentication separately
+never saved in run state, included in errors, or passed to the sandbox. Configure Git authentication separately
 for pushes to `origin`. The command adds `git-remote` to `runStores` for its invocation,
 without changing the config file, and always saves the run with merging disabled.
+`mergeMode` does not apply to these runs, including when configured as `auto`.

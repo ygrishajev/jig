@@ -103,7 +103,8 @@ describe('OctokitGithub', () => {
     client.pulls.create.mockResolvedValue({ data: { number, html_url: url } });
     expect(unwrap(await github.openPullRequest(repository, input))).toEqual({ number, url });
     expect(client.pulls.create).toHaveBeenCalledWith({ ...repository, ...input });
-    unwrap(await github.commentOnIssue(repository, number, input.body));
+    client.issues.createComment.mockResolvedValue({ data: { html_url: url } });
+    expect(unwrap(await github.commentOnIssue(repository, number, input.body))).toBe(url);
     expect(client.issues.createComment).toHaveBeenCalledWith({
       ...repository,
       issue_number: number,

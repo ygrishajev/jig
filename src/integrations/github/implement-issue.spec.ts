@@ -13,6 +13,7 @@ import {
 } from '../../../tests/support/agent-scripts.js';
 import {
   aPlannedSlice,
+  aRunState,
   everyStepOn,
   implementingPlanSteps,
 } from '../../../tests/support/builders.js';
@@ -21,6 +22,8 @@ import { FakeAgentSession } from '../../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
+import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store.js';
+import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session.js';
 import { createAppContainer } from '../../app/container.js';
 import { parseEnvironment } from '../../config/environment.js';
 import { configFileFor, loadConfig } from '../../config/load-config.js';
@@ -30,18 +33,34 @@ import { runBranchFor } from '../../domain/run-state.js';
 import { GithubNotFound, GithubRefused } from './errors.js';
 import { implementIssue } from './implement-issue.js';
 import { OrchestrationStore } from './orchestration-store.js';
+import { requestText } from './request-snapshot.js';
 
 describe('implementIssue', () => {
   it('publishes a completed run without merging the operator branch', async () => {
-    const { implement, github, dir, id, issue } = await setup();
+    const { implement, github, dir, id, issue, store, key, agent } = await setup({ auto: true });
     const before = await simpleGit(dir).revparse(['HEAD']);
-    unwrap(await implement());
+    const outcome = unwrap(await implement());
     const pr = github.pullRequests.get(runBranchFor(id));
+    expect(outcome).toEqual({ kind: 'pullRequest', url: pr?.url, reused: false });
     expect(pr).toMatchObject({ draft: false, base: github.defaultBranch });
     expect(pr?.body).toContain(`Closes #${issue.number}`);
-    expect(github.commentsMade).toBe(1);
+    expect(github.commentsMade).toBe(0);
     expect(await simpleGit(dir).revparse(['HEAD'])).toBe(before);
     expect(await simpleGit(dir).listRemote(['origin', `refs/jig/${id}`])).not.toBe('');
+    expect(await simpleGit(dir).listRemote(['origin', `refs/heads/${runBranchFor(id)}`])).not.toBe(
+      '',
+    );
+    expect(
+      await simpleGit(dir).listRemote(['origin', `refs/heads/${github.defaultBranch}`]),
+    ).toContain(before);
+    expect(unwrap(await store.read()).receipts[key]).toMatchObject({ url: pr?.url });
+    expect(await simpleGit(dir).show(['refs/jig/_orchestration:orchestration.json'])).toContain(
+      pr?.url,
+    );
+    const calls = agent.calls.length;
+    expect(unwrap(await implement())).toEqual({ kind: 'pullRequest', url: pr?.url, reused: true });
+    expect(agent.calls).toHaveLength(calls);
+    expect(unwrap(await new GitRemoteRunStore(dir).load(id))?.phase).toBe('completed');
   });
 
   it('reuses its accepted snapshot after the issue changes', async () => {
@@ -52,7 +71,7 @@ describe('implementIssue', () => {
     unwrap(await implement());
     expect(unwrap(await store.read()).requests[key]).toEqual(accepted);
     expect(github.prsOpened).toBe(1);
-    expect(github.commentsMade).toBe(1);
+    expect(github.commentsMade).toBe(0);
   });
 
   it('retries publication after a refused PR without repeating the run', async () => {
@@ -64,12 +83,12 @@ describe('implementIssue', () => {
     expect(github.prsOpened).toBe(1);
   });
 
-  it('retries a failed comment using the recorded PR', async () => {
-    const { implement, github } = await setup();
+  it('retries a failed status comment without opening a PR', async () => {
+    const { implement, github } = await setup({ empty: true });
     github.failOnce('commentOnIssue', new GithubRefused({ message: faker.lorem.sentence() }));
     expect((await implement()).isErr()).toBe(true);
     unwrap(await implement());
-    expect(github.prsOpened).toBe(1);
+    expect(github.prsOpened).toBe(0);
     expect(github.commentsMade).toBe(1);
   });
 
@@ -86,9 +105,9 @@ describe('implementIssue', () => {
       draft: false,
     };
     github.pullRequests.set(head, pr);
-    unwrap(await implement());
+    expect(unwrap(await implement())).toEqual({ kind: 'pullRequest', url: pr.url, reused: true });
     expect(github.prsOpened).toBe(0);
-    expect(github.comments[0].body).toContain(pr.url);
+    expect(github.commentsMade).toBe(0);
   });
 
   it('refuses another base branch before accepting a request', async () => {
@@ -99,26 +118,50 @@ describe('implementIssue', () => {
     expect(unwrap(await store.read()).requests).toEqual({});
   });
 
-  it('does not publish a run paused after planning', async () => {
+  it('comments on a run paused after planning', async () => {
     const { implement, github } = await setup({ paused: true });
-    unwrap(await implement());
+    expect(unwrap(await implement())).toMatchObject({ kind: 'commented', outcome: 'halted' });
     expect(github.prsOpened).toBe(0);
-    expect(github.commentsMade).toBe(0);
+    expect(github.commentsMade).toBe(1);
   });
 
-  it('opens a draft for unfinished work with changes', async () => {
-    const { implement, github, id, issue } = await setup({ unfinished: true });
-    unwrap(await implement());
-    const pr = github.pullRequests.get(runBranchFor(id));
-    expect(pr?.draft).toBe(true);
-    expect(pr?.body).toContain(`Refs #${issue.number}`);
-  });
+  it.each([{ unfinished: true }, { blocked: true }, { empty: true }, { planningBlocked: true }])(
+    'comments on unfinished work and skips the same revision on rerun: %j',
+    async (options) => {
+      const { implement, github, store } = await setup(options);
+      const outcome = unwrap(await implement());
+      expect(outcome).toMatchObject({
+        kind: 'commented',
+        outcome: options.blocked || options.planningBlocked ? 'blocked' : 'stuck',
+      });
+      expect(github.comments[0].body).toContain(
+        options.blocked || options.planningBlocked ? 'blocked' : 'stuck',
+      );
+      expect(Object.values(unwrap(await store.read()).comments)).toEqual([outcome.url]);
+      expect(github.prsOpened).toBe(0);
+      expect(github.commentsMade).toBe(1);
+      expect(unwrap(await implement())).toEqual(outcome);
+      expect(github.commentsMade).toBe(1);
+    },
+  );
 
-  it('leaves an exhausted run without changes unpublished', async () => {
-    const { implement, github } = await setup({ empty: true });
+  it('comments exactly once when a completed run commits nothing', async () => {
+    const { implement, github, dir, id, issue } = await setup();
+    await simpleGit(dir).branch([runBranchFor(id)]);
+    unwrap(
+      await new GitRemoteRunStore(dir).save(
+        aRunState({
+          runId: id,
+          phase: 'completed',
+          merge: false,
+          request: requestText(issue),
+        }),
+      ),
+    );
+    expect(unwrap(await implement())).toMatchObject({ kind: 'commented', outcome: 'completed' });
     unwrap(await implement());
     expect(github.prsOpened).toBe(0);
-    expect(github.commentsMade).toBe(0);
+    expect(github.commentsMade).toBe(1);
   });
 
   it('returns an issue lookup failure without accepting a request', async () => {
@@ -131,20 +174,21 @@ describe('implementIssue', () => {
     expect(github.prsOpened).toBe(0);
   });
 
-  it('publishes a blocked run with changes as a draft', async () => {
-    const { implement, github, id, issue } = await setup({ blocked: true });
-    unwrap(await implement());
-    expect(github.pullRequests.get(runBranchFor(id))?.draft).toBe(true);
-    expect(github.pullRequests.get(runBranchFor(id))?.body).toContain(`Refs #${issue.number}`);
-    expect(github.commentsMade).toBe(1);
-  });
-
   async function setup({
     paused = false,
     unfinished = false,
     empty = false,
     blocked = false,
-  }: { paused?: boolean; unfinished?: boolean; empty?: boolean; blocked?: boolean } = {}) {
+    auto = false,
+    planningBlocked = false,
+  }: {
+    paused?: boolean;
+    unfinished?: boolean;
+    empty?: boolean;
+    blocked?: boolean;
+    auto?: boolean;
+    planningBlocked?: boolean;
+  } = {}) {
     const remote = await createRemote();
     const dir = await remote.cloneOf();
     const github = new FakeGithub();
@@ -159,13 +203,21 @@ describe('implementIssue', () => {
       logLevel: 'silent',
       configFile: configFileFor(dir),
       config: unwrap(loadConfig(configFileFor(dir))),
-      environment: unwrap(parseEnvironment({ ANTHROPIC_API_KEY: faker.string.alphanumeric(20) })),
+      environment: unwrap(
+        parseEnvironment({
+          ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
+          GITHUB_TOKEN: faker.string.alphanumeric(20),
+          GH_TOKEN: faker.string.alphanumeric(20),
+        }),
+      ),
     });
+    const imageName = faker.string.alpha(10);
     app.register({
       config: asValue({
         ...app.cradle.config,
         ...everyStepOn(),
-        sandboxImage: faker.string.alpha(10),
+        sandboxImage: imageName,
+        mergeMode: auto ? 'auto' : 'manual',
         designGate: paused ? 'checkpoint' : 'auto',
         reviewCycleCap: 1,
       }),
@@ -178,7 +230,11 @@ describe('implementIssue', () => {
       undefined,
       path.join(dir, '.jig', id, 'workspace'),
     );
-    if (paused) scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+    if (planningBlocked) {
+      const fail = new AgentRunFailed({ message: faker.lorem.sentence() });
+      agent.script('planner', { fail }, { fail });
+    } else if (paused)
+      scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
     else if (unfinished || empty || blocked) {
       scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
       if (empty) agent.script('implementer', { output: {} }, { output: {} });
@@ -187,17 +243,20 @@ describe('implementIssue', () => {
         agent.script(
           'reviewer',
           blocked ? { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) } : rejection(),
+          ...(blocked ? [{ fail: new AgentRunFailed({ message: faker.lorem.sentence() }) }] : []),
         );
       }
       agent.script('describer', aDescription());
     } else scriptWholeRun(agent);
     app.register({
-      openSession: asValue(
-        async ({ run, events }: Parameters<typeof app.cradle.openSession>[0]) => {
-          await openRunWorktree({ repoRoot: dir, ...run });
-          return Result.ok(agent.reportUsageTo(events, run.runId));
-        },
-      ),
+      openSession: asValue(async (input: Parameters<typeof app.cradle.openSession>[0]) => {
+        const { run, events } = input;
+        const options = unwrap(sandcastleSessionOptions({ ...app.cradle, imageName }, input));
+        expect(options.credentials).not.toHaveProperty('GITHUB_TOKEN');
+        expect(options.credentials).not.toHaveProperty('GH_TOKEN');
+        await openRunWorktree({ repoRoot: dir, ...run });
+        return Result.ok(agent.reportUsageTo(events, run.runId));
+      }),
     });
     return {
       dir,

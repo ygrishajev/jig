@@ -92,7 +92,7 @@ describe('github implement command', () => {
         ANTHROPIC_API_KEY: faker.string.alphanumeric(30),
       },
     });
-    github.failOnce('commentOnIssue', new GithubRefused({ message: faker.lorem.sentence() }));
+    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
     await run(['--issue', '1']);
     expect(output.setExitCode).toHaveBeenCalledWith(1);
     output.printError.mockClear();
@@ -102,7 +102,7 @@ describe('github implement command', () => {
     expect(output.printError).not.toHaveBeenCalled();
     expect(output.setExitCode).not.toHaveBeenCalled();
     expect(github.prsOpened).toBe(1);
-    expect(github.commentsMade).toBe(1);
+    expect(github.commentsMade).toBe(0);
     expect(sessionsOpened()).toBe(1);
   });
 

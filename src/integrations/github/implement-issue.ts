@@ -1,12 +1,13 @@
 import { panic, Result } from 'better-result';
 
 import { getCurrentBranch } from '../../adapters/git/branch.js';
+import { RemoteRef } from '../../adapters/git/remote-ref.js';
 import { hasChangesAgainst } from '../../adapters/git/repository.js';
 import type { App } from '../../app/container.js';
 import { runJig, type RunReport } from '../../app/run-jig.js';
-import type { JigError } from '../../domain/errors.js';
+import { type JigError, RemoteUnavailable } from '../../domain/errors.js';
 import { runIdFor } from '../../domain/run-id.js';
-import { runBranchFor } from '../../domain/run-state.js';
+import { runBranchFor, runStopReason } from '../../domain/run-state.js';
 import { outcomeIsComplete } from '../../flow/engine.js';
 import { BaseBranchMismatch, type GithubError, type GithubSetupInvalid } from './errors.js';
 import type {
@@ -19,7 +20,7 @@ import {
   type AcceptedRequest,
   acceptedRequest,
   acceptRequest,
-  hasCommented,
+  commentReceipt,
   pullRequestReceipt,
   withComment,
   withPullRequest,
@@ -27,12 +28,16 @@ import {
 import { OrchestrationStore, type StoreFailure } from './orchestration-store.js';
 import { requestText } from './request-snapshot.js';
 
+export type IssueOutcome =
+  | { kind: 'pullRequest'; url: string; reused: boolean }
+  | { kind: 'commented'; outcome: RunReport['status']; url: string };
+
 export function implementIssue(
   app: App,
   github: GithubPort,
   repository: RepositoryIdentity,
   issueNumber: number,
-): Promise<Result<void, JigError | Exclude<GithubError, GithubSetupInvalid>>> {
+): Promise<Result<IssueOutcome, JigError | Exclude<GithubError, GithubSetupInvalid>>> {
   return Result.gen(async function* () {
     const base = yield* Result.await(github.getDefaultBranch(repository));
     const current = yield* Result.await(getCurrentBranch(app.cradle.repoRoot));
@@ -58,9 +63,21 @@ export function implementIssue(
       hasChangesAgainst(app.cradle.repoRoot, base, runBranchFor(accepted.runId)),
     );
     const publication = publicationFor(report, { title: accepted.title, issueNumber, changes });
-    if (!publication) return Result.ok();
-    yield* Result.await(publish(store, github, repository, key, issueNumber, publication));
-    return Result.ok();
+    const refs = new RemoteRef(app.cradle.repoRoot);
+    const branch = `refs/heads/${runBranchFor(accepted.runId)}`;
+    const listed = yield* Result.await(refs.list([branch]));
+    const revision = listed.get(branch);
+    if (!revision)
+      return Result.err(
+        new RemoteUnavailable({ message: `Run branch ${branch} is missing on origin.` }),
+      );
+    if (publication)
+      return Result.ok(yield* Result.await(publish(store, github, repository, key, publication)));
+    return Result.ok(
+      yield* Result.await(
+        publishComment(store, github, repository, issueNumber, { report, revision, changes }),
+      ),
+    );
   });
 }
 
@@ -95,18 +112,13 @@ export function publicationFor(
   report: RunReport,
   { title, issueNumber, changes }: { title: string; issueNumber: number; changes: boolean },
 ): OpenPullRequest | undefined {
-  if (!changes || report.status === 'halted') return undefined;
-  const completed = outcomeIsComplete(report.status);
-  const summary =
-    report.status === 'blocked'
-      ? report.reason
-      : `Run ${report.state.runId} stopped with status ${report.status}.`;
+  if (!changes || !outcomeIsComplete(report.status)) return undefined;
   return {
     head: runBranchFor(report.state.runId),
     base: report.state.baseBranch,
     title,
-    body: `${report.state.prDescription ?? summary}\n\n${completed ? 'Closes' : 'Refs'} #${issueNumber}`,
-    draft: !completed,
+    body: `${report.state.prDescription ?? ''}\n\nCloses #${issueNumber}`,
+    draft: false,
   };
 }
 
@@ -115,26 +127,44 @@ function publish(
   github: GithubPort,
   repository: RepositoryIdentity,
   key: string,
-  issueNumber: number,
   publication: OpenPullRequest,
-): Promise<Result<void, GithubFailure | StoreFailure>> {
+): Promise<Result<IssueOutcome, GithubFailure | StoreFailure>> {
   return Result.gen(async function* () {
-    let state = yield* Result.await(store.read());
-    let receipt = pullRequestReceipt(state, key);
-    if (!receipt) {
-      const found = yield* Result.await(
-        github.findOpenPullRequestByHead(repository, publication.head),
-      );
-      const pr = found ?? (yield* Result.await(github.openPullRequest(repository, publication)));
-      state = yield* Result.await(store.update((state) => withPullRequest(state, key, pr)));
-      receipt = pullRequestReceipt(state, key);
+    const state = yield* Result.await(store.read());
+    const receipt = pullRequestReceipt(state, key);
+    if (receipt) return Result.ok({ kind: 'pullRequest', url: receipt.url, reused: true });
+    const found = yield* Result.await(
+      github.findOpenPullRequestByHead(repository, publication.head),
+    );
+    const pr = found ?? (yield* Result.await(github.openPullRequest(repository, publication)));
+    yield* Result.await(store.update((state) => withPullRequest(state, key, pr)));
+    return Result.ok({ kind: 'pullRequest', url: pr.url, reused: !!found });
+  });
+}
+
+function publishComment(
+  store: OrchestrationStore,
+  github: GithubPort,
+  repository: RepositoryIdentity,
+  issueNumber: number,
+  { report, revision, changes }: { report: RunReport; revision: string; changes: boolean },
+): Promise<Result<IssueOutcome, GithubFailure | StoreFailure>> {
+  return Result.gen(async function* () {
+    const identity = { runId: report.state.runId, outcome: report.status, revision };
+    const state = yield* Result.await(store.read());
+    let url = commentReceipt(state, identity);
+    if (!url) {
+      const reason =
+        report.status === 'blocked'
+          ? report.reason
+          : report.status === 'halted'
+            ? 'Paused at the design checkpoint.'
+            : runStopReason(report.state);
+      const body = `Run ${report.state.runId}: ${report.status}. ${reason ?? (changes ? 'Run paused before completion.' : 'No changes were committed.')}`;
+      const postedUrl = yield* Result.await(github.commentOnIssue(repository, issueNumber, body));
+      yield* Result.await(store.update((state) => withComment(state, identity, postedUrl)));
+      url = postedUrl;
     }
-    if (receipt && !hasCommented(state, key)) {
-      yield* Result.await(
-        github.commentOnIssue(repository, issueNumber, `Implementation: ${receipt.url}`),
-      );
-      yield* Result.await(store.update((state) => withComment(state, key)));
-    }
-    return Result.ok();
+    return Result.ok({ kind: 'commented', outcome: report.status, url });
   });
 }

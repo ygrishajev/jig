@@ -5,8 +5,8 @@ import { runId } from '../../../tests/support/builders.js';
 import {
   acceptedRequest,
   acceptRequest,
+  commentReceipt,
   emptyOrchestration,
-  hasCommented,
   pullRequestReceipt,
   withComment,
   withPullRequest,
@@ -28,18 +28,27 @@ describe('orchestration state', () => {
     expect(state.requests).toEqual({});
   });
 
-  it('records a PR and its comment independently', () => {
-    const { state, key } = setup();
+  it('records PRs independently from comments for each outcome and revision', () => {
+    const { state, key, request } = setup();
     const pr = { number: faker.number.int({ min: 1 }), url: faker.internet.url() };
-    expect(pullRequestReceipt(state, key)).toBeUndefined();
-    expect(hasCommented(state, key)).toBe(false);
-    expect(withComment(state, key)).toBe(state);
+    const identity = { runId: request.runId, outcome: 'stuck', revision: faker.git.commitSha() };
+    expect(commentReceipt(state, identity)).toBeUndefined();
     const published = withPullRequest(state, key, pr);
-    expect(pullRequestReceipt(published, key)).toMatchObject(pr);
-    expect(hasCommented(published, key)).toBe(false);
-    const commented = withComment(published, key);
-    expect(hasCommented(commented, key)).toBe(true);
-    expect(withComment(commented, key)).toBe(commented);
+    expect(pullRequestReceipt(published, key)).toEqual(pr);
+    const url = faker.internet.url();
+    const commented = withComment(published, identity, url);
+    expect(commentReceipt(commented, identity)).toBe(url);
+    expect(
+      commentReceipt(commented, { ...identity, revision: faker.git.commitSha() }),
+    ).toBeUndefined();
+    expect(commentReceipt(commented, { ...identity, outcome: 'blocked' })).toBeUndefined();
+    expect(commentReceipt(commented, { ...identity, runId: runId() })).toBeUndefined();
+    const next = { ...identity, revision: faker.git.commitSha() };
+    const nextUrl = faker.internet.url();
+    const revised = withComment(commented, next, nextUrl);
+    expect(commentReceipt(revised, next)).toBe(nextUrl);
+    expect(commentReceipt(revised, identity)).toBe(url);
+    expect(withComment(commented, identity, faker.internet.url())).toBe(commented);
     expect(withPullRequest(commented, key, { ...pr, url: faker.internet.url() })).toBe(commented);
   });
 

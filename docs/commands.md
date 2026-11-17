@@ -138,6 +138,8 @@ The first invocation saves the issue title and body as an immutable request. Rep
 the command resumes that run, even if the issue was edited. State is always saved to
 `git-remote` as well as configured stores, so another clone can resume it.
 The operator branch is never merged. A completed run opens a PR that closes the issue;
-a blocked or stuck run with changes opens a draft for manual follow-up. A planning
-checkpoint or a branch without changes opens no PR. Existing open PRs are reused,
-and recorded PRs and comments are skipped on later invocations.
+a completed run without changes posts one issue comment and opens no PR. Halted,
+blocked and stuck runs comment with their status and reason, without opening a PR.
+Existing open PRs are reused. Comment receipts are keyed by run, outcome and branch
+revision, so repeating an outcome at the same revision does not comment again.
+The command prints the PR URL (including whether it was reused) or comment URL and status.

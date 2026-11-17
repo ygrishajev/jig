@@ -17,7 +17,7 @@ export interface GithubPort {
     repository: RepositoryIdentity,
     number: number,
     body: string,
-  ): Promise<Result<void, GithubFailure>>;
+  ): Promise<Result<string, GithubFailure>>;
 }
 export interface RepositoryIdentity {
   owner: string;
