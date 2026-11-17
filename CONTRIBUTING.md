@@ -87,7 +87,9 @@ commits, and pull requests, follow [commit-pr](.claude/skills/commit-pr/SKILL.md
 
 ## Releases
 
-The [publish workflow](.github/workflows/publish.yml) builds and publishes to GitHub
-Packages when a `v*.*.*` tag is pushed. Commit the package version bump before tagging.
-Repository visibility and package access are separate settings; making the repository public
-does not move the package to npmjs.org.
+The [publish workflow](.github/workflows/publish.yml) validates each push to `main`, then
+semantic-release calculates the next version from conventional commits since the last release.
+Breaking changes release a major version, features release a minor version, and other conventional
+commits release a patch version. The workflow publishes to npmjs.org with provenance and creates
+the release tag and GitHub Release. The checked-in package version is a development placeholder;
+do not bump it or create release tags manually.
