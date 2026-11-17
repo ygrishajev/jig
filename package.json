@@ -1,6 +1,6 @@
 {
   "name": "@ygrishajev/jig",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agentic SDLC pipeline orchestrator",
   "license": "MIT",
   "type": "module",
