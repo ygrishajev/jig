@@ -73,14 +73,29 @@ export function classifyInspect(
   image: string,
   outcome: DockerOutcome,
 ): Result<Record<string, string> | undefined, ImageBuildFailed> {
-  if (outcome.exitCode === 0) {
-    return Result.ok(imageLabelsSchema.parse(JSON.parse(outcome.stdout ?? '')) ?? {});
-  }
+  if (outcome.exitCode === 0) return parseLabels(image, outcome.stdout ?? '');
   if (!didNotStart(outcome) && NO_SUCH_IMAGE.test(outcome.stderr ?? ''))
     return Result.ok(undefined);
   const output = dockerFailure(outcome);
   return Result.err(
     new ImageBuildFailed({ message: `Could not ask docker about ${image}: ${output}`, output }),
+  );
+}
+
+function parseLabels(
+  image: string,
+  stdout: string,
+): Result<Record<string, string>, ImageBuildFailed> {
+  const unreadableLabels = (): ImageBuildFailed =>
+    new ImageBuildFailed({
+      message: `Docker returned labels for ${image} that jig cannot read: ${stdout}`,
+      output: stdout,
+    });
+  return Result.try({ try: (): unknown => JSON.parse(stdout), catch: unreadableLabels }).andThen(
+    (json) => {
+      const labels = imageLabelsSchema.safeParse(json);
+      return labels.success ? Result.ok(labels.data ?? {}) : Result.err(unreadableLabels());
+    },
   );
 }
 

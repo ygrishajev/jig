@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
+import { ImageBuildFailed } from '../../domain/errors.js';
 import type { ImageBuildSpec } from '../../ports/sandbox-images.js';
 import { classifyInspect, dockerBuildArguments } from './docker-images.js';
 
@@ -20,6 +21,30 @@ describe('classifyInspect', () => {
     expect(classifyInspect(faker.word.noun(), { exitCode: 0, stdout: 'null' }).unwrap()).toEqual(
       {},
     );
+  });
+
+  it('reports exit-zero output that is not JSON as unreadable labels', () => {
+    const image = faker.word.noun();
+    const stdout = `${faker.lorem.word()} {`;
+
+    const result = classifyInspect(image, { exitCode: 0, stdout });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ImageBuildFailed);
+    expect(result.isErr() && result.error.message).toContain(image);
+    expect(result.isErr() && result.error.message).toContain(stdout);
+    expect(result.isErr() && result.error.output).toBe(stdout);
+  });
+
+  it('reports labels whose values are not strings as unreadable', () => {
+    const image = faker.word.noun();
+    const stdout = JSON.stringify({ [faker.word.noun()]: faker.number.int() });
+
+    const result = classifyInspect(image, { exitCode: 0, stdout });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ImageBuildFailed);
+    expect(result.isErr() && result.error.message).toContain(image);
+    expect(result.isErr() && result.error.message).toContain(stdout);
+    expect(result.isErr() && result.error.output).toBe(stdout);
   });
 
   it('reports an image that is not there as absent, not as a failure', () => {
