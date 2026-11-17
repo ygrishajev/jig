@@ -491,7 +491,7 @@ svg text{font-family:var(--sans)}
     cont("c-kinds", "Failure kinds", "concept", 960, 250, 380, ["retry, block, fatal."], cCKinds)
   ], []);
 
-  var githubIntegration = flowCv("gh", "Integrations layer · GitHub", "src/integrations/github owns forge policy; the core CLI and run engine do not import it.", [
+  var githubIntegration = flowCv("gh", "Integrations layer · GitHub", "src/integrations/github owns forge policy. No TypeScript file under src/ outside src/integrations/github/ may import it, with no exemptions. ESLint and src/boundary.spec.ts enforce this dependency direction.", [
     ["Composing entry: cli.ts", "buildJigCli() adds GitHub commands to buildCli(); owns executable startup.", "iface"],
     ["Prepare command input", "command.ts parses --issue, reads token privately and resolves repository identity.", "iface"],
     ["Check the base branch", "implement-issue.ts refuses a checkout other than GitHub's default branch.", "domain"],

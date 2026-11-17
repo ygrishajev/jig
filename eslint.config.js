@@ -71,6 +71,11 @@ const externalCallsInAdapters = [
   message: 'Domain, flow and step code reaches the outside through a port; put this in an adapter.',
 }));
 
+const githubOnlyInIntegration = {
+  group: ['**/integrations/github/**'],
+  message: 'The GitHub integration depends on core modules; core modules must never import it.',
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -128,8 +133,23 @@ export default tseslint.config(
   },
   {
     files: ['src/**/*.ts'],
+    ignores: ['src/integrations/github/**'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        { patterns: [githubOnlyInIntegration] },
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.ts'],
     ignores: ['src/app/**', 'src/**/*.spec.ts'],
-    rules: { '@typescript-eslint/no-restricted-imports': ['error', { paths: [awilixOnlyInApp] }] },
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        { paths: [awilixOnlyInApp], patterns: [githubOnlyInIntegration] },
+      ],
+    },
   },
   {
     files: ['src/domain/**/*.ts', 'src/flow/**/*.ts', 'src/steps/**/*.ts'],
@@ -140,6 +160,7 @@ export default tseslint.config(
         {
           paths: [awilixOnlyInApp, ...externalCallsInAdapters],
           patterns: [
+            githubOnlyInIntegration,
             {
               group: ['@ai-hero/sandcastle/*'],
               allowTypeImports: true,
