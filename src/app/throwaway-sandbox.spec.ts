@@ -1,6 +1,8 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
+import { execa } from 'execa';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
@@ -68,14 +70,21 @@ describe('withThrowawaySandbox', () => {
     expect(result.isErr() && result.error).toBe(closeFailure);
   });
 
-  it('removes the worktree the closed sandbox leaves behind, with its branch', async () => {
-    const { app, repoRoot, worktreeOf, branchOf } = await setup({ withWorktree: true });
+  it('removes the worktree the close preserved for uncommitted changes, with its branch', async () => {
+    const { app, repoRoot, worktreeOf, branchOf, worktreeSession } = await setup({
+      withWorktree: true,
+    });
 
-    const result = await withThrowawaySandbox(app, null, async (session) =>
-      Result.ok(session.worktreePath),
-    );
+    const result = await withThrowawaySandbox(app, null, async (session) => {
+      await writeFile(
+        path.join(session.worktreePath, faker.system.fileName()),
+        faker.lorem.paragraph(),
+      );
+      return Result.ok(session.worktreePath);
+    });
 
     expect(unwrap(result)).toBe(worktreeOf());
+    expect(worktreeSession().preservedWorktreePath).toBe(worktreeOf());
     expect((await simpleGit({ baseDir: repoRoot }).branchLocal()).all).not.toContain(branchOf());
     expect(
       await simpleGit({ baseDir: repoRoot }).raw(['worktree', 'list', '--porcelain']),
@@ -87,6 +96,7 @@ describe('withThrowawaySandbox', () => {
     const session = new FakeAgentSession(repoRoot);
     const branches: string[] = [];
     const worktrees: string[] = [];
+    const worktreeSessions: HostWorktreeSession[] = [];
     let opened = 0;
     const app = createAppContainer({
       repoRoot,
@@ -109,7 +119,9 @@ describe('withThrowawaySandbox', () => {
           await simpleGit({ baseDir: repoRoot }).raw(['worktree', 'add', '-b', branch, worktree]);
           worktrees.push(worktree);
           branches.push(branch);
-          return Result.ok(new FakeAgentSession(worktree));
+          const worktreeSession = new HostWorktreeSession(repoRoot, worktree);
+          worktreeSessions.push(worktreeSession);
+          return Result.ok(worktreeSession);
         }
         await simpleGit({ baseDir: repoRoot }).branch([branch]);
         branches.push(branch);
@@ -131,10 +143,51 @@ describe('withThrowawaySandbox', () => {
       opened: () => opened,
       worktreeOf: () => worktrees[0],
       branchOf: () => branches[0],
+      worktreeSession: () => worktreeSessions[0],
     };
   }
 });
 
 function sandboxUnavailable() {
   return new SandboxUnavailable({ message: faker.lorem.sentence() });
+}
+
+/**
+ * Plays sandcastle 0.14.0's close contract (`createSandbox.doClose`): the container stops, a
+ * worktree with uncommitted changes is preserved, a clean one is removed, and a removal that
+ * fails is tolerated.
+ */
+class HostWorktreeSession extends FakeAgentSession {
+  /** The worktree a close preserved instead of removing, the outcome sandcastle reports back. */
+  preservedWorktreePath?: string;
+
+  constructor(
+    private readonly hostRepoRoot: string,
+    worktreePath: string,
+  ) {
+    super(worktreePath);
+  }
+
+  override async close(): Promise<Result<void, SandboxUnavailable>> {
+    if (this.failCloseWith) return super.close();
+    if (this.closed) return Result.ok();
+    this.closed = true;
+    if (await this.hasUncommittedChanges()) {
+      this.preservedWorktreePath = this.worktreePath;
+      return Result.ok();
+    }
+    await execa('git', ['worktree', 'remove', '--force', this.worktreePath], {
+      cwd: this.hostRepoRoot,
+      reject: false,
+    });
+    return Result.ok();
+  }
+
+  private async hasUncommittedChanges(): Promise<boolean> {
+    const status = await execa('git', ['status', '--porcelain'], {
+      cwd: this.worktreePath,
+      reject: false,
+    });
+    return status.stdout.trim().length > 0;
+  }
 }

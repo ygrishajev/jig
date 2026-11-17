@@ -63,9 +63,9 @@ function worktreesOn(porcelain: string, branch: string): string[] {
 const EXIT_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
 
 /**
- * Removes `branch` with any worktree still on it: closing a sandbox stops its container but
- * leaves the host worktree sandcastle gave it, and git refuses to delete a branch a worktree
- * is on.
+ * Removes `branch` with any worktree still on it: a sandbox's close leaves its worktree in
+ * place when the run left uncommitted changes there or when removing it failed, and git
+ * refuses to delete a branch a worktree is on.
  */
 export async function discardBranch(
   cwd: string,
