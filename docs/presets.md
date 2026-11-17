@@ -27,7 +27,8 @@ including its model. Other settings keep their config values.
 
 A bare `--preset` opens a picker. Its first entry keeps the selected config's agents;
 the remaining entries show presets, their descriptions, and any custom source.
-Without a terminal, or if the prompt is cancelled, pass an explicit name.
+Without a terminal, or if the prompt is cancelled, pass an explicit name. A piped request
+still leaves the picker on the controlling terminal when one is available.
 Put a bare `--preset` after the request: `jig run request.md --preset`. Otherwise,
 the CLI treats the request path as the preset name. Use the same preset when resuming.
 
