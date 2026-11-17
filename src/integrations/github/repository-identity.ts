@@ -7,7 +7,7 @@ import type { RepositoryIdentity } from './github-port.js';
 
 export async function repositoryIdentity(
   repoRoot: string,
-  environment: NodeJS.ProcessEnv,
+  environment: { GITHUB_REPOSITORY?: string },
 ): Promise<Result<RepositoryIdentity, GithubSetupInvalid>> {
   const configured = environment.GITHUB_REPOSITORY;
   if (configured !== undefined) return parseRepository(configured);

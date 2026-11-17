@@ -45,22 +45,26 @@ export class OctokitGithub implements GithubPort {
   }
 
   getIssue(repository: RepositoryIdentity, number: number): Promise<Result<Issue, GithubFailure>> {
-    return this.call(async () => {
+    return this.call(`getIssue ${repository.owner}/${repository.repo}#${number}`, async () => {
       const { data } = await this.client.issues.get({ ...repository, issue_number: number });
       return { number: data.number, title: data.title, body: data.body ?? '', url: data.html_url };
     });
   }
 
-  private call<T>(operation: () => Promise<T>): Promise<Result<T, GithubFailure>> {
-    return retryResult(() => Result.tryPromise({ try: operation, catch: githubFailure }), {
-      retries: GITHUB_RETRIES,
-      delayMs: GITHUB_RETRY_DELAY_MS,
-      shouldRetry: (error) => error._tag === 'GithubUnavailable',
-    });
+  private call<T>(subject: string, operation: () => Promise<T>): Promise<Result<T, GithubFailure>> {
+    return retryResult(
+      () => Result.tryPromise({ try: operation, catch: (cause) => githubFailure(subject, cause) }),
+      {
+        retries: GITHUB_RETRIES,
+        delayMs: GITHUB_RETRY_DELAY_MS,
+        shouldRetry: (error) => error._tag === 'GithubUnavailable',
+      },
+    );
   }
 
   getDefaultBranch(repository: RepositoryIdentity): Promise<Result<string, GithubFailure>> {
     return this.call(
+      `getDefaultBranch ${repository.owner}/${repository.repo}`,
       async () => (await this.client.repos.get({ ...repository })).data.default_branch,
     );
   }
@@ -69,24 +73,30 @@ export class OctokitGithub implements GithubPort {
     repository: RepositoryIdentity,
     head: string,
   ): Promise<Result<PullRequest | undefined, GithubFailure>> {
-    return this.call(async () => {
-      const { data } = await this.client.pulls.list({
-        ...repository,
-        head: `${repository.owner}:${head}`,
-        state: 'open',
-      });
-      return data[0] ? { number: data[0].number, url: data[0].html_url } : undefined;
-    });
+    return this.call(
+      `findOpenPullRequestByHead ${repository.owner}/${repository.repo}:${head}`,
+      async () => {
+        const { data } = await this.client.pulls.list({
+          ...repository,
+          head: `${repository.owner}:${head}`,
+          state: 'open',
+        });
+        return data[0] ? { number: data[0].number, url: data[0].html_url } : undefined;
+      },
+    );
   }
 
   openPullRequest(
     repository: RepositoryIdentity,
     input: OpenPullRequest,
   ): Promise<Result<PullRequest, GithubFailure>> {
-    return this.call(async () => {
-      const { data } = await this.client.pulls.create({ ...repository, ...input });
-      return { number: data.number, url: data.html_url };
-    });
+    return this.call(
+      `openPullRequest ${repository.owner}/${repository.repo}: ${input.head} -> ${input.base}`,
+      async () => {
+        const { data } = await this.client.pulls.create({ ...repository, ...input });
+        return { number: data.number, url: data.html_url };
+      },
+    );
   }
 
   commentOnIssue(
@@ -94,19 +104,33 @@ export class OctokitGithub implements GithubPort {
     number: number,
     body: string,
   ): Promise<Result<void, GithubFailure>> {
-    return this.call(async () => {
-      await this.client.issues.createComment({ ...repository, issue_number: number, body });
-    });
+    return this.call(
+      `commentOnIssue ${repository.owner}/${repository.repo}#${number}`,
+      async () => {
+        await this.client.issues.createComment({ ...repository, issue_number: number, body });
+      },
+    );
   }
 }
 
-function githubFailure(cause: unknown): GithubFailure {
-  const parsed = z.object({ status: z.number() }).safeParse(cause);
-  const status = parsed.success ? parsed.data.status : undefined;
-  if (status === 404) return new GithubNotFound({ message: 'GitHub resource was not found.' });
-  if (status !== undefined && status >= 400 && status < 500)
-    return new GithubRefused({ message: `GitHub refused the operation (${status}).` });
-  return new GithubUnavailable({ message: 'GitHub is unavailable; try again later.' });
+function githubFailure(subject: string, cause: unknown): GithubFailure {
+  const parsed = z
+    .object({
+      status: z.number().default(0),
+      message: z.string().optional(),
+      response: z.object({ data: z.object({ message: z.string().optional() }) }).optional(),
+    })
+    .safeParse(cause);
+  const status = parsed.success ? parsed.data.status : 0;
+  const reason = parsed.success
+    ? (parsed.data.response?.data.message ?? parsed.data.message)
+    : undefined;
+  const context = `GitHub ${subject} failed${status ? ` (${status})` : ''}`;
+  if (status >= 400 && status < 500) {
+    const message = `${context}: ${reason ?? 'Request refused.'}`;
+    return status === 404 ? new GithubNotFound({ message }) : new GithubRefused({ message });
+  }
+  return new GithubUnavailable({ message: `${context}: GitHub is unavailable; try again later.` });
 }
 
 /** Short outages should not abort an unattended job, while retries remain bounded. */

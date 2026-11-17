@@ -13,10 +13,48 @@ describe('OctokitGithub', () => {
     [422, 'GithubRefused'],
   ])('maps HTTP %s to %s', async (status, tag) => {
     const { client, github, repository } = setup();
-    client.repos.get.mockRejectedValue({ status, message: faker.string.alphanumeric(30) });
+    const message = faker.lorem.sentence();
+    client.repos.get.mockRejectedValue({ status, message });
     const result = await github.getDefaultBranch(repository);
     expect(result.isErr() && result.error._tag).toBe(tag);
+    expect(result.isErr() && result.error.message).toContain(
+      `getDefaultBranch ${repository.owner}/${repository.repo}`,
+    );
+    expect(result.isErr() && result.error.message).toContain(String(status));
+    expect(result.isErr() && result.error.message).toContain(message);
     expect(client.repos.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the issue and response reason for a missing issue', async () => {
+    const { client, github, repository } = setup();
+    const number = faker.number.int({ min: 1 });
+    const message = faker.lorem.sentence();
+    client.issues.get.mockRejectedValue({ status: 404, response: { data: { message } } });
+    const result = await github.getIssue(repository, number);
+    expect(result.isErr() && result.error.message).toContain(
+      `getIssue ${repository.owner}/${repository.repo}#${number}`,
+    );
+    expect(result.isErr() && result.error.message).toContain('404');
+    expect(result.isErr() && result.error.message).toContain(message);
+  });
+
+  it('reports the head and base when GitHub refuses publication', async () => {
+    const { client, github, repository } = setup();
+    const input = {
+      head: faker.git.branch(),
+      base: faker.git.branch(),
+      title: faker.lorem.sentence(),
+      body: faker.lorem.paragraph(),
+      draft: false,
+    };
+    const message = `No commits between ${input.base} and ${input.head}`;
+    client.pulls.create.mockRejectedValue({ status: 422, message });
+    const result = await github.openPullRequest(repository, input);
+    expect(result.isErr() && result.error.message).toContain(
+      `openPullRequest ${repository.owner}/${repository.repo}: ${input.head} -> ${input.base}`,
+    );
+    expect(result.isErr() && result.error.message).toContain('422');
+    expect(result.isErr() && result.error.message).toContain(message);
   });
 
   it.each([503, 0, undefined])('retries an unavailable response with status %s', async (status) => {

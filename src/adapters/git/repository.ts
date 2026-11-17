@@ -86,35 +86,28 @@ export function hasChangesAgainst(
   base: string,
   branch: string,
 ): Promise<Result<boolean, GitCommandFailed>> {
+  const existsArgs = ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`];
+  const diffArgs = ['diff', '--quiet', `${base}...${branch}`, '--'];
+  const failure = (args: string[], output: string): GitCommandFailed => {
+    const command = `git ${args.join(' ')}`;
+    return new GitCommandFailed({ message: `${command} failed: ${output}`, command, output });
+  };
   return Result.gen(async function* () {
     const exists = yield* Result.await(
-      gitCommand('show-ref', () =>
-        execa('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], {
-          cwd: repoRoot,
-          reject: false,
-        }),
-      ),
+      Result.tryPromise({
+        try: () => execa('git', existsArgs, { cwd: repoRoot, reject: false }),
+        catch: (cause) => failure(existsArgs, messageOf(cause)),
+      }),
     );
     if (exists.exitCode === 1) return Result.ok(false);
-    if (exists.exitCode !== 0)
-      return Result.err(
-        new GitCommandFailed({
-          message: exists.stderr,
-          command: 'git show-ref',
-          output: exists.stderr,
-        }),
-      );
+    if (exists.exitCode !== 0) return Result.err(failure(existsArgs, exists.stderr));
     const diff = yield* Result.await(
-      gitCommand('diff', () =>
-        execa('git', ['diff', '--quiet', `${base}...${branch}`, '--'], {
-          cwd: repoRoot,
-          reject: false,
-        }),
-      ),
+      Result.tryPromise({
+        try: () => execa('git', diffArgs, { cwd: repoRoot, reject: false }),
+        catch: (cause) => failure(diffArgs, messageOf(cause)),
+      }),
     );
     if (diff.exitCode === 0 || diff.exitCode === 1) return Result.ok(diff.exitCode === 1);
-    return Result.err(
-      new GitCommandFailed({ message: diff.stderr, command: 'git diff', output: diff.stderr }),
-    );
+    return Result.err(failure(diffArgs, diff.stderr));
   });
 }

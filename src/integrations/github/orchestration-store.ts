@@ -50,14 +50,21 @@ export class OrchestrationStore {
     }, this);
   }
 
-  update(
+  async update(
     decide: (state: Orchestration) => Orchestration,
   ): Promise<Result<Orchestration, StoreFailure>> {
-    return retryResult(() => this.updateOnce(decide), {
+    const result = await retryResult(() => this.updateOnce(decide), {
       retries: ORCHESTRATION_ATTEMPTS - 1,
       delayMs: 0,
       shouldRetry: (error) => error._tag === 'RunStateConflict',
     });
+    return result.mapError((error) =>
+      error._tag === 'RunStateConflict'
+        ? new OrchestrationStateInvalid({
+            message: `Competing jobs kept updating GitHub orchestration ref ${ORCHESTRATION_REF}; try again.`,
+          })
+        : error,
+    );
   }
 
   private updateOnce(
@@ -82,7 +89,10 @@ export class OrchestrationStore {
     }, this);
   }
 }
+
+/** A hidden ref outside the branch list shares orchestration across every repository job. */
 const ORCHESTRATION_REF = 'refs/jig/_orchestration';
+/** Every repository job reads the shared receipts from this file in the hidden ref. */
 const ORCHESTRATION_FILE = 'orchestration.json';
 
 /** Competing jobs re-read the winner's state, within a bounded contention budget. */

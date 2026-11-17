@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { execFileSync } from 'node:child_process';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
@@ -41,6 +42,39 @@ describe('OrchestrationStore', () => {
     expect(await simpleGit(dir).listRemote(['origin', 'refs/jig/_orchestration'])).toBe(before);
   });
 
+  it('names the orchestration ref when competing jobs exhaust the retry budget', async () => {
+    const { dir, origin, store, request } = await setup();
+    const refs = new RemoteRef(dir);
+    const key = faker.string.uuid();
+    const commits: string[] = [];
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const state = acceptRequest(emptyOrchestration(), faker.string.uuid(), request);
+      commits.push(
+        unwrap(
+          await refs.commitFile(
+            'refs/jig/_orchestration',
+            'orchestration.json',
+            JSON.stringify(state),
+            faker.git.commitMessage(),
+          ),
+        ),
+      );
+    }
+    let attempts = 0;
+    const result = await store.update((state) => {
+      execFileSync(
+        'git',
+        ['push', '--force', origin, `${commits[attempts++]}:refs/jig/_orchestration`],
+        { cwd: dir, stdio: 'pipe' },
+      );
+      return acceptRequest(state, key, request);
+    });
+    expect(attempts).toBe(5);
+    expect(result.isErr() && result.error._tag).toBe('OrchestrationStateInvalid');
+    expect(result.isErr() && result.error.message).toContain('refs/jig/_orchestration');
+    expect(result.isErr() && result.error.message).toContain('Competing jobs');
+  });
+
   it('refuses corrupt remote state', async () => {
     const { dir, store } = await setup();
     const refs = new RemoteRef(dir);
@@ -58,10 +92,11 @@ describe('OrchestrationStore', () => {
   });
 
   async function setup() {
-    const { cloneOf } = await createRemote();
+    const { cloneOf, origin } = await createRemote();
     const dir = await cloneOf();
     return {
       dir,
+      origin,
       cloneOf,
       store: new OrchestrationStore(dir),
       request: { runId: runId(), text: faker.lorem.paragraph(), title: faker.lorem.sentence() },

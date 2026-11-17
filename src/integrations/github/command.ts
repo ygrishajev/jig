@@ -52,14 +52,33 @@ function prepare(
   { cwd, environment }: Invocation,
 ): Promise<Result<{ token: string; repository: RepositoryIdentity }, GithubSetupInvalid>> {
   return Result.gen(async function* () {
-    const token = environment.GITHUB_TOKEN || environment.GH_TOKEN;
-    if (!token)
+    const parsed = githubEnvironmentSchema.safeParse(environment);
+    if (!parsed.success)
       return Result.err(
         new GithubSetupInvalid({
-          message: 'Set GITHUB_TOKEN or GH_TOKEN to implement a GitHub issue.',
+          message: parsed.error.issues.map(({ message }) => message).join('; '),
         }),
       );
-    const repository = yield* Result.await(repositoryIdentity(cwd, environment));
+    const { token, ...identity } = parsed.data;
+    const repository = yield* Result.await(repositoryIdentity(cwd, identity));
     return Result.ok({ token, repository });
   });
 }
+
+const githubEnvironmentSchema = z
+  .object({
+    GITHUB_TOKEN: z.string().min(1).optional(),
+    GH_TOKEN: z.string().min(1).optional(),
+    GITHUB_REPOSITORY: z.string().optional(),
+  })
+  .transform(({ GITHUB_TOKEN, GH_TOKEN, GITHUB_REPOSITORY }, context) => {
+    const token = GITHUB_TOKEN ?? GH_TOKEN;
+    if (!token) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Set GITHUB_TOKEN or GH_TOKEN to implement a GitHub issue.',
+      });
+      return z.NEVER;
+    }
+    return { token, GITHUB_REPOSITORY };
+  });

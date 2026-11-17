@@ -110,7 +110,12 @@ describe('hasChangesAgainst', () => {
     await openRepo(repo).add('.');
     await openRepo(repo).commit(faker.git.commitMessage());
     expect((await hasChangesAgainst(repo, 'main', 'feature')).unwrap()).toBe(true);
-    expect((await hasChangesAgainst(repo, 'missing', 'feature')).isErr()).toBe(true);
+    const result = await hasChangesAgainst(repo, 'missing', 'feature');
+    expect(result.isErr() && result.error._tag).toBe('GitCommandFailed');
+    expect(result.isErr() && result.error.command).toBe('git diff --quiet missing...feature --');
+    expect(result.isErr() && result.error.message).toContain(
+      'git diff --quiet missing...feature -- failed:',
+    );
   });
 
   async function setup() {

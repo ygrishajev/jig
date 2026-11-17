@@ -8,7 +8,7 @@ import type { JigError } from '../../domain/errors.js';
 import { runIdFor } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { outcomeIsComplete } from '../../flow/engine.js';
-import { BaseBranchMismatch, type OrchestrationStateInvalid } from './errors.js';
+import { BaseBranchMismatch, type GithubError, type GithubSetupInvalid } from './errors.js';
 import type {
   GithubFailure,
   GithubPort,
@@ -32,9 +32,7 @@ export function implementIssue(
   github: GithubPort,
   repository: RepositoryIdentity,
   issueNumber: number,
-): Promise<
-  Result<void, JigError | GithubFailure | BaseBranchMismatch | OrchestrationStateInvalid>
-> {
+): Promise<Result<void, JigError | Exclude<GithubError, GithubSetupInvalid>>> {
   return Result.gen(async function* () {
     const base = yield* Result.await(github.getDefaultBranch(repository));
     const current = yield* Result.await(getCurrentBranch(app.cradle.repoRoot));

@@ -25,6 +25,27 @@ describe('github implement command', () => {
     expect(createApp).not.toHaveBeenCalled();
   });
 
+  it('refuses an empty token before opening the app', async () => {
+    const { run, output, createApp } = await setup({ environment: { GITHUB_TOKEN: '' } });
+    await run(['--issue', '1']);
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+    expect(createApp).not.toHaveBeenCalled();
+  });
+
+  it('prefers GITHUB_TOKEN when both tokens are configured', async () => {
+    const token = faker.string.alphanumeric(30);
+    const { run, githubFor, github } = await setup({
+      environment: {
+        GITHUB_TOKEN: token,
+        GH_TOKEN: faker.string.alphanumeric(30),
+        GITHUB_REPOSITORY: `${faker.string.alpha(8)}/${faker.string.alpha(8)}`,
+      },
+    });
+    github.failOnce('getDefaultBranch', new GithubRefused({ message: faker.lorem.sentence() }));
+    await run(['--issue', '1']);
+    expect(githubFor).toHaveBeenCalledWith(token);
+  });
+
   it.each(['0', '-1', 'text', '1.5'])(
     'refuses invalid issue %s before opening the app',
     async (issue) => {
