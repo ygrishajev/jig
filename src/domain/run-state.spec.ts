@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { Panic } from 'better-result';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,9 +10,9 @@ import {
   aRevisionAwaitingReReview,
   aRunState,
   aSlice,
+  runId,
 } from '../../tests/support/builders.js';
 import type { DesignReviewProgress } from './design-review.js';
-import { runIdSchema } from './run-id.js';
 import {
   enterPhase,
   runMerges,
@@ -144,7 +145,16 @@ describe('runStateSchema', () => {
   it('panics entering completed without a pull request description', () => {
     const { prDescription: _missing, ...undescribed } = aRunState({ phase: 'describing' });
 
-    expect(() => enterPhase(undescribed, 'completed')).toThrow(/cannot enter "completed"/);
+    expect(() => enterPhase(undescribed, 'completed')).toThrow(Panic);
+  });
+
+  it('enters completed from a described run, keeping its description', () => {
+    const prDescription = faker.lorem.paragraphs();
+    const described = { ...aRunState({ phase: 'describing' }), prDescription };
+
+    const completed = enterPhase(described, 'completed');
+
+    expect(completed).toMatchObject({ phase: 'completed', prDescription });
   });
 
   it('loads a run saved in describing with what the earlier phases produced', () => {
@@ -198,7 +208,7 @@ describe('stuckSlice', () => {
 
 function aStart() {
   return {
-    runId: runIdSchema.parse(`run-${faker.string.alphanumeric({ length: 8, casing: 'lower' })}`),
+    runId: runId(),
     baseBranch: 'main',
     request: faker.lorem.paragraph(),
   };

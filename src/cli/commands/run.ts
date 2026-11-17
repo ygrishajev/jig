@@ -32,7 +32,7 @@ export function registerRunCommand(program: Command, io?: CommandIo): void {
     .option('--id <id>', 'run id: resumes that run if it exists, otherwise names the new one')
     .option(
       '--no-merge',
-      'plan, implement and review the run, then stop on its branch without merging; ignored when resuming',
+      'describe the result and stop without merging; the run ends "completed" (ignored when resuming an existing run)',
     )
     .addOption(configOption())
     .addOption(presetOption())
