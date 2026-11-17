@@ -7,7 +7,7 @@ run a request, and review the resulting branch.
 
 ## Get started
 
-- [Installation](installation.md) — requirements, source install, and GitHub Packages.
+- [Installation](installation.md) — requirements, npm installation, and source installation.
 - [Authentication](authentication.md) — agent credentials and the Codex login cache.
 
 ## Run and configure

@@ -20,7 +20,9 @@
     "url": "git+https://github.com/ygrishajev/jig.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://registry.npmjs.org",
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "validate": "node --import tsx scripts/validate.ts",

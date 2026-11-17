@@ -33,18 +33,21 @@ Requires Node **20.17 or newer**, Git **2.38 or newer**, and a running Docker da
 Run jig from the target repository's root. Set your Git `user.name` and `user.email`
 for automatic merges.
 
-Install from a checkout:
+Install globally from npm:
 
 ```bash
-git clone https://github.com/ygrishajev/jig.git
-cd jig
-npm ci
-npm run install:local
+npm install --global @ygrishajev/jig
 jig --help
 ```
 
-Tagged releases publish as `@ygrishajev/jig` to **GitHub Packages**. See
-[package installation](docs/installation.md) for registry setup and authentication.
+For a repository-local installation:
+
+```bash
+npm install --save-dev @ygrishajev/jig
+npx jig --help
+```
+
+See [package installation](docs/installation.md) for usage and source installation.
 For development setup and checks, see [Contributing](CONTRIBUTING.md).
 
 ## Quickstart

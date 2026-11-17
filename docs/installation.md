@@ -12,6 +12,32 @@
 Run commands from the target repository's root. Configure your Git identity for automatic
 merges. A repository signing setup is needed only when you opt into `commitSigning: "repo"`.
 
+## From npm
+
+Install `@ygrishajev/jig` from the public npm registry. No registry mapping or npm
+credentials are needed to install it.
+
+### Global installation
+
+```bash
+npm install --global @ygrishajev/jig
+jig --help
+```
+
+Run `jig init` and `jig run ../request.md` from the target repository's root.
+
+### Development dependency
+
+Install in the target repository:
+
+```bash
+npm install --save-dev @ygrishajev/jig
+npx jig --help
+```
+
+Use `npx jig init` and `npx jig run ../request.md` from that repository. npm scripts
+can invoke `jig` directly because npm adds local dependency binaries to `PATH`.
+
 ## From source
 
 ```bash
@@ -25,26 +51,5 @@ jig --help
 `install:local` builds, packs, and installs the package globally. You can also build with
 `npm run build` and invoke `node /path/to/jig/dist/cli/main.js` from the target repository.
 Contributor setup, including Git hooks, is in [Contributing](../CONTRIBUTING.md).
-
-## From GitHub Packages
-
-Releases publish as `@ygrishajev/jig` to `npm.pkg.github.com`, not npmjs.org. Access depends
-on the package's visibility and your account permissions.
-
-Add this registry mapping to the consuming repository's `.npmrc`:
-
-```ini
-@ygrishajev:registry=https://npm.pkg.github.com
-```
-
-Authenticate npm to that registry with an account that can read the package, then install:
-
-```bash
-npm install --save-dev @ygrishajev/jig
-npx jig --help
-```
-
-Follow [GitHub's npm registry authentication instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-to-github-packages)
-for token and CI setup. Keep tokens out of tracked `.npmrc` files.
 
 Continue with the [quickstart](../README.md#quickstart).

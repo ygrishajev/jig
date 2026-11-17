@@ -49,4 +49,5 @@ write-file-atomic, pino, zod, simple-git, execa, commander.
   [Codex authentication](docs/authentication.md#codex-authentication). Every `.env` is git-ignored;
   keep it that way.
 - **Tags publish.** Pushing a `v*.*.*` tag runs `.github/workflows/publish.yml`, which publishes
-  the package to GitHub Packages. Bump the version in a commit first; never push a tag casually.
+  the package publicly to npm with provenance via trusted publishing. Bump the version in a commit
+  first; never push a tag casually.
