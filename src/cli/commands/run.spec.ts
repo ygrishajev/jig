@@ -23,6 +23,14 @@ describe('nextStep', () => {
     expect(nextStep({ state, status: 'done' })).not.toContain(state.runId);
   });
 
+  it('names the run branch to review once a run finished without merging', () => {
+    const state = aRunState({ phase: 'completed', merge: false });
+
+    const step = nextStep({ state, status: 'completed' });
+
+    expect(step).toContain(runBranchFor(state.runId));
+  });
+
   it('asks for the design to be read before resuming a run paused after planning', () => {
     const state = aRunState({ phase: 'paused' });
 
@@ -86,16 +94,29 @@ describe('runInputSchema', () => {
     const request = faker.system.filePath();
     const id = runId();
 
-    expect(runInputSchema.parse({ request, logFormat }).run).toEqual({ start: { file: request } });
+    expect(runInputSchema.parse({ request, logFormat }).run).toEqual({
+      start: { file: request },
+      merge: true,
+    });
     expect(runInputSchema.parse({ request, id, logFormat }).run).toEqual({
       start: { file: request },
       runId: id,
+      merge: true,
+    });
+  });
+
+  it('starts a run that skips the merge when --no-merge is given', () => {
+    const request = faker.system.filePath();
+
+    expect(runInputSchema.parse({ request, merge: false, logFormat }).run).toMatchObject({
+      merge: false,
     });
   });
 
   it('reads the request from standard input when the request is -', () => {
     expect(runInputSchema.parse({ request: '-', logFormat }).run).toEqual({
       start: { stdin: true },
+      merge: true,
     });
   });
 

@@ -12,15 +12,15 @@ Local artifacts live in `.jig/<id>/state/`. jig writes `result.json` and the ava
 documents each time `jig run` reports an outcome. `jig status <id>` lists the documents
 available on the current machine.
 
-| File                | Contents                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| `result.json`       | Outcome fields: `status`, `complete`, `blockedReason`, and `metrics`.                |
-| `design.md`         | Current design, including any revisions requested during design review.              |
-| `plan.md`           | Current implementation plan.                                                         |
-| `design-review.md`  | Review findings, evidence, uncertainty, planner responses, and unresolved decisions. |
-| `PR_DESCRIPTION.md` | Generated pull request description with a metrics summary.                           |
-| `run.log`           | Run log.                                                                             |
-| `metrics.jsonl`     | One record per step or agent call, including planning and design review.             |
+| File                | Contents                                                                                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `result.json`       | Outcome fields: `status` (`done`, `completed`, `halted`, `blocked`, `stuck`), `complete` (true for `done` and `completed`), `blockedReason`, and `metrics`. |
+| `design.md`         | Current design, including any revisions requested during design review.                                                                                     |
+| `plan.md`           | Current implementation plan.                                                                                                                                |
+| `design-review.md`  | Review findings, evidence, uncertainty, planner responses, and unresolved decisions.                                                                        |
+| `PR_DESCRIPTION.md` | Generated pull request description with a metrics summary.                                                                                                  |
+| `run.log`           | Run log.                                                                                                                                                    |
+| `metrics.jsonl`     | One record per step or agent call, including planning and design review.                                                                                    |
 
 `design-review.md` preserves the documents as first reviewed and indicates how far
 the review progressed. A pending review is never reported as approved. Unresolved
@@ -33,6 +33,8 @@ on a machine without the local report files.
 Command errors exit nonzero. Automation must inspect `result.json` as well as the
 exit code; see [outcomes and recovery](commands.md#outcomes-and-recovery) for the
 meaning of each status. A manual-merge run normally stops with `halted`.
+`done` and `completed` both write `complete: true`; check `status` when you must know
+whether the branch was merged (`completed` means it was left unmerged).
 
 Pass an explicit run id and preset name in CI, for example:
 

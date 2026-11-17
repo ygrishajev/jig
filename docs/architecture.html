@@ -273,7 +273,7 @@ svg text{font-family:var(--sans)}
     ["Pick the next phase", "the node's transition for the outcome; guards take the first that holds.", "domain"],
     ["Save", "RunStore.save after every transition — the checkpoint.", "infra"],
     ["Publish events", "stepStarted, stepFinished, phaseChanged and the rest, to the observers.", "infra"],
-    ["Stop", "at a final (done, stuck) or a halt (paused, awaitingMerge).", "step"]
+    ["Stop", "at a final (done, completed, stuck) or a halt (paused, awaitingMerge).", "step"]
   ], { h: 60, gap: 14 });
   var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values (src/domain/errors.ts); the engine decides what happens next.", [
     ["A step returns a JigError", "its kind decides: retry, block or fatal.", "fail"],
@@ -296,7 +296,7 @@ svg text{font-family:var(--sans)}
     ["Manual merge", "merging → awaitingMerge; resume checks whether the branch was merged.", "domain"],
     ["Blocked", "Save the reason and phase; fix its cause before resuming. Design revision limits do not reset.", "fail"],
     ["Crash", "Resume from saved state and imported commits in a fresh container.", "infra"],
-    ["done or stuck", "Terminal outcomes: resuming does no further work. Inspect result.json in CI.", "step"]
+    ["done, completed or stuck", "Terminal outcomes (completed: --no-merge, branch left unmerged): resuming does no further work. Inspect result.json in CI.", "step"]
   ], { h: 70, gap: 20 });
 
   var cFPlanning = flowCv("sp", "Planning and design review", "src/steps/planning.ts and src/steps/design-review.ts.", [
@@ -423,7 +423,8 @@ svg text{font-family:var(--sans)}
     ["slicing → gate", "checkpoint → paused; resume continues to slices.", "step"],
     ["slices", "pending → verifying → in_review → approved; capped failures become stuck.", "domain"],
     ["checkingReuse → finalCheck", "Still-valid single-slice evidence → describing; else pass → describing, first failure → repair, second → stuck.", "domain"],
-    ["describing → merging", "Manual mode → awaitingMerge; automatic or detected merge → done.", "domain"]
+    ["describing → merging", "Manual mode → awaitingMerge; automatic or detected merge → done.", "domain"],
+    ["describing → completed", "A run started with --no-merge skips merging and ends completed.", "domain"]
   ], { h: 70, gap: 20 });
   var cCKinds = flowCv("ck", "Failure kinds", "What the engine does with an error.", [
     ["retry", "transient: tried again with backoff, then block.", "step"],

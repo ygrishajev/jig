@@ -31,12 +31,12 @@ import { ensureSandboxImage } from './sandbox-image.js';
 export type RunJigInput = { start: StartRequest; runId?: RunId } | { resume: RunId };
 
 /** The text of a request and, when it came from one, the file it was read from. */
-export type StartRequest = { text: string; file?: string };
+export type StartRequest = { text: string; file?: string; merge?: boolean };
 
 export type RunReport = EngineResult;
 
 /** The run to start or resume: its id, and the request text when one was given. */
-type RunTarget = { runId: RunId; request?: string };
+type RunTarget = { runId: RunId; request?: string; merge?: boolean };
 
 /**
  * Runs `input` to its next stop. The whole run holds the run's lock, so a second
@@ -60,7 +60,7 @@ export async function runJig(
 function targetOf(input: RunJigInput): RunTarget {
   if ('resume' in input) return { runId: input.resume };
   const { start } = input;
-  return { request: start.text, runId: input.runId ?? newRunId(start) };
+  return { request: start.text, merge: start.merge, runId: input.runId ?? newRunId(start) };
 }
 
 function runLocked(
@@ -83,7 +83,7 @@ function runLocked(
 async function startOrResume(
   cradle: AppCradle,
   store: RunStore,
-  { runId, request }: RunTarget,
+  { runId, request, merge }: RunTarget,
 ): Promise<Result<RunState, RunStoreFailure | RunRequestInvalid>> {
   const existing = await store.load(runId);
   if (existing.isErr()) return Result.err(existing.error);
@@ -92,7 +92,7 @@ async function startOrResume(
       ? Result.ok(existing.value)
       : Result.err(new RunRequestInvalid({ message: `No run found with id "${runId}".` }));
   }
-  if (!existing.value) return startNewRun(cradle, store, runId, request);
+  if (!existing.value) return startNewRun(cradle, store, { runId, request, merge });
   if (request !== existing.value.request) {
     return Result.err(
       new RunRequestInvalid({
@@ -106,12 +106,11 @@ async function startOrResume(
 async function startNewRun(
   cradle: AppCradle,
   store: RunStore,
-  runId: RunId,
-  request: string,
+  { runId, request, merge }: { runId: RunId; request: string; merge?: boolean },
 ): Promise<Result<RunState, RunStoreFailure>> {
   const baseBranch = await getCurrentBranch(cradle.repoRoot);
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
-  const started = startRun({ runId, baseBranch: baseBranch.value, request });
+  const started = startRun({ runId, baseBranch: baseBranch.value, request, merge });
   const saved = await store.save(started);
   return saved.isErr() ? Result.err(saved.error) : Result.ok(started);
 }

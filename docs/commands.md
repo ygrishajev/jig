@@ -2,13 +2,13 @@
 
 [Documentation](README.md) · [Project home](../README.md)
 
-| Command                                 | Purpose                                                         |
-| --------------------------------------- | --------------------------------------------------------------- |
-| `jig init [--no-agent]`                 | Create and check the sandbox Dockerfile and config.             |
-| `jig build [--pull-agents]`             | Build the image; optionally refresh unpinned agent CLIs.        |
-| `jig run [request.md \| -] [--id <id>]` | Start a run or resume a saved one.                              |
-| `jig status <id>`                       | Show the phase, branch, documents, slice feedback, and metrics. |
-| `jig presets`                           | List available presets, sources, and descriptions.              |
+| Command                                              | Purpose                                                         |
+| ---------------------------------------------------- | --------------------------------------------------------------- |
+| `jig init [--no-agent]`                              | Create and check the sandbox Dockerfile and config.             |
+| `jig build [--pull-agents]`                          | Build the image; optionally refresh unpinned agent CLIs.        |
+| `jig run [request.md \| -] [--id <id>] [--no-merge]` | Start a run or resume a saved one.                              |
+| `jig status <id>`                                    | Show the phase, branch, documents, slice feedback, and metrics. |
+| `jig presets`                                        | List available presets, sources, and descriptions.              |
 
 Use `jig <command> --help` for flags. `init`, `build`, `run`, and `status` accept
 `--config <path>`. `build` and `run` accept `--preset [name]`. `init`, `build`, and
@@ -48,6 +48,11 @@ to read when standard input is a terminal. Resuming a piped run needs the same p
 text with the same `--id`.
 Ids may contain lowercase letters, digits, and hyphens.
 Use the same `--config` and `--preset` when resuming.
+
+`--no-merge` plans, implements, reviews and describes the run, then stops without
+merging. The run ends `completed` and its branch `jig/run/<id>` is left for you to
+review and merge. The choice is saved with the run, so a resumed run keeps it and the
+flag is ignored on resume. `mergeMode` does not apply to these runs.
 
 One process can run a given id at a time. A second invocation fails immediately;
 a lock left by a crashed process expires after 30 seconds.
@@ -99,12 +104,16 @@ the run is described and ends as stuck without merging.
 [`.jig/<id>/state/result.json`](operations.md#ci-outcome-handling) to distinguish them.
 Command errors, such as invalid configuration, exit nonzero.
 
-| Status    | Meaning                                                          | Next action                                                                          |
-| --------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `done`    | The run branch is merged.                                        | Inspect the result. Resuming returns the saved result.                               |
-| `halted`  | Paused at the checkpoint or waiting for a merge.                 | Read the docs or merge the branch, then resume.                                      |
-| `blocked` | A step could not continue, including unresolved design findings. | Inspect the reason and fix its cause before resuming.                                |
-| `stuck`   | A slice hit a cap or the final check still failed after repair.  | Finish by hand on `jig/run/<id>`, or start a new run. Resuming does no further work. |
+| Status      | Meaning                                                          | Next action                                                                          |
+| ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `done`      | The run branch is merged.                                        | Inspect the result. Resuming returns the saved result.                               |
+| `completed` | The run finished without merging (`--no-merge`).                 | Review and merge `jig/run/<id>` yourself. Resuming returns the saved result.         |
+| `halted`    | Paused at the checkpoint or waiting for a merge.                 | Read the docs or merge the branch, then resume.                                      |
+| `blocked`   | A step could not continue, including unresolved design findings. | Inspect the reason and fix its cause before resuming.                                |
+| `stuck`     | A slice hit a cap or the final check still failed after repair.  | Finish by hand on `jig/run/<id>`, or start a new run. Resuming does no further work. |
+
+`halted` covers both the checkpoint pause and the manual-merge wait; the phase in
+`result.json` and `jig status` (`paused` or `awaitingMerge`) tells them apart.
 
 A design blocked after re-review has spent its automatic revision allowance. Resuming
 alone does not grant another revision; use its findings to clarify a new request.

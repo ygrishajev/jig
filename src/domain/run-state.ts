@@ -18,8 +18,13 @@ export interface RunIdentity {
 /** A run in phase `P`, with everything that phase guarantees. */
 export type RunStateIn<P extends RunPhase> = RunState & { phase: P };
 
-export function startRun(input: { runId: RunId; baseBranch: string; request: string }): RunState {
-  return { ...input, revision: 0, phase: 'context', slices: [] };
+export function startRun(input: {
+  runId: RunId;
+  baseBranch: string;
+  request: string;
+  merge?: boolean;
+}): RunState {
+  return { ...input, merge: input.merge ?? true, revision: 0, phase: 'context', slices: [] };
 }
 
 /** Moves a run into `phase`, checking it carries everything `phase` guarantees. */
@@ -65,6 +70,8 @@ const runFields = z.object({
   revision: z.number().int().nonnegative().default(0),
   baseBranch: z.string().min(1),
   request: z.string(),
+  /** Whether the run merges its branch when it finishes; a run saved before the choice existed merges. */
+  merge: z.boolean().default(true),
   context: runContextSchema.optional(),
   plan: featurePlanSchema.optional(),
   docs: designDocsSchema.optional(),
@@ -102,6 +109,7 @@ export const runPhaseSchema = z.enum([
   'describing',
   'merging',
   'awaitingMerge',
+  'completed',
   'done',
   'stuck',
 ]);
@@ -152,7 +160,7 @@ export const runStateSchema = z.discriminatedUnion('phase', [
     ]),
   }),
   withDescription.extend({
-    phase: runPhaseSchema.extract(['merging', 'awaitingMerge', 'done', 'stuck']),
+    phase: runPhaseSchema.extract(['merging', 'awaitingMerge', 'completed', 'done', 'stuck']),
   }),
 ]);
 
@@ -166,6 +174,11 @@ export function runBranchFor(runId: RunId): string {
 /** The first slice, by order, that has not been approved — a stuck slice stays current. */
 export function currentSlice(state: RunState): Slice | undefined {
   return slicesInOrder(state.slices).find((slice) => slice.status !== 'approved');
+}
+
+/** Whether the run merges its branch once it is described. */
+export function runMerges(state: RunState): boolean {
+  return state.merge;
 }
 
 export function runStopReason(state: RunState): string | undefined {

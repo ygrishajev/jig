@@ -100,6 +100,45 @@ describe('runJig', () => {
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'halted', complete: false });
   });
 
+  it('starts a run that skips the merge, saves the choice and ends it completed', async () => {
+    const { app, aRequest, agentFor, repo } = await setup();
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+
+    const report = (
+      await runJig(app, { start: { text: aRequest(), merge: false }, runId: id })
+    ).unwrap();
+
+    expect(report).toMatchObject({ status: 'completed', state: { phase: 'completed' } });
+    expect((await new LocalRunStore(repo.dir).load(id)).unwrap()?.merge).toBe(false);
+    expect(await readResult(repo.dir, id)).toMatchObject({ status: 'completed', complete: true });
+  });
+
+  it('keeps the saved choice not to merge when the run is started again asking to merge', async () => {
+    const { app, aRequest, agentFor } = await setup();
+    const id = runId();
+    scriptWholeRun(agentFor(id));
+    const request = aRequest();
+    (await runJig(app, { start: { text: request, merge: false }, runId: id })).unwrap();
+
+    const second = (
+      await runJig(app, { start: { text: request, merge: true }, runId: id })
+    ).unwrap();
+
+    expect(second).toMatchObject({ status: 'completed', state: { merge: false } });
+  });
+
+  it('reports a saved completed run without opening a sandbox', async () => {
+    const { app, repo, sessionsOpened } = await setup();
+    const state = aRunState({ phase: 'completed', merge: false });
+    await new LocalRunStore(repo.dir).save(state);
+
+    const report = (await runJig(app, { resume: state.runId })).unwrap();
+
+    expect(report.status).toBe('completed');
+    expect(sessionsOpened()).toBe(0);
+  });
+
   it("leaves a tracked file alone when a saved run's document links to it", async () => {
     const { app, repo } = await setup();
     const id = runId();

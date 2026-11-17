@@ -154,6 +154,34 @@ describe('RunArtefacts', () => {
     });
   });
 
+  it('summarises a run that finished without merging as complete', async () => {
+    const { artefacts, read } = await setup();
+    const state = aRunState({ phase: 'completed', merge: false });
+    const metrics = aMetricsSummary();
+
+    await artefacts.write(state, 'completed', metrics);
+
+    expect(JSON.parse(await read(state.runId, 'result.json'))).toEqual({
+      runId: state.runId,
+      status: 'completed',
+      phase: 'completed',
+      complete: true,
+      metrics,
+    });
+  });
+
+  it('summarises a halted run as not complete', async () => {
+    const { artefacts, read } = await setup();
+    const state = aRunState({ phase: 'paused' });
+
+    await artefacts.write(state, 'halted', aMetricsSummary());
+
+    expect(JSON.parse(await read(state.runId, 'result.json'))).toMatchObject({
+      status: 'halted',
+      complete: false,
+    });
+  });
+
   it('keeps its own directory out of the operator repository', async () => {
     const { artefacts, repoRoot } = await setup();
 
