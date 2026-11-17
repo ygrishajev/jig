@@ -29,6 +29,7 @@ describe('nextStep', () => {
     const step = nextStep({ state, status: 'completed' });
 
     expect(step).toContain(runBranchFor(state.runId));
+    expect(step).not.toBe(nextStep({ state, status: 'done' }));
   });
 
   it('asks for the design to be read before resuming a run paused after planning', () => {
