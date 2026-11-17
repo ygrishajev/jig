@@ -4,5 +4,6 @@
   "testRunner": "vitest",
   "mutate": ["src/**/*.ts", "!src/**/*.spec.ts", "!src/cli/main.ts"],
   "reporters": ["html", "clear-text", "progress"],
-  "coverageAnalysis": "perTest"
+  "coverageAnalysis": "perTest",
+  "dryRunTimeoutMinutes": 20
 }
