@@ -12,7 +12,8 @@ import {
 } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
-import { RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
+import { unwrap } from '../../../tests/support/unwrap.js';
+import { GitCommandFailed, RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { GitRemoteRunStore } from './git-remote-run-store.js';
@@ -152,6 +153,32 @@ describe('GitRemoteRunStore', () => {
     const loaded = await new GitRemoteRunStore(here).load(state.runId);
 
     expect(loaded.isErr() && loaded.error).toBeInstanceOf(RunStateConflict);
+  });
+
+  it('reports an ancestry failure after fetching the remote state and branch', async () => {
+    const { cloneOf } = await setup();
+    const here = await cloneOf();
+    const state = aRunState({ phase: 'slices' });
+    const remoteHead = await commitOnRunBranch(here, state.runId);
+    unwrap(await new GitRemoteRunStore(here).save(state));
+    const localHead = await commitOnRunBranch(here, state.runId);
+    const git = simpleGit({ baseDir: here });
+    const blob = (await git.raw(['hash-object', '-w', 'README.md'])).trim();
+    await git.raw(['replace', '--force', localHead, blob]);
+
+    const loaded = await new GitRemoteRunStore(here).load(state.runId);
+
+    expect(loaded.isErr()).toBe(true);
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(GitCommandFailed);
+    expect(loaded.isErr() && loaded.error).toMatchObject({
+      command: `git merge-base --is-ancestor ${remoteHead} ${localHead}`,
+      output: expect.stringContaining('error'),
+    });
+    expect(await git.revparse([`refs/remotes/origin/${runBranchFor(state.runId)}`])).toBe(
+      remoteHead,
+    );
+    expect(JSON.parse(await git.show([`refs/jig/${state.runId}:run.json`]))).toEqual(state);
+    expect(await git.revparse([runBranchFor(state.runId)])).toBe(localHead);
   });
 
   it('retries an unreachable remote, then reports it unavailable', async () => {

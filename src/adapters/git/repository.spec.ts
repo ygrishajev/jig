@@ -5,10 +5,42 @@ import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { ConfigInvalid } from '../../domain/errors.js';
-import { ensureRepositoryRoot, isWorkingTreeClean } from './repository.js';
+import { ConfigInvalid, GitCommandFailed } from '../../domain/errors.js';
+import { ensureRepositoryRoot, isAncestor, isWorkingTreeClean, openRepo } from './repository.js';
 
 describe('git repository helpers', () => {
+  it('distinguishes ancestors from non-ancestors', async () => {
+    const { repo } = await setup();
+    const git = openRepo(repo);
+    const parent = await git.revparse(['HEAD']);
+    await git.commit(faker.git.commitMessage(), ['--allow-empty']);
+    const child = await git.revparse(['HEAD']);
+
+    expect((await isAncestor(repo, parent, child)).unwrap()).toBe(true);
+    expect((await isAncestor(repo, child, parent)).unwrap()).toBe(false);
+  });
+
+  it('reports unknown commits as command failures', async () => {
+    const { repo } = await setup();
+    const unknown = faker.git.commitSha();
+    const result = await isAncestor(repo, unknown, 'HEAD');
+
+    expect(result.isErr()).toBe(true);
+    expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
+    expect(result.isErr() && result.error.command).toBe(
+      `git merge-base --is-ancestor ${unknown} HEAD`,
+    );
+    expect(result.isErr() && result.error.output).toContain(unknown);
+  });
+
+  it('reports an execution that cannot start as a command failure', async () => {
+    const { repo } = await setup();
+    const result = await isAncestor(path.join(repo, faker.string.uuid()), 'HEAD', 'HEAD');
+
+    expect(result.isErr()).toBe(true);
+    expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
+  });
+
   it('sees a tree as clean right after a commit', async () => {
     const { repo } = await setup();
 

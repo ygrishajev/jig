@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { execa } from 'execa';
 import { realpath } from 'node:fs/promises';
 import { type SimpleGit, simpleGit } from 'simple-git';
 
@@ -56,4 +57,26 @@ export async function ensureRepositoryRoot(cwd: string): Promise<Result<void, Co
       message: `Run jig from the repository's root, ${root} — not from ${cwd}.`,
     }),
   );
+}
+
+export function isAncestor(
+  cwd: string,
+  ancestor: string,
+  descendant: string,
+): Promise<Result<boolean, GitCommandFailed>> {
+  const args = ['merge-base', '--is-ancestor', ancestor, descendant];
+  const command = `git ${args.join(' ')}`;
+  const failure = (output: string): GitCommandFailed =>
+    new GitCommandFailed({ message: `${command} failed: ${output}`, command, output });
+  return Result.gen(async function* () {
+    const checked = yield* Result.await(
+      Result.tryPromise({
+        try: () => execa('git', args, { cwd, reject: false }),
+        catch: (cause) => failure(messageOf(cause)),
+      }),
+    );
+    if (checked.exitCode === 0) return Result.ok(true);
+    if (checked.exitCode === 1) return Result.ok(false);
+    return Result.err(failure(checked.stderr));
+  });
 }

@@ -12,6 +12,7 @@ import { retryResult } from '../../domain/retry.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, runStateSchema } from '../../domain/run-state.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
+import { isAncestor } from '../git/repository.js';
 
 /** What the remote held for a run when this store last looked or pushed; a save leases against it. */
 interface RemoteRun {
@@ -141,25 +142,29 @@ export class GitRemoteRunStore implements RunStore {
    * Moves the local run branch to the remote's when it is behind, keeps it when it is ahead with
    * commits not pushed yet, and refuses when the two have diverged.
    */
-  private async catchUpRunBranch(
+  private catchUpRunBranch(
     runId: RunId,
     remoteHead: string,
   ): Promise<Result<void, RunStateConflict | GitCommandFailed>> {
-    const local = await this.revision(branchRef(runId));
-    if (!local) {
-      return (await this.required(['update-ref', branchRef(runId), remoteHead, ''])).map(
-        () => undefined,
-      );
-    }
-    if (await this.isAncestor(remoteHead, local)) return Result.ok();
-    if (!(await this.isAncestor(local, remoteHead))) {
-      return Result.err(
-        new RunStateConflict({
-          message: `The run branch "${runBranchFor(runId)}" here and on ${this.remote} have diverged.`,
-        }),
-      );
-    }
-    return this.fastForward(runId, local, remoteHead);
+    return Result.gen(async function* (this: GitRemoteRunStore) {
+      const local = await this.revision(branchRef(runId));
+      if (!local) {
+        return (await this.required(['update-ref', branchRef(runId), remoteHead, ''])).map(
+          () => undefined,
+        );
+      }
+      const remoteIsAncestor = yield* Result.await(isAncestor(this.repoRoot, remoteHead, local));
+      if (remoteIsAncestor) return Result.ok();
+      const localIsAncestor = yield* Result.await(isAncestor(this.repoRoot, local, remoteHead));
+      if (!localIsAncestor) {
+        return Result.err(
+          new RunStateConflict({
+            message: `The run branch "${runBranchFor(runId)}" here and on ${this.remote} have diverged.`,
+          }),
+        );
+      }
+      return this.fastForward(runId, local, remoteHead);
+    }, this);
   }
 
   private async required(
@@ -175,11 +180,6 @@ export class GitRemoteRunStore implements RunStore {
         output: result.stderr,
       }),
     );
-  }
-
-  private async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
-    const checked = await this.git(['merge-base', '--is-ancestor', ancestor, descendant]);
-    return checked.exitCode === 0;
   }
 
   /** Git refuses to move a branch a worktree has checked out, so that worktree is moved instead. */

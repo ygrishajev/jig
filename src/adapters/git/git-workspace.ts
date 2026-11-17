@@ -1,5 +1,4 @@
 import { Result } from 'better-result';
-import { execa } from 'execa';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -22,7 +21,13 @@ import type { GitFacts, WorkFacts } from '../../domain/work-facts.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import type { SaveWorkFailure, Workspace } from '../../ports/workspace.js';
 import { isBranchMergedInto, mergeBranchInto } from './merge.js';
-import { gitCommand, isWorkingTreeClean, openRepo, openRepoWithoutHooks } from './repository.js';
+import {
+  gitCommand,
+  isAncestor,
+  isWorkingTreeClean,
+  openRepo,
+  openRepoWithoutHooks,
+} from './repository.js';
 
 export interface GitWorkspaceOptions {
   repoRoot: string;
@@ -108,7 +113,7 @@ export class GitWorkspace implements Workspace {
           }),
         );
       }
-      if (!(await this.descendsFrom(fetched, approved))) {
+      if (!(yield* Result.await(isAncestor(this.options.repoRoot, approved, fetched)))) {
         return Result.err(
           new CommitImportRefused({
             message: `The sandbox rewrote approved commit ${approved}, so its work was not taken.`,
@@ -159,14 +164,6 @@ export class GitWorkspace implements Workspace {
         await removeImportDirectory(directory);
       }
     }, this);
-  }
-
-  private async descendsFrom(commit: string, ancestor: string): Promise<boolean> {
-    const { exitCode } = await execa('git', ['merge-base', '--is-ancestor', ancestor, commit], {
-      cwd: this.options.repoRoot,
-      reject: false,
-    });
-    return exitCode === 0;
   }
 
   headCommit(): Promise<Result<string, GitCommandFailed>> {

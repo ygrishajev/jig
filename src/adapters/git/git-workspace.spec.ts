@@ -18,7 +18,7 @@ import {
 } from '../../domain/errors.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { type CommitSigning, GitWorkspace } from './git-workspace.js';
-import { isWorkingTreeClean } from './repository.js';
+import { isWorkingTreeClean, openRepo } from './repository.js';
 
 describe('GitWorkspace', () => {
   it('reports where the run branch and the sandbox clone stand once work is saved, both clean', async () => {
@@ -227,6 +227,26 @@ describe('GitWorkspace', () => {
       expect(await git.revparse([runBranch])).toBe(forkPoint);
     },
   );
+
+  it('reports an ancestry failure after fetching the sandbox commits without moving the branch', async () => {
+    const { workspace, git, worktreePath, inSandbox, writeInSandbox, saveAfter, forkPoint } =
+      await setup();
+    await writeInSandbox('feature.txt', faker.lorem.sentence());
+    await inSandbox.add('-A').commit(faker.git.commitMessage());
+    const head = await inSandbox.revparse(['HEAD']);
+    const blob = (await git.raw(['hash-object', '-w', 'README.md'])).trim();
+
+    const saved = await saveAfter(blob);
+
+    expect(saved.isErr()).toBe(true);
+    expect(saved.isErr() && saved.error).toBeInstanceOf(GitCommandFailed);
+    expect(saved.isErr() && saved.error).toMatchObject({
+      command: `git merge-base --is-ancestor ${blob} ${head}`,
+      output: expect.stringContaining('error'),
+    });
+    expect(await openRepo(worktreePath).revparse(['FETCH_HEAD'])).toBe(head);
+    expect((await workspace.headCommit()).unwrap()).toBe(forkPoint);
+  });
 
   it('runs none of the host repository hooks while importing', async () => {
     const { repo, inSandbox, writeInSandbox, save } = await setup();
