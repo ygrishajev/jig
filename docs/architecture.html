@@ -491,8 +491,18 @@ svg text{font-family:var(--sans)}
     cont("c-kinds", "Failure kinds", "concept", 960, 250, 380, ["retry, block, fatal."], cCKinds)
   ], []);
 
+  var githubIntegration = flowCv("gh", "Integrations layer · GitHub", "src/integrations/github owns forge policy; the core CLI and run engine do not import it.", [
+    ["Composing entry: cli.ts", "buildJigCli() adds GitHub commands to buildCli(); owns executable startup.", "iface"],
+    ["Prepare command input", "command.ts parses --issue, reads token privately and resolves repository identity.", "iface"],
+    ["Check the base branch", "implement-issue.ts refuses a checkout other than GitHub's default branch.", "domain"],
+    ["Accept the request", "orchestration-state.ts freezes the issue snapshot and deterministic run id.", "domain"],
+    ["Run the core pipeline", "runJig: merge disabled, git-remote required, agents remain inside the sandbox.", "module"],
+    ["Publish or reuse", "publicationFor chooses ready or draft; GithubPort hides the Octokit API adapter.", "ext"],
+    ["Record receipts", "OrchestrationStore uses RemoteRef leases at refs/jig/_orchestration; skips recorded PRs and comments.", "infra"]
+  ], { h: 60, gap: 12 });
+
   /* ---------- level 1: the layered map ---------- */
-  var root = cv("Level 1 · Layers", "jig", "Run commands, core modules, and infrastructure. jig presets lists agent overrides used by run and build. Click a box to open it.", [
+  var root = cv("Level 1 · Layers", "jig", "src/integrations/github/cli.ts composes the core CLI and the GitHub integration. The integrations layer owns issue snapshots, PR publication and receipts; core modules remain GitHub-neutral. Click a box to open it.", [
     leaf("band-i", "COMMANDS", "band", 24, 152, 1126, 210, [], { tone: "i" }),
     leaf("band-d", "CORE MODULES", "band", 24, 384, 1126, 210, [], { tone: "d" }),
     leaf("band-x", "INFRA & EXTERNAL", "band", 24, 616, 1126, 177, [], { tone: "x" }),
@@ -511,8 +521,10 @@ svg text{font-family:var(--sans)}
     leaf("x-docker", "Docker", "ext", 593, 650, 170, 109, ["images, buildx cache, npm"]),
     leaf("x-llm", "Agent APIs", "ext", 775, 650, 170, 109, ["Anthropic, OpenRouter, OpenAI — called from the sandbox"]),
     leaf("x-otel", "OTel collector", "ext", 957, 650, 170, 109, ["optional, OTLP/HTTP"]),
+    cont("i-github", "Integrations · GitHub", "iface", 1170, 186, 236, ["jig github implement --issue", "cli.ts composes buildCli()", "Snapshots and publication receipts"], githubIntegration),
     cont("c-run", "How a run moves", "concept", 1170, 418, 190, ["A concept, not a module."], conceptCanvas)
   ], [
+    { from: "i-github", to: "d-engine", route: [[1288, 338], [1288, 374], [178, 374], [178, 418]], label: "runJig, merge disabled", at: [1120, 368, "middle"] },
     { from: "i-run", to: "d-engine", route: [[178, 338], [178, 418]], label: "run / resume", at: [186, 384, "start"] },
     { from: "i-build", to: "d-image", route: [[458, 338], [458, 372], [680, 372], [680, 418]], label: "build", at: [569, 366, "middle"] },
     { from: "i-init", to: "d-image", route: [[790, 338], [790, 418]], label: "set up", at: [798, 384, "start"] },

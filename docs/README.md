@@ -41,3 +41,6 @@ to them from the README rather than duplicating them.
 - [Configuration schema](../src/config/load-config.ts)
 - [Command definitions](../src/cli/commands/)
 - [Pipeline transitions](../src/flow/run-flow.ts)
+
+To turn an issue into a pull request, see [GitHub implementation](commands.md#implement-a-github-issue)
+and [retrying jobs](operations.md#github-issue-implementation).

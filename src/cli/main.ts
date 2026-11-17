@@ -1,16 +1,11 @@
-#!/usr/bin/env node
 import { Command } from 'commander';
-import { readFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
 import { registerPresetsCommand } from './commands/presets.js';
 import { registerRunCommand } from './commands/run.js';
 import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';
-import { exitWhenDone } from './exit-when-done.js';
-
-const packageManifestSchema = z.object({ version: z.string() });
 
 export function buildCli(): Command {
   const program = new Command();
@@ -22,19 +17,9 @@ export function buildCli(): Command {
   return program;
 }
 
-function packageVersion(): string {
+export function packageVersion(): string {
   const manifest = new URL('../../package.json', import.meta.url);
   return packageManifestSchema.parse(JSON.parse(readFileSync(manifest, 'utf-8'))).version;
 }
 
-/**
- * A globally installed CLI is invoked through a symlink, so the invoked path is resolved
- * before comparing it with this module's own path.
- */
-const isMainModule =
-  process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
-
-if (isMainModule) {
-  await buildCli().parseAsync(process.argv);
-  await exitWhenDone();
-}
+const packageManifestSchema = z.object({ version: z.string() });

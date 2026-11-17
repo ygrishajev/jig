@@ -82,3 +82,13 @@ See [images and setup](sandbox.md#images-and-setup) for the container lifecycle.
 `runStores` defaults to `["local"]` and must contain at least one entry. Add
 `"git-remote"` to push state and the run branch to `origin`, or supply a path to a
 custom store module. See [saved state and remote resume](operations.md#saved-state-and-remote-resume).
+
+## GitHub integration environment
+
+`jig github implement --issue <number>` reads `GITHUB_TOKEN`, falling back to
+`GH_TOKEN`. It reads `GITHUB_REPOSITORY` as `owner/repo`, or infers that identity from
+the GitHub `origin` URL. These values are read only by the GitHub command; `jig run`
+needs no GitHub environment variables. Tokens are passed directly to the API client,
+never saved in run state or included in errors. Configure Git authentication separately
+for pushes to `origin`. The command adds `git-remote` to `runStores` for its invocation,
+without changing the config file, and always saves the run with merging disabled.

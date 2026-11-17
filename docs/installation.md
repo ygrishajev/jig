@@ -53,3 +53,10 @@ jig --help
 Contributor setup, including Git hooks, is in [Contributing](../CONTRIBUTING.md).
 
 Continue with the [quickstart](../README.md#quickstart).
+
+## GitHub command setup
+
+The installed `jig` includes `jig github implement --issue <number>`. It requires no
+`gh` executable. Provide `GITHUB_TOKEN` or `GH_TOKEN` with issue and pull request
+access, and Git credentials able to push branches and hidden run refs to `origin`.
+Start from the repository's default branch after committing your jig configuration.

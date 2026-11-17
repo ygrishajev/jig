@@ -3,17 +3,17 @@ import { Command } from 'commander';
 import type { z } from 'zod';
 
 import { describeIssues } from '../config/describe-issues.js';
-import { CommandInputInvalid, type JigError } from '../domain/errors.js';
+import { CommandInputInvalid } from '../domain/errors.js';
 
 /**
  * A commander action that receives the command's arguments and options as one object, parsed
  * by `schema`: named arguments by their declared names, options by their camel-cased ones.
  */
-export function withInput<Schema extends z.ZodTypeAny>(
+export function withInput<Schema extends z.ZodTypeAny, E extends { message: string }>(
   schema: Schema,
-  run: (input: z.output<Schema>) => Promise<Result<void, JigError>>,
+  run: (input: z.output<Schema>) => Promise<Result<void, E>>,
 ) {
-  return async (...actionArguments: unknown[]): Promise<Result<void, JigError>> => {
+  return async (...actionArguments: unknown[]): Promise<Result<void, E | CommandInputInvalid>> => {
     const command = actionArguments.at(-1);
     if (!(command instanceof Command)) panic('withInput must wrap a commander action');
     const parsed = schema.safeParse(inputOf(command));

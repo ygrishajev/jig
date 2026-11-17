@@ -80,3 +80,41 @@ export function isAncestor(
     return Result.err(failure(checked.stderr));
   });
 }
+
+export function hasChangesAgainst(
+  repoRoot: string,
+  base: string,
+  branch: string,
+): Promise<Result<boolean, GitCommandFailed>> {
+  return Result.gen(async function* () {
+    const exists = yield* Result.await(
+      gitCommand('show-ref', () =>
+        execa('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], {
+          cwd: repoRoot,
+          reject: false,
+        }),
+      ),
+    );
+    if (exists.exitCode === 1) return Result.ok(false);
+    if (exists.exitCode !== 0)
+      return Result.err(
+        new GitCommandFailed({
+          message: exists.stderr,
+          command: 'git show-ref',
+          output: exists.stderr,
+        }),
+      );
+    const diff = yield* Result.await(
+      gitCommand('diff', () =>
+        execa('git', ['diff', '--quiet', `${base}...${branch}`, '--'], {
+          cwd: repoRoot,
+          reject: false,
+        }),
+      ),
+    );
+    if (diff.exitCode === 0 || diff.exitCode === 1) return Result.ok(diff.exitCode === 1);
+    return Result.err(
+      new GitCommandFailed({ message: diff.stderr, command: 'git diff', output: diff.stderr }),
+    );
+  });
+}

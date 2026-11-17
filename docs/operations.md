@@ -82,3 +82,17 @@ run as an OpenTelemetry trace and enable Claude Code's telemetry in the sandbox.
 Every `OTEL_*` variable is forwarded to the container, including
 `OTEL_EXPORTER_OTLP_HEADERS`. The endpoint must be reachable from inside the container;
 `localhost` there refers to the container itself.
+
+## GitHub issue implementation
+
+Use `jig github implement --issue <number>` on the default branch. Re-run the same
+command after an interrupted job. The accepted request and publication receipts live
+at `refs/jig/_orchestration` in `orchestration.json`; run state remains at
+`refs/jig/<runId>`. Preserve both when moving a repository or cleaning remote refs.
+Updates use leases and retry competing writes rather than overwriting another job.
+A per-run lock protects local execution; schedule one job per issue to avoid concurrent
+GitHub publication. A crash after sending a comment but before saving its receipt can
+cause that comment to be repeated. A PR created before a crash is recovered by its head.
+
+Review and merge completed PRs yourself. Draft PRs record unfinished runs. A run with
+no branch changes or paused at the design checkpoint produces no PR.

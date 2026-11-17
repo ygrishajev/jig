@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { runId } from '../../tests/support/builders.js';
-import { newRunId, runIdSchema } from './run-id.js';
+import { newRunId, runIdFor, runIdSchema } from './run-id.js';
 
 describe('runIdSchema', () => {
   it('accepts an id made of lowercase letters, digits and hyphens', () => {
@@ -98,3 +98,14 @@ describe('newRunId', () => {
 function lowerWord() {
   return faker.string.alpha({ length: 6, casing: 'lower' });
 }
+
+describe('runIdFor', () => {
+  it('binds a readable name to a stable key digest', () => {
+    expect(runIdFor({ name: 'Café crème!', key: 'abc' })).toBe('cafe-creme-ba7816bf');
+    expect(runIdFor({ name: '!!!', key: 'abc' })).toBe('request-ba7816bf');
+    const key = faker.string.uuid();
+    const name = faker.lorem.sentence();
+    expect(runIdFor({ name, key })).toBe(runIdFor({ name, key }));
+    expect(runIdFor({ name, key: faker.string.uuid() })).not.toBe(runIdFor({ name, key }));
+  });
+});

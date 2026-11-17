@@ -4,13 +4,27 @@ import { describe, expect, it } from 'vitest';
 
 import { aRunState } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
+import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { configFileFor, loadConfig } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { openRunStore } from './run-stores.js';
 
 describe('openRunStore', () => {
+  it('adds required stores once while keeping configured stores', async () => {
+    const { repoRoot, config, state } = await setup();
+    const store = unwrap(
+      await openRunStore({ repoRoot, config }, ['git-remote', 'local', 'git-remote']),
+    );
+    unwrap(await store.save(state));
+    const local = unwrap(await new LocalRunStore(repoRoot).load(state.runId));
+    const remote = unwrap(await new GitRemoteRunStore(repoRoot).load(state.runId));
+    expect(local).toEqual(remote);
+    expect(local?.revision).toBe(state.revision + 1);
+  });
+
   it('saves to the local store by default', async () => {
     const repoRoot = await tempDirectory('jig-stores-');
     const store = (
@@ -187,4 +201,10 @@ describe('openRunStore', () => {
 
     expect(opened.isErr() && opened.error).toBeInstanceOf(ConfigInvalid);
   });
+
+  async function setup() {
+    const { cloneOf } = await createRemote();
+    const repoRoot = await cloneOf();
+    return { repoRoot, config: unwrap(loadConfig(configFileFor(repoRoot))), state: aRunState() };
+  }
 });

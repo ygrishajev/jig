@@ -8,6 +8,7 @@
 | `jig build [--pull-agents]`                          | Build the image; optionally refresh unpinned agent CLIs.        |
 | `jig run [request.md \| -] [--id <id>] [--no-merge]` | Start a run or resume a saved one.                              |
 | `jig status <id>`                                    | Show the phase, branch, documents, slice feedback, and metrics. |
+| `jig github implement --issue <number>`              | Implement an issue and publish a pull request.                  |
 | `jig presets`                                        | List available presets, sources, and descriptions.              |
 
 Use `jig <command> --help` for flags. `init`, `build`, `run`, and `status` accept
@@ -120,3 +121,23 @@ alone does not grant another revision; use its findings to clarify a new request
 A resumed run detects plain, squash, and rebase merges, including merges on the base
 branch's remote before you pull them locally. Automatic merging requires a clean
 operator working tree; resolve conflicts or unrelated local changes before resuming.
+
+## Implement a GitHub issue
+
+```bash
+jig github implement --issue 42
+```
+
+Run from the default branch of a repository with an `origin` you can push to.
+Set `GITHUB_TOKEN` (or `GH_TOKEN`) with permission to read issues, open pull requests
+and comment on issues. `GITHUB_REPOSITORY=owner/repo` overrides the identity inferred
+from an HTTPS or SSH GitHub origin. Git push authentication is configured separately.
+The command accepts `--config`, `--preset` and `--log-format` like `jig run`.
+
+The first invocation saves the issue title and body as an immutable request. Repeating
+the command resumes that run, even if the issue was edited. State is always saved to
+`git-remote` as well as configured stores, so another clone can resume it.
+The operator branch is never merged. A completed run opens a PR that closes the issue;
+a blocked or stuck run with changes opens a draft for manual follow-up. A planning
+checkpoint or a branch without changes opens no PR. Existing open PRs are reused,
+and recorded PRs and comments are skipped on later invocations.

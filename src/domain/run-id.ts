@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -48,3 +48,9 @@ export const runIdSchema = z
   .brand<'RunId'>();
 
 export type RunId = z.infer<typeof runIdSchema>;
+
+export function runIdFor({ name, key }: { name: string; key: string }): RunId {
+  return runIdSchema.parse(
+    `${slugOf(name) || 'request'}-${createHash('sha256').update(key).digest('hex').slice(0, 8)}`,
+  );
+}

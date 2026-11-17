@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { Panic, Result } from 'better-result';
 import { describe, expect, it } from 'vitest';
 
-import { ConfigInvalid, type JigError } from '../domain/errors.js';
+import { ConfigInvalid } from '../domain/errors.js';
 import { type FailureOutput, withErrorHandling } from './with-error-handling.js';
 
 describe('withErrorHandling', () => {
@@ -12,6 +12,13 @@ describe('withErrorHandling', () => {
 
     await expect(handle()).resolves.toBeUndefined();
 
+    expect(output).toEqual({ printed: [failure.message], exitCode: 1 });
+  });
+
+  it('prints an integration failure without requiring a core error class', async () => {
+    const failure = { message: faker.lorem.sentence() };
+    const { handle, output } = setup({ command: async () => Result.err(failure) });
+    await handle();
     expect(output).toEqual({ printed: [failure.message], exitCode: 1 });
   });
 
@@ -71,7 +78,9 @@ describe('withErrorHandling', () => {
     expect(output).toEqual({ printed: [], exitCode: undefined });
   });
 
-  function setup(input: { command: (...args: unknown[]) => Promise<Result<void, JigError>> }) {
+  function setup(input: {
+    command: (...args: unknown[]) => Promise<Result<void, { message: string }>>;
+  }) {
     const output: { printed: string[]; exitCode?: number } = {
       printed: [],
       exitCode: undefined,

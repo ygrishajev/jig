@@ -132,6 +132,20 @@ lands agent code without a human checkpoint. Agent commits are unsigned by defau
 `"commitSigning": "repo"` re-signs the run branch during an automatic merge and requires
 a signing setup that works without prompts. See [sandbox boundaries](docs/sandbox.md#merging-and-signing) for details.
 
+### Implement a GitHub issue
+
+From your repository's default branch, with `GITHUB_TOKEN` (or `GH_TOKEN`) and Git
+push access configured:
+
+```bash
+jig github implement --issue 42
+```
+
+jig snapshots the request, implements it in the sandbox and opens a pull request.
+Repeating the command resumes the same run and reuses its PR. Completed work opens
+a ready PR; unfinished work with changes opens a draft. You review and merge it.
+See [setup and retry behavior](docs/commands.md#implement-a-github-issue).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

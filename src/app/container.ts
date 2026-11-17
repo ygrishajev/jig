@@ -49,17 +49,7 @@ import { observedEvents } from './observed-events.js';
 import { reportCleanup } from './report-cleanup.js';
 import { sandboxImageName } from './sandbox-image.js';
 
-/** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
-export interface RunCradle extends AppCradle {
-  run: RunIdentity;
-  runStore: RunStore;
-  runLogger: Logger;
-  metricsLog: MetricsLog;
-  events: RunEvents;
-  session: RunSession;
-  workspace: Workspace;
-  engineDependencies: EngineDependencies;
-}
+export type App = AwilixContainer<AppCradle>;
 
 /** Lives for the whole process: configuration and everything shared by every run. */
 export interface AppCradle {
@@ -86,6 +76,18 @@ export interface AppCradle {
 export interface RunSession extends AgentSession, SandboxGit {
   readonly worktreePath: string;
   close(): Promise<Result<void, SessionCloseFailure>>;
+}
+
+/** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
+export interface RunCradle extends AppCradle {
+  run: RunIdentity;
+  runStore: RunStore;
+  runLogger: Logger;
+  metricsLog: MetricsLog;
+  events: RunEvents;
+  session: RunSession;
+  workspace: Workspace;
+  engineDependencies: EngineDependencies;
 }
 
 export function createAppContainer(input: {

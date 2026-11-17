@@ -28,7 +28,8 @@ import { ensureSandboxImage } from './sandbox-image.js';
  * Starting with the id of an existing run resumes it only when the text is the request it was
  * started with, so a retried CI job resumes safely and a new request is never attached to an old run.
  */
-export type RunJigInput = { start: StartRequest; runId?: RunId } | { resume: RunId };
+export type RunJigInput =
+  { start: StartRequest; runId?: RunId; requiredStores?: string[] } | { resume: RunId };
 
 /** The text of a request and, when it came from one, the file it was read from. */
 export type StartRequest = { text: string; file?: string; merge?: boolean };
@@ -36,7 +37,7 @@ export type StartRequest = { text: string; file?: string; merge?: boolean };
 export type RunReport = EngineResult;
 
 /** The run to start or resume: its id, and the request text when one was given. */
-type RunTarget = { runId: RunId; request?: string; merge?: boolean };
+type RunTarget = { runId: RunId; request?: string; merge?: boolean; requiredStores?: string[] };
 
 /**
  * Runs `input` to its next stop. The whole run holds the run's lock, so a second
@@ -60,7 +61,12 @@ export async function runJig(
 function targetOf(input: RunJigInput): RunTarget {
   if ('resume' in input) return { runId: input.resume };
   const { start } = input;
-  return { request: start.text, merge: start.merge, runId: input.runId ?? newRunId(start) };
+  return {
+    requiredStores: input.requiredStores,
+    request: start.text,
+    merge: start.merge,
+    runId: input.runId ?? newRunId(start),
+  };
 }
 
 function runLocked(
@@ -68,7 +74,7 @@ function runLocked(
   target: RunTarget,
 ): Promise<Result<RunReport, JigError>> {
   return Result.gen(async function* () {
-    const store = yield* Result.await(openRunStore(app.cradle));
+    const store = yield* Result.await(openRunStore(app.cradle, target.requiredStores));
     const state = yield* Result.await(startOrResume(app.cradle, store, target));
     for (const warning of validationWarnings(app.cradle.config)) app.cradle.logger.warn(warning);
     const finished = finalStatus(runFlow, state);

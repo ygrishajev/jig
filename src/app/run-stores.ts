@@ -32,12 +32,12 @@ interface ModuleStore {
  * `.jig/<id>/state/` — `result.json`, `metrics.jsonl`, the logs and the markdown documents — is
  * this machine's record of the invocations it ran, not part of the run, and stays local.
  */
-export async function openRunStore({
-  repoRoot,
-  config,
-}: Pick<AppCradle, 'repoRoot' | 'config'>): Promise<Result<RunStore, ConfigInvalid>> {
+export async function openRunStore(
+  { repoRoot, config }: Pick<AppCradle, 'repoRoot' | 'config'>,
+  requiredStores: string[] = [],
+): Promise<Result<RunStore, ConfigInvalid>> {
   const stores: RunStore[] = [];
-  for (const name of config.runStores) {
+  for (const name of new Set([...config.runStores, ...requiredStores])) {
     const store = await storeNamed(name, repoRoot);
     if (store.isErr()) return Result.err(store.error);
     stores.push(store.value);

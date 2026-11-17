@@ -38,11 +38,11 @@ export interface AppOptions {
 }
 
 /** Runs a command against the repository in the working directory, then releases what it opened. */
-export async function withApp<T>(
+export async function withApp<T, E extends { message: string }>(
   options: AppOptions,
-  command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, JigError>>,
+  command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, E>>,
   invocation: Invocation = processInvocation(),
-): Promise<Result<T, JigError>> {
+): Promise<Result<T, E | JigError>> {
   const app = await openApp(options, invocation);
   if (app.isErr()) return Result.err(app.error);
   try {

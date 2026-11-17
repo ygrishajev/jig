@@ -22,22 +22,24 @@ export interface CommandIo {
 export function appAction<
   Schema extends z.ZodType<AppOptions, z.ZodTypeDef, unknown>,
   Prepared = undefined,
+  E extends { message: string } = JigError,
+  PreparationError extends { message: string } = E,
 >(
   schema: Schema,
   run: (
     input: z.output<Schema>,
     app: AwilixContainer<AppCradle>,
     prepared: Prepared,
-  ) => Promise<Result<void, JigError>>,
+  ) => Promise<Result<void, E>>,
   { invocation, failureOutput }: CommandIo = {},
   prepare?: (
     input: z.output<Schema>,
     invocation: Invocation,
-  ) => Promise<Result<Prepared, JigError>>,
+  ) => Promise<Result<Prepared, PreparationError>>,
 ): (...actionArguments: unknown[]) => Promise<void> {
   const commandInvocation = invocation ?? processInvocation();
   return withErrorHandling(
-    withInput(schema, async (input) => {
+    withInput(schema, async (input): Promise<Result<void, E | PreparationError | JigError>> => {
       const prepared = prepare ? await prepare(input, commandInvocation) : Result.ok(undefined);
       if (prepared.isErr()) return Result.err(prepared.error);
       return withApp(
