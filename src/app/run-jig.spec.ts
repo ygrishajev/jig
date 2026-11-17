@@ -32,6 +32,7 @@ import {
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
@@ -52,6 +53,7 @@ import { designReviewStage } from '../domain/design-review.js';
 import { designReviewReport } from '../domain/design-review-report.js';
 import {
   ConfigInvalid,
+  GitCommandFailed,
   ImageBuildFailed,
   LocalStateUnwritable,
   RunInProgress,
@@ -70,6 +72,21 @@ import { readRunStatus } from './run-status.js';
 const UNREACHABLE_COLLECTOR = 'http://192.0.2.1:4318';
 
 describe('runJig', () => {
+  it('preserves a failed branch lookup before opening a sandbox', async () => {
+    const { app, sessionsOpened } = await setup();
+    const directory = await tempDirectory();
+    app.register({ repoRoot: asValue(directory) });
+
+    const result = await runJig(app, { start: { text: faker.lorem.paragraph() }, runId: runId() });
+
+    expect(result.isErr()).toBe(true);
+    expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
+    expect(result.isErr() && GitCommandFailed.is(result.error) && result.error.command).toBe(
+      'git status',
+    );
+    expect(sessionsOpened()).toBe(0);
+  });
+
   it('starts a run from a request and stops once the work waits to be merged', async () => {
     const { app, aRequest, agentFor, repo } = await setup();
     const id = runId();

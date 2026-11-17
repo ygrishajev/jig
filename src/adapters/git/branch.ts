@@ -3,15 +3,11 @@ import { Result } from 'better-result';
 import { ConfigInvalid, type GitCommandFailed } from '../../domain/errors.js';
 import { gitCommand, openRepo } from './repository.js';
 
-export async function getCurrentBranch(cwd: string): Promise<Result<string, ConfigInvalid>> {
+export async function getCurrentBranch(
+  cwd: string,
+): Promise<Result<string, ConfigInvalid | GitCommandFailed>> {
   const status = await gitCommand('status', () => openRepo(cwd).status());
-  if (status.isErr()) {
-    return Result.err(
-      new ConfigInvalid({
-        message: `Cannot tell which branch is checked out in ${cwd}: ${status.error.output}`,
-      }),
-    );
-  }
+  if (status.isErr()) return status;
   if (!status.value.current || status.value.detached) {
     return Result.err(
       new ConfigInvalid({

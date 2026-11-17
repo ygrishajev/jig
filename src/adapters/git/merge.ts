@@ -2,6 +2,7 @@ import { Result } from 'better-result';
 import { execa, type ResultPromise } from 'execa';
 
 import {
+  type ConfigInvalid,
   GitCommandFailed,
   MergeFailed,
   messageOf,
@@ -129,6 +130,6 @@ export async function mergeBranchInto(
   });
 }
 
-function asMergeFailed(error: { message: string }): MergeFailed {
-  return new MergeFailed({ message: error.message });
+function asMergeFailed(error: ConfigInvalid | GitCommandFailed): MergeFailed | GitCommandFailed {
+  return GitCommandFailed.is(error) ? error : new MergeFailed({ message: error.message });
 }

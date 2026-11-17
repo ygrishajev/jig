@@ -6,6 +6,7 @@ import { type SimpleGit, simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
 import { commitAll } from '../../../tests/support/commit-all.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createRemote, createTempRepo } from '../../../tests/support/temp-repo.js';
 import { GitCommandFailed, MergeFailed, RemoteUnavailable } from '../../domain/errors.js';
 import { isBranchMergedInto, mergeBranchInto } from './merge.js';
@@ -18,6 +19,32 @@ describe('mergeBranchInto', () => {
 
     expect(sha).toBe(await git.revparse(['main']));
     expect((await isBranchMergedInto(repo, branch, 'main')).unwrap()).toBe(true);
+  });
+
+  it('preserves a failed branch lookup outside a repository', async () => {
+    const directory = await tempDirectory();
+
+    const result = await mergeBranchInto(directory, faker.git.branch(), 'main');
+
+    expect(result.isErr()).toBe(true);
+    expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
+    expect(result.isErr() && GitCommandFailed.is(result.error) && result.error.command).toBe(
+      'git status',
+    );
+    expect(result.isErr() && GitCommandFailed.is(result.error) && result.error.output).toContain(
+      'not a git repository',
+    );
+  });
+
+  it('reports a detached HEAD as a merge failure', async () => {
+    const { repo, branch, git } = await setup();
+    await git.checkout(['--detach', 'HEAD']);
+
+    const result = await mergeBranchInto(repo, branch, 'main');
+
+    expect(result.isErr()).toBe(true);
+    expect(result.isErr() && result.error).toBeInstanceOf(MergeFailed);
+    expect(result.isErr() && result.error.message).toContain('has no branch checked out');
   });
 
   it('refuses to merge while the base is not checked out, leaving the branches as they were', async () => {

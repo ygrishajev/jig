@@ -14,12 +14,32 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { configFileFor, loadConfig } from '../config/load-config.js';
-import { MergeFailed, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
+import {
+  GitCommandFailed,
+  MergeFailed,
+  SandboxUnavailable,
+  SetupCommandFailed,
+} from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer } from './container.js';
 import { withThrowawaySandbox } from './throwaway-sandbox.js';
 
 describe('withThrowawaySandbox', () => {
+  it('preserves a failed branch lookup before opening a sandbox', async () => {
+    const { app, opened } = await setup();
+    const directory = await tempDirectory();
+    app.register({ repoRoot: asValue(directory) });
+
+    const result = await withThrowawaySandbox(app, null, async () => Result.ok());
+
+    expect(result.isErr()).toBe(true);
+    expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
+    expect(result.isErr() && GitCommandFailed.is(result.error) && result.error.command).toBe(
+      'git status',
+    );
+    expect(opened()).toBe(0);
+  });
+
   it('closes the sandbox and removes its branch when the work inside it fails', async () => {
     const { app, session, branches, repoRoot } = await setup();
     const failure = new Error(faker.lorem.sentence());

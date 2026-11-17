@@ -2,8 +2,9 @@ import { faker } from '@faker-js/faker';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { ConfigInvalid } from '../../domain/errors.js';
+import { ConfigInvalid, GitCommandFailed } from '../../domain/errors.js';
 import { deleteBranch, getCurrentBranch } from './branch.js';
 
 describe('getCurrentBranch', () => {
@@ -11,6 +12,21 @@ describe('getCurrentBranch', () => {
     const { repo, branch } = await setup();
 
     expect((await getCurrentBranch(repo)).unwrap()).toBe(branch);
+  });
+
+  it('preserves a failed status command outside a repository', async () => {
+    const directory = await tempDirectory();
+
+    const result = await getCurrentBranch(directory);
+
+    expect(result.isErr()).toBe(true);
+    expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
+    expect(result.isErr() && GitCommandFailed.is(result.error) && result.error.command).toBe(
+      'git status',
+    );
+    expect(result.isErr() && GitCommandFailed.is(result.error) && result.error.output).toContain(
+      'not a git repository',
+    );
   });
 
   it('reports a detached HEAD as something the operator fixes', async () => {
