@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { runId } from '../../../tests/support/builders.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { isWorkingTreeClean } from '../../git/repository.js';
+import { isWorkingTreeClean } from '../git/repository.js';
 import {
   agentLogFile,
   JIG_DIR,

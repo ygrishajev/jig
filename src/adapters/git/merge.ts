@@ -1,7 +1,12 @@
 import { Result } from 'better-result';
 import { execa, type ResultPromise } from 'execa';
 
-import { GitCommandFailed, MergeFailed, messageOf, RemoteUnavailable } from '../domain/errors.js';
+import {
+  GitCommandFailed,
+  MergeFailed,
+  messageOf,
+  RemoteUnavailable,
+} from '../../domain/errors.js';
 import { getCurrentBranch } from './branch.js';
 import { gitCommand, isWorkingTreeClean, openRepoWithoutHooks } from './repository.js';
 

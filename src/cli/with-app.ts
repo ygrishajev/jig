@@ -1,6 +1,7 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 
+import { ensureRepositoryRoot } from '../adapters/git/repository.js';
 import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import type { LogFormat } from '../adapters/logging/create-logger.js';
 import { askForPreset, type PresetPick } from '../adapters/terminal/ask-for-preset.js';
@@ -16,7 +17,6 @@ import {
   type PresetName,
 } from '../config/presets.js';
 import { ConfigInvalid, type JigError } from '../domain/errors.js';
-import { ensureRepositoryRoot } from '../git/repository.js';
 import type { PresetSelection } from './config-option.js';
 
 /** Where the CLI was started, what it was started with, and who answers its questions; the only reads of `process`. */

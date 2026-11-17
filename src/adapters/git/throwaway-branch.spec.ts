@@ -5,8 +5,8 @@ import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, vi } from 'vitest';
 
-import { tempDirectory } from '../../tests/support/temp-directory.js';
-import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { discardBranchOnExit, type ExitingProcess } from './throwaway-branch.js';
 
 describe('discardBranchOnExit', () => {

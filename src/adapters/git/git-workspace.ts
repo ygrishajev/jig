@@ -19,15 +19,10 @@ import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type { CommitSummary } from '../../domain/usage.js';
 import type { GitFacts, WorkFacts } from '../../domain/work-facts.js';
-import { isBranchMergedInto, mergeBranchInto } from '../../git/merge.js';
-import {
-  gitCommand,
-  isWorkingTreeClean,
-  openRepo,
-  openRepoWithoutHooks,
-} from '../../git/repository.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import type { SaveWorkFailure, Workspace } from '../../ports/workspace.js';
+import { isBranchMergedInto, mergeBranchInto } from './merge.js';
+import { gitCommand, isWorkingTreeClean, openRepo, openRepoWithoutHooks } from './repository.js';
 
 export interface GitWorkspaceOptions {
   repoRoot: string;

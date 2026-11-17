@@ -1,6 +1,6 @@
 import { Result } from 'better-result';
 
-import { ConfigInvalid, type GitCommandFailed } from '../domain/errors.js';
+import { ConfigInvalid, type GitCommandFailed } from '../../domain/errors.js';
 import { gitCommand, openRepo } from './repository.js';
 
 export async function getCurrentBranch(cwd: string): Promise<Result<string, ConfigInvalid>> {

@@ -1,6 +1,7 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 
+import { getCurrentBranch } from '../adapters/git/branch.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stepCredentials } from '../adapters/sandcastle/open-session.js';
@@ -17,7 +18,6 @@ import { type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
 import { type EngineResult, runEngine } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
-import { getCurrentBranch } from '../git/branch.js';
 import type { RunStore, RunStoreFailure } from '../ports/run-store.js';
 import { type AppCradle, withRunScope } from './container.js';
 import { openRunStore } from './run-stores.js';

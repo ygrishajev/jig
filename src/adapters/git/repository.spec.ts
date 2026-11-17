@@ -3,9 +3,9 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { tempDirectory } from '../../tests/support/temp-directory.js';
-import { createTempRepo } from '../../tests/support/temp-repo.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { createTempRepo } from '../../../tests/support/temp-repo.js';
+import { ConfigInvalid } from '../../domain/errors.js';
 import { ensureRepositoryRoot, isWorkingTreeClean } from './repository.js';
 
 describe('git repository helpers', () => {

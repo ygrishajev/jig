@@ -2,8 +2,8 @@ import { faker } from '@faker-js/faker';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
-import { createTempRepo } from '../../tests/support/temp-repo.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { createTempRepo } from '../../../tests/support/temp-repo.js';
+import { ConfigInvalid } from '../../domain/errors.js';
 import { deleteBranch, getCurrentBranch } from './branch.js';
 
 describe('getCurrentBranch', () => {

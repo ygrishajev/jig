@@ -16,9 +16,9 @@ import {
   MergeFailed,
   SandboxUnavailable,
 } from '../../domain/errors.js';
-import { isWorkingTreeClean } from '../../git/repository.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { type CommitSigning, GitWorkspace } from './git-workspace.js';
+import { isWorkingTreeClean } from './repository.js';
 
 describe('GitWorkspace', () => {
   it('reports where the run branch and the sandbox clone stand once work is saved, both clean', async () => {

@@ -2,6 +2,8 @@ import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 import { randomBytes } from 'node:crypto';
 
+import { getCurrentBranch } from '../adapters/git/branch.js';
+import { discardBranch, discardBranchOnExit } from '../adapters/git/throwaway-branch.js';
 import type {
   SessionCloseFailure,
   SessionOpenFailure,
@@ -9,8 +11,6 @@ import type {
 import type { GitCommandFailed } from '../domain/errors.js';
 import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
-import { getCurrentBranch } from '../git/branch.js';
-import { discardBranch, discardBranchOnExit } from '../git/throwaway-branch.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
 import type { AppCradle, RunSession } from './container.js';
 import { observedEvents } from './observed-events.js';
