@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { PassThrough } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { aPreset } from '../../../tests/support/builders.js';
 import type { Preset } from '../../config/presets.js';
@@ -33,11 +33,10 @@ describe('askForPreset', () => {
     const { answer, type, shown } = setup({ presets: [aPreset({ description })] });
 
     await type(DOWN);
-    const describedOnArrival = shown().includes(description);
+
+    await vi.waitFor(() => expect(shown()).toContain(description));
     await type(CTRL_C);
     await answer;
-
-    expect(describedOnArrival).toBe(true);
   });
 
   it('labels a preset with its source unless it ships with jig', async () => {
