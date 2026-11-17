@@ -32,9 +32,9 @@ import {
 import type { JigEnvironment } from '../config/environment.js';
 import { type ConfigFile, type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
-import { type GitCommandFailed, isTransient, type JigError } from '../domain/errors.js';
+import { type GitCommandFailed, type JigError } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
-import { retryResult } from '../domain/retry.js';
+import { retryResult, transientRetryPolicy } from '../domain/retry.js';
 import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -248,9 +248,7 @@ function openSessionRetrying({
   runLogger,
 }: RunCradle): Promise<Result<RunSession, SessionOpenFailure>> {
   return retryResult<RunSession, SessionOpenFailure>(() => openSession({ run, events }), {
-    retries: settings.maxStepRetries,
-    delayMs: settings.retryDelayMs,
-    shouldRetry: isTransient,
+    ...transientRetryPolicy(settings),
     onFailedAttempt: ({ error, attempt }) =>
       runLogger.warn({ err: error, attempt }, 'the sandbox did not start'),
   });

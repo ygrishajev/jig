@@ -4,7 +4,7 @@ import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
 import { isTransient, type JigError, messageOf, rootCause } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { Outcome } from '../domain/outcome.js';
-import { retryResult } from '../domain/retry.js';
+import { retryResult, transientRetryPolicy } from '../domain/retry.js';
 import type { RunId } from '../domain/run-id.js';
 import {
   currentSlice,
@@ -65,12 +65,16 @@ export async function runEngine(
 class Engine {
   constructor(
     private readonly flow: RunFlow,
-    private readonly d: EngineDependencies,
+    private readonly dependencies: EngineDependencies,
   ) {}
 
   /** Every invocation that resumes a run ends it with one run-level event, a failure or a bug included. */
   async run(initial: RunState): Promise<Result<EngineResult, JigError>> {
-    this.d.events.publish({ type: 'runResumed', runId: initial.runId, phase: initial.phase });
+    this.dependencies.events.publish({
+      type: 'runResumed',
+      runId: initial.runId,
+      phase: initial.phase,
+    });
     let saved = initial;
     let settled: Result<EngineResult, JigError>;
     try {
@@ -98,7 +102,7 @@ class Engine {
       if (passed.isErr()) return passed;
       if ('result' in passed.value) return Result.ok(passed.value.result);
       state = passed.value.state;
-      const saved = await this.d.store.save(state);
+      const saved = await this.dependencies.store.save(state);
       if (saved.isErr()) return saved;
       onSaved(state);
     }
@@ -110,13 +114,13 @@ class Engine {
     const resumed: RunState = { ...state, blockedReason: undefined };
     if (!('halt' in node)) return Result.ok(resumed);
     const next = this.changePhase(resumed, node.resumeAt);
-    return (await this.d.store.save(next)).map(() => next);
+    return (await this.dependencies.store.save(next)).map(() => next);
   }
 
   /** `from` is where the run stood before its outcome applied, which may already have moved it. */
   private changePhase(state: RunState, to: RunPhase, from: RunPhase = state.phase): RunState {
     if (to !== from) {
-      this.d.events.publish({ type: 'phaseChanged', runId: state.runId, from, to });
+      this.dependencies.events.publish({ type: 'phaseChanged', runId: state.runId, from, to });
     }
     return enterPhase(state, to);
   }
@@ -140,12 +144,16 @@ class Engine {
   }
 
   private finish(state: RunState, final: 'done' | 'stuck'): EngineResult {
-    this.d.events.publish({ type: 'runFinished', runId: state.runId, phase: state.phase });
+    this.dependencies.events.publish({
+      type: 'runFinished',
+      runId: state.runId,
+      phase: state.phase,
+    });
     return { state, status: final };
   }
 
   private halt(state: RunState): EngineResult {
-    this.d.events.publish({ type: 'runHalted', runId: state.runId, phase: state.phase });
+    this.dependencies.events.publish({ type: 'runHalted', runId: state.runId, phase: state.phase });
     return { state, status: 'halted' };
   }
 
@@ -163,7 +171,12 @@ class Engine {
 
     const at: StepLocation = { phase: state.phase, sliceId: slice.id, sliceStatus: slice.status };
     const attempted = await this.attempt(at, state.runId, () =>
-      sliceNode.step({ state, ports: this.d.ports, settings: this.d.settings, slice }),
+      sliceNode.step({
+        state,
+        ports: this.dependencies.ports,
+        settings: this.dependencies.settings,
+        slice,
+      }),
     );
     if (attempted.isErr()) return attempted;
     if ('blockedReason' in attempted.value) return Result.ok(attempted.value);
@@ -173,9 +186,9 @@ class Engine {
     const nextStatus = this.resolve(sliceNode.on, outcome, {
       state: applied,
       slice: currentSlice(applied),
-      settings: this.d.settings,
+      settings: this.dependencies.settings,
     });
-    this.d.events.publish({
+    this.dependencies.events.publish({
       type: 'sliceStatusChanged',
       runId: state.runId,
       sliceId: slice.id,
@@ -197,12 +210,16 @@ class Engine {
     step: () => Promise<Result<Outcome, JigError>>,
   ): Promise<Result<Attempt, JigError>> {
     const attempted = await retryResult(() => this.timed(at, runId, step), {
-      retries: this.d.settings.maxStepRetries,
-      delayMs: this.d.settings.retryDelayMs,
-      shouldRetry: isTransient,
+      ...transientRetryPolicy(this.dependencies.settings),
       onFailedAttempt: ({ error, attempt, retriesLeft }) => {
         if (!isTransient(error) || retriesLeft === 0) return;
-        this.d.events.publish({ type: 'stepRetried', runId, at, attempt, reason: error.message });
+        this.dependencies.events.publish({
+          type: 'stepRetried',
+          runId,
+          at,
+          attempt,
+          reason: error.message,
+        });
       },
     });
     if (attempted.isOk()) return Result.ok({ outcome: attempted.value });
@@ -216,11 +233,17 @@ class Engine {
     runId: RunId,
     step: () => Promise<Result<Outcome, JigError>>,
   ): Promise<Result<Outcome, JigError>> {
-    const startedAt = this.d.clock.now();
-    const elapsed = (): number => this.d.clock.now() - startedAt;
+    const startedAt = this.dependencies.clock.now();
+    const elapsed = (): number => this.dependencies.clock.now() - startedAt;
     const publishFailed = (reason: string): void =>
-      this.d.events.publish({ type: 'stepFailed', runId, at, reason, durationMs: elapsed() });
-    this.d.events.publish({ type: 'stepStarted', runId, at });
+      this.dependencies.events.publish({
+        type: 'stepFailed',
+        runId,
+        at,
+        reason,
+        durationMs: elapsed(),
+      });
+    this.dependencies.events.publish({ type: 'stepStarted', runId, at });
     let stepped: Result<Outcome, JigError>;
     try {
       stepped = await step();
@@ -234,7 +257,13 @@ class Engine {
       return stepped;
     }
     const outcome = stepped.value;
-    this.d.events.publish({ type: 'stepFinished', runId, at, outcome, durationMs: elapsed() });
+    this.dependencies.events.publish({
+      type: 'stepFinished',
+      runId,
+      at,
+      outcome,
+      durationMs: elapsed(),
+    });
     return stepped;
   }
 
@@ -259,28 +288,45 @@ class Engine {
       const at: StepLocation = { phase: state.phase };
       const attempted = yield* Result.await(
         this.attempt(at, state.runId, () =>
-          node.step({ state, ports: this.d.ports, settings: this.d.settings }),
+          node.step({
+            state,
+            ports: this.dependencies.ports,
+            settings: this.dependencies.settings,
+          }),
         ),
       );
       if ('blockedReason' in attempted) return Result.ok(attempted);
 
       const { outcome } = attempted;
       const applied = applyOutcome(state, outcome);
-      const next = this.resolve(node.on, outcome, { state: applied, settings: this.d.settings });
+      const next = this.resolve(node.on, outcome, {
+        state: applied,
+        settings: this.dependencies.settings,
+      });
       return Result.ok({ state: this.changePhase(applied, next, state.phase) });
     }, this);
   }
 
   private async block(state: RunState, reason: string): Promise<Result<EngineResult, JigError>> {
     const blocked = { ...state, blockedReason: reason };
-    const saved = await this.d.store.save(blocked);
+    const saved = await this.dependencies.store.save(blocked);
     if (saved.isErr()) return saved;
-    this.d.events.publish({ type: 'runBlocked', runId: state.runId, phase: state.phase, reason });
+    this.dependencies.events.publish({
+      type: 'runBlocked',
+      runId: state.runId,
+      phase: state.phase,
+      reason,
+    });
     return Result.ok({ state: blocked, status: 'blocked', reason });
   }
 
   private publishRunFailed(state: RunState, reason: string): void {
-    this.d.events.publish({ type: 'runFailed', runId: state.runId, phase: state.phase, reason });
+    this.dependencies.events.publish({
+      type: 'runFailed',
+      runId: state.runId,
+      phase: state.phase,
+      reason,
+    });
   }
 }
 
