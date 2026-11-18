@@ -8,12 +8,14 @@ import {
   aContext,
   aDesignFinding,
   aDisposition,
+  aFailedVerification,
   aFeaturePlan,
   anImplementation,
   aPlannedSlice,
   aRunState,
   aSlice,
   designDocs,
+  failureOutput,
   workObservations,
 } from '../../tests/support/builders.js';
 import { applyOutcome } from './apply-outcome.js';
@@ -21,7 +23,7 @@ import type { Outcome } from './outcome.js';
 import { sliceSchema } from './slice.js';
 
 describe('applyOutcome', () => {
-  it.each(['continue', 'pause', 'approved', 'merged', 'awaitingManualMerge'] as const)(
+  it.each(['continue', 'pause', 'merged', 'awaitingManualMerge'] as const)(
     'preserves state for the %s control outcome',
     (type) => {
       const state = aRunState();
@@ -228,29 +230,36 @@ describe('applyOutcome', () => {
     expect(slices[0].verification).toEqual({ command, observed });
   });
 
-  it('records the command and the work around a verification that failed, beside its counter', () => {
+  it('records the command, its output and the work around a verification that failed, beside its counter', () => {
     const command = `npm run ${faker.word.verb()}`;
     const observed = workObservations();
+    const output = failureOutput();
     const feedback = faker.lorem.sentence();
     const slice = aSlice({ order: 0, verificationFailures: 1 });
+    const run = aRunState({ slices: [slice] });
 
-    const state = applyOutcome(aRunState({ slices: [slice] }), {
+    const state = applyOutcome(run, {
       type: 'verificationFailed',
       feedback,
       command,
+      output,
       observed,
     });
 
-    expect(state.slices[0].failedVerification).toEqual({ command, observed });
+    expect(state.slices[0].failedVerification).toEqual({
+      command,
+      observed,
+      output: { captured: true, tail: output, truncated: false },
+      at: run.diagnosticSequence + 1,
+      passedSince: false,
+    });
+    expect(state.diagnosticSequence).toBe(run.diagnosticSequence + 1);
     expect(state.slices[0].verificationFailures).toBe(2);
     expect(state.slices[0].lastFeedback).toBe(feedback);
   });
 
   it('keeps the failed verification an earlier round recorded when a later one is sent back for other reasons', () => {
-    const failedVerification = {
-      command: `npm run ${faker.word.verb()}`,
-      observed: workObservations(),
-    };
+    const failedVerification = aFailedVerification();
     const slice = aSlice({ order: 0, failedVerification });
 
     const state = applyOutcome(aRunState({ slices: [slice] }), {
@@ -273,7 +282,7 @@ describe('applyOutcome', () => {
   });
 
   it('clears earlier completion evidence when the latest approval has no fulfillment verdict', () => {
-    const state = aRunState({ completionReuse: aCompletionEvidence() });
+    const state = aRunState({ slices: [aSlice()], completionReuse: aCompletionEvidence() });
 
     const applied = applyOutcome(state, { type: 'approved' });
 

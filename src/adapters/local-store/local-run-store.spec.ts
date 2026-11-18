@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest';
 import {
   aCompletionEvidence,
   aContext,
+  aFailedVerification,
   aFeaturePlan,
   aFirstDesignReview,
   anApprovedDesignReview,
+  aRejectedReview,
   aRevisedDesignReview,
   aRevisionAwaitingReReview,
   aRunState,
@@ -71,10 +73,8 @@ describe('LocalRunStore', () => {
         aSlice({
           status: 'in_review',
           verification: { command: `npm run ${faker.word.verb()}`, observed: workObservations() },
-          failedVerification: {
-            command: `npm run ${faker.word.verb()}`,
-            observed: workObservations(),
-          },
+          failedVerification: aFailedVerification(),
+          rejectedReview: aRejectedReview(),
         }),
       ],
       completionReuse: aCompletionEvidence(),

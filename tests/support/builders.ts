@@ -17,6 +17,7 @@ import {
   type FindingDisposition,
   resolveDesignReview,
 } from '../../src/domain/design-review.js';
+import type { CapturedOutput, RejectedReview } from '../../src/domain/diagnostics.js';
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import {
@@ -30,7 +31,7 @@ import {
   runStateSchema,
 } from '../../src/domain/run-state.js';
 import type { RunSettings } from '../../src/domain/settings.js';
-import type { PlannedSlice, Slice } from '../../src/domain/slice.js';
+import type { FailedVerification, PlannedSlice, Slice } from '../../src/domain/slice.js';
 import type { CommitSummary, TokenUsage } from '../../src/domain/usage.js';
 import type {
   CheckedWork,
@@ -84,6 +85,7 @@ export function aSlice({
   commit,
   verification,
   failedVerification,
+  rejectedReview,
 }: Partial<Slice> = {}): Slice {
   return {
     id,
@@ -101,7 +103,36 @@ export function aSlice({
     commit,
     verification,
     failedVerification,
+    rejectedReview,
   };
+}
+
+export function aFailedVerification({
+  command = `npm run ${faker.word.verb()}`,
+  observed = workObservations(),
+  output = capturedOutput(),
+  at = faker.number.int({ min: 1, max: 50 }),
+  passedSince = false,
+}: Partial<FailedVerification> = {}): FailedVerification {
+  return { command, observed, output, at, passedSince };
+}
+
+export function aRejectedReview({
+  feedback = faker.lorem.sentence(),
+  at = faker.number.int({ min: 1, max: 50 }),
+}: Partial<RejectedReview> = {}): RejectedReview {
+  return { feedback, at };
+}
+
+export function capturedOutput(tail = failureOutput()): CapturedOutput {
+  return { captured: true, tail, truncated: false };
+}
+
+/** Command output the way a failing check prints it: a free-text file and line reference first. */
+export function failureOutput(): string {
+  const file = `src/${faker.system.fileName({ extensionCount: 0 })}.ts`;
+  const line = faker.number.int({ min: 1, max: 400 });
+  return `${file}:${line}: ${faker.lorem.sentence()}`;
 }
 
 export function aFinalCheckResult({

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { captureOutput, type FailedFinalVerification } from './diagnostics.js';
 import type { Outcome } from './outcome.js';
 import type { FinalCheckResult, RunState } from './run-state.js';
 import { type PlannedSlice, type Slice, sliceFromPlan } from './slice.js';
@@ -22,8 +23,14 @@ export type FulfillmentVerdict = z.infer<typeof fulfillmentVerdictSchema>;
  */
 export function recordFinalCheck(state: RunState, checked: FinalCheckCompletion): RunState {
   const round = state.finalCheck === undefined ? 1 : 2;
+  const at = state.diagnosticSequence + 1;
   const repaired = repairOwed(checked, round) ? withRepairSlice(state, checked) : state;
-  return { ...repaired, finalCheck: completedCheck(checked, round) };
+  return {
+    ...repaired,
+    finalCheck: completedCheck(checked, round),
+    failedFinalVerification: lastFailedVerification(state, checked, { round, at }),
+    diagnosticSequence: at,
+  };
 }
 
 function repairOwed(checked: FinalCheckCompletion, round: number): boolean {
@@ -118,6 +125,23 @@ function completedCheck(checked: FinalCheckCompletion, round: number): FinalChec
     fulfilled: checked.fulfilled,
     gaps: checked.gaps,
     round,
+  };
+}
+
+/** The verification this check failed, or the earlier failure it passed since. */
+function lastFailedVerification(
+  state: RunState,
+  checked: FinalCheckCompletion,
+  { round, at }: { round: number; at: number },
+): FailedFinalVerification | undefined {
+  const earlier = state.failedFinalVerification;
+  if (checked.verified) return earlier && { ...earlier, passedSince: true };
+  return {
+    command: checked.command,
+    output: captureOutput(checked.output),
+    round,
+    at,
+    passedSince: false,
   };
 }
 

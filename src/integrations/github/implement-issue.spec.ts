@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
-import { Result } from 'better-result';
+import { panic, Result } from 'better-result';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from 'pino';
@@ -20,6 +20,7 @@ import {
   aPlannedSlice,
   aRunState,
   everyStepOn,
+  failureOutput,
   implementingPlanSteps,
 } from '../../../tests/support/builders.js';
 import { anIssue, FakeGithub } from '../../../tests/support/fake-github.js';
@@ -32,9 +33,11 @@ import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session
 import { createAppContainer } from '../../app/container.js';
 import { parseEnvironment } from '../../config/environment.js';
 import { configFileFor, loadConfig } from '../../config/load-config.js';
+import { runDiagnostics } from '../../domain/diagnostics.js';
 import { AgentRunFailed } from '../../domain/errors.js';
 import { type RunId, runIdFor } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
+import type { ExecResult } from '../../ports/agent-session.js';
 import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
 import { implementIssue } from './implement-issue.js';
 import { claimPublication } from './orchestration-state.js';
@@ -342,6 +345,25 @@ describe('implementIssue', () => {
     expect(await remoteHasObject(dir, saved?.codeRevision ?? '')).toBe(false);
   });
 
+  it('keeps the rejected review and the verification output of a stuck run through execution and reload', async () => {
+    const { implement, dir, id, verifyCommand, failingOutput, feedback } = await setup({
+      failingVerify: true,
+    });
+
+    expect(unwrap(await implement())).toMatchObject({ kind: 'commented', outcome: 'stuck' });
+
+    const saved = unwrap(await new GitRemoteRunStore(dir).peek(id));
+    if (!saved) panic('The stuck run was not saved');
+    const diagnostics = runDiagnostics(saved);
+    expect(diagnostics.unresolvedReviews.map((review) => review.feedback)).toEqual([feedback]);
+    expect(diagnostics.lastVerificationFailure).toMatchObject({
+      scope: { kind: 'slice', sliceId: saved.slices[0].id },
+      command: verifyCommand,
+      output: { captured: true, tail: failingOutput },
+      current: true,
+    });
+  });
+
   it('inspects a run saved before checkpoints existed without guessing where it started', async () => {
     const { implement, github, dir, id, issue } = await setup();
     unwrap(
@@ -366,6 +388,7 @@ describe('implementIssue', () => {
     auto = false,
     planningBlocked = false,
     workflow = false,
+    failingVerify = false,
   }: {
     paused?: boolean;
     unfinished?: boolean;
@@ -374,6 +397,7 @@ describe('implementIssue', () => {
     auto?: boolean;
     planningBlocked?: boolean;
     workflow?: boolean;
+    failingVerify?: boolean;
   } = {}) {
     const remote = await createRemote();
     const dir = await remote.cloneOf();
@@ -400,6 +424,15 @@ describe('implementIssue', () => {
     const logger = mock<Logger>();
     app.register({ logger: asValue(logger) });
     const imageName = faker.string.alpha(10);
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const failingOutput = failureOutput();
+    const feedback = faker.lorem.sentence();
+    const verifyResults: ExecResult[] = failingVerify
+      ? [
+          { exitCode: 0, output: faker.lorem.sentence() },
+          ...Array.from({ length: 3 }, () => ({ exitCode: 1, output: failingOutput })),
+        ]
+      : [];
     const workflowPath = `.github/workflows/${faker.string.alpha(8)}.yml`;
     app.register({
       config: asValue({
@@ -408,7 +441,8 @@ describe('implementIssue', () => {
         sandboxImage: imageName,
         mergeMode: auto ? 'auto' : 'manual',
         designGate: paused ? 'checkpoint' : 'auto',
-        reviewCycleCap: 1,
+        reviewCycleCap: failingVerify ? 2 : 1,
+        ...(failingVerify ? { verifyCommand } : {}),
       }),
     });
     app.register({
@@ -416,7 +450,7 @@ describe('implementIssue', () => {
     });
     const agent = new FakeAgentSession(
       sandboxCloneOf(dir, id),
-      undefined,
+      () => verifyResults.shift() ?? { exitCode: 0, output: '' },
       path.join(dir, '.jig', id, 'workspace'),
     );
     if (planningBlocked) {
@@ -435,6 +469,16 @@ describe('implementIssue', () => {
           ...(blocked ? [{ fail: new AgentRunFailed({ message: faker.lorem.sentence() }) }] : []),
         );
       }
+      agent.script('describer', aDescription());
+    } else if (failingVerify) {
+      scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+      agent.script(
+        'implementer',
+        ...Array.from({ length: 4 }, () => ({
+          files: { [`${faker.string.alpha(8)}.txt`]: faker.lorem.paragraph() },
+        })),
+      );
+      agent.script('reviewer', rejection(feedback));
       agent.script('describer', aDescription());
     } else if (workflow) {
       scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
@@ -456,6 +500,9 @@ describe('implementIssue', () => {
     });
     return {
       dir,
+      verifyCommand,
+      failingOutput,
+      feedback,
       workflow: workflowPath,
       sessionCredentials,
       id,

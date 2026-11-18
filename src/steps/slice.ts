@@ -201,6 +201,7 @@ export const verifySlice: SliceStep = ({ settings, ports }) => {
         type: 'verificationFailed',
         feedback: verifyFailedFeedback(command, output),
         command,
+        output,
         observed,
       });
     }

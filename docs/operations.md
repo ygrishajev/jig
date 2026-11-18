@@ -27,6 +27,35 @@ the review progressed. A pending review is never reported as approved. Unresolve
 findings also appear in the saved run's `blockedReason`, which `jig status` can show
 on a machine without the local report files.
 
+### Run diagnostics
+
+The saved run keeps what an operator needs to understand unfinished work, whether or
+not it is ever published. Integrations read it through one projection
+(`runDiagnostics` in `src/domain/diagnostics.ts`) rather than the raw state:
+
+- **Unresolved reviews.** A slice whose review requested changes keeps that feedback
+  as `rejectedReview` through the hook rejections, empty attempts and verification
+  failures that follow, until a later review approves the slice. Earlier rounds stay
+  in `feedbackHistory` but are not part of the projection.
+- **Outstanding gaps.** The gaps of the latest final check, while it reports the
+  request unfulfilled. A later fulfilled check leaves none.
+- **Last verification failure.** The most recent failed verify command, from a slice
+  (`failedVerification`) or the whole-run final check (`failedFinalVerification`),
+  with its command, round or slice, and the last 3000 characters of its output kept
+  verbatim, so file and line references survive. It stays after a later verification
+  passes; `passedSince` (projected as `current: false`) marks it as history rather
+  than a current problem.
+
+Each recorded failure takes the next value of the run's `diagnosticSequence` as its
+`at`, so the latest is known even during a final-check repair, when a slice failure
+and a final-check failure coexist.
+
+Runs saved before diagnostics were kept load without error: their failures carry
+`at: 0`, earlier than any ordered one, and their output is
+`{ "captured": false }` — unavailable, never an empty string. A final check saved
+with a failed verification but no `failedFinalVerification` is projected the same
+way.
+
 ## CI outcome handling
 
 `jig run` exits 0 for every reported run outcome, including `blocked` and `stuck`.

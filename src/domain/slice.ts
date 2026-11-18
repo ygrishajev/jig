@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+import {
+  capturedOutputSchema,
+  diagnosticOrderSchema,
+  OUTPUT_UNAVAILABLE,
+  rejectedReviewSchema,
+} from './diagnostics.js';
 import { workObservationsSchema } from './work-facts.js';
 
 /** Slice ids become lookup keys in state and log lines, so they are restricted to safe characters. */
@@ -26,13 +32,19 @@ export const verificationRecordSchema = z.object({
 });
 
 /**
- * What a slice's last failed verification ran and left behind: a failing command can change the
- * work it failed on, so the facts around it are recorded for the audit.
+ * What a slice's last failed verification ran, reported and left behind: a failing command can
+ * change the work it failed on, so the facts around it are recorded for the audit. It stays after
+ * a later verification passes, marked `passedSince`; one saved before output was kept has none.
  */
 export const failedVerificationSchema = z.object({
   command: z.string().min(1),
   observed: workObservationsSchema,
+  output: capturedOutputSchema.default(OUTPUT_UNAVAILABLE),
+  at: diagnosticOrderSchema,
+  passedSince: z.boolean().default(false),
 });
+
+export type FailedVerification = z.infer<typeof failedVerificationSchema>;
 
 export const sliceSchema = plannedSliceSchema.extend({
   order: z.number().int().nonnegative(),
@@ -47,6 +59,7 @@ export const sliceSchema = plannedSliceSchema.extend({
   commit: z.string().optional(),
   verification: verificationRecordSchema.optional(),
   failedVerification: failedVerificationSchema.optional(),
+  rejectedReview: rejectedReviewSchema.optional(),
 });
 
 export type Slice = z.infer<typeof sliceSchema>;
