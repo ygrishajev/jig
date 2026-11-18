@@ -2,6 +2,13 @@ import { z } from 'zod';
 
 import { runIdSchema } from '../../domain/run-id.js';
 import type { EngineStatus } from '../../flow/engine.js';
+import type { RepositoryIdentity } from './github-port.js';
+
+/** Which findings comment a draft PR carries: one per PR, run, outcome and exact revision. */
+export interface FindingsIdentity extends CommentIdentity {
+  repository: RepositoryIdentity;
+  pullRequest: number;
+}
 
 export interface CommentIdentity {
   runId: AcceptedRequest['runId'];
@@ -41,6 +48,7 @@ export const orchestrationSchema = z.object({
   comments: z.record(z.string()).default({}),
   refusals: z.record(refusalSchema).default({}),
   refusalComments: z.record(z.string()).default({}),
+  findingsComments: z.record(z.string()).default({}),
   owners: z.record(ownershipSchema).default({}),
 });
 
@@ -54,6 +62,7 @@ export function emptyOrchestration(): Orchestration {
     comments: {},
     refusals: {},
     refusalComments: {},
+    findingsComments: {},
     owners: {},
   };
 }
@@ -153,6 +162,34 @@ export function refusalCommentReceipt(
 /** The marker a refusal comment carries, so a comment whose receipt was lost can be found again. */
 export function refusalMarker(key: string, revision: string): string {
   return `<!-- jig:refusal:${refusalKey(key, revision)} -->`;
+}
+
+export function withFindingsComment(
+  state: Orchestration,
+  identity: FindingsIdentity,
+  url: string,
+): Orchestration {
+  if (findingsCommentReceipt(state, identity)) return state;
+  return {
+    ...state,
+    findingsComments: { ...state.findingsComments, [findingsKey(identity)]: url },
+  };
+}
+
+export function findingsCommentReceipt(
+  state: Orchestration,
+  identity: FindingsIdentity,
+): string | undefined {
+  return state.findingsComments[findingsKey(identity)];
+}
+
+function findingsKey({ repository, pullRequest, ...comment }: FindingsIdentity): string {
+  return `findings:${repository.owner}/${repository.repo}#${pullRequest}:${commentKey(comment)}`;
+}
+
+/** The marker a findings comment carries, so a comment whose receipt was lost can be found again. */
+export function findingsMarker(identity: FindingsIdentity): string {
+  return `<!-- jig:${findingsKey(identity)} -->`;
 }
 
 /** Takes publication of `key` for `claim` unless another owner holds an unexpired lease. */

@@ -15,7 +15,7 @@ describe('publishRunBranch', () => {
     const { publish, commitOnRunBranch, remoteBranch } = await setup();
     const revision = await commitOnRunBranch({ write: { [allowedPath()]: faker.lorem.word() } });
 
-    expect(unwrap(await publish(revision))).toEqual({ kind: 'published' });
+    expect(unwrap(await publish(revision))).toEqual({ kind: 'published', changesFiles: true });
     expect(await remoteBranch()).toBe(revision);
   });
 
@@ -72,7 +72,7 @@ describe('publishRunBranch', () => {
     const { publish, commitOnRunBranch, remoteBranch } = await setup();
     const revision = await commitOnRunBranch({ write: { [file]: faker.lorem.word() } });
 
-    expect(unwrap(await publish(revision))).toEqual({ kind: 'published' });
+    expect(unwrap(await publish(revision))).toEqual({ kind: 'published', changesFiles: true });
     expect(await remoteBranch()).toBe(revision);
   });
 
@@ -81,7 +81,7 @@ describe('publishRunBranch', () => {
     const revision = await commitOnRunBranch({ write: { [allowedPath()]: faker.lorem.word() } });
     await seedDefault({ write: { [`.github/workflows/${workflowName()}`]: 'on: push' } });
 
-    expect(unwrap(await publish(revision))).toEqual({ kind: 'published' });
+    expect(unwrap(await publish(revision))).toEqual({ kind: 'published', changesFiles: true });
     expect(await remoteBranch()).toBe(revision);
   });
 
@@ -108,6 +108,33 @@ describe('publishRunBranch', () => {
     expect(unwrap(await hasWorkBeyondStart(here, { startingCommit, codeRevision }))).toBe(true);
   });
 
+  it('pushes commits that change nothing when asked to, reporting that they change no files', async () => {
+    const { publish, here, remoteBranch, id } = await setup();
+    const git = simpleGit(here);
+    await git.checkout(['-b', runBranchFor(id)]);
+    await git.commit(faker.git.commitMessage(), ['--allow-empty']);
+    const codeRevision = await git.revparse(['HEAD']);
+    await git.checkout('main');
+
+    expect(unwrap(await publish(codeRevision, { pushUnchanged: true }))).toEqual({
+      kind: 'published',
+      changesFiles: false,
+    });
+    expect(await remoteBranch()).toBe(codeRevision);
+  });
+
+  it('still refuses a workflow change when asked to push unchanged commits', async () => {
+    const { publish, commitOnRunBranch, remoteBranch } = await setup();
+    const workflow = `.github/workflows/${workflowName()}`;
+    const revision = await commitOnRunBranch({ write: { [workflow]: 'on: push' } });
+
+    expect(unwrap(await publish(revision, { pushUnchanged: true }))).toEqual({
+      kind: 'refused',
+      paths: [workflow],
+    });
+    expect(await remoteBranch()).toBeUndefined();
+  });
+
   it('refuses a run branch that moved past the inspected revision', async () => {
     const { publish, commitOnRunBranch, remoteBranch } = await setup();
     const revision = await commitOnRunBranch({ write: { [allowedPath()]: faker.lorem.word() } });
@@ -125,8 +152,8 @@ describe('publishRunBranch', () => {
     unwrap(await publish(first));
     const next = await commitOnRunBranch({ write: { [allowedPath()]: faker.lorem.word() } });
 
-    expect(unwrap(await publish(next))).toEqual({ kind: 'published' });
-    expect(unwrap(await publish(next))).toEqual({ kind: 'published' });
+    expect(unwrap(await publish(next))).toEqual({ kind: 'published', changesFiles: true });
+    expect(unwrap(await publish(next))).toEqual({ kind: 'published', changesFiles: true });
     expect(await remoteBranch()).toBe(next);
   });
 
@@ -226,8 +253,8 @@ describe('publishRunBranch', () => {
       ]);
       return listed.trim() || undefined;
     };
-    const publish = (revision: string) =>
-      publishRunBranch(here, { runId: id, revision, defaultBranch: 'main' });
+    const publish = (revision: string, options: { pushUnchanged?: boolean } = {}) =>
+      publishRunBranch(here, { runId: id, revision, defaultBranch: 'main', ...options });
     return { here, id, cloneOf, publish, commitOnRunBranch, seedDefault, remoteBranch };
   }
 });

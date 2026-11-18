@@ -145,10 +145,18 @@ checkpoint against where it forked from the default branch on `origin`. A run th
 adds, modifies, deletes, retypes or renames anything under `.github/workflows/` is
 refused: nothing is pushed, no PR is opened, and one issue comment names every
 offending path. Otherwise a completed run pushes exactly that commit to its run branch
-and opens a PR that closes the issue; a completed run without changes posts one issue
-comment and opens no PR. Halted, blocked and stuck runs comment with their status and
-reason, without opening a PR or pushing code. Existing open PRs are reused.
-Comment receipts are keyed by run, outcome and code checkpoint, so repeating an outcome
-at the same checkpoint does not comment again.
-The command prints the PR URL (including whether it was reused), the comment URL and status,
-or the refused paths and refusal comment URL.
+and opens a ready PR that closes the issue; a completed run without changes posts one
+issue comment and opens no PR. A stuck run that committed past the commit it started
+from pushes its checkpoint and opens a draft PR with the same head, base, title and
+body rules, plus one PR-level findings comment: why the run stopped, the unresolved
+review feedback, any outstanding final-check gaps, and the last verification failure
+with its output verbatim. Inline review comments are never used. Its commits are pushed
+even when they change no files; if GitHub then refuses the draft, the error says so.
+A stuck run without commits, and halted and blocked runs, comment on the issue with
+their status and reason, without opening a PR or pushing code. Existing open PRs are
+reused. Comment receipts are keyed by run, outcome and code checkpoint (findings
+receipts also by PR), so repeating an outcome at the same checkpoint does not comment
+again.
+The command prints the PR URL (including whether it was reused), a draft PR's URL with its
+findings comment URL, the comment URL and status, or the refused paths and refusal comment
+URL.

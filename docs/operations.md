@@ -131,11 +131,39 @@ by its head. Every comment carries a hidden `<!-- jig:… -->` marker and is pos
 single request, never retried blindly; when a comment was sent but its response or
 receipt was lost, the next attempt finds it by marker instead of posting it again.
 
-Review and merge completed PRs yourself. Completed runs without changes and halted,
-stuck or blocked runs post an issue comment with their status and reason, without
-opening a PR. Comments are recorded per run, outcome and code checkpoint; a receipt
-for one checkpoint does not suppress a comment for another. Completed PRs do not add
-a separate issue comment.
+Review and merge completed PRs yourself. Completed runs without changes, halted and
+blocked runs, and stuck runs with no commits past their `startingCommit` post an issue
+comment with their status and reason, without opening a PR. Comments are recorded per
+run, outcome and code checkpoint; a receipt for one checkpoint does not suppress a
+comment for another. Completed PRs do not add a separate issue comment.
+
+### Draft PRs for stuck runs
+
+A stuck run that committed past its recorded `startingCommit` is published as a draft
+PR, after the same workflow inspection as a completed run, so a person can finish or
+discard the work. A run saved before starting commits were recorded never counts as
+having work, and stays an issue comment. The draft carries one PR-level conversation
+comment rendered from the [run diagnostics](#run-diagnostics): the stop reason, each
+unresolved review, outstanding gaps and the last verification failure, with its output
+in a code block so file and line references read as text.
+
+The draft and its findings comment have independent receipts. The PR receipt is saved
+first; the findings receipt is keyed by purpose, PR, run, outcome and exact checkpoint,
+and every rerun checks for it after creating or reusing the PR, so a PR whose comment
+failed, or one recorded before findings existed, still gets exactly one. A status comment
+saved for the same checkpoint by an earlier version does not suppress it. Findings
+comments carry a marker like every other comment, so one posted before its response or
+receipt was lost is found instead of posted again. The run branch is inspected again
+before any receipt is reused.
+
+A stuck run whose code changes a workflow is refused like a completed one: no draft,
+one refusal comment, recovered by marker and repeated without commenting again. A run
+whose commits change no files is still pushed; GitHub may refuse a PR without a diff,
+and the command then fails with GitHub's reason and a note that the commits change
+nothing. Because issue runs defer code, a draft can only be published from the clone
+that ran it, or after its branch reached `origin`: a fresh runner fails with
+`RunCodeUnavailable` before publishing anything (see
+[deferred code publication](#deferred-code-publication)).
 
 ### Workflow refusals
 

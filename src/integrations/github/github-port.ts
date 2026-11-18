@@ -15,14 +15,15 @@ export interface GithubPort {
   ): Promise<Result<PullRequest, GithubFailure>>;
   /**
    * Posts once and never retries: an unavailable response may hide a comment GitHub did post, so
-   * the caller reconciles it with `findIssueComment` before posting again.
+   * the caller reconciles it with `findIssueComment` before posting again. A PR's number gets a
+   * PR-level conversation comment, never an inline review comment.
    */
   commentOnIssue(
     repository: RepositoryIdentity,
     number: number,
     body: string,
   ): Promise<Result<string, GithubFailure>>;
-  /** The URL of the issue's comment whose body carries `marker`, if one was already posted. */
+  /** The URL of the issue's or PR's conversation comment carrying `marker`, if already posted. */
   findIssueComment(
     repository: RepositoryIdentity,
     number: number,

@@ -15,7 +15,9 @@ import { runBranchFor, type RunState } from '../../domain/run-state.js';
 import { RunBranchUnpublishable } from './errors.js';
 
 export type RunBranchPublication =
-  { kind: 'refused'; paths: string[] } | { kind: 'unchanged' } | { kind: 'published' };
+  | { kind: 'refused'; paths: string[] }
+  | { kind: 'unchanged' }
+  | { kind: 'published'; changesFiles: boolean };
 
 export type PublicationFailure =
   RunBranchUnpublishable | GitCommandFailed | RemoteUnavailable | RunStateConflict;
@@ -23,12 +25,17 @@ export type PublicationFailure =
 /**
  * The only way an issue run's code reaches the remote. It inspects exactly `revision` against
  * where it forked from the remote default branch, refuses it when it changes a workflow, skips it
- * when it changes nothing, and otherwise pushes that object ID under a lease on the remote branch.
- * Any failure to inspect publishes nothing.
+ * when it changes nothing unless `pushUnchanged` asks for its commits anyway, and otherwise pushes
+ * that object ID under a lease on the remote branch. Any failure to inspect publishes nothing.
  */
 export function publishRunBranch(
   repoRoot: string,
-  { runId, revision, defaultBranch }: { runId: RunId; revision: string; defaultBranch: string },
+  {
+    runId,
+    revision,
+    defaultBranch,
+    pushUnchanged = false,
+  }: { runId: RunId; revision: string; defaultBranch: string; pushUnchanged?: boolean },
 ): Promise<Result<RunBranchPublication, PublicationFailure>> {
   return Result.gen(async function* () {
     const refs = new RemoteRef(repoRoot);
@@ -51,9 +58,11 @@ export function publishRunBranch(
     const workflows = paths.filter(isWorkflowPath);
     if (workflows.length > 0)
       return Result.ok<RunBranchPublication>({ kind: 'refused', paths: workflows });
-    if (paths.length === 0) return Result.ok<RunBranchPublication>({ kind: 'unchanged' });
+    const changesFiles = paths.length > 0;
+    if (!changesFiles && !pushUnchanged)
+      return Result.ok<RunBranchPublication>({ kind: 'unchanged' });
     yield* Result.await(pushLeased(repoRoot, refs, runId, revision));
-    return Result.ok<RunBranchPublication>({ kind: 'published' });
+    return Result.ok<RunBranchPublication>({ kind: 'published', changesFiles });
   });
 }
 

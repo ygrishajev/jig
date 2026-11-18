@@ -11,8 +11,11 @@ import type {
   RepositoryIdentity,
 } from '../../src/integrations/github/github-port.js';
 
+/** Issues and PRs share GitHub's numbering, so the fake keeps their numbers apart. */
+const HIGHEST_ISSUE_NUMBER = 10000;
+
 export function anIssue({
-  number = faker.number.int({ min: 1, max: 10000 }),
+  number = faker.number.int({ min: 1, max: HIGHEST_ISSUE_NUMBER }),
   title = faker.lorem.sentence(),
   body = faker.lorem.paragraph(),
   url = faker.internet.url(),
@@ -70,7 +73,7 @@ export class FakeGithub implements GithubPort {
       this.prsOpened++;
       const pr = {
         ...input,
-        number: faker.number.int({ min: 1, max: 10000 }),
+        number: faker.number.int({ min: HIGHEST_ISSUE_NUMBER + 1, max: 2 * HIGHEST_ISSUE_NUMBER }),
         url: faker.internet.url(),
       };
       this.pullRequests.set(input.head, pr);
