@@ -50,6 +50,7 @@ import { requestText } from './request-snapshot.js';
 import {
   hasWorkBeyondStart,
   inspectRunBranch,
+  type PublicationFailure as BranchPublicationFailure,
   publishRunBranch,
 } from './run-branch-publication.js';
 
@@ -252,13 +253,12 @@ function publicationFor(
   });
 }
 
-/** A run whose code changes a workflow is refused rather than reported in a status comment. */
 function publishStatus(
   repoRoot: string,
   store: OrchestrationStore,
   target: IssueTarget,
   { report, revision }: { report: RunReport; revision?: string },
-): Promise<Result<IssueOutcome, IssueFailure>> {
+): Promise<Result<IssueOutcome, BranchPublicationFailure | PublicationFailure>> {
   return Result.gen(async function* () {
     if (!revision) return publishComment(store, target, { report });
     const { runId } = report.state;

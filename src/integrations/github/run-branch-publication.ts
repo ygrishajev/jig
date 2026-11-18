@@ -65,8 +65,8 @@ function branchRef(runId: RunId): string {
 }
 
 /**
- * What `revision` changes against where it forked from the remote default branch, refused when it
- * changes a workflow. Every publication of an issue run, a status comment included, asks this first.
+ * Publication and receipt reuse must not bypass workflow refusal: a prior receipt does not prove
+ * that the run's code is safe to publish.
  */
 export function inspectRunBranch(
   repoRoot: string,
