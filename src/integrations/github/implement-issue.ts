@@ -47,7 +47,11 @@ import {
 } from './orchestration-state.js';
 import { OrchestrationStore, type StoreFailure, type WhileOwned } from './orchestration-store.js';
 import { requestText } from './request-snapshot.js';
-import { hasWorkBeyondStart, publishRunBranch } from './run-branch-publication.js';
+import {
+  hasWorkBeyondStart,
+  inspectRunBranch,
+  publishRunBranch,
+} from './run-branch-publication.js';
 
 export type IssueOutcome =
   | { kind: 'pullRequest'; url: string; reused: boolean }
@@ -73,7 +77,8 @@ interface IssueTarget {
 
 type CodeCheckpoint = Pick<RunState, 'startingCommit' | 'codeRevision'>;
 
-type Publication = { kind: 'comment' } | { kind: 'ready' | 'draft'; revision: string };
+type Publication =
+  { kind: 'comment'; revision?: string } | { kind: 'ready' | 'draft'; revision: string };
 
 type PublicationFailure = GithubFailure | StoreFailure | PublicationInProgress;
 
@@ -165,8 +170,8 @@ const REQUIRED_STORES = ['git-remote'];
 /**
  * Publishes what the run left: a ready PR for a completed run with approved changes, a draft PR
  * with a findings comment for a stuck run that committed work, a refusal for one that changes a
- * workflow, and a status comment otherwise. Code reaches the remote only through
- * `publishRunBranch`, which inspects it before any receipt is reused.
+ * workflow, and a status comment otherwise. Every run with code is inspected before any receipt is
+ * reused, and its code reaches the remote only through `publishRunBranch`.
  */
 function publishOutcome(
   app: App,
@@ -179,7 +184,7 @@ function publishOutcome(
     const checkpoint = yield* Result.await(codeCheckpointOf(app, report));
     const publication = yield* Result.await(publicationFor(repoRoot, report, checkpoint));
     if (publication.kind === 'comment')
-      return publishComment(store, target, { report, revision: checkpoint.codeRevision });
+      return publishStatus(repoRoot, store, target, { report, revision: publication.revision });
     const { revision } = publication;
     const pushed = yield* Result.await(
       target.whileOwned(() =>
@@ -241,9 +246,28 @@ function publicationFor(
     if (!revision) return Result.ok<Publication>({ kind: 'comment' });
     if (outcomeIsComplete(report.status))
       return Result.ok<Publication>({ kind: 'ready', revision });
-    if (report.status !== 'stuck') return Result.ok<Publication>({ kind: 'comment' });
+    if (report.status !== 'stuck') return Result.ok<Publication>({ kind: 'comment', revision });
     const committed = yield* Result.await(hasWorkBeyondStart(repoRoot, checkpoint));
-    return Result.ok<Publication>(committed ? { kind: 'draft', revision } : { kind: 'comment' });
+    return Result.ok<Publication>({ kind: committed ? 'draft' : 'comment', revision });
+  });
+}
+
+/** A run whose code changes a workflow is refused rather than reported in a status comment. */
+function publishStatus(
+  repoRoot: string,
+  store: OrchestrationStore,
+  target: IssueTarget,
+  { report, revision }: { report: RunReport; revision?: string },
+): Promise<Result<IssueOutcome, IssueFailure>> {
+  return Result.gen(async function* () {
+    if (!revision) return publishComment(store, target, { report });
+    const { runId } = report.state;
+    const inspection = yield* Result.await(
+      inspectRunBranch(repoRoot, { runId, revision, defaultBranch: target.base }),
+    );
+    if (inspection.kind === 'refused')
+      return refuse(store, target, { runId, revision, paths: inspection.paths });
+    return publishComment(store, target, { report, revision });
   });
 }
 

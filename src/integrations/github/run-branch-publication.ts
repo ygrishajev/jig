@@ -22,23 +22,27 @@ export type RunBranchPublication =
 export type PublicationFailure =
   RunBranchUnpublishable | GitCommandFailed | RemoteUnavailable | RunStateConflict;
 
+interface InspectedRevision {
+  runId: RunId;
+  revision: string;
+  defaultBranch: string;
+}
+
+export type RunBranchInspection =
+  { kind: 'refused'; paths: string[] } | { kind: 'clean'; changesFiles: boolean };
+
 /**
- * The only way an issue run's code reaches the remote. It inspects exactly `revision` against
- * where it forked from the remote default branch, refuses it when it changes a workflow, skips it
- * when it changes nothing unless `pushUnchanged` asks for its commits anyway, and otherwise pushes
- * that object ID under a lease on the remote branch. Any failure to inspect publishes nothing.
+ * The only way an issue run's code reaches the remote. It inspects exactly `revision`, refuses it
+ * when it changes a workflow, skips it when it changes nothing unless `pushUnchanged` asks for its
+ * commits anyway, and otherwise pushes that object ID under a lease on the remote branch. Any
+ * failure to inspect publishes nothing.
  */
 export function publishRunBranch(
   repoRoot: string,
-  {
-    runId,
-    revision,
-    defaultBranch,
-    pushUnchanged = false,
-  }: { runId: RunId; revision: string; defaultBranch: string; pushUnchanged?: boolean },
+  { pushUnchanged = false, ...inspected }: InspectedRevision & { pushUnchanged?: boolean },
 ): Promise<Result<RunBranchPublication, PublicationFailure>> {
   return Result.gen(async function* () {
-    const refs = new RemoteRef(repoRoot);
+    const { runId, revision } = inspected;
     const head = yield* Result.await(exactHead(repoRoot, branchRef(runId)));
     if (head !== revision)
       return Result.err(
@@ -46,7 +50,30 @@ export function publishRunBranch(
           message: `Run branch ${runBranchFor(runId)} is at ${head ?? 'nothing'}, not the checkpoint ${revision} its state records; move it back to the checkpoint or start a new run.`,
         }),
       );
-    const defaultHead = yield* Result.await(fetchedHead(refs, defaultBranch));
+    const inspection = yield* Result.await(inspectRunBranch(repoRoot, inspected));
+    if (inspection.kind === 'refused') return Result.ok<RunBranchPublication>(inspection);
+    const { changesFiles } = inspection;
+    if (!changesFiles && !pushUnchanged)
+      return Result.ok<RunBranchPublication>({ kind: 'unchanged' });
+    yield* Result.await(pushLeased(repoRoot, new RemoteRef(repoRoot), runId, revision));
+    return Result.ok<RunBranchPublication>({ kind: 'published', changesFiles });
+  });
+}
+
+function branchRef(runId: RunId): string {
+  return `refs/heads/${runBranchFor(runId)}`;
+}
+
+/**
+ * What `revision` changes against where it forked from the remote default branch, refused when it
+ * changes a workflow. Every publication of an issue run, a status comment included, asks this first.
+ */
+export function inspectRunBranch(
+  repoRoot: string,
+  { runId, revision, defaultBranch }: InspectedRevision,
+): Promise<Result<RunBranchInspection, PublicationFailure>> {
+  return Result.gen(async function* () {
+    const defaultHead = yield* Result.await(fetchedHead(new RemoteRef(repoRoot), defaultBranch));
     const forkPoint = yield* Result.await(mergeBaseWith(repoRoot, defaultHead, revision));
     if (!forkPoint)
       return Result.err(
@@ -57,17 +84,9 @@ export function publishRunBranch(
     const paths = yield* Result.await(changedPaths(repoRoot, forkPoint, revision));
     const workflows = paths.filter(isWorkflowPath);
     if (workflows.length > 0)
-      return Result.ok<RunBranchPublication>({ kind: 'refused', paths: workflows });
-    const changesFiles = paths.length > 0;
-    if (!changesFiles && !pushUnchanged)
-      return Result.ok<RunBranchPublication>({ kind: 'unchanged' });
-    yield* Result.await(pushLeased(repoRoot, refs, runId, revision));
-    return Result.ok<RunBranchPublication>({ kind: 'published', changesFiles });
+      return Result.ok<RunBranchInspection>({ kind: 'refused', paths: workflows });
+    return Result.ok<RunBranchInspection>({ kind: 'clean', changesFiles: paths.length > 0 });
   });
-}
-
-function branchRef(runId: RunId): string {
-  return `refs/heads/${runBranchFor(runId)}`;
 }
 
 function fetchedHead(

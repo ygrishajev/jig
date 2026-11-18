@@ -366,6 +366,39 @@ describe('implementIssue', () => {
     expect(await remoteHasObject(dir, saved?.codeRevision ?? '')).toBe(false);
   });
 
+  it('refuses a blocked run that changes a workflow instead of posting a status comment', async () => {
+    const { implement, github, dir, id, store, key, workflow } = await setup({
+      blocked: true,
+      workflow: true,
+    });
+
+    const outcome = unwrap(await implement());
+
+    const revision = unwrap(await new GitRemoteRunStore(dir).peek(id))?.codeRevision ?? '';
+    expect(outcome).toEqual({ kind: 'refused', paths: [workflow], url: github.comments[0].url });
+    expect(github.comments[0].body).toContain(workflow);
+    expect(unwrap(await store.read()).refusals).toEqual({
+      [`${key}@${revision}`]: { runId: id, revision, paths: [workflow] },
+    });
+    expect(github.commentsMade).toBe(1);
+    expect(await remoteBranch(dir, id)).toBe('');
+  });
+
+  it('inspects a blocked run before reusing a status comment recorded for its revision', async () => {
+    const { implement, github, dir, id, store, workflow } = await setup({
+      blocked: true,
+      workflow: true,
+    });
+    const outcome = unwrap(await implement());
+    const revision = unwrap(await new GitRemoteRunStore(dir).peek(id))?.codeRevision ?? '';
+    const identity = { runId: id, outcome: 'blocked' as const, revision };
+    unwrap(await store.update((state) => withComment(state, identity, faker.internet.url())));
+
+    expect(unwrap(await implement())).toEqual(outcome);
+    expect(outcome).toMatchObject({ kind: 'refused', paths: [workflow] });
+    expect(github.commentsMade).toBe(1);
+  });
+
   it('keeps the rejected review and the verification output of a stuck run through execution, reload and its findings', async () => {
     const { implement, github, dir, id, verifyCommand, failingOutput, feedback } = await setup({
       failingVerify: true,
