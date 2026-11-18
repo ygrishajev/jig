@@ -665,22 +665,7 @@ describe('implementIssue', () => {
     const repository = { owner: faker.internet.username(), repo: faker.string.alpha(10) };
     const key = `${repository.owner}/${repository.repo}#${issue.number}`;
     const id = runIdFor({ name: issue.title, key });
-    const app = createAppContainer({
-      repoRoot: dir,
-      logFormat: 'json',
-      logLevel: 'silent',
-      configFile: configFileFor(dir),
-      config: unwrap(loadConfig(configFileFor(dir))),
-      environment: unwrap(
-        parseEnvironment({
-          ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
-          GITHUB_TOKEN: faker.string.alphanumeric(20),
-          GH_TOKEN: faker.string.alphanumeric(20),
-        }),
-      ),
-    });
     const logger = mock<Logger>();
-    app.register({ logger: asValue(logger) });
     const imageName = faker.string.alpha(10);
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const failingOutput = failureOutput();
@@ -753,6 +738,7 @@ describe('implementIssue', () => {
           }),
         ),
       });
+      app.register({ logger: asValue(logger) });
       app.register({
         config: asValue({
           ...app.cradle.config,
