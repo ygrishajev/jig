@@ -28,6 +28,7 @@ export type Outcome = OfKnownType<
       type: 'verificationFailed';
       feedback: string;
       command?: string;
+      output?: string;
       observed?: WorkObservations;
     }
   | { type: 'nothingChanged'; feedback: string }

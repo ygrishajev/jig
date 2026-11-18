@@ -2,6 +2,7 @@ import { panic } from 'better-result';
 
 import type { CompletionEvidence } from './completion-reuse.js';
 import { recordDesignReview, recordDesignRevision } from './design-review.js';
+import { captureOutput } from './diagnostics.js';
 import { recordFinalCheck } from './final-check.js';
 import type { Outcome } from './outcome.js';
 import { currentSlice, enterPhase, type RunState } from './run-state.js';
@@ -38,26 +39,17 @@ type SendBack = Extract<Outcome, { type: keyof typeof ATTEMPT_COUNTER_OF }> & {
 
 function sendSliceBack(state: RunState, outcome: SendBack): RunState {
   const counter = ATTEMPT_COUNTER_OF[outcome.type];
-  return withCompletionEvidence(
-    updateCurrentSlice(state, (slice) => ({
-      ...slice,
-      [counter]: slice[counter] + 1,
-      lastFeedback: outcome.feedback,
-      feedbackHistory: [...slice.feedbackHistory, outcome.feedback],
-      verification: undefined,
-      failedVerification: failedVerificationOf(outcome, slice),
-    })),
-    outcome.completion,
-  );
-}
-
-/** The whole-request evidence a review leaves, kept as the run's record of its latest one. */
-function withCompletionEvidence(
-  state: RunState,
-  completion: CompletionEvidence | undefined,
-): RunState {
-  if (completion === undefined && state.completionReuse === undefined) return state;
-  return { ...state, completionReuse: completion };
+  const at = state.diagnosticSequence + 1;
+  const sentBack = updateCurrentSlice(state, (slice) => ({
+    ...slice,
+    [counter]: slice[counter] + 1,
+    lastFeedback: outcome.feedback,
+    feedbackHistory: [...slice.feedbackHistory, outcome.feedback],
+    verification: undefined,
+    failedVerification: failedVerificationOf(outcome, slice, at),
+    rejectedReview: rejectedReviewOf(outcome, slice, at),
+  }));
+  return withCompletionEvidence({ ...sentBack, diagnosticSequence: at }, outcome.completion);
 }
 
 export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Slice): RunState {
@@ -73,12 +65,35 @@ export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Sl
  * The facts of the verification that just failed, beside the counter it spent; a failure that
  * recorded none leaves whatever earlier failure the slice already holds.
  */
-function failedVerificationOf(outcome: SendBack, slice: Slice): Slice['failedVerification'] {
+function failedVerificationOf(
+  outcome: SendBack,
+  slice: Slice,
+  at: number,
+): Slice['failedVerification'] {
   if (outcome.type !== 'verificationFailed') return slice.failedVerification;
-  const { command, observed } = outcome;
+  const { command, observed, output } = outcome;
   return command !== undefined && observed !== undefined
-    ? { command, observed }
+    ? { command, observed, output: captureOutput(output), at, passedSince: false }
     : slice.failedVerification;
+}
+
+/**
+ * The review changes the slice still owes: a rejection records its feedback, and the
+ * implementation and verification failures on the way to the next review leave it standing.
+ */
+function rejectedReviewOf(outcome: SendBack, slice: Slice, at: number): Slice['rejectedReview'] {
+  return outcome.type === 'changesRequested' || outcome.type === 'rulesFixRequested'
+    ? { feedback: outcome.feedback, at }
+    : slice.rejectedReview;
+}
+
+/** The whole-request evidence a review leaves, kept as the run's record of its latest one. */
+function withCompletionEvidence(
+  state: RunState,
+  completion: CompletionEvidence | undefined,
+): RunState {
+  if (completion === undefined && state.completionReuse === undefined) return state;
+  return { ...state, completionReuse: completion };
 }
 
 function isDesignOutcome(outcome: Outcome): outcome is DesignOutcome {
@@ -131,7 +146,10 @@ function foldStepData(state: RunState, outcome: Outcome): RunState {
     case 'verified':
       return updateCurrentSlice(state, (slice) => verifiedSlice(slice, outcome));
     case 'approved':
-      return withCompletionEvidence(state, outcome.completion);
+      return withCompletionEvidence(
+        updateCurrentSlice(state, (slice) => ({ ...slice, rejectedReview: undefined })),
+        outcome.completion,
+      );
     case 'finalChecked':
       return recordFinalCheck(state, outcome);
     case 'described':
@@ -146,6 +164,10 @@ function verifiedSlice(slice: Slice, outcome: Extract<Outcome, { type: 'verified
   return {
     ...slice,
     lastFeedback: undefined,
+    failedVerification: slice.failedVerification && {
+      ...slice.failedVerification,
+      passedSince: true,
+    },
     verification: outcome.command
       ? { command: outcome.command, observed: outcome.observed }
       : undefined,

@@ -34,6 +34,7 @@ import {
   aRunStateIn,
   aSlice,
   designDocs,
+  failureOutput,
   implementingPlanSteps,
   planWithSteps,
   runId,
@@ -48,6 +49,7 @@ import {
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { runDiagnostics } from '../domain/diagnostics.js';
 import { AgentRunFailed, RunStateConflict, SandboxUnavailable } from '../domain/errors.js';
 import { enterPhase, type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -1257,6 +1259,127 @@ describe('runFlow', () => {
     expect(agent.commands).toEqual([verifyCommand, verifyCommand, verifyCommand, verifyCommand]);
     expect(state.finalCheck).toMatchObject({ verified: true, fulfilled: true, round: 2 });
     expect(agent.calls.filter((call) => call.role === 'implementer')[1].prompt).toContain(failure);
+  });
+
+  it('leaves a stuck slice its rejected review and current verification failure, through a reload', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const feedback = faker.lorem.sentence();
+    const lastOutput = failureOutput();
+    const results: ExecResult[] = [
+      { exitCode: 0, output: faker.lorem.sentence() },
+      { exitCode: 1, output: failureOutput() },
+      { exitCode: 1, output: failureOutput() },
+      { exitCode: 1, output: lastOutput },
+    ];
+    const { agent, run, start, reload } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => results.shift() ?? { exitCode: 0, output: '' },
+    });
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+    agent.script(
+      'implementer',
+      ...Array.from({ length: 4 }, () => ({
+        files: { [`${faker.string.alpha(8)}.txt`]: faker.lorem.sentence() },
+      })),
+    );
+    agent.script('reviewer', rejection(feedback));
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('stuck');
+    const sliceId = state.slices[0].id;
+    const diagnostics = runDiagnostics(await reload(state));
+    expect(diagnostics.unresolvedReviews).toEqual([
+      { sliceId, feedback, at: state.slices[0].rejectedReview?.at },
+    ]);
+    expect(diagnostics.lastVerificationFailure).toMatchObject({
+      scope: { kind: 'slice', sliceId },
+      command: verifyCommand,
+      output: { captured: true, tail: lastOutput },
+      current: true,
+    });
+    expect(diagnostics.lastVerificationFailure?.at).toBeGreaterThan(
+      diagnostics.unresolvedReviews[0].at,
+    );
+  });
+
+  it('resolves a rejected review the next review approves, keeping the failure before it as history', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const output = failureOutput();
+    const results: ExecResult[] = [
+      { exitCode: 0, output: faker.lorem.sentence() },
+      { exitCode: 1, output },
+      { exitCode: 0, output: faker.lorem.sentence() },
+    ];
+    const { agent, run, start } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => results.shift() ?? { exitCode: 0, output: '' },
+    });
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+    agent.script(
+      'implementer',
+      ...Array.from({ length: 3 }, () => ({
+        files: { [`${faker.string.alpha(8)}.txt`]: faker.lorem.sentence() },
+      })),
+    );
+    agent.script('reviewer', rejection(), approval());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    const diagnostics = runDiagnostics(state);
+    expect(diagnostics.unresolvedReviews).toEqual([]);
+    expect(diagnostics.lastVerificationFailure).toMatchObject({
+      output: { tail: output },
+      current: false,
+    });
+  });
+
+  it('keeps the latest repair failure and the final check failure before it once the repaired run passes, through a reload', async () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const finalOutput = failureOutput();
+    const repairOutput = failureOutput();
+    const results: ExecResult[] = [
+      { exitCode: 0, output: faker.lorem.sentence() },
+      { exitCode: 1, output: finalOutput },
+      { exitCode: 1, output: repairOutput },
+      { exitCode: 0, output: faker.lorem.sentence() },
+      { exitCode: 0, output: faker.lorem.sentence() },
+    ];
+    const { agent, run, start, reload } = await setup({
+      settings: runSettings({ verifyCommand }),
+      exec: () => results.shift() ?? { exitCode: 1, output: '' },
+    });
+    scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+    agent.script(
+      'implementer',
+      ...Array.from({ length: 3 }, () => ({
+        files: { [`${faker.string.alpha(8)}.txt`]: faker.lorem.sentence() },
+      })),
+    );
+    agent.script('reviewer', approvalLeavingGaps(), fulfillment(), approval(), fulfillment());
+    agent.script('describer', aDescription());
+
+    const { status, state } = await run(start);
+
+    expect(status).toBe('done');
+    const reloaded = await reload(state);
+    expect(runDiagnostics(reloaded)).toEqual({
+      unresolvedReviews: [],
+      outstandingGaps: [],
+      lastVerificationFailure: expect.objectContaining({
+        scope: { kind: 'slice', sliceId: state.slices[1].id },
+        output: { captured: true, tail: repairOutput, truncated: false },
+        current: false,
+      }),
+    });
+    expect(reloaded.failedFinalVerification).toMatchObject({
+      round: 1,
+      output: { captured: true, tail: finalOutput },
+      passedSince: true,
+    });
   });
 
   it('sends the repair one description carrying the failed verification and the reviewer gaps', async () => {

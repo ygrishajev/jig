@@ -771,7 +771,11 @@ describe('slice steps', () => {
     const outcome = await run(verifySlice, aSlice());
 
     expect(agent.commands).toEqual([verifyCommand]);
-    expect(outcome).toMatchObject({ type: 'verificationFailed' });
+    expect(outcome).toMatchObject({
+      type: 'verificationFailed',
+      command: verifyCommand,
+      output: failure,
+    });
     expect(outcome.type === 'verificationFailed' && outcome.feedback).toContain(failure);
     expect(outcome.type === 'verificationFailed' && outcome.feedback).toContain(verifyCommand);
   });
@@ -794,7 +798,7 @@ describe('slice steps', () => {
     expect(observed?.before.sandbox.clean).toBe(true);
     expect(observed?.after.sandbox.clean).toBe(false);
     const state = applyOutcome(aRunState({ slices: [slice] }), outcome);
-    expect(state.slices[0].failedVerification).toEqual({ command: verifyCommand, observed });
+    expect(state.slices[0].failedVerification).toMatchObject({ command: verifyCommand, observed });
     expect(state.slices[0].verificationFailures).toBe(1);
   });
 

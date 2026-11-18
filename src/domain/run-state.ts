@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { completionEvidenceSchema } from './completion-reuse.js';
 import { designDocsSchema } from './design-docs.js';
 import { designReviewProgressAt, designReviewProgressSchema } from './design-review.js';
+import { failedFinalVerificationSchema } from './diagnostics.js';
 import { finalCheckFailed } from './final-check.js';
 import { type RunId, runIdSchema } from './run-id.js';
 import { sliceStopReason } from './settings.js';
@@ -26,7 +27,14 @@ export function startRun(input: {
   codePublication?: CodePublication;
   startingCommit?: string;
 }): RunState {
-  return { ...input, merge: input.merge ?? true, revision: 0, phase: 'context', slices: [] };
+  return {
+    ...input,
+    merge: input.merge ?? true,
+    revision: 0,
+    diagnosticSequence: 0,
+    phase: 'context',
+    slices: [],
+  };
 }
 
 /** Moves a run into `phase`, checking it carries everything `phase` guarantees. */
@@ -93,6 +101,9 @@ const runFields = z.object({
   designReview: designReviewProgressSchema.optional(),
   slices: z.array(sliceSchema),
   finalCheck: finalCheckResultSchema.optional(),
+  failedFinalVerification: failedFinalVerificationSchema.optional(),
+  /** Counts the send-backs and final checks the run recorded; each failure takes its count as `at`. */
+  diagnosticSequence: z.number().int().nonnegative().default(0),
   /**
    * What an eligible slice review recorded about the whole request, bound to the work it saw.
    * Evidence saved before it carried its review scope loads as none, so the run declines reuse.
