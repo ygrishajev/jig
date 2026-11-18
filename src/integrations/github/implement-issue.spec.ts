@@ -28,6 +28,8 @@ import { FakeAgentSession } from '../../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
+import { GitRunCode } from '../../adapters/git/run-code.js';
+import { CompositeRunStore } from '../../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store.js';
 import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session.js';
 import { createAppContainer } from '../../app/container.js';
@@ -436,6 +438,43 @@ describe('implementIssue', () => {
     expect(await remoteBranch(dir, id)).toBe('');
     expect(unwrap(await new GitRemoteRunStore(dir).peek(id))?.startingCommit).toBeUndefined();
     expect(github.prsOpened).toBe(0);
+  });
+
+  it('reports a restored run with no commits as unfinished after the default branch advances', async () => {
+    const { implement, github, dir, id, issue, agent } = await setup();
+    const git = simpleGit(dir);
+    const startingCommit = await git.revparse(['HEAD']);
+    const freshStore = () =>
+      new CompositeRunStore([new GitRemoteRunStore(dir)], new GitRunCode(dir));
+    unwrap(
+      await freshStore().save(
+        aRunState({
+          runId: id,
+          codePublication: 'deferred',
+          merge: false,
+          startingCommit,
+          request: requestText(issue),
+        }),
+      ),
+    );
+    await git.commit(faker.git.commitMessage(), ['--allow-empty']);
+    await git.push('origin', 'main');
+    const store = freshStore();
+    const restored = unwrap(await store.load(id));
+    if (!restored) panic('The initial checkpoint was not restored');
+    unwrap(await store.save(aRunState({ ...restored, phase: 'stuck' })));
+
+    expect(unwrap(await implement())).toMatchObject({ kind: 'commented', outcome: 'stuck' });
+    expect(github.prsOpened).toBe(0);
+    expect(github.commentsMade).toBe(1);
+    expect(agent.calls).toHaveLength(0);
+    expect(await remoteBranch(dir, id)).toBe('');
+    expect(await git.revparse([runBranchFor(id)])).toBe(startingCommit);
+    expect(unwrap(await new GitRemoteRunStore(dir).peek(id))).toMatchObject({
+      startingCommit,
+      codeRevision: startingCommit,
+      merge: false,
+    });
   });
 
   it('opens one draft PR with one findings comment for a stuck run with commits, across reruns', async () => {

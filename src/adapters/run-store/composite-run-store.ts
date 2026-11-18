@@ -1,9 +1,17 @@
 import { Result } from 'better-result';
 
-import { RunStateConflict } from '../../domain/errors.js';
+import {
+  type GitCommandFailed,
+  RunCodeUnavailable,
+  RunStateConflict,
+} from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
-import { defersCodePublication, type RunState } from '../../domain/run-state.js';
-import type { RunCode } from '../../ports/run-code.js';
+import {
+  canRecoverInitialCheckpoint,
+  defersCodePublication,
+  type RunState,
+} from '../../domain/run-state.js';
+import type { RunCode, RunCodeRestoreFailure } from '../../ports/run-code.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 
 /**
@@ -29,8 +37,7 @@ export class CompositeRunStore implements RunStore {
       const freshest = yield* consistentFreshestOf(copies);
       if (!freshest) return Result.ok(undefined);
       this.latestRevisions.set(runId, freshest.revision);
-      yield* Result.await(this.restoreCheckpoint(freshest));
-      return Result.ok(freshest);
+      return this.restoreCheckpoint(freshest);
     }, this);
   }
 
@@ -46,10 +53,13 @@ export class CompositeRunStore implements RunStore {
     return Result.ok(copies);
   }
 
-  private async restoreCheckpoint(freshest: RunState): Promise<Result<void, RunStoreFailure>> {
-    const { runId, codeRevision } = freshest;
-    if (!defersCodePublication(freshest) || !codeRevision) return Result.ok();
-    return this.code.restore(runId, codeRevision);
+  private restoreCheckpoint(state: RunState): Promise<Result<RunState, RunCodeRestoreFailure>> {
+    return Result.gen(async function* (this: CompositeRunStore) {
+      if (!defersCodePublication(state)) return Result.ok(state);
+      const checkpointed = yield* recordedCheckpoint(state);
+      yield* Result.await(this.code.restore(state.runId, checkpointed.codeRevision));
+      return Result.ok(checkpointed);
+    }, this);
   }
 
   async peek(runId: RunId): Promise<Result<RunState | undefined, RunStoreFailure>> {
@@ -70,10 +80,14 @@ export class CompositeRunStore implements RunStore {
     return Result.ok();
   }
 
-  private async withCodeCheckpoint(state: RunState): Promise<Result<RunState, RunStoreFailure>> {
+  private async withCodeCheckpoint(
+    state: RunState,
+  ): Promise<Result<RunState, GitCommandFailed | RunCodeUnavailable>> {
     if (!defersCodePublication(state)) return Result.ok(state);
     const checkpoint = await this.code.checkpoint(state.runId);
-    return checkpoint.map((codeRevision) => (codeRevision ? { ...state, codeRevision } : state));
+    return checkpoint.andThen((codeRevision) =>
+      recordedCheckpoint(codeRevision ? { ...state, codeRevision } : state),
+    );
   }
 }
 
@@ -114,4 +128,17 @@ function sameCode(first: RunState, second: RunState): boolean {
 
 function codeOf({ codePublication, codeRevision }: RunState): string {
   return `${codePublication ?? 'published with state'}, checkpoint ${codeRevision ?? 'none'}`;
+}
+
+function recordedCheckpoint(
+  state: RunState,
+): Result<RunState & { codeRevision: string }, RunCodeUnavailable> {
+  const codeRevision =
+    state.codeRevision ?? (canRecoverInitialCheckpoint(state) ? state.startingCommit : undefined);
+  if (codeRevision) return Result.ok({ ...state, codeRevision });
+  return Result.err(
+    new RunCodeUnavailable({
+      message: `Run ${state.runId} has no trustworthy code checkpoint. Resume from a copy with a recorded codeRevision, or start a new run; the current default branch cannot recover this run's code.`,
+    }),
+  );
 }

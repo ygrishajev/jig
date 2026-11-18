@@ -1,12 +1,16 @@
 import { faker } from '@faker-js/faker';
+import { panic } from 'better-result';
 import { mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
-import { runId } from '../../../tests/support/builders.js';
+import { aRunState, runId } from '../../../tests/support/builders.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
+import { GitRunCode } from '../../adapters/git/run-code.js';
+import { CompositeRunStore } from '../../adapters/run-store/composite-run-store.js';
+import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { hasWorkBeyondStart, publishRunBranch } from './run-branch-publication.js';
 
@@ -190,6 +194,29 @@ describe('publishRunBranch', () => {
   });
 
   describe('hasWorkBeyondStart', () => {
+    it('counts only run commits from a checkpoint restored after the default branch advances', async () => {
+      const { cloneOf } = await createRemote();
+      const here = await cloneOf();
+      const git = simpleGit(here);
+      const startingCommit = await git.revparse(['HEAD']);
+      const state = aRunState({ startingCommit, codePublication: 'deferred' });
+      const freshStore = () =>
+        new CompositeRunStore([new GitRemoteRunStore(here)], new GitRunCode(here));
+      unwrap(await freshStore().save(state));
+      await git.commit(faker.git.commitMessage(), ['--allow-empty']);
+      await git.push('origin', 'main');
+      const store = freshStore();
+      const restored = unwrap(await store.load(state.runId));
+      if (!restored) panic('The initial checkpoint was not restored');
+      expect(unwrap(await hasWorkBeyondStart(here, restored))).toBe(false);
+      await git.checkout(runBranchFor(state.runId));
+      await git.commit(faker.git.commitMessage(), ['--allow-empty']);
+      unwrap(await store.save(restored));
+      const resumed = unwrap(await freshStore().load(state.runId));
+      if (!resumed) panic('The run checkpoint was not restored');
+      expect(unwrap(await hasWorkBeyondStart(here, resumed))).toBe(true);
+    });
+
     it('counts commits made past the recorded starting commit', async () => {
       const { here, commitOnRunBranch } = await setup();
       const startingCommit = await simpleGit(here).revparse(['HEAD']);

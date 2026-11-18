@@ -225,3 +225,23 @@ export function runStopReason(state: RunState): string | undefined {
 export function stuckSlice(state: RunState): Slice | undefined {
   return state.slices.find((slice) => slice.status === 'stuck');
 }
+
+export function canRecoverInitialCheckpoint(state: RunState): boolean {
+  return (
+    state.phase === 'context' &&
+    state.slices.length === 0 &&
+    state.diagnosticSequence === 0 &&
+    [
+      state.context,
+      state.plan,
+      state.docs,
+      state.designReview,
+      state.finalCheck,
+      state.failedFinalVerification,
+      state.completionReuse,
+      state.completionReuseAuthorized,
+      state.prDescription,
+      state.blockedReason,
+    ].every((evidence) => evidence === undefined)
+  );
+}

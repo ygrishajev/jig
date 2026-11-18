@@ -14,6 +14,7 @@ import {
 } from '../../tests/support/builders.js';
 import type { DesignReviewProgress } from './design-review.js';
 import {
+  canRecoverInitialCheckpoint,
   enterPhase,
   runMerges,
   type RunPhase,
@@ -213,3 +214,32 @@ function aStart() {
     request: faker.lorem.paragraph(),
   };
 }
+
+describe('canRecoverInitialCheckpoint', () => {
+  it('accepts untouched state independently of persistence revision', () => {
+    expect(canRecoverInitialCheckpoint(aRunState({ phase: 'context' }))).toBe(true);
+  });
+
+  it.each(runPhaseSchema.options.filter((phase) => phase !== 'context'))(
+    'refuses progressed phase %s',
+    (phase) => {
+      expect(canRecoverInitialCheckpoint(aRunState({ phase }))).toBe(false);
+    },
+  );
+
+  it.each([
+    { slices: [aSlice()] },
+    { context: { classification: faker.word.noun(), repoSummary: faker.lorem.paragraph() } },
+    { diagnosticSequence: 1 },
+    { blockedReason: faker.lorem.sentence() },
+    { prDescription: faker.lorem.paragraph() },
+    { completionReuseAuthorized: true as const },
+    { plan: aRunState({ phase: 'designing' }).plan },
+    { docs: aRunState({ phase: 'slicing' }).docs },
+    { designReview: aFirstDesignReview() },
+    { finalCheck: { verified: true, fulfilled: true, gaps: [], round: 1 } },
+    { completionReuse: aCompletionEvidence() },
+  ])('refuses ambiguous context state %j', (evidence) => {
+    expect(canRecoverInitialCheckpoint(aRunState({ phase: 'context', ...evidence }))).toBe(false);
+  });
+});
