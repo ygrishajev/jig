@@ -7,16 +7,21 @@ description: jig's conventions for committing, naming a branch and opening a pul
 
 ## Commit
 
-1. Read `.commitlintrc.json` for the allowed scopes — the list changes; don't work from memory.
+1. Check `node --version` against `package.json`'s `engines` and `volta` entries before committing.
+   The `commit-msg` hook runs `npx commitlint`; an older shell runtime can fail before commitlint
+   checks the message. If the shell picked the wrong runtime, run `git commit` with the project's
+   installed Node version first on `PATH`. Do not bypass the hook.
+2. Read `.commitlintrc.json` for the allowed scopes — the list changes; don't work from memory.
    husky's `commit-msg` hook enforces `@commitlint/config-conventional` plus a required scope.
-2. Pick the type from what the commit touches:
+   Keep each body line at most 100 characters, as required by the inherited commitlint rules.
+3. Pick the type from what the commit touches:
    - **Anything under `src/` is never `chore`.** `feat` for new behaviour, `fix` for a bug in
      code, `refactor` for a cleanup or internal restructuring. Torn between `fix` and `refactor`:
      `refactor`.
    - `chore`, `docs`, `test`, `ci` only when `src/` is untouched — check with
      `git diff --cached --name-only | grep '^src/'`.
-3. Subject: _what_ changed, imperative ("run verify inside the sandbox"). Body: _why_.
-4. Commits before this rule use `sdlc: <subject>` — don't rewrite history to fix them.
+4. Subject: _what_ changed, imperative ("run verify inside the sandbox"). Body: _why_.
+5. Commits before this rule use `sdlc: <subject>` — don't rewrite history to fix them.
 
 ## Branch
 
