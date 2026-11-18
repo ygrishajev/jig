@@ -1,6 +1,6 @@
 {
   "runId": "publish-partial-work-as-a-draft-pr-and-2d6a3b10",
-  "revision": 30,
+  "revision": 31,
   "baseBranch": "main",
   "request": "# Publish partial work as a draft PR, and refuse workflow-file changes\n\nOne part of the GitHub Actions workflow work. **Treat this request as self-contained**: everything needed is below. Don't assume access to any other issue or to `docs/specs/github-actions-workflow.md`.\n\n**Order:** builds on `jig github implement`, which already opens a ready PR for a completed run and comments when nothing changed.\n\n## What\n\nWhen a run started from an issue cannot finish but did produce changes, jig opens a **draft** PR. One PR comment lists what is still open: the reviewer's unresolved findings, final-check gaps and verification failures. If the run's changes touch anything under `.github/workflows/`, jig publishes nothing and explains on the issue that this automation cannot change workflows.\n\n## Why\n\nAttempts cost time and money. A run that ran out of attempts often leaves useful work and the exact list of what is wrong; throwing both away means a person starts from zero. Workflow files decide what runs with the repository's credentials, so the automation must never ship changes to them.\n\n## Context\n\njig is a Node CLI (TypeScript, Vitest) that turns a markdown request into planned slices, has one agent implement and another review each slice inside a Docker sandbox, and lands them on one run branch, `jig/run/<id>`. Before editing, read `README.md`, `docs/architecture.html`, `CLAUDE.md`, and every `.claude/rules/` file that covers a file you will change, specs included.\n\nThe layering is domain rules (`src/domain/`) → flows and steps (`src/flow/`, `src/steps/`) → ports (`src/ports/`) → adapters (`src/adapters/`). Composition lives in `src/app/` and commands in `src/cli/`. Specs sit beside the code as `*.spec.ts` and pass fakes for ports, never module mocks. Anything that touches git is tested against a real temporary repository (`tests/support/temp-repo.ts`).\n\nThis issue is one part of the GitHub Actions workflow. In that workflow an operator marks GitHub issues ready, and jig, running in GitHub Actions under a GitHub App identity, implements them, opens PRs and works on review feedback. The jig core, called the *execution engine* (plan, implement, verify, review), stays independent of GitHub. The GitHub code is an *integration*: optional, jig-owned code in its own directory (`src/integrations/github/` unless one already exists). It depends on core contracts, and the core never imports it. jig must start without the integration or its credentials.\n\n- `jig github implement --issue <n>` exists, with its GitHub port, orchestration state ref and publication receipts.\n- Run state records why a run stopped: which cap was hit, on which slice, after how many attempts (`src/domain/run-state.ts`, `result.json`).\n- Review feedback is free text today (`src/steps/slice.ts`); final-check results live in `src/domain/final-check.ts`.\n\n## Target\n\n- An outcome of `stuck` with commits on the run branch beyond the starting commit opens a draft PR (same head, base and body rules as a ready PR) plus one PR-level comment with the remaining findings, final-check gaps and the last verification failure.\n- Findings are published **at PR level only**. Keep any file and line a finding mentions as text, and never invent an inline anchor. Inline placement is a later issue.\n- Before any publication, check the change set (default branch fork point to run head). Any added, modified or deleted path under `.github/workflows/` means: publish nothing, comment on the issue naming the files, and record the refusal in orchestration state.\n- The comment is repeatable without duplicates, through a receipt in orchestration state.\n\n## Don't undo these\n\n- **Agents and project commands run only inside the sandbox.** Never on the runner host, not even \"for CI\".\n- **Credentials never land in a file jig writes, a log line, the image, or the sandbox.** The App key and the publishing token stay in the host process.\n- **The core never imports the GitHub integration.** Dependencies point from the integration toward core contracts.\n- **The host publishes, not the sandbox.** Pushes, PRs and comments are made by the GitHub integration in the host process.\n- **No automatic merge.** A person merges every PR. `mergeMode` does not apply to runs this automation starts.\n\n## Done when\n\n- [ ] A stuck run with commits opens one draft PR and one findings comment; a rerun adds neither again\n- [ ] A stuck run with no commits opens no PR and comments on the issue\n- [ ] A run that changes `.github/workflows/ci.yml` publishes nothing and the issue comment names the file\n- [ ] `npm run validate` passes from the repository root\n\n\nSource: https://github.com/ygrishajev/jig/issues/14\n",
   "merge": false,
@@ -175,43 +175,17 @@
       "title": "Address the final check findings",
       "description": "A final check of the whole run found problems after every slice was approved.\nRepair exactly what this description lists; change nothing else in the approved work.\nThe review of the whole run reported these unmet requirements:\n1. src/integrations/github/implement-issue.ts bypasses workflow inspection when publicationFor selects an issue comment. A blocked run containing workflow changes posts a generic status comment without naming the offending files or recording a refusal in orchestration state. A focused execution test confirmed this. Inspect the change set before all publication paths, including status comments and receipt reuse.",
       "order": 3,
-      "status": "in_review",
+      "status": "pending",
       "reviewCycles": 0,
       "hookFailures": 0,
       "verificationFailures": 0,
       "emptyAttempts": 0,
-      "ruleFixCycles": 0,
-      "feedbackHistory": [],
+      "ruleFixCycles": 1,
+      "feedbackHistory": [
+        "1. src/integrations/github/implement-issue.ts:234: Remove the new JSDoc that merely restates publishStatus's behavior, or replace it with the non-obvious reason inspection must precede receipt reuse. clean-code-over-comments.md permits declaration comments only for why.\n2. src/integrations/github/run-branch-publication.ts:67: Replace the new inspection JSDoc's behavioral narration with a concise explanation of the safety constraint behind inspecting before publication and receipt reuse, as required by clean-code-over-comments.md.\n3. src/integrations/github/implement-issue.ts:240: Narrow publishStatus's error type from IssueFailure (which includes the entire JigError union) to the union actually returned by inspectRunBranch, publishComment, and refuse, as required by errors-as-values.md. The requested behavior is implemented, and the protected spec changes add relevant coverage without weakening existing checks. Recorded validation was accepted; no broader checks were rerun."
+      ],
       "commit": "41f5af8969bbb8d5a359faa28abed7df45b9edf1",
-      "verification": {
-        "command": "npm run validate",
-        "observed": {
-          "before": {
-            "host": {
-              "commit": "41f5af8969bbb8d5a359faa28abed7df45b9edf1",
-              "tree": "502df38b641e0f545428a67905853630aabd6e84",
-              "clean": true
-            },
-            "sandbox": {
-              "commit": "41f5af8969bbb8d5a359faa28abed7df45b9edf1",
-              "tree": "502df38b641e0f545428a67905853630aabd6e84",
-              "clean": true
-            }
-          },
-          "after": {
-            "host": {
-              "commit": "41f5af8969bbb8d5a359faa28abed7df45b9edf1",
-              "tree": "502df38b641e0f545428a67905853630aabd6e84",
-              "clean": true
-            },
-            "sandbox": {
-              "commit": "41f5af8969bbb8d5a359faa28abed7df45b9edf1",
-              "tree": "502df38b641e0f545428a67905853630aabd6e84",
-              "clean": true
-            }
-          }
-        }
-      }
+      "lastFeedback": "1. src/integrations/github/implement-issue.ts:234: Remove the new JSDoc that merely restates publishStatus's behavior, or replace it with the non-obvious reason inspection must precede receipt reuse. clean-code-over-comments.md permits declaration comments only for why.\n2. src/integrations/github/run-branch-publication.ts:67: Replace the new inspection JSDoc's behavioral narration with a concise explanation of the safety constraint behind inspecting before publication and receipt reuse, as required by clean-code-over-comments.md.\n3. src/integrations/github/implement-issue.ts:240: Narrow publishStatus's error type from IssueFailure (which includes the entire JigError union) to the union actually returned by inspectRunBranch, publishComment, and refuse, as required by errors-as-values.md. The requested behavior is implemented, and the protected spec changes add relevant coverage without weakening existing checks. Recorded validation was accepted; no broader checks were rerun."
     }
   ],
   "finalCheck": {
