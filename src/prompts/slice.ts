@@ -20,6 +20,8 @@ export function implementPrompt(slice: Slice, verifyCommand?: string): string {
     ...houseRulesFirst(),
     '',
     'Make the necessary code changes in this repository to complete this slice.',
+    'Preserve lint, test and verification settings. Change them only when this slice explicitly',
+    'requires the change; never relax a check to make the implementation pass.',
     'Do not rebase, amend or otherwise rewrite the commits already on this branch.',
     '',
     ...checkAgainstHouseRulesLast(),
@@ -43,6 +45,10 @@ function previousFeedback(slice: Slice): string[] {
     'A previous attempt at this slice was sent back with changes requested, by its review or by a failed check.',
     'Address this feedback specifically:',
     slice.lastFeedback,
+    'If a requested change is wrong or outside this slice, check the relevant code and request',
+    'before disputing it. Record the evidence in your commit message body so the reviewer can',
+    'verify it from the commit history.',
+    'Do not leave a supported finding unresolved because you disagree with its wording.',
     ...earlierRounds(slice),
   ];
 }
@@ -204,6 +210,11 @@ function sliceReviewSections(
     'the most serious: each rejection costs the slice one of a few attempts, so a problem you',
     'leave for the next round may be the one it runs out on. On a later round, check the whole',
     'range again, not only what the last feedback named.',
+    'For a missing edge case, name the reachable input or state, the wrong result, and why',
+    'existing checks do not cover it. Do not request coverage for a speculative case that',
+    'the slice cannot reach.',
+    "If an earlier finding was disputed, check the implementer's evidence against the code.",
+    'Drop the finding when that evidence holds; otherwise explain the remaining failure case.',
   ];
 }
 

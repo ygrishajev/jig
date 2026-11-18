@@ -57,6 +57,8 @@ function documentsSection(label: string, docs: DesignDocs): string[] {
 function reviewRules(): string[] {
   return [
     'Explore the repository as much as you need to check the documents against it.',
+    'Check that the design maps each requested behaviour to the module that owns it in this',
+    'repository. Raise a consequential mismatch with a concrete failure scenario and evidence.',
     '',
     'Raise a finding only for a consequential decision: one that, wrong or missing, would',
     'materially change behaviour the request requires, violate a constraint of this repository',

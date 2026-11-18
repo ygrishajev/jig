@@ -8,7 +8,7 @@
 
 ## How
 
-<!-- For reviewers: the approach and the notable decisions, a few lines. -->
+<!-- For reviewers: a short before/after flow in pseudocode when behaviour changed. Explain what differs, when it matters, and why. -->
 
 ## Verification
 
