@@ -201,6 +201,34 @@ describe('run diagnostics', () => {
     });
   });
 
+  it('keeps the failed verification of a final check saved before output was kept as history once the repaired check passes', () => {
+    const command = `npm run ${faker.word.verb()}`;
+    const round = 1;
+    const { diagnosticSequence: _unordered, ...legacy } = aRunState({
+      phase: 'finalCheck',
+      finalCheck: aFinalCheckResult({ verified: false, command, round }),
+    });
+    const loaded = runStateSchema.parse(legacy);
+
+    const repaired = applyOutcome(loaded, finalCheck({ command, gaps: [] }));
+    const reloaded = runStateSchema.parse(JSON.parse(JSON.stringify(repaired)));
+
+    expect(reloaded.failedFinalVerification).toEqual({
+      command,
+      output: { captured: false },
+      round,
+      at: 0,
+      passedSince: true,
+    });
+    expect(runDiagnostics(reloaded).lastVerificationFailure).toEqual({
+      scope: { kind: 'finalCheck', round },
+      command,
+      output: { captured: false },
+      at: 0,
+      current: false,
+    });
+  });
+
   it('places every ordered failure after one saved before failures were ordered', () => {
     const legacy = aSlice({ order: 0, failedVerification: aFailedVerification({ at: 0 }) });
     const later = aSlice({

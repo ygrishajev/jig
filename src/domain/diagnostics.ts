@@ -113,32 +113,36 @@ function sliceVerificationFailure(slice: Slice): VerificationFailureDiagnostic[]
   ];
 }
 
-/**
- * The run's last whole-run verification failure. A run saved before these were kept still
- * records that its latest check failed verification, so that one stands in with no output.
- */
 function finalVerificationFailure(state: RunState): VerificationFailureDiagnostic[] {
-  const failed = state.failedFinalVerification;
-  if (failed) {
-    return [
-      {
-        scope: { kind: 'finalCheck', round: failed.round },
-        command: failed.command,
-        output: failed.output,
-        at: failed.at,
-        current: !failed.passedSince,
-      },
-    ];
-  }
-  const check = state.finalCheck;
-  if (!check || check.verified) return [];
+  const failed = retainedFinalVerificationFailure(state);
+  if (!failed) return [];
   return [
     {
-      scope: { kind: 'finalCheck', round: check.round },
-      command: check.command,
-      output: OUTPUT_UNAVAILABLE,
-      at: 0,
-      current: true,
+      scope: { kind: 'finalCheck', round: failed.round },
+      command: failed.command,
+      output: failed.output,
+      at: failed.at,
+      current: !failed.passedSince,
     },
   ];
+}
+
+/**
+ * The run's last whole-run verification failure. A run saved before these were kept still
+ * records that its latest check failed verification, so that one stands in, unordered and with
+ * no output, until a later check replaces it.
+ */
+export function retainedFinalVerificationFailure(
+  state: RunState,
+): FailedFinalVerification | undefined {
+  if (state.failedFinalVerification) return state.failedFinalVerification;
+  const check = state.finalCheck;
+  if (!check || check.verified) return undefined;
+  return {
+    command: check.command,
+    output: OUTPUT_UNAVAILABLE,
+    round: check.round,
+    at: 0,
+    passedSince: false,
+  };
 }

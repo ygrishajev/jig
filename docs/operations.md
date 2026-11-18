@@ -54,7 +54,9 @@ Runs saved before diagnostics were kept load without error: their failures carry
 `at: 0`, earlier than any ordered one, and their output is
 `{ "captured": false }` — unavailable, never an empty string. A final check saved
 with a failed verification but no `failedFinalVerification` is projected the same
-way.
+way, and a later check that passes keeps it as `failedFinalVerification` with its
+command and round, `at: 0`, unavailable output and `passedSince: true`, so the
+historical failure outlives the check that replaced it.
 
 ## CI outcome handling
 
