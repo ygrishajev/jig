@@ -1,12 +1,15 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
 import {
   aDescription,
+  approval,
+  fulfillment,
   rejection,
   scriptPlanning,
   scriptWholeRun,
@@ -28,10 +31,11 @@ import { createAppContainer } from '../../app/container.js';
 import { parseEnvironment } from '../../config/environment.js';
 import { configFileFor, loadConfig } from '../../config/load-config.js';
 import { AgentRunFailed } from '../../domain/errors.js';
-import { runIdFor } from '../../domain/run-id.js';
+import { type RunId, runIdFor } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import { GithubNotFound, GithubRefused } from './errors.js';
+import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
 import { implementIssue } from './implement-issue.js';
+import { claimPublication } from './orchestration-state.js';
 import { OrchestrationStore } from './orchestration-store.js';
 import { requestText } from './request-snapshot.js';
 
@@ -184,6 +188,138 @@ describe('implementIssue', () => {
     expect(github.prsOpened).toBe(0);
   });
 
+  it('refuses a completed run that changes a workflow without publishing its code', async () => {
+    const { implement, github, dir, id, store, key, agent, workflow } = await setup({
+      workflow: true,
+    });
+
+    const outcome = unwrap(await implement());
+
+    const saved = unwrap(await new GitRemoteRunStore(dir).peek(id));
+    const revision = saved?.codeRevision ?? '';
+    expect(outcome).toEqual({ kind: 'refused', paths: [workflow], url: github.comments[0].url });
+    expect(unwrap(await store.read()).refusals).toEqual({
+      [`${key}@${revision}`]: { runId: id, revision, paths: [workflow] },
+    });
+    expect(await remoteBranch(dir, id)).toBe('');
+    expect(await remoteHasObject(dir, revision)).toBe(false);
+    expect(github.prsOpened).toBe(0);
+    expect(github.pullRequests.size).toBe(0);
+    const calls = agent.calls.length;
+    expect(unwrap(await implement())).toEqual(outcome);
+    expect(unwrap(await implement())).toEqual(outcome);
+    expect(agent.calls).toHaveLength(calls);
+    expect(github.commentsMade).toBe(1);
+    expect(github.prsOpened).toBe(0);
+  });
+
+  it('saves a refusal before commenting, so a failed comment is retried and nothing published', async () => {
+    const { implement, github, dir, id, store, workflow } = await setup({ workflow: true });
+    github.failOnce('commentOnIssue', new GithubRefused({ message: faker.lorem.sentence() }));
+
+    expect((await implement()).isErr()).toBe(true);
+    const saved = unwrap(await store.read());
+    expect(Object.values(saved.refusals).map(({ paths }) => paths)).toEqual([[workflow]]);
+    expect(saved.refusalComments).toEqual({});
+
+    expect(unwrap(await implement())).toMatchObject({ kind: 'refused', paths: [workflow] });
+    expect(github.commentsMade).toBe(1);
+    expect(await remoteBranch(dir, id)).toBe('');
+  });
+
+  it.each([
+    ['refusal', { workflow: true }],
+    ['status', { empty: true }],
+  ])(
+    'finds a %s comment posted before its outcome was known instead of posting it again',
+    async (_, options) => {
+      const { implement, github } = await setup(options);
+      github.failOnceAfterEffect(
+        'commentOnIssue',
+        new GithubUnavailable({ message: faker.lorem.sentence() }),
+      );
+
+      expect((await implement()).isErr()).toBe(true);
+      const outcome = unwrap(await implement());
+
+      expect(github.commentsMade).toBe(1);
+      expect(outcome).toMatchObject({ url: github.comments[0].url });
+      expect(unwrap(await implement())).toEqual(outcome);
+      expect(github.commentsMade).toBe(1);
+    },
+  );
+
+  it('retries an approved publication with the same inspected revision', async () => {
+    const { implement, github, dir, id } = await setup();
+    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
+
+    expect((await implement()).isErr()).toBe(true);
+    const revision = unwrap(await new GitRemoteRunStore(dir).peek(id))?.codeRevision;
+    expect(await remoteBranch(dir, id)).toContain(revision);
+
+    expect(unwrap(await implement())).toMatchObject({ kind: 'pullRequest', reused: false });
+    expect(await remoteBranch(dir, id)).toContain(revision);
+    expect(github.prsOpened).toBe(1);
+  });
+
+  it('opens one PR when two attempts publish the same request at once', async () => {
+    const { implement, github } = await setup();
+    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
+    expect((await implement()).isErr()).toBe(true);
+
+    const attempts = await Promise.all([implement(), implement()]);
+
+    const succeeded = attempts.filter((attempt) => attempt.isOk());
+    expect(succeeded.length).toBeGreaterThan(0);
+    for (const attempt of attempts)
+      if (attempt.isErr())
+        expect(['PublicationInProgress', 'RunInProgress']).toContain(attempt.error._tag);
+    expect(github.prsOpened).toBe(1);
+  });
+
+  it('publishes nothing while another job owns the publication', async () => {
+    const { implement, github, dir, id, store, key } = await setup();
+    const owner = { token: faker.string.uuid(), expiresAt: Date.now() + 60_000 };
+    unwrap(await store.update((state) => claimPublication(state, key, owner, Date.now())));
+
+    const result = await implement();
+
+    expect(result.isErr() && result.error._tag).toBe('PublicationInProgress');
+    expect(await remoteBranch(dir, id)).toBe('');
+    expect(github.prsOpened).toBe(0);
+    expect(github.commentsMade).toBe(0);
+    expect(unwrap(await store.read()).owners[key]).toEqual(owner);
+  });
+
+  it("keeps an unfinished run's code off the remote while checkpointing where it started", async () => {
+    const { implement, dir, id } = await setup({ unfinished: true });
+    const startingCommit = await simpleGit(dir).revparse(['HEAD']);
+
+    unwrap(await implement());
+
+    const saved = unwrap(await new GitRemoteRunStore(dir).peek(id));
+    expect(saved).toMatchObject({ codePublication: 'deferred', startingCommit });
+    expect(await simpleGit(dir).revparse([runBranchFor(id)])).toBe(saved?.codeRevision);
+    expect(await remoteBranch(dir, id)).toBe('');
+    expect(await remoteHasObject(dir, saved?.codeRevision ?? '')).toBe(false);
+  });
+
+  it('inspects a run saved before checkpoints existed without guessing where it started', async () => {
+    const { implement, github, dir, id, issue } = await setup();
+    unwrap(
+      await new GitRemoteRunStore(dir).save(
+        aRunState({ runId: id, phase: 'completed', merge: false, request: requestText(issue) }),
+      ),
+    );
+    const workflow = `.github/workflows/${faker.string.alpha(8)}.yml`;
+    await commitOnBranch(dir, runBranchFor(id), { [workflow]: 'on: push' });
+
+    expect(unwrap(await implement())).toMatchObject({ kind: 'refused', paths: [workflow] });
+    expect(await remoteBranch(dir, id)).toBe('');
+    expect(unwrap(await new GitRemoteRunStore(dir).peek(id))?.startingCommit).toBeUndefined();
+    expect(github.prsOpened).toBe(0);
+  });
+
   async function setup({
     paused = false,
     unfinished = false,
@@ -191,6 +327,7 @@ describe('implementIssue', () => {
     blocked = false,
     auto = false,
     planningBlocked = false,
+    workflow = false,
   }: {
     paused?: boolean;
     unfinished?: boolean;
@@ -198,6 +335,7 @@ describe('implementIssue', () => {
     blocked?: boolean;
     auto?: boolean;
     planningBlocked?: boolean;
+    workflow?: boolean;
   } = {}) {
     const remote = await createRemote();
     const dir = await remote.cloneOf();
@@ -222,6 +360,7 @@ describe('implementIssue', () => {
       ),
     });
     const imageName = faker.string.alpha(10);
+    const workflowPath = `.github/workflows/${faker.string.alpha(8)}.yml`;
     app.register({
       config: asValue({
         ...app.cradle.config,
@@ -257,6 +396,13 @@ describe('implementIssue', () => {
         );
       }
       agent.script('describer', aDescription());
+    } else if (workflow) {
+      scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+      agent.script('implementer', {
+        files: { [workflowPath]: 'on: push', [`${faker.string.alpha(8)}.txt`]: faker.lorem.word() },
+      });
+      agent.script('reviewer', approval(), fulfillment());
+      agent.script('describer', aDescription());
     } else scriptWholeRun(agent);
     const sessionCredentials: Record<string, string>[] = [];
     app.register({
@@ -270,6 +416,7 @@ describe('implementIssue', () => {
     });
     return {
       dir,
+      workflow: workflowPath,
       sessionCredentials,
       id,
       issue,
@@ -282,3 +429,29 @@ describe('implementIssue', () => {
     };
   }
 });
+
+function remoteBranch(dir: string, id: RunId) {
+  return simpleGit(dir).listRemote(['origin', `refs/heads/${runBranchFor(id)}`]);
+}
+
+async function remoteHasObject(dir: string, object: string) {
+  const origin = (await simpleGit(dir).remote(['get-url', 'origin']))?.trim() ?? '';
+  return simpleGit(origin)
+    .raw(['cat-file', '-t', object])
+    .then(
+      () => true,
+      () => false,
+    );
+}
+
+async function commitOnBranch(dir: string, branch: string, files: Record<string, string>) {
+  const git = simpleGit(dir);
+  await git.checkout(['-b', branch]);
+  for (const [file, contents] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(dir, file)), { recursive: true });
+    await writeFile(path.join(dir, file), contents);
+  }
+  await git.add('.');
+  await git.commit(faker.git.commitMessage());
+  await git.checkout('-');
+}

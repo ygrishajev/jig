@@ -112,6 +112,34 @@ describe('OctokitGithub', () => {
     });
   });
 
+  it('finds a marked comment on a later page and stops at the last page without one', async () => {
+    const { client, github, repository } = setup();
+    const number = faker.number.int({ min: 1 });
+    const marker = `<!-- ${faker.string.uuid()} -->`;
+    const url = faker.internet.url();
+    const unmarked = (count: number) =>
+      Array.from({ length: count }, () => ({
+        body: faker.lorem.sentence(),
+        html_url: faker.internet.url(),
+      }));
+    client.issues.listComments
+      .mockResolvedValueOnce({ data: unmarked(100) })
+      .mockResolvedValueOnce({
+        data: [...unmarked(3), { body: `${faker.lorem.sentence()}\n${marker}`, html_url: url }],
+      })
+      .mockResolvedValueOnce({ data: [{ body: null, html_url: faker.internet.url() }] });
+
+    expect(unwrap(await github.findIssueComment(repository, number, marker))).toBe(url);
+    expect(client.issues.listComments).toHaveBeenLastCalledWith({
+      ...repository,
+      issue_number: number,
+      per_page: 100,
+      page: 2,
+    });
+    expect(unwrap(await github.findIssueComment(repository, number, marker))).toBeUndefined();
+    expect(client.issues.listComments).toHaveBeenCalledTimes(3);
+  });
+
   function setup() {
     const client = {
       issues: mock<GithubClient['issues']>(),

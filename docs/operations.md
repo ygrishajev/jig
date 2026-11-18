@@ -90,12 +90,46 @@ command after an interrupted job. The accepted request and publication receipts 
 at `refs/jig/_orchestration` in `orchestration.json`; run state remains at
 `refs/jig/<runId>`. Preserve both when moving a repository or cleaning remote refs.
 Updates use leases and retry competing writes rather than overwriting another job.
-A per-run lock protects local execution; schedule one job per issue to avoid concurrent
-GitHub publication. A crash after sending a comment but before saving its receipt can
-cause that comment to be repeated. A PR created before a crash is recovered by its head.
+A per-run lock protects local execution, and publication is serialized per issue: a job
+takes a 15-minute ownership lease in the orchestration state, releases it however
+publication ends, and a second job fails with `PublicationInProgress` until then. A
+crashed job's lease lapses on its own. A PR created before a crash is recovered by its
+head. Every comment carries a hidden `<!-- jig:… -->` marker; when a comment was sent
+but its receipt was not saved, the next attempt finds it by marker instead of posting it
+again.
 
 Review and merge completed PRs yourself. Completed runs without changes and halted,
 stuck or blocked runs post an issue comment with their status and reason, without
-opening a PR. Comments are recorded per run, outcome and branch revision; a receipt
-for one revision does not suppress a comment for another. Completed PRs do not add
+opening a PR. Comments are recorded per run, outcome and code checkpoint; a receipt
+for one checkpoint does not suppress a comment for another. Completed PRs do not add
 a separate issue comment.
+
+### Workflow refusals
+
+jig never pushes a run whose changes touch `.github/workflows/`, because a pushed
+workflow could run before anyone reviewed it. The check compares the exact code
+checkpoint with its merge base on the default branch, with rename detection off, so
+additions, edits, deletions, type changes and renames into or out of the directory all
+count; workflows changed on the default branch since the run started do not. The
+refusal, with every offending path, is saved in `orchestration.json` before the issue
+comment is posted, and the comment has its own receipt. Re-running the command reports
+the same refusal without commenting again. To proceed, make the workflow change
+yourself and open a new issue for the rest.
+
+### Deferred code publication
+
+Issue runs save state to `refs/jig/<runId>` without pushing the run branch, so
+unapproved code never reaches `origin`. The state commit does not reference the code,
+and each save records the branch's commit as `codeRevision`, along with the
+`startingCommit` the run began from. Only the publication step pushes the branch, and
+only the inspected commit, leased against what `origin` held. Inspection fails closed:
+if the default branch cannot be read, the histories share nothing, or the local run
+branch no longer points at the saved checkpoint, nothing is pushed.
+
+Resume an interrupted issue run from the clone that ran it: loading the run restores
+its branch from objects this clone kept, or from the run branch already published on
+`origin`. A clone with neither fails with `RunCodeUnavailable` instead of resuming from
+code the state does not describe. A local branch with commits past the checkpoint is
+kept; one that diverged from it is refused. Runs saved before checkpoints existed defer
+from then on, keep whatever they already pushed, and have no recorded starting commit,
+so jig never guesses one.

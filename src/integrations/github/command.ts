@@ -53,6 +53,8 @@ const githubInputSchema = logFormatInputSchema
 
 export function describeIssueOutcome(outcome: IssueOutcome): string {
   if (outcome.kind === 'commented') return `${outcome.outcome}: ${outcome.url}`;
+  if (outcome.kind === 'refused')
+    return `Refused, changes workflows (${outcome.paths.join(', ')}): ${outcome.url}`;
   return `${outcome.reused ? 'Reused PR' : 'PR'}: ${outcome.url}`;
 }
 

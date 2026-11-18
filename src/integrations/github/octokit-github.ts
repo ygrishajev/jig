@@ -21,6 +21,10 @@ export interface GithubClient {
     createComment(
       input: RepositoryIdentity & Record<string, unknown> & { issue_number: number; body: string },
     ): Promise<{ data: { html_url: string } }>;
+    listComments(
+      input: RepositoryIdentity &
+        Record<string, unknown> & { issue_number: number; per_page: number; page: number },
+    ): Promise<{ data: { body?: string | null; html_url: string }[] }>;
   };
   repos: {
     get(
@@ -116,6 +120,29 @@ export class OctokitGithub implements GithubPort {
       },
     );
   }
+
+  findIssueComment(
+    repository: RepositoryIdentity,
+    number: number,
+    marker: string,
+  ): Promise<Result<string | undefined, GithubFailure>> {
+    return this.call(
+      `findIssueComment ${repository.owner}/${repository.repo}#${number}`,
+      async () => {
+        for (let page = 1; ; page++) {
+          const { data } = await this.client.issues.listComments({
+            ...repository,
+            issue_number: number,
+            per_page: COMMENTS_PER_PAGE,
+            page,
+          });
+          const found = data.find(({ body }) => body?.includes(marker));
+          if (found) return found.html_url;
+          if (data.length < COMMENTS_PER_PAGE) return undefined;
+        }
+      },
+    );
+  }
 }
 
 function githubFailure(subject: string, cause: unknown): GithubFailure {
@@ -143,3 +170,6 @@ const GITHUB_RETRIES = 3;
 
 /** Back off from an unavailable API rather than immediately sending the request again. */
 const GITHUB_RETRY_DELAY_MS = 1000;
+
+/** GitHub's largest page of issue comments, so a lookup takes as few requests as it can. */
+const COMMENTS_PER_PAGE = 100;

@@ -8,7 +8,12 @@ import {
   RunStateConflict,
 } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
-import { runBranchFor, type RunState, runStateSchema } from '../../domain/run-state.js';
+import {
+  defersCodePublication,
+  runBranchFor,
+  type RunState,
+  runStateSchema,
+} from '../../domain/run-state.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 import { RemoteRef } from '../git/remote-ref.js';
 import { isAncestor } from '../git/repository.js';
@@ -24,6 +29,7 @@ interface RemoteRun {
  * run branch, to a remote — so another machine, such as a retried CI job, can resume the run.
  * The hidden ref keeps state commits out of the repository's branch list. A save only replaces
  * what this store last saw on the remote, so a concurrent writer is refused rather than overwritten.
+ * A run that defers its code publication pushes its state alone: the branch stays on this clone.
  */
 export class GitRemoteRunStore implements RunStore {
   private readonly seenOnRemote = new Map<RunId, RemoteRun>();
@@ -149,7 +155,9 @@ export class GitRemoteRunStore implements RunStore {
           `jig run ${state.runId}: ${state.phase}`,
         ),
       );
-      const branch = await this.refs.revision(branchRef(state.runId));
+      const branch = defersCodePublication(state)
+        ? undefined
+        : await this.refs.revision(branchRef(state.runId));
       const lease = this.seenOnRemote.get(state.runId) ?? {};
       yield* Result.await(
         this.refs.pushLeased([

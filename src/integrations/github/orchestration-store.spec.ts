@@ -1,5 +1,7 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
 import { execFileSync } from 'node:child_process';
+import { pino } from 'pino';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
@@ -7,7 +9,8 @@ import { runId } from '../../../tests/support/builders.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { RemoteRef } from '../../adapters/git/remote-ref.js';
-import { acceptRequest, emptyOrchestration } from './orchestration-state.js';
+import { GithubRefused } from './errors.js';
+import { acceptRequest, claimPublication, emptyOrchestration } from './orchestration-state.js';
 import { OrchestrationStore } from './orchestration-store.js';
 
 describe('OrchestrationStore', () => {
@@ -89,6 +92,57 @@ describe('OrchestrationStore', () => {
     unwrap(await refs.pushLeased([{ ref: 'refs/jig/_orchestration', source: commit }]));
     const result = await store.read();
     expect(result.isErr() && result.error._tag).toBe('OrchestrationStateInvalid');
+  });
+
+  it('refuses a second owner while the first publishes, and releases however the work ends', async () => {
+    const { store, cloneOf } = await setup();
+    const other = new OrchestrationStore(await cloneOf());
+    const key = faker.string.uuid();
+    const value = faker.lorem.word();
+    const failure = new GithubRefused({ message: faker.lorem.sentence() });
+    const logger = pino({ level: 'silent' });
+
+    const outer = await store.withPublicationOwnership(key, logger, async () => {
+      const inner = await other.withPublicationOwnership(key, logger, async () => Result.ok());
+      expect(inner.isErr() && inner.error._tag).toBe('PublicationInProgress');
+      return Result.ok(value);
+    });
+    const failed = await other.withPublicationOwnership(key, logger, async () =>
+      Result.err(failure),
+    );
+    const after = await store.withPublicationOwnership(key, logger, async () => Result.ok(value));
+
+    expect(unwrap(outer)).toBe(value);
+    expect(failed.isErr() && failed.error).toBe(failure);
+    expect(unwrap(after)).toBe(value);
+    expect(unwrap(await store.read()).owners).toEqual({});
+  });
+
+  it('takes over a lease a crashed owner left once it expires', async () => {
+    const { dir, cloneOf } = await setup();
+    const key = faker.string.uuid();
+    const now = faker.number.int({ min: 1, max: 1_000_000 });
+    const crashed = { token: faker.string.uuid(), expiresAt: now + 1 };
+    unwrap(
+      await new OrchestrationStore(dir).update((state) =>
+        claimPublication(state, key, crashed, now),
+      ),
+    );
+    const logger = pino({ level: 'silent' });
+    const value = faker.lorem.word();
+
+    const early = await new OrchestrationStore(await cloneOf(), () => now).withPublicationOwnership(
+      key,
+      logger,
+      async () => Result.ok(value),
+    );
+    const late = await new OrchestrationStore(
+      await cloneOf(),
+      () => crashed.expiresAt,
+    ).withPublicationOwnership(key, logger, async () => Result.ok(value));
+
+    expect(early.isErr() && early.error._tag).toBe('PublicationInProgress');
+    expect(unwrap(late)).toBe(value);
   });
 
   async function setup() {

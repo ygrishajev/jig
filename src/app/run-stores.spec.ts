@@ -1,5 +1,7 @@
+import { faker } from '@faker-js/faker';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
 import { aRunState } from '../../tests/support/builders.js';
@@ -10,6 +12,7 @@ import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { configFileFor, loadConfig } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
+import { runBranchFor } from '../domain/run-state.js';
 import { openRunStore } from './run-stores.js';
 
 describe('openRunStore', () => {
@@ -202,9 +205,73 @@ describe('openRunStore', () => {
     expect(opened.isErr() && opened.error).toBeInstanceOf(ConfigInvalid);
   });
 
+  it('resumes an interrupted deferred run from the code checkpoint this clone kept', async () => {
+    const { repoRoot, config, deferred } = await setup();
+    const branch = runBranchFor(deferred.runId);
+    const checkpoint = await commitOn(repoRoot, branch);
+    unwrap(await unwrap(await openRunStore({ repoRoot, config }, ['git-remote'])).save(deferred));
+    await simpleGit(repoRoot).branch(['-D', branch]);
+
+    const resumed = unwrap(
+      await unwrap(await openRunStore({ repoRoot, config }, ['git-remote'])).load(deferred.runId),
+    );
+
+    expect(resumed?.codeRevision).toBe(checkpoint);
+    expect(await simpleGit(repoRoot).revparse([branch])).toBe(checkpoint);
+    expect(await simpleGit(repoRoot).listRemote(['origin', `refs/heads/${branch}`])).toBe('');
+  });
+
+  it('refuses to resume a deferred run on a clone without its unpublished code', async () => {
+    const { repoRoot, config, deferred, cloneOf } = await setup();
+    await commitOn(repoRoot, runBranchFor(deferred.runId));
+    unwrap(await unwrap(await openRunStore({ repoRoot, config }, ['git-remote'])).save(deferred));
+    const elsewhere = await cloneOf();
+
+    const loaded = await unwrap(
+      await openRunStore({ repoRoot: elsewhere, config }, ['git-remote']),
+    ).load(deferred.runId);
+
+    expect(loaded.isErr() && loaded.error._tag).toBe('RunCodeUnavailable');
+  });
+
+  it('resumes a deferred run on another clone once its checkpoint was published', async () => {
+    const { repoRoot, config, deferred, cloneOf } = await setup();
+    const branch = runBranchFor(deferred.runId);
+    const checkpoint = await commitOn(repoRoot, branch);
+    unwrap(await unwrap(await openRunStore({ repoRoot, config }, ['git-remote'])).save(deferred));
+    await simpleGit(repoRoot).push(['origin', `${checkpoint}:refs/heads/${branch}`]);
+    const elsewhere = await cloneOf();
+
+    const resumed = unwrap(
+      await unwrap(await openRunStore({ repoRoot: elsewhere, config }, ['git-remote'])).load(
+        deferred.runId,
+      ),
+    );
+
+    expect(resumed?.codeRevision).toBe(checkpoint);
+    expect(await simpleGit(elsewhere).revparse([branch])).toBe(checkpoint);
+  });
+
+  async function commitOn(repo: string, branch: string) {
+    const git = simpleGit(repo);
+    await git.checkout(['-b', branch]);
+    await writeFile(path.join(repo, `${faker.string.alpha(10)}.txt`), faker.lorem.paragraph());
+    await git.add('.');
+    await git.commit(faker.git.commitMessage());
+    const head = await git.revparse(['HEAD']);
+    await git.checkout('main');
+    return head;
+  }
+
   async function setup() {
     const { cloneOf } = await createRemote();
     const repoRoot = await cloneOf();
-    return { repoRoot, config: unwrap(loadConfig(configFileFor(repoRoot))), state: aRunState() };
+    return {
+      repoRoot,
+      cloneOf,
+      config: unwrap(loadConfig(configFileFor(repoRoot))),
+      state: aRunState(),
+      deferred: aRunState({ codePublication: 'deferred' }),
+    };
   }
 });

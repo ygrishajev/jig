@@ -6,13 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { ConfigInvalid, GitCommandFailed } from '../../domain/errors.js';
-import {
-  ensureRepositoryRoot,
-  hasChangesAgainst,
-  isAncestor,
-  isWorkingTreeClean,
-  openRepo,
-} from './repository.js';
+import { ensureRepositoryRoot, isAncestor, isWorkingTreeClean, openRepo } from './repository.js';
 
 describe('git repository helpers', () => {
   it('distinguishes ancestors from non-ancestors', async () => {
@@ -98,28 +92,3 @@ describe('git repository helpers', () => {
 function wholePath(directory: string) {
   return new RegExp(`${directory.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!/)`);
 }
-
-describe('hasChangesAgainst', () => {
-  it('ignores missing branches and commits with unchanged trees', async () => {
-    const { repo } = await setup();
-    expect((await hasChangesAgainst(repo, 'main', 'missing')).unwrap()).toBe(false);
-    await openRepo(repo).checkoutLocalBranch('feature');
-    await openRepo(repo).commit(faker.git.commitMessage(), ['--allow-empty']);
-    expect((await hasChangesAgainst(repo, 'main', 'feature')).unwrap()).toBe(false);
-    await writeFile(path.join(repo, 'change.txt'), faker.lorem.paragraph());
-    await openRepo(repo).add('.');
-    await openRepo(repo).commit(faker.git.commitMessage());
-    expect((await hasChangesAgainst(repo, 'main', 'feature')).unwrap()).toBe(true);
-    const result = await hasChangesAgainst(repo, 'missing', 'feature');
-    expect(result.isErr() && result.error._tag).toBe('GitCommandFailed');
-    expect(result.isErr() && result.error.command).toBe('git diff --quiet missing...feature --');
-    expect(result.isErr() && result.error.message).toContain(
-      'git diff --quiet missing...feature -- failed:',
-    );
-  });
-
-  async function setup() {
-    const { dir } = await createTempRepo();
-    return { repo: dir };
-  }
-});
