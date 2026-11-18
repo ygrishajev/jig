@@ -91,12 +91,14 @@ at `refs/jig/_orchestration` in `orchestration.json`; run state remains at
 `refs/jig/<runId>`. Preserve both when moving a repository or cleaning remote refs.
 Updates use leases and retry competing writes rather than overwriting another job.
 A per-run lock protects local execution, and publication is serialized per issue: a job
-takes a 15-minute ownership lease in the orchestration state, releases it however
-publication ends, and a second job fails with `PublicationInProgress` until then. A
-crashed job's lease lapses on its own. A PR created before a crash is recovered by its
-head. Every comment carries a hidden `<!-- jig:… -->` marker; when a comment was sent
-but its receipt was not saved, the next attempt finds it by marker instead of posting it
-again.
+takes a 15-minute ownership lease in the orchestration state, renews it before each push,
+comment or PR it makes, releases it however publication ends (a crash of jig itself
+included), and a second job fails with `PublicationInProgress` until then. A crashed
+job's lease lapses on its own; a job that finds its lapsed lease taken over stops with
+`PublicationInProgress` before its next effect. A PR created before a crash is recovered
+by its head. Every comment carries a hidden `<!-- jig:… -->` marker and is posted in a
+single request, never retried blindly; when a comment was sent but its response or
+receipt was lost, the next attempt finds it by marker instead of posting it again.
 
 Review and merge completed PRs yourself. Completed runs without changes and halted,
 stuck or blocked runs post an issue comment with their status and reason, without
@@ -129,7 +131,10 @@ branch no longer points at the saved checkpoint, nothing is pushed.
 Resume an interrupted issue run from the clone that ran it: loading the run restores
 its branch from objects this clone kept, or from the run branch already published on
 `origin`. A clone with neither fails with `RunCodeUnavailable` instead of resuming from
-code the state does not describe. A local branch with commits past the checkpoint is
+code the state does not describe. Copies of the state saved at the same revision must
+agree on the publication policy, starting commit and checkpoint; otherwise loading or
+inspecting the run fails with `RunStateConflict` rather than letting store order pick
+the code. A local branch with commits past the checkpoint is
 kept; one that diverged from it is refused. Runs saved before checkpoints existed defer
 from then on, keep whatever they already pushed, and have no recorded starting commit,
 so jig never guesses one.

@@ -167,6 +167,20 @@ export function claimPublication(
   return { ...state, owners: { ...state.owners, [key]: claim } };
 }
 
+/** Extends the lease of `claim`'s owner; a lease another job has taken stays with that job. */
+export function renewPublication(
+  state: Orchestration,
+  key: string,
+  claim: PublicationOwnership,
+): Orchestration {
+  if (!ownsPublication(state, key, claim.token)) return state;
+  return { ...state, owners: { ...state.owners, [key]: claim } };
+}
+
+export function ownsPublication(state: Orchestration, key: string, token: string): boolean {
+  return state.owners[key]?.token === token;
+}
+
 export function releasePublication(
   state: Orchestration,
   key: string,
@@ -175,8 +189,4 @@ export function releasePublication(
   if (!ownsPublication(state, key, token)) return state;
   const { [key]: _released, ...owners } = state.owners;
   return { ...state, owners };
-}
-
-export function ownsPublication(state: Orchestration, key: string, token: string): boolean {
-  return state.owners[key]?.token === token;
 }

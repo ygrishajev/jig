@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { Result } from 'better-result';
+import { Panic, panic, Result } from 'better-result';
 import { execFileSync } from 'node:child_process';
 import { pino } from 'pino';
 import { simpleGit } from 'simple-git';
@@ -11,7 +11,7 @@ import { unwrap } from '../../../tests/support/unwrap.js';
 import { RemoteRef } from '../../adapters/git/remote-ref.js';
 import { GithubRefused } from './errors.js';
 import { acceptRequest, claimPublication, emptyOrchestration } from './orchestration-state.js';
-import { OrchestrationStore } from './orchestration-store.js';
+import { OrchestrationStore, OWNERSHIP_LEASE_MS } from './orchestration-store.js';
 
 describe('OrchestrationStore', () => {
   it('starts empty and skips a push for unchanged state', async () => {
@@ -143,6 +143,66 @@ describe('OrchestrationStore', () => {
 
     expect(early.isErr() && early.error._tag).toBe('PublicationInProgress');
     expect(unwrap(late)).toBe(value);
+  });
+
+  it('stops a publisher whose lease another job took over before its next effect', async () => {
+    const { cloneOf } = await setup();
+    const clock = { now: faker.number.int({ min: 1, max: 1_000_000 }) };
+    const slow = new OrchestrationStore(await cloneOf(), () => clock.now);
+    const other = new OrchestrationStore(await cloneOf(), () => clock.now);
+    const key = faker.string.uuid();
+    const logger = pino({ level: 'silent' });
+    const effects: string[] = [];
+
+    const stopped = await slow.withPublicationOwnership(key, logger, async (whileOwned) => {
+      clock.now += OWNERSHIP_LEASE_MS;
+      const takeover = await other.withPublicationOwnership(key, logger, (otherOwned) =>
+        otherOwned(async () => Result.ok(effects.push('other'))),
+      );
+      unwrap(takeover);
+      return whileOwned(async () => Result.ok(effects.push('slow')));
+    });
+
+    expect(stopped.isErr() && stopped.error._tag).toBe('PublicationInProgress');
+    expect(effects).toEqual(['other']);
+  });
+
+  it('keeps a renewed lease past its first expiry, so no other job can take over', async () => {
+    const { cloneOf } = await setup();
+    const clock = { now: faker.number.int({ min: 1, max: 1_000_000 }) };
+    const slow = new OrchestrationStore(await cloneOf(), () => clock.now);
+    const other = new OrchestrationStore(await cloneOf(), () => clock.now);
+    const key = faker.string.uuid();
+    const logger = pino({ level: 'silent' });
+    const value = faker.lorem.word();
+
+    const finished = await slow.withPublicationOwnership(key, logger, async (whileOwned) => {
+      clock.now += OWNERSHIP_LEASE_MS - 1;
+      unwrap(await whileOwned(async () => Result.ok()));
+      clock.now += OWNERSHIP_LEASE_MS - 1;
+      const refused = await other.withPublicationOwnership(key, logger, async () => Result.ok());
+      expect(refused.isErr() && refused.error._tag).toBe('PublicationInProgress');
+      return whileOwned(async () => Result.ok(value));
+    });
+
+    expect(unwrap(finished)).toBe(value);
+  });
+
+  it('releases ownership when the publisher panics and rethrows the panic', async () => {
+    const { store, cloneOf } = await setup();
+    const other = new OrchestrationStore(await cloneOf());
+    const key = faker.string.uuid();
+    const message = faker.lorem.sentence();
+    const value = faker.lorem.word();
+    const logger = pino({ level: 'silent' });
+
+    const failed = store.withPublicationOwnership(key, logger, async () => panic(message));
+
+    await expect(failed).rejects.toThrow(Panic);
+    await expect(failed).rejects.toThrow(message);
+    expect(
+      unwrap(await other.withPublicationOwnership(key, logger, async () => Result.ok(value))),
+    ).toBe(value);
   });
 
   async function setup() {

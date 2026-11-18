@@ -56,14 +56,18 @@ export class OctokitGithub implements GithubPort {
   }
 
   private call<T>(subject: string, operation: () => Promise<T>): Promise<Result<T, GithubFailure>> {
-    return retryResult(
-      () => Result.tryPromise({ try: operation, catch: (cause) => githubFailure(subject, cause) }),
-      {
-        retries: GITHUB_RETRIES,
-        delayMs: GITHUB_RETRY_DELAY_MS,
-        shouldRetry: (error) => error._tag === 'GithubUnavailable',
-      },
-    );
+    return retryResult(() => this.attempt(subject, operation), {
+      retries: GITHUB_RETRIES,
+      delayMs: GITHUB_RETRY_DELAY_MS,
+      shouldRetry: (error) => error._tag === 'GithubUnavailable',
+    });
+  }
+
+  private attempt<T>(
+    subject: string,
+    operation: () => Promise<T>,
+  ): Promise<Result<T, GithubFailure>> {
+    return Result.tryPromise({ try: operation, catch: (cause) => githubFailure(subject, cause) });
   }
 
   getDefaultBranch(repository: RepositoryIdentity): Promise<Result<string, GithubFailure>> {
@@ -108,7 +112,7 @@ export class OctokitGithub implements GithubPort {
     number: number,
     body: string,
   ): Promise<Result<string, GithubFailure>> {
-    return this.call(
+    return this.attempt(
       `commentOnIssue ${repository.owner}/${repository.repo}#${number}`,
       async () => {
         const { data } = await this.client.issues.createComment({
@@ -145,6 +149,12 @@ export class OctokitGithub implements GithubPort {
   }
 }
 
+/** Short outages should not abort an unattended job, while retries remain bounded. */
+const GITHUB_RETRIES = 3;
+
+/** Back off from an unavailable API rather than immediately sending the request again. */
+const GITHUB_RETRY_DELAY_MS = 1000;
+
 function githubFailure(subject: string, cause: unknown): GithubFailure {
   const parsed = z
     .object({
@@ -164,12 +174,6 @@ function githubFailure(subject: string, cause: unknown): GithubFailure {
   }
   return new GithubUnavailable({ message: `${context}: GitHub is unavailable; try again later.` });
 }
-
-/** Short outages should not abort an unattended job, while retries remain bounded. */
-const GITHUB_RETRIES = 3;
-
-/** Back off from an unavailable API rather than immediately sending the request again. */
-const GITHUB_RETRY_DELAY_MS = 1000;
 
 /** GitHub's largest page of issue comments, so a lookup takes as few requests as it can. */
 const COMMENTS_PER_PAGE = 100;

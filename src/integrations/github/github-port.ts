@@ -13,6 +13,10 @@ export interface GithubPort {
     repository: RepositoryIdentity,
     input: OpenPullRequest,
   ): Promise<Result<PullRequest, GithubFailure>>;
+  /**
+   * Posts once and never retries: an unavailable response may hide a comment GitHub did post, so
+   * the caller reconciles it with `findIssueComment` before posting again.
+   */
   commentOnIssue(
     repository: RepositoryIdentity,
     number: number,
