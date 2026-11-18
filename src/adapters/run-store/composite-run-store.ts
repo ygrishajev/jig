@@ -8,8 +8,9 @@ import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 
 /**
  * Keeps a copy of each run in every store. A load or a peek asks every store and returns the
- * copy with the highest revision; a tie goes to the store listed first. A load also lets a
- * remote store learn what it must not overwrite. A save stamps the next revision past any this store has seen, so one
+ * copy with the highest revision; copies tied at that revision must agree on how and where the
+ * run's code is published, so the store order never decides which code a run resumes with. A load
+ * also lets a remote store learn what it must not overwrite. A save stamps the next revision past any this store has seen, so one
  * process never writes two different states under the same revision. A run that defers its code
  * publication records the run branch's commit at each save, and a load restores that checkpoint
  * before handing the run back, so the state never describes code this clone does not hold.
@@ -25,10 +26,10 @@ export class CompositeRunStore implements RunStore {
   load(runId: RunId): Promise<Result<RunState | undefined, RunStoreFailure>> {
     return Result.gen(async function* (this: CompositeRunStore) {
       const copies = yield* Result.await(this.readEach((store) => store.load(runId)));
-      const freshest = freshestOf(copies);
+      const freshest = yield* consistentFreshestOf(copies);
       if (!freshest) return Result.ok(undefined);
       this.latestRevisions.set(runId, freshest.revision);
-      yield* Result.await(this.restoreCheckpoint(freshest, copies));
+      yield* Result.await(this.restoreCheckpoint(freshest));
       return Result.ok(freshest);
     }, this);
   }
@@ -45,27 +46,15 @@ export class CompositeRunStore implements RunStore {
     return Result.ok(copies);
   }
 
-  private async restoreCheckpoint(
-    freshest: RunState,
-    copies: (RunState | undefined)[],
-  ): Promise<Result<void, RunStoreFailure>> {
+  private async restoreCheckpoint(freshest: RunState): Promise<Result<void, RunStoreFailure>> {
     const { runId, codeRevision } = freshest;
     if (!defersCodePublication(freshest) || !codeRevision) return Result.ok();
-    const disagreeing = copies.find(
-      (copy) => copy?.revision === freshest.revision && copy.codeRevision !== codeRevision,
-    );
-    if (disagreeing)
-      return Result.err(
-        new RunStateConflict({
-          message: `Run ${runId} has two copies at revision ${freshest.revision} with different code checkpoints (${codeRevision}, ${disagreeing.codeRevision ?? 'none'}).`,
-        }),
-      );
     return this.code.restore(runId, codeRevision);
   }
 
   async peek(runId: RunId): Promise<Result<RunState | undefined, RunStoreFailure>> {
     const copies = await this.readEach((store) => store.peek(runId));
-    return copies.map(freshestOf);
+    return copies.andThen(consistentFreshestOf);
   }
 
   async save(state: RunState): Promise<Result<void, RunStoreFailure>> {
@@ -88,11 +77,41 @@ export class CompositeRunStore implements RunStore {
   }
 }
 
-/** The copy with the highest revision; on a tie, the one listed first. */
+/**
+ * The copy with the highest revision, listed first on a tie, once every tied copy agrees on its code
+ * publication policy and checkpoint; disagreeing copies would let store order pick the run's code.
+ */
+function consistentFreshestOf(
+  copies: (RunState | undefined)[],
+): Result<RunState | undefined, RunStateConflict> {
+  const freshest = freshestOf(copies);
+  const disagreeing = copies.find(
+    (copy) => copy && freshest && copy.revision === freshest.revision && !sameCode(copy, freshest),
+  );
+  if (!freshest || !disagreeing) return Result.ok(freshest);
+  return Result.err(
+    new RunStateConflict({
+      message: `Run ${freshest.runId} has two copies at revision ${freshest.revision} that disagree on its code (${codeOf(freshest)}; ${codeOf(disagreeing)}).`,
+    }),
+  );
+}
+
 function freshestOf(copies: (RunState | undefined)[]): RunState | undefined {
   let freshest: RunState | undefined;
   for (const copy of copies) {
     if (copy && (!freshest || copy.revision > freshest.revision)) freshest = copy;
   }
   return freshest;
+}
+
+function sameCode(first: RunState, second: RunState): boolean {
+  return (
+    first.codePublication === second.codePublication &&
+    first.startingCommit === second.startingCommit &&
+    first.codeRevision === second.codeRevision
+  );
+}
+
+function codeOf({ codePublication, codeRevision }: RunState): string {
+  return `${codePublication ?? 'published with state'}, checkpoint ${codeRevision ?? 'none'}`;
 }

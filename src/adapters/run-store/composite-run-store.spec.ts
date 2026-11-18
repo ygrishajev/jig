@@ -174,6 +174,69 @@ describe('CompositeRunStore', () => {
     expect(code.restore).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['listed first', 0],
+    ['listed second', 1],
+  ])('refuses a tied copy without a checkpoint whether it is %s', async (_order, missingAt) => {
+    const checkpointed = aRunState({
+      codePublication: 'deferred',
+      codeRevision: faker.git.commitSha(),
+    });
+    const { codeRevision: _dropped, ...missing } = checkpointed;
+    const copies = missingAt === 0 ? [missing, checkpointed] : [checkpointed, missing];
+    const { store, code } = await setup({ copies });
+
+    const loaded = await store.load(checkpointed.runId);
+    const peeked = await store.peek(checkpointed.runId);
+
+    expect(loaded.isErr() && loaded.error._tag).toBe('RunStateConflict');
+    expect(peeked.isErr() && peeked.error._tag).toBe('RunStateConflict');
+    expect(code.restore).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['listed first', 0],
+    ['listed second', 1],
+  ])(
+    'refuses a tied copy with another publication policy whether it is %s',
+    async (_order, publishedAt) => {
+      const deferred = aRunState({ codePublication: 'deferred' });
+      const { codePublication: _dropped, ...published } = deferred;
+      const copies = publishedAt === 0 ? [published, deferred] : [deferred, published];
+      const { store } = await setup({ copies });
+
+      const loaded = await store.load(deferred.runId);
+      const peeked = await store.peek(deferred.runId);
+
+      expect(loaded.isErr() && loaded.error._tag).toBe('RunStateConflict');
+      expect(peeked.isErr() && peeked.error._tag).toBe('RunStateConflict');
+    },
+  );
+
+  it('peeks at tied copies that record different checkpoints as a conflict', async () => {
+    const first = aRunState({ codePublication: 'deferred', codeRevision: faker.git.commitSha() });
+    const second = { ...first, codeRevision: faker.git.commitSha() };
+    const { store } = await setup({ copies: [second, first] });
+
+    const peeked = await store.peek(first.runId);
+
+    expect(peeked.isErr() && peeked.error._tag).toBe('RunStateConflict');
+  });
+
+  it('accepts a stale copy that disagrees with the freshest one', async () => {
+    const fresher = aRunState({
+      codePublication: 'deferred',
+      codeRevision: faker.git.commitSha(),
+      revision: 4,
+    });
+    const { codeRevision: _dropped, ...stale } = { ...fresher, revision: 3 };
+    const { store, code } = await setup({ copies: [stale, fresher] });
+
+    expect(unwrap(await store.peek(fresher.runId))).toEqual(fresher);
+    expect(unwrap(await store.load(fresher.runId))).toEqual(fresher);
+    expect(code.restore).toHaveBeenCalledWith(fresher.runId, fresher.codeRevision);
+  });
+
   async function setup(input: {
     copies: (RunState | undefined)[];
     serialized?: boolean;

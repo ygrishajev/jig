@@ -19,8 +19,18 @@ import {
   type Orchestration,
   orchestrationSchema,
   ownsPublication,
+  type PublicationOwnership,
   releasePublication,
+  renewPublication,
 } from './orchestration-state.js';
+
+/**
+ * Runs `step` only while this job still owns the publication, renewing its lease first, so a job
+ * whose lease another job took over stops before its next outward-facing effect.
+ */
+export type WhileOwned = <T, E>(
+  step: () => Promise<Result<T, E>>,
+) => Promise<Result<T, E | StoreFailure | PublicationInProgress>>;
 
 export type StoreFailure =
   GitCommandFailed | RemoteUnavailable | RunStateConflict | OrchestrationStateInvalid;
@@ -37,21 +47,17 @@ export class OrchestrationStore {
 
   /**
    * Runs `use` as the only job publishing `key`, under a lease another job may take over once it
-   * expires, and releases it however `use` ends.
+   * expires. `use` renews the lease through `whileOwned` before each effect, and the lease is
+   * released however `use` ends, a throw included.
    */
   async withPublicationOwnership<T, E>(
     key: string,
     logger: Logger,
-    use: () => Promise<Result<T, E>>,
+    use: (whileOwned: WhileOwned) => Promise<Result<T, E>>,
   ): Promise<Result<T, E | StoreFailure | PublicationInProgress>> {
     const token = randomUUID();
     const claimed = await this.update((state) =>
-      claimPublication(
-        state,
-        key,
-        { token, expiresAt: this.now() + OWNERSHIP_LEASE_MS },
-        this.now(),
-      ),
+      claimPublication(state, key, this.leaseFor(token), this.now()),
     );
     if (claimed.isErr()) return Result.err(claimed.error);
     if (!ownsPublication(claimed.value, key, token))
@@ -60,12 +66,41 @@ export class OrchestrationStore {
           message: `Another job is publishing ${key}; run the command again once it finishes.`,
         }),
       );
-    const used = await use();
-    const released = await this.update((state) => releasePublication(state, key, token));
+    const whileOwned: WhileOwned = async (step) => {
+      const renewed = await this.renew(key, token);
+      return renewed.isErr() ? Result.err(renewed.error) : step();
+    };
+    let used: Result<T, E>;
+    let released: Result<Orchestration, StoreFailure>;
+    try {
+      used = await use(whileOwned);
+    } finally {
+      released = await this.update((state) => releasePublication(state, key, token));
+    }
     return reportCleanup(
       used,
       released.map(() => undefined),
       logger,
+    );
+  }
+
+  private leaseFor(token: string): PublicationOwnership {
+    return { token, expiresAt: this.now() + OWNERSHIP_LEASE_MS };
+  }
+
+  private async renew(
+    key: string,
+    token: string,
+  ): Promise<Result<void, StoreFailure | PublicationInProgress>> {
+    const renewed = await this.update((state) =>
+      renewPublication(state, key, this.leaseFor(token)),
+    );
+    if (renewed.isErr()) return Result.err(renewed.error);
+    if (ownsPublication(renewed.value, key, token)) return Result.ok();
+    return Result.err(
+      new PublicationInProgress({
+        message: `Another job took over publishing ${key} after this job's lease expired; this job stopped publishing.`,
+      }),
     );
   }
 
@@ -133,8 +168,8 @@ export class OrchestrationStore {
   }
 }
 
-/** How long a publication owner holds its lease; a crashed job's lease lapses after this. */
-const OWNERSHIP_LEASE_MS = 15 * 60 * 1000;
+/** How long a publication owner holds its lease unrenewed; a crashed job's lease lapses after this. */
+export const OWNERSHIP_LEASE_MS = 15 * 60 * 1000;
 
 /** A hidden ref outside the branch list shares orchestration across every repository job. */
 const ORCHESTRATION_REF = 'refs/jig/_orchestration';

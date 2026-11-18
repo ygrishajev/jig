@@ -67,6 +67,20 @@ describe('OctokitGithub', () => {
     expect(client.repos.get).toHaveBeenCalledTimes(2);
   });
 
+  it('posts a comment once when its response is lost, so a marker lookup can reconcile it', async () => {
+    const { client, github, repository } = setup();
+    const number = faker.number.int({ min: 1 });
+    const body = faker.lorem.paragraph();
+    client.issues.createComment
+      .mockRejectedValueOnce({ status: 503 })
+      .mockResolvedValue({ data: { html_url: faker.internet.url() } });
+
+    const result = await github.commentOnIssue(repository, number, body);
+
+    expect(result.isErr() && result.error._tag).toBe('GithubUnavailable');
+    expect(client.issues.createComment).toHaveBeenCalledTimes(1);
+  });
+
   it('translates issues, head searches, PR creation and comments', async () => {
     const { client, github, repository } = setup();
     const number = faker.number.int({ min: 1 });

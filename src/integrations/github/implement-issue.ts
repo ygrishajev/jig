@@ -9,7 +9,12 @@ import type { JigError } from '../../domain/errors.js';
 import { runIdFor } from '../../domain/run-id.js';
 import { runBranchFor, runStopReason } from '../../domain/run-state.js';
 import { outcomeIsComplete } from '../../flow/engine.js';
-import { BaseBranchMismatch, type GithubError, type GithubSetupInvalid } from './errors.js';
+import {
+  BaseBranchMismatch,
+  type GithubError,
+  type GithubSetupInvalid,
+  type PublicationInProgress,
+} from './errors.js';
 import type {
   GithubFailure,
   GithubPort,
@@ -32,7 +37,7 @@ import {
   withRefusal,
   withRefusalComment,
 } from './orchestration-state.js';
-import { OrchestrationStore, type StoreFailure } from './orchestration-store.js';
+import { OrchestrationStore, type StoreFailure, type WhileOwned } from './orchestration-store.js';
 import { requestText } from './request-snapshot.js';
 import { publishRunBranch } from './run-branch-publication.js';
 
@@ -43,7 +48,10 @@ export type IssueOutcome =
 
 type IssueFailure = JigError | Exclude<GithubError, GithubSetupInvalid>;
 
-/** Where the accepted request is published: the issue, its key in the receipts, and its default branch. */
+/**
+ * Where the accepted request is published: the issue, its key in the receipts, its default branch,
+ * and the ownership every outward-facing step runs under.
+ */
 interface IssueTarget {
   github: GithubPort;
   repository: RepositoryIdentity;
@@ -51,7 +59,10 @@ interface IssueTarget {
   key: string;
   base: string;
   title: string;
+  whileOwned: WhileOwned;
 }
+
+type PublicationFailure = GithubFailure | StoreFailure | PublicationInProgress;
 
 export function implementIssue(
   app: App,
@@ -81,8 +92,8 @@ export function implementIssue(
       }),
     );
     const target = { github, repository, issueNumber, key, base, title: accepted.title };
-    return store.withPublicationOwnership(key, app.cradle.logger, () =>
-      publishOutcome(app, store, target, report),
+    return store.withPublicationOwnership(key, app.cradle.logger, (whileOwned) =>
+      publishOutcome(app, store, { ...target, whileOwned }, report),
     );
   });
 }
@@ -134,11 +145,13 @@ function publishOutcome(
     if (!revision || !outcomeIsComplete(report.status))
       return publishComment(store, target, { report, revision });
     const publication = yield* Result.await(
-      publishRunBranch(repoRoot, {
-        runId: report.state.runId,
-        revision,
-        defaultBranch: target.base,
-      }),
+      target.whileOwned(() =>
+        publishRunBranch(repoRoot, {
+          runId: report.state.runId,
+          revision,
+          defaultBranch: target.base,
+        }),
+      ),
     );
     if (publication.kind === 'refused')
       return refuse(store, target, {
@@ -173,7 +186,7 @@ function publishComment(
   store: OrchestrationStore,
   target: IssueTarget,
   { report, revision }: { report: RunReport; revision?: string },
-): Promise<Result<IssueOutcome, GithubFailure | StoreFailure>> {
+): Promise<Result<IssueOutcome, PublicationFailure>> {
   return Result.gen(async function* () {
     const identity = {
       runId: report.state.runId,
@@ -201,14 +214,14 @@ const NO_CODE_REVISION = 'none';
  * was saved is found again by its marker instead of being posted a second time.
  */
 function commentOnce(
-  { github, repository, issueNumber }: IssueTarget,
+  { github, repository, issueNumber, whileOwned }: IssueTarget,
   comment: {
     receipt: string | undefined;
     marker: string;
     body: string;
     save: (url: string) => Promise<Result<unknown, StoreFailure>>;
   },
-): Promise<Result<string, GithubFailure | StoreFailure>> {
+): Promise<Result<string, PublicationFailure>> {
   return Result.gen(async function* () {
     if (comment.receipt) return Result.ok(comment.receipt);
     const found = yield* Result.await(
@@ -217,7 +230,9 @@ function commentOnce(
     const url =
       found ??
       (yield* Result.await(
-        github.commentOnIssue(repository, issueNumber, `${comment.body}\n\n${comment.marker}`),
+        whileOwned(() =>
+          github.commentOnIssue(repository, issueNumber, `${comment.body}\n\n${comment.marker}`),
+        ),
       ));
     yield* Result.await(comment.save(url));
     return Result.ok(url);
@@ -247,7 +262,7 @@ function refuse(
   store: OrchestrationStore,
   target: IssueTarget,
   refusal: Refusal,
-): Promise<Result<IssueOutcome, GithubFailure | StoreFailure>> {
+): Promise<Result<IssueOutcome, PublicationFailure>> {
   return Result.gen(async function* () {
     const { key } = target;
     const state = yield* Result.await(store.update((state) => withRefusal(state, key, refusal)));
@@ -272,9 +287,9 @@ function refusalCommentBody({ runId, revision, paths }: Refusal): string {
 
 function publish(
   store: OrchestrationStore,
-  { github, repository, key }: IssueTarget,
+  { github, repository, key, whileOwned }: IssueTarget,
   publication: OpenPullRequest,
-): Promise<Result<IssueOutcome, GithubFailure | StoreFailure>> {
+): Promise<Result<IssueOutcome, PublicationFailure>> {
   return Result.gen(async function* () {
     const state = yield* Result.await(store.read());
     const receipt = pullRequestReceipt(state, key);
@@ -283,7 +298,9 @@ function publish(
     const found = yield* Result.await(
       github.findOpenPullRequestByHead(repository, publication.head),
     );
-    const pr = found ?? (yield* Result.await(github.openPullRequest(repository, publication)));
+    const pr =
+      found ??
+      (yield* Result.await(whileOwned(() => github.openPullRequest(repository, publication))));
     yield* Result.await(store.update((state) => withPullRequest(state, key, pr)));
     return Result.ok<IssueOutcome>({ kind: 'pullRequest', url: pr.url, reused: !!found });
   });
