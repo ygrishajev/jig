@@ -90,3 +90,40 @@ export function changedPaths(
     '--',
   ]).then((result) => result.map(({ stdout }) => stdout.split('\0').filter(Boolean)));
 }
+
+/** The worktree that has `branchRef` checked out, or `undefined` when none does. */
+export function worktreeHolding(
+  repoRoot: string,
+  branchRef: string,
+): Promise<Result<string | undefined, GitCommandFailed>> {
+  return gitOutput(repoRoot, ['worktree', 'list', '--porcelain', '-z']).then((result) =>
+    result.map(({ stdout }) => {
+      const holding = stdout
+        .split('\0\0')
+        .map((record) => record.split('\0'))
+        .find((fields) => fields.includes(`branch ${branchRef}`));
+      return holding?.find((field) => field.startsWith('worktree '))?.slice('worktree '.length);
+    }),
+  );
+}
+
+/**
+ * Fast-forwards the branch checked out in `worktree` to `revision`, moving its index and files with
+ * it. Uncommitted work git can carry along stays; work the move would overwrite makes git refuse.
+ * Hooks are off: the commits may hold code nobody on this host has read yet.
+ */
+export function fastForwardWorktree(
+  worktree: string,
+  revision: string,
+): Promise<Result<void, GitCommandFailed>> {
+  return gitOutput(worktree, [
+    '-c',
+    'core.hooksPath=/dev/null',
+    'merge',
+    '--ff-only',
+    '--no-stat',
+    '--quiet',
+    '--end-of-options',
+    revision,
+  ]).then((result) => result.map(() => undefined));
+}

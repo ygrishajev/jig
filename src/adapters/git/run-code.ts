@@ -1,13 +1,16 @@
 import { Result } from 'better-result';
 
-import { RunCodeUnavailable, RunStateConflict } from '../../domain/errors.js';
+import {
+  type GitCommandFailed,
+  RunCodeUnavailable,
+  RunStateConflict,
+} from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import type { RunCode } from '../../ports/run-code.js';
-import type { RunStoreFailure } from '../../ports/run-store.js';
+import type { RunCode, RunCodeRestoreFailure } from '../../ports/run-code.js';
 import { RemoteRef } from './remote-ref.js';
 import { isAncestor } from './repository.js';
-import { exactHead, hasCommit } from './run-history.js';
+import { exactHead, fastForwardWorktree, hasCommit, worktreeHolding } from './run-history.js';
 
 /** Restores a deferred run's code checkpoint from this clone, or from the branch already published. */
 export class GitRunCode implements RunCode {
@@ -20,11 +23,11 @@ export class GitRunCode implements RunCode {
     this.refs = new RemoteRef(repoRoot, remote);
   }
 
-  checkpoint(runId: RunId): Promise<Result<string | undefined, RunStoreFailure>> {
+  checkpoint(runId: RunId): Promise<Result<string | undefined, GitCommandFailed>> {
     return exactHead(this.repoRoot, branchRef(runId));
   }
 
-  restore(runId: RunId, revision: string): Promise<Result<void, RunStoreFailure>> {
+  restore(runId: RunId, revision: string): Promise<Result<void, RunCodeRestoreFailure>> {
     return Result.gen(async function* (this: GitRunCode) {
       const local = yield* Result.await(exactHead(this.repoRoot, branchRef(runId)));
       if (local === revision) return Result.ok();
@@ -41,7 +44,10 @@ export class GitRunCode implements RunCode {
     }, this);
   }
 
-  private ensureAvailable(runId: RunId, revision: string): Promise<Result<void, RunStoreFailure>> {
+  private ensureAvailable(
+    runId: RunId,
+    revision: string,
+  ): Promise<Result<void, RunCodeRestoreFailure>> {
     return Result.gen(async function* (this: GitRunCode) {
       if (yield* Result.await(hasCommit(this.repoRoot, revision))) return Result.ok();
       const listed = yield* Result.await(this.refs.list([branchRef(runId)]));
@@ -60,13 +66,18 @@ export class GitRunCode implements RunCode {
     }, this);
   }
 
-  private async moveBranch(
+  /** A branch checked out somewhere moves with its worktree, so its index and files follow it. */
+  private moveBranch(
     runId: RunId,
     revision: string,
     expected: string,
-  ): Promise<Result<void, RunStoreFailure>> {
-    const moved = await this.refs.required(['update-ref', branchRef(runId), revision, expected]);
-    return moved.map(() => undefined);
+  ): Promise<Result<void, GitCommandFailed>> {
+    return Result.gen(async function* (this: GitRunCode) {
+      const worktree = yield* Result.await(worktreeHolding(this.repoRoot, branchRef(runId)));
+      if (worktree) return fastForwardWorktree(worktree, revision);
+      const moved = await this.refs.required(['update-ref', branchRef(runId), revision, expected]);
+      return moved.map(() => undefined);
+    }, this);
   }
 }
 
