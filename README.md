@@ -143,7 +143,9 @@ jig github implement --issue 42
 
 jig snapshots the request, implements it in the sandbox and opens a pull request.
 Repeating the command resumes the same run and reuses its PR. Completed work opens
-a ready PR; unfinished work with changes opens a draft. You review and merge it.
+a ready PR; a stuck run with commits opens a draft with one PR-level comment of its
+findings. Workflow changes are refused rather than pushed, and other unfinished runs
+comment on the issue. You review and merge it.
 See [setup and retry behavior](docs/commands.md#implement-a-github-issue).
 
 ## License

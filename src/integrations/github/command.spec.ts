@@ -31,6 +31,22 @@ describe('github implement command', () => {
     expect(description).not.toBe(describeIssueOutcome({ ...outcome, reused: false }));
   });
 
+  it('describes a draft PR with its URL and its findings comment URL', () => {
+    const outcome = {
+      kind: 'draftPullRequest',
+      url: faker.internet.url(),
+      reused: faker.datatype.boolean(),
+      findingsUrl: faker.internet.url(),
+    } as const;
+    const description = describeIssueOutcome(outcome);
+    expect(description).toContain(outcome.url);
+    expect(description).toContain(outcome.findingsUrl);
+    expect(description).not.toBe(describeIssueOutcome({ ...outcome, reused: !outcome.reused }));
+    expect(description).not.toBe(
+      describeIssueOutcome({ kind: 'pullRequest', url: outcome.url, reused: outcome.reused }),
+    );
+  });
+
   it.each(['completed', 'stuck', 'blocked', 'halted'] as const)(
     'describes a %s comment with its status and URL',
     (status) => {

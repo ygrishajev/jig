@@ -10,6 +10,9 @@ import {
   commentMarker,
   commentReceipt,
   emptyOrchestration,
+  findingsCommentReceipt,
+  type FindingsIdentity,
+  findingsMarker,
   orchestrationSchema,
   ownsPublication,
   pullRequestReceipt,
@@ -18,6 +21,7 @@ import {
   refusalOf,
   releasePublication,
   withComment,
+  withFindingsComment,
   withPullRequest,
   withRefusal,
   withRefusalComment,
@@ -94,6 +98,37 @@ describe('orchestration state', () => {
     expect(withRefusalComment(commented, key, revision, faker.internet.url())).toBe(commented);
     expect(refusalCommentReceipt(commented, key, faker.git.commitSha())).toBeUndefined();
     expect(commented.comments).toEqual({});
+  });
+
+  it('records a findings comment per PR, run, outcome and revision, apart from status comments', () => {
+    const { state, request } = setup();
+    const identity: FindingsIdentity = {
+      repository: { owner: faker.internet.username(), repo: faker.string.alpha(10) },
+      pullRequest: faker.number.int({ min: 1 }),
+      runId: request.runId,
+      outcome: 'stuck',
+      revision: faker.git.commitSha(),
+    };
+    const url = faker.internet.url();
+    const status = withComment(state, identity, faker.internet.url());
+    expect(findingsCommentReceipt(status, identity)).toBeUndefined();
+
+    const commented = withFindingsComment(status, identity, url);
+
+    expect(findingsCommentReceipt(commented, identity)).toBe(url);
+    expect(withFindingsComment(commented, identity, faker.internet.url())).toBe(commented);
+    for (const other of [
+      { ...identity, pullRequest: identity.pullRequest + 1 },
+      { ...identity, repository: { ...identity.repository, repo: faker.string.alpha(11) } },
+      { ...identity, runId: runId() },
+      { ...identity, outcome: 'blocked' as const },
+      { ...identity, revision: faker.git.commitSha() },
+    ]) {
+      expect(findingsCommentReceipt(commented, other)).toBeUndefined();
+      expect(findingsMarker(other)).not.toBe(findingsMarker(identity));
+    }
+    expect(findingsMarker(identity)).toBe(findingsMarker({ ...identity }));
+    expect(findingsMarker(identity)).not.toBe(commentMarker(identity));
   });
 
   it('marks each comment with a marker unique to what it announces', () => {

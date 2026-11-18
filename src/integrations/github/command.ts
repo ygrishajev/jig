@@ -55,6 +55,8 @@ export function describeIssueOutcome(outcome: IssueOutcome): string {
   if (outcome.kind === 'commented') return `${outcome.outcome}: ${outcome.url}`;
   if (outcome.kind === 'refused')
     return `Refused, changes workflows (${outcome.paths.join(', ')}): ${outcome.url}`;
+  if (outcome.kind === 'draftPullRequest')
+    return `${outcome.reused ? 'Reused draft PR' : 'Draft PR'} (stuck): ${outcome.url}, findings: ${outcome.findingsUrl}`;
   return `${outcome.reused ? 'Reused PR' : 'PR'}: ${outcome.url}`;
 }
 

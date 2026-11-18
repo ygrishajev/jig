@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { panic, Result } from 'better-result';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
@@ -38,7 +38,12 @@ import { runBranchFor } from '../../domain/run-state.js';
 import type { ExecResult } from '../../ports/agent-session.js';
 import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
 import { implementIssue } from './implement-issue.js';
-import { claimPublication } from './orchestration-state.js';
+import {
+  claimPublication,
+  releasePublication,
+  withComment,
+  withPullRequest,
+} from './orchestration-state.js';
 import { OrchestrationStore } from './orchestration-store.js';
 import { requestText } from './request-snapshot.js';
 
@@ -142,7 +147,7 @@ describe('implementIssue', () => {
     expect(github.commentsMade).toBe(1);
   });
 
-  it.each([{ unfinished: true }, { blocked: true }, { empty: true }, { planningBlocked: true }])(
+  it.each([{ blocked: true }, { empty: true }, { planningBlocked: true }])(
     'comments on unfinished work and skips the same revision on rerun: %j',
     async (options) => {
       const { implement, github, store } = await setup(options);
@@ -252,33 +257,49 @@ describe('implementIssue', () => {
     },
   );
 
-  it('retries an approved publication with the same inspected revision', async () => {
-    const { implement, github, dir, id } = await setup();
-    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
+  it.each([
+    ['ready', {}, 'pullRequest', 0],
+    ['draft', { unfinished: true }, 'draftPullRequest', 1],
+  ] as const)(
+    'retries an approved %s publication with the same inspected revision',
+    async (_, options, kind, comments) => {
+      const { implement, github, dir, id } = await setup(options);
+      const failure = new GithubRefused({ message: faker.lorem.sentence() });
+      github.failOnce('openPullRequest', failure);
 
-    expect((await implement()).isErr()).toBe(true);
-    const revision = unwrap(await new GitRemoteRunStore(dir).peek(id))?.codeRevision;
-    expect(await remoteBranch(dir, id)).toContain(revision);
+      const failed = await implement();
+      expect(failed.isErr() && failed.error).toBe(failure);
+      const revision = unwrap(await new GitRemoteRunStore(dir).peek(id))?.codeRevision;
+      expect(await remoteBranch(dir, id)).toContain(revision);
 
-    expect(unwrap(await implement())).toMatchObject({ kind: 'pullRequest', reused: false });
-    expect(await remoteBranch(dir, id)).toContain(revision);
-    expect(github.prsOpened).toBe(1);
-  });
+      expect(unwrap(await implement())).toMatchObject({ kind, reused: false });
+      expect(await remoteBranch(dir, id)).toContain(revision);
+      expect(github.prsOpened).toBe(1);
+      expect(github.commentsMade).toBe(comments);
+    },
+  );
 
-  it('opens one PR when two attempts publish the same request at once', async () => {
-    const { implement, github } = await setup();
-    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
-    expect((await implement()).isErr()).toBe(true);
+  it.each([
+    ['ready', {}, 0],
+    ['draft', { unfinished: true }, 1],
+  ] as const)(
+    'opens one %s PR when two attempts publish the same request at once',
+    async (_, options, comments) => {
+      const { implement, github } = await setup(options);
+      github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
+      expect((await implement()).isErr()).toBe(true);
 
-    const attempts = await Promise.all([implement(), implement()]);
+      const attempts = await Promise.all([implement(), implement()]);
 
-    const succeeded = attempts.filter((attempt) => attempt.isOk());
-    expect(succeeded.length).toBeGreaterThan(0);
-    for (const attempt of attempts)
-      if (attempt.isErr())
-        expect(['PublicationInProgress', 'RunInProgress']).toContain(attempt.error._tag);
-    expect(github.prsOpened).toBe(1);
-  });
+      const succeeded = attempts.filter((attempt) => attempt.isOk());
+      expect(succeeded.length).toBeGreaterThan(0);
+      for (const attempt of attempts)
+        if (attempt.isErr())
+          expect(['PublicationInProgress', 'RunInProgress']).toContain(attempt.error._tag);
+      expect(github.prsOpened).toBe(1);
+      expect(github.commentsMade).toBe(comments);
+    },
+  );
 
   it('publishes nothing while another job owns the publication', async () => {
     const { implement, github, dir, id, store, key } = await setup();
@@ -294,8 +315,8 @@ describe('implementIssue', () => {
     expect(unwrap(await store.read()).owners[key]).toEqual(owner);
   });
 
-  it("keeps an unfinished run's code off the remote while checkpointing where it started", async () => {
-    const { implement, dir, id } = await setup({ unfinished: true });
+  it("keeps a blocked run's code off the remote while checkpointing where it started", async () => {
+    const { implement, dir, id } = await setup({ blocked: true });
     const startingCommit = await simpleGit(dir).revparse(['HEAD']);
 
     unwrap(await implement());
@@ -307,16 +328,20 @@ describe('implementIssue', () => {
     expect(await remoteHasObject(dir, saved?.codeRevision ?? '')).toBe(false);
   });
 
-  it('keeps the rejected review and the verification output of a stuck run through execution and reload', async () => {
-    const { implement, dir, id, verifyCommand, failingOutput, feedback } = await setup({
+  it('keeps the rejected review and the verification output of a stuck run through execution, reload and its findings', async () => {
+    const { implement, github, dir, id, verifyCommand, failingOutput, feedback } = await setup({
       failingVerify: true,
     });
 
-    expect(unwrap(await implement())).toMatchObject({ kind: 'commented', outcome: 'stuck' });
+    expect(unwrap(await implement())).toMatchObject({ kind: 'draftPullRequest' });
 
     const saved = unwrap(await new GitRemoteRunStore(dir).peek(id));
     if (!saved) panic('The stuck run was not saved');
     const diagnostics = runDiagnostics(saved);
+    const [findings] = github.comments;
+    expect(findings.body).toContain(feedback);
+    expect(findings.body).toContain(failingOutput);
+    expect(findings.body).toContain(saved.slices[0].id);
     expect(diagnostics.unresolvedReviews.map((review) => review.feedback)).toEqual([feedback]);
     expect(diagnostics.lastVerificationFailure).toMatchObject({
       scope: { kind: 'slice', sliceId: saved.slices[0].id },
@@ -340,6 +365,206 @@ describe('implementIssue', () => {
     expect(await remoteBranch(dir, id)).toBe('');
     expect(unwrap(await new GitRemoteRunStore(dir).peek(id))?.startingCommit).toBeUndefined();
     expect(github.prsOpened).toBe(0);
+  });
+
+  it('opens one draft PR with one findings comment for a stuck run with commits, across reruns', async () => {
+    const { implement, github, dir, id, issue, store, agent } = await setup({ unfinished: true });
+
+    const outcome = unwrap(await implement());
+
+    const pr = github.pullRequests.get(runBranchFor(id));
+    if (!pr) panic('The stuck run opened no PR');
+    const saved = unwrap(await new GitRemoteRunStore(dir).peek(id));
+    const [findings] = github.comments;
+    expect(outcome).toEqual({
+      kind: 'draftPullRequest',
+      url: pr.url,
+      reused: false,
+      findingsUrl: findings.url,
+    });
+    expect(pr).toMatchObject({ draft: true, base: github.defaultBranch, head: runBranchFor(id) });
+    expect(pr.body).toContain(`Closes #${issue.number}`);
+    expect(github.comments.map(({ number }) => number)).toEqual([pr.number]);
+    expect(findings.body).toContain(saved?.slices[0].id);
+    expect(findings.body).toContain(saved?.codeRevision);
+    expect(await remoteBranch(dir, id)).toContain(saved?.codeRevision);
+    expect(Object.values(unwrap(await store.read()).findingsComments)).toEqual([findings.url]);
+    const calls = agent.calls.length;
+    expect(unwrap(await implement())).toEqual({ ...outcome, reused: true });
+    expect(unwrap(await implement())).toEqual({ ...outcome, reused: true });
+    expect(agent.calls).toHaveLength(calls);
+    expect(github.prsOpened).toBe(1);
+    expect(github.commentsMade).toBe(1);
+  });
+
+  it('posts the findings comment on a rerun after the draft opened but its comment failed', async () => {
+    const { implement, github, store, key } = await setup({ unfinished: true });
+    github.failOnce('commentOnIssue', new GithubRefused({ message: faker.lorem.sentence() }));
+
+    expect((await implement()).isErr()).toBe(true);
+    const saved = unwrap(await store.read());
+    expect(saved.receipts[key]).toBeDefined();
+    expect(saved.findingsComments).toEqual({});
+
+    const outcome = unwrap(await implement());
+    expect(outcome).toMatchObject({
+      kind: 'draftPullRequest',
+      url: saved.receipts[key].url,
+      reused: true,
+      findingsUrl: github.comments[0].url,
+    });
+    expect(github.prsOpened).toBe(1);
+    expect(github.commentsMade).toBe(1);
+  });
+
+  it.each([
+    [
+      'its response was lost',
+      async ({ github }: { github: FakeGithub }) =>
+        github.failOnceAfterEffect(
+          'commentOnIssue',
+          new GithubUnavailable({ message: faker.lorem.sentence() }),
+        ),
+      async () => undefined,
+    ],
+    [
+      'its receipt failed to save',
+      async ({ origin }: { origin: string }) => refuseFindingsReceipts(origin),
+      async ({ origin }: { origin: string }) => acceptFindingsReceipts(origin),
+    ],
+  ])(
+    'finds a findings comment posted when %s instead of posting it again',
+    async (_, interrupt, recover) => {
+      const context = await setup({ unfinished: true });
+      const { implement, github, store } = context;
+      await interrupt(context);
+
+      expect((await implement()).isErr()).toBe(true);
+      expect(github.commentsMade).toBe(1);
+      expect(unwrap(await store.read()).findingsComments).toEqual({});
+      await recover(context);
+
+      const outcome = unwrap(await implement());
+      expect(outcome).toMatchObject({
+        kind: 'draftPullRequest',
+        findingsUrl: github.comments[0].url,
+      });
+      expect(unwrap(await implement())).toEqual(outcome);
+      expect(Object.values(unwrap(await store.read()).findingsComments)).toEqual([
+        github.comments[0].url,
+      ]);
+      expect(github.commentsMade).toBe(1);
+      expect(github.prsOpened).toBe(1);
+    },
+  );
+
+  it('posts missing findings on a draft recorded before findings existed, past a status comment for the same revision', async () => {
+    const { implement, github, dir, id, store, key } = await setup({ unfinished: true });
+    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
+    expect((await implement()).isErr()).toBe(true);
+    const revision = unwrap(await new GitRemoteRunStore(dir).peek(id))?.codeRevision ?? '';
+    const legacy = {
+      number: faker.number.int({ min: 20001, max: 30000 }),
+      url: faker.internet.url(),
+      head: runBranchFor(id),
+      base: github.defaultBranch,
+      title: faker.lorem.sentence(),
+      body: faker.lorem.paragraph(),
+      draft: true,
+    };
+    github.pullRequests.set(legacy.head, legacy);
+    unwrap(
+      await store.update((state) =>
+        withComment(
+          withPullRequest(state, key, legacy),
+          { runId: id, outcome: 'stuck', revision },
+          faker.internet.url(),
+        ),
+      ),
+    );
+
+    const outcome = unwrap(await implement());
+
+    expect(outcome).toEqual({
+      kind: 'draftPullRequest',
+      url: legacy.url,
+      reused: true,
+      findingsUrl: github.comments[0].url,
+    });
+    expect(github.comments.map(({ number }) => number)).toEqual([legacy.number]);
+    expect(github.prsOpened).toBe(0);
+  });
+
+  it('refuses a stuck run that changes a workflow once, recovering its lost comment, without a draft', async () => {
+    const { implement, github, dir, id, issue, workflow } = await setup({
+      unfinished: true,
+      workflow: true,
+    });
+    github.failOnceAfterEffect(
+      'commentOnIssue',
+      new GithubUnavailable({ message: faker.lorem.sentence() }),
+    );
+
+    expect((await implement()).isErr()).toBe(true);
+    const outcome = unwrap(await implement());
+
+    expect(outcome).toEqual({ kind: 'refused', paths: [workflow], url: github.comments[0].url });
+    expect(unwrap(await implement())).toEqual(outcome);
+    expect(github.comments.map(({ number }) => number)).toEqual([issue.number]);
+    expect(github.prsOpened).toBe(0);
+    expect(await remoteBranch(dir, id)).toBe('');
+  });
+
+  it("fails on a fresh clone before publishing when the stuck run's code never left the clone that ran it", async () => {
+    const { implement, implementFromFreshClone, github, dir, id, store, key } = await setup({
+      unfinished: true,
+    });
+    const owner = { token: faker.string.uuid(), expiresAt: Date.now() + 60_000 };
+    unwrap(await store.update((state) => claimPublication(state, key, owner, Date.now())));
+    expect((await implement()).isErr()).toBe(true);
+    unwrap(await store.update((state) => releasePublication(state, key, owner.token)));
+
+    const result = await implementFromFreshClone();
+
+    expect(result.isErr() && result.error._tag).toBe('RunCodeUnavailable');
+    expect(await remoteBranch(dir, id)).toBe('');
+    expect(github.prsOpened).toBe(0);
+    expect(github.commentsMade).toBe(0);
+  });
+
+  it('explains GitHub refusing a draft whose commits change no files', async () => {
+    const { implement, github, dir, id, issue } = await setup();
+    const git = simpleGit(dir);
+    const startingCommit = await git.revparse(['HEAD']);
+    await git.checkout(['-b', runBranchFor(id)]);
+    await git.commit(faker.git.commitMessage(), ['--allow-empty']);
+    const codeRevision = await git.revparse(['HEAD']);
+    await git.checkout('-');
+    unwrap(
+      await new GitRemoteRunStore(dir).save(
+        aRunState({
+          runId: id,
+          phase: 'stuck',
+          merge: false,
+          request: requestText(issue),
+          codePublication: 'deferred',
+          startingCommit,
+          codeRevision,
+        }),
+      ),
+    );
+    const failure = new GithubRefused({ message: faker.lorem.sentence() });
+    github.failOnce('openPullRequest', failure);
+
+    const result = await implement();
+
+    if (!result.isErr()) panic('A refused draft PR was reported as published');
+    expect(result.error).toBeInstanceOf(GithubRefused);
+    expect(result.error.message).not.toBe(failure.message);
+    expect(result.error.message).toContain(failure.message);
+    expect(result.error.message).toContain(runBranchFor(id));
+    expect(await remoteBranch(dir, id)).toContain(codeRevision);
+    expect(github.commentsMade).toBe(0);
   });
 
   async function setup({
@@ -369,20 +594,6 @@ describe('implementIssue', () => {
     const repository = { owner: faker.internet.username(), repo: faker.string.alpha(10) };
     const key = `${repository.owner}/${repository.repo}#${issue.number}`;
     const id = runIdFor({ name: issue.title, key });
-    const app = createAppContainer({
-      repoRoot: dir,
-      logFormat: 'json',
-      logLevel: 'silent',
-      configFile: configFileFor(dir),
-      config: unwrap(loadConfig(configFileFor(dir))),
-      environment: unwrap(
-        parseEnvironment({
-          ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
-          GITHUB_TOKEN: faker.string.alphanumeric(20),
-          GH_TOKEN: faker.string.alphanumeric(20),
-        }),
-      ),
-    });
     const imageName = faker.string.alpha(10);
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const failingOutput = failureOutput();
@@ -394,20 +605,6 @@ describe('implementIssue', () => {
         ]
       : [];
     const workflowPath = `.github/workflows/${faker.string.alpha(8)}.yml`;
-    app.register({
-      config: asValue({
-        ...app.cradle.config,
-        ...everyStepOn(),
-        sandboxImage: imageName,
-        mergeMode: auto ? 'auto' : 'manual',
-        designGate: paused ? 'checkpoint' : 'auto',
-        reviewCycleCap: failingVerify ? 2 : 1,
-        ...(failingVerify ? { verifyCommand } : {}),
-      }),
-    });
-    app.register({
-      settings: asValue({ ...app.cradle.settings, maxStepRetries: 0, retryDelayMs: 0 }),
-    });
     const agent = new FakeAgentSession(
       sandboxCloneOf(dir, id),
       () => verifyResults.shift() ?? { exitCode: 0, output: '' },
@@ -422,7 +619,12 @@ describe('implementIssue', () => {
       scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
       if (empty) agent.script('implementer', { output: {} }, { output: {} });
       else {
-        agent.script('implementer', { files: { 'work.txt': faker.lorem.paragraph() } });
+        agent.script('implementer', {
+          files: {
+            'work.txt': faker.lorem.paragraph(),
+            ...(workflow ? { [workflowPath]: 'on: push' } : {}),
+          },
+        });
         agent.script(
           'reviewer',
           blocked ? { fail: new AgentRunFailed({ message: faker.lorem.sentence() }) } : rejection(),
@@ -449,17 +651,50 @@ describe('implementIssue', () => {
       agent.script('describer', aDescription());
     } else scriptWholeRun(agent);
     const sessionCredentials: Record<string, string>[] = [];
-    app.register({
-      openSession: asValue(async (input: Parameters<typeof app.cradle.openSession>[0]) => {
-        const { run, events } = input;
-        const options = unwrap(sandcastleSessionOptions({ ...app.cradle, imageName }, input));
-        sessionCredentials.push(options.credentials);
-        await openRunWorktree({ repoRoot: dir, ...run });
-        return Result.ok(agent.reportUsageTo(events, run.runId));
-      }),
-    });
+    const appIn = (repoRoot: string) => {
+      const app = createAppContainer({
+        repoRoot,
+        logFormat: 'json',
+        logLevel: 'silent',
+        configFile: configFileFor(repoRoot),
+        config: unwrap(loadConfig(configFileFor(repoRoot))),
+        environment: unwrap(
+          parseEnvironment({
+            ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
+            GITHUB_TOKEN: faker.string.alphanumeric(20),
+            GH_TOKEN: faker.string.alphanumeric(20),
+          }),
+        ),
+      });
+      app.register({
+        config: asValue({
+          ...app.cradle.config,
+          ...everyStepOn(),
+          sandboxImage: imageName,
+          mergeMode: auto ? 'auto' : 'manual',
+          designGate: paused ? 'checkpoint' : 'auto',
+          reviewCycleCap: failingVerify ? 2 : 1,
+          ...(failingVerify ? { verifyCommand } : {}),
+        }),
+      });
+      app.register({
+        settings: asValue({ ...app.cradle.settings, maxStepRetries: 0, retryDelayMs: 0 }),
+      });
+      app.register({
+        openSession: asValue(async (input: Parameters<typeof app.cradle.openSession>[0]) => {
+          const { run, events } = input;
+          const options = unwrap(sandcastleSessionOptions({ ...app.cradle, imageName }, input));
+          sessionCredentials.push(options.credentials);
+          await openRunWorktree({ repoRoot, ...run });
+          return Result.ok(agent.reportUsageTo(events, run.runId));
+        }),
+      });
+      return app;
+    };
+    const app = appIn(dir);
     return {
       dir,
+      origin: remote.origin,
       verifyCommand,
       failingOutput,
       feedback,
@@ -468,11 +703,14 @@ describe('implementIssue', () => {
       id,
       issue,
       key,
+      repository,
       agent,
       github,
       app,
       store: new OrchestrationStore(dir),
       implement: () => implementIssue(app, github, repository, issue.number),
+      implementFromFreshClone: async () =>
+        implementIssue(appIn(await remote.cloneOf()), github, repository, issue.number),
     };
   }
 });
@@ -501,4 +739,27 @@ async function commitOnBranch(dir: string, branch: string, files: Record<string,
   await git.add('.');
   await git.commit(faker.git.commitMessage());
   await git.checkout('-');
+}
+
+/** Makes origin refuse any orchestration update that records a findings comment. */
+async function refuseFindingsReceipts(origin: string) {
+  const hook = path.join(origin, 'hooks', 'pre-receive');
+  await writeFile(
+    hook,
+    [
+      '#!/bin/sh',
+      'while read old new ref; do',
+      '  if [ "$ref" = refs/jig/_orchestration ] && git show "$new:orchestration.json" | grep -q \'"findingsComments": {$\'; then',
+      '    echo "[rejected] findings receipt" >&2',
+      '    exit 1',
+      '  fi',
+      'done',
+      '',
+    ].join('\n'),
+  );
+  await chmod(hook, 0o755);
+}
+
+async function acceptFindingsReceipts(origin: string) {
+  await rm(path.join(origin, 'hooks', 'pre-receive'));
 }
