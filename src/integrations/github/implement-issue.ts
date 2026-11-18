@@ -39,6 +39,10 @@ export function implementIssue(
   issueNumber: number,
 ): Promise<Result<IssueOutcome, JigError | Exclude<GithubError, GithubSetupInvalid>>> {
   return Result.gen(async function* () {
+    app.cradle.logger.info(
+      { event: 'githubIssuePreparationStarted', issueNumber, repository },
+      `Checking GitHub issue #${issueNumber} in ${repository.owner}/${repository.repo}`,
+    );
     const base = yield* Result.await(github.getDefaultBranch(repository));
     const current = yield* Result.await(getCurrentBranch(app.cradle.repoRoot));
     if (current !== base)
@@ -49,8 +53,16 @@ export function implementIssue(
       );
     const store = new OrchestrationStore(app.cradle.repoRoot);
     const key = `${repository.owner}/${repository.repo}#${issueNumber}`;
+    app.cradle.logger.info(
+      { event: 'githubIssueRequestStarted', issueNumber },
+      `Loading accepted request or fetching GitHub issue #${issueNumber}`,
+    );
     const accepted = yield* Result.await(
       acceptedRequestFor(store, github, repository, key, issueNumber),
+    );
+    app.cradle.logger.info(
+      { event: 'githubIssueRequestAccepted', issueNumber, runId: accepted.runId },
+      `GitHub issue #${issueNumber} is ready as run ${accepted.runId}`,
     );
     const report = yield* Result.await(
       runJig(app, {
@@ -58,6 +70,15 @@ export function implementIssue(
         runId: accepted.runId,
         requiredStores: ['git-remote'],
       }),
+    );
+    app.cradle.logger.info(
+      {
+        event: 'githubIssueRunFinished',
+        issueNumber,
+        runId: accepted.runId,
+        status: report.status,
+      },
+      `Run ${accepted.runId} finished ${report.status}; publishing the GitHub outcome`,
     );
     const changes = yield* Result.await(
       hasChangesAgainst(app.cradle.repoRoot, base, runBranchFor(accepted.runId)),

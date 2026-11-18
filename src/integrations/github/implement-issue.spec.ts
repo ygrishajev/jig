@@ -2,8 +2,10 @@ import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
 import path from 'node:path';
+import type { Logger } from 'pino';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
 import {
   aDescription,
@@ -36,6 +38,42 @@ import { OrchestrationStore } from './orchestration-store.js';
 import { requestText } from './request-snapshot.js';
 
 describe('implementIssue', () => {
+  it('reports GitHub preparation before a default branch lookup fails', async () => {
+    const { implement, github, issue, logger } = await setup();
+    github.failOnce('getDefaultBranch', new GithubRefused({ message: faker.lorem.sentence() }));
+
+    const result = await implement();
+
+    expect(result.isErr()).toBe(true);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'githubIssuePreparationStarted',
+        issueNumber: issue.number,
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('reports request acceptance and the run outcome', async () => {
+    const { implement, issue, id, logger } = await setup();
+
+    const outcome = unwrap(await implement());
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'githubIssueRequestStarted', issueNumber: issue.number }),
+      expect.any(String),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'githubIssueRequestAccepted', runId: id }),
+      expect.any(String),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'githubIssueRunFinished', runId: id, status: 'completed' }),
+      expect.any(String),
+    );
+    expect(outcome.kind).toBe('pullRequest');
+  });
+
   it('publishes a completed run without merging the operator branch', async () => {
     const { implement, github, dir, id, issue, store, key, agent } = await setup({ auto: true });
     const before = await simpleGit(dir).revparse(['HEAD']);
@@ -221,6 +259,8 @@ describe('implementIssue', () => {
         }),
       ),
     });
+    const logger = mock<Logger>();
+    app.register({ logger: asValue(logger) });
     const imageName = faker.string.alpha(10);
     app.register({
       config: asValue({
@@ -276,6 +316,7 @@ describe('implementIssue', () => {
       key,
       agent,
       github,
+      logger,
       app,
       store: new OrchestrationStore(dir),
       implement: () => implementIssue(app, github, repository, issue.number),
