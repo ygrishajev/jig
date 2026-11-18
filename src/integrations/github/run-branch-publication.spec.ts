@@ -94,6 +94,20 @@ describe('publishRunBranch', () => {
     expect(await remoteBranch()).toBeUndefined();
   });
 
+  it('skips an empty commit, which still counts as work beyond the starting commit', async () => {
+    const { publish, here, remoteBranch, id } = await setup();
+    const git = simpleGit(here);
+    const startingCommit = await git.revparse(['HEAD']);
+    await git.checkout(['-b', runBranchFor(id)]);
+    await git.commit(faker.git.commitMessage(), ['--allow-empty']);
+    const codeRevision = await git.revparse(['HEAD']);
+    await git.checkout('main');
+
+    expect(unwrap(await publish(codeRevision))).toEqual({ kind: 'unchanged' });
+    expect(await remoteBranch()).toBeUndefined();
+    expect(unwrap(await hasWorkBeyondStart(here, { startingCommit, codeRevision }))).toBe(true);
+  });
+
   it('refuses a run branch that moved past the inspected revision', async () => {
     const { publish, commitOnRunBranch, remoteBranch } = await setup();
     const revision = await commitOnRunBranch({ write: { [allowedPath()]: faker.lorem.word() } });

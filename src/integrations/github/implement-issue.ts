@@ -9,6 +9,7 @@ import type { JigError } from '../../domain/errors.js';
 import { runIdFor } from '../../domain/run-id.js';
 import { runBranchFor, runStopReason } from '../../domain/run-state.js';
 import { outcomeIsComplete } from '../../flow/engine.js';
+import type { RunStoreFailure } from '../../ports/run-store.js';
 import {
   BaseBranchMismatch,
   type GithubError,
@@ -172,7 +173,7 @@ function publishOutcome(
 function codeRevisionOf(
   app: App,
   report: RunReport,
-): Promise<Result<string | undefined, JigError>> {
+): Promise<Result<string | undefined, RunStoreFailure>> {
   return Result.gen(async function* () {
     const { runId } = report.state;
     const store = yield* Result.await(openRunStore(app.cradle, REQUIRED_STORES));
