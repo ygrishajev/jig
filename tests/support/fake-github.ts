@@ -23,14 +23,20 @@ export function anIssue({
 export class FakeGithub implements GithubPort {
   readonly issues = new Map<number, Issue>();
   readonly pullRequests = new Map<string, PullRequest & OpenPullRequest>();
-  readonly comments: { number: number; body: string }[] = [];
+  readonly comments: { number: number; body: string; url: string }[] = [];
   prsOpened = 0;
   commentsMade = 0;
   defaultBranch = 'main';
   private readonly failures = new Map<keyof GithubPort, GithubFailure>();
+  private readonly failuresAfterEffect = new Map<keyof GithubPort, GithubFailure>();
 
   failOnce(operation: keyof GithubPort, failure: GithubFailure): void {
     this.failures.set(operation, failure);
+  }
+
+  /** The next `operation` takes effect on GitHub but reports `failure`, as a lost response would. */
+  failOnceAfterEffect(operation: keyof GithubPort, failure: GithubFailure): void {
+    this.failuresAfterEffect.set(operation, failure);
   }
 
   async getIssue(_repository: RepositoryIdentity, number: number) {
@@ -44,7 +50,11 @@ export class FakeGithub implements GithubPort {
   private perform<T>(operation: keyof GithubPort, work: () => T): Result<T, GithubFailure> {
     const failure = this.failures.get(operation);
     this.failures.delete(operation);
-    return failure ? Result.err(failure) : Result.ok(work());
+    if (failure) return Result.err(failure);
+    const value = work();
+    const lost = this.failuresAfterEffect.get(operation);
+    this.failuresAfterEffect.delete(operation);
+    return lost ? Result.err(lost) : Result.ok(value);
   }
 
   async getDefaultBranch(_repository: RepositoryIdentity) {
@@ -71,8 +81,18 @@ export class FakeGithub implements GithubPort {
   async commentOnIssue(_repository: RepositoryIdentity, number: number, body: string) {
     return this.perform('commentOnIssue', () => {
       this.commentsMade++;
-      this.comments.push({ number, body });
-      return faker.internet.url();
+      const url = faker.internet.url();
+      this.comments.push({ number, body, url });
+      return url;
     });
+  }
+
+  async findIssueComment(_repository: RepositoryIdentity, number: number, marker: string) {
+    return this.perform(
+      'findIssueComment',
+      () =>
+        this.comments.find((comment) => comment.number === number && comment.body.includes(marker))
+          ?.url,
+    );
   }
 }

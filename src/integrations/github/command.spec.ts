@@ -41,6 +41,17 @@ describe('github implement command', () => {
     },
   );
 
+  it('describes a refusal with every refused path and its comment URL', () => {
+    const paths = faker.helpers.uniqueArray(
+      () => `.github/workflows/${faker.string.alpha(8)}.yml`,
+      2,
+    );
+    const outcome = { kind: 'refused', paths, url: faker.internet.url() } as const;
+    const description = describeIssueOutcome(outcome);
+    for (const path of paths) expect(description).toContain(path);
+    expect(description).toContain(outcome.url);
+  });
+
   it('refuses a missing token before opening the app', async () => {
     const { run, output, createApp } = await setup();
     await run(['--issue', '1']);

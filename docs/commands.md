@@ -136,10 +136,19 @@ The command accepts `--config`, `--preset` and `--log-format` like `jig run`.
 
 The first invocation saves the issue title and body as an immutable request. Repeating
 the command resumes that run, even if the issue was edited. State is always saved to
-`git-remote` as well as configured stores, so another clone can resume it.
-The operator branch is never merged. A completed run opens a PR that closes the issue;
-a completed run without changes posts one issue comment and opens no PR. Halted,
-blocked and stuck runs comment with their status and reason, without opening a PR.
-Existing open PRs are reused. Comment receipts are keyed by run, outcome and branch
-revision, so repeating an outcome at the same revision does not comment again.
-The command prints the PR URL (including whether it was reused) or comment URL and status.
+`git-remote` as well as configured stores, so another clone can resume it. Unlike
+`jig run`, saves push state only: the run branch stays on the clone that ran it, and the
+state records the branch's commit as a code checkpoint (see
+[deferred code publication](operations.md#deferred-code-publication)).
+The operator branch is never merged. Before any code is pushed, jig inspects the exact
+checkpoint against where it forked from the default branch on `origin`. A run that
+adds, modifies, deletes, retypes or renames anything under `.github/workflows/` is
+refused: nothing is pushed, no PR is opened, and one issue comment names every
+offending path. Otherwise a completed run pushes exactly that commit to its run branch
+and opens a PR that closes the issue; a completed run without changes posts one issue
+comment and opens no PR. Halted, blocked and stuck runs comment with their status and
+reason, without opening a PR or pushing code. Existing open PRs are reused.
+Comment receipts are keyed by run, outcome and code checkpoint, so repeating an outcome
+at the same checkpoint does not comment again.
+The command prints the PR URL (including whether it was reused), the comment URL and status,
+or the refused paths and refusal comment URL.

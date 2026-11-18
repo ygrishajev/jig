@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 
+import { GitRunCode } from '../adapters/git/run-code.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { CompositeRunStore } from '../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
@@ -42,7 +43,7 @@ export async function openRunStore(
     if (store.isErr()) return Result.err(store.error);
     stores.push(store.value);
   }
-  return Result.ok(new CompositeRunStore(stores));
+  return Result.ok(new CompositeRunStore(stores, new GitRunCode(repoRoot)));
 }
 
 async function storeNamed(

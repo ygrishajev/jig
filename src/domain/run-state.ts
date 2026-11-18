@@ -23,6 +23,8 @@ export function startRun(input: {
   baseBranch: string;
   request: string;
   merge?: boolean;
+  codePublication?: CodePublication;
+  startingCommit?: string;
 }): RunState {
   return { ...input, merge: input.merge ?? true, revision: 0, phase: 'context', slices: [] };
 }
@@ -35,6 +37,10 @@ export function enterPhase(state: Omit<RunState, 'phase'>, phase: RunPhase): Run
   }
   return entered.data;
 }
+
+export const codePublicationSchema = z.enum(['deferred']);
+
+export type CodePublication = z.infer<typeof codePublicationSchema>;
 
 export const runContextSchema = z.object({ classification: z.string(), repoSummary: z.string() });
 
@@ -72,6 +78,15 @@ const runFields = z.object({
   request: z.string(),
   /** Whether the run merges its branch when it finishes; a run saved before the choice existed merges. */
   merge: z.boolean().default(true),
+  /**
+   * `deferred` keeps the run's code off the remote: saves publish state only, recording the
+   * commit the run branch held as `codeRevision`, and the code is published by whoever owns it.
+   */
+  codePublication: codePublicationSchema.optional(),
+  /** The commit the run started from; absent on runs saved before it was recorded. */
+  startingCommit: z.string().min(1).optional(),
+  /** The run branch's commit at the last deferred save: the checkpoint a resume restores. */
+  codeRevision: z.string().min(1).optional(),
   context: runContextSchema.optional(),
   plan: featurePlanSchema.optional(),
   docs: designDocsSchema.optional(),
@@ -179,6 +194,11 @@ export function currentSlice(state: RunState): Slice | undefined {
 /** Whether the run merges its branch once it is described. */
 export function runMerges(state: RunState): boolean {
   return state.merge;
+}
+
+/** Whether saves keep the run's code off the remote, leaving its publication to the caller. */
+export function defersCodePublication(state: RunState): boolean {
+  return state.codePublication === 'deferred';
 }
 
 export function runStopReason(state: RunState): string | undefined {

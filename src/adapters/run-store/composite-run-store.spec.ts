@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
@@ -9,9 +10,12 @@ import {
 } from '../../../tests/support/builders.js';
 import { InMemoryRunStore } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { unwrap } from '../../../tests/support/unwrap.js';
+import { RunCodeUnavailable } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import type { RunState } from '../../domain/run-state.js';
-import type { RunStore } from '../../ports/run-store.js';
+import type { RunCode } from '../../ports/run-code.js';
+import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 import { LocalRunStore } from '../local-store/local-run-store.js';
 import { CompositeRunStore } from './composite-run-store.js';
 
@@ -104,7 +108,78 @@ describe('CompositeRunStore', () => {
     expect((await store.load(stale.runId)).unwrap()).toEqual(fresher);
   });
 
-  async function setup(input: { copies: (RunState | undefined)[]; serialized?: boolean }) {
+  it('records the run branch commit with each save of a run that defers its code', async () => {
+    const state = aRunState({ codePublication: 'deferred', codeRevision: faker.git.commitSha() });
+    const checkpoint = faker.git.commitSha();
+    const { store, stores } = await setup({ copies: [undefined, undefined], checkpoint });
+
+    unwrap(await store.save(state));
+
+    for (const each of stores)
+      expect(unwrap(await each.load(state.runId))?.codeRevision).toBe(checkpoint);
+  });
+
+  it('keeps the recorded checkpoint while the run branch has no commit here', async () => {
+    const state = aRunState({ codePublication: 'deferred', codeRevision: faker.git.commitSha() });
+    const { store, stores } = await setup({ copies: [undefined] });
+
+    unwrap(await store.save(state));
+
+    expect(unwrap(await stores[0].load(state.runId))?.codeRevision).toBe(state.codeRevision);
+  });
+
+  it('neither records nor restores code for a run that publishes it with its state', async () => {
+    const state = aRunState({ codeRevision: faker.git.commitSha() });
+    const { store, stores, code } = await setup({ copies: [state] });
+
+    unwrap(await store.load(state.runId));
+    unwrap(await store.save(state));
+
+    expect(unwrap(await stores[0].load(state.runId))?.codeRevision).toBe(state.codeRevision);
+    expect(code.checkpoint).not.toHaveBeenCalled();
+    expect(code.restore).not.toHaveBeenCalled();
+  });
+
+  it('restores the code checkpoint of the copy it loads', async () => {
+    const stale = aRunState({
+      codePublication: 'deferred',
+      codeRevision: faker.git.commitSha(),
+      revision: 2,
+    });
+    const fresher = { ...stale, codeRevision: faker.git.commitSha(), revision: 3 };
+    const { store, code } = await setup({ copies: [stale, fresher] });
+
+    expect(unwrap(await store.load(stale.runId))).toEqual(fresher);
+    expect(code.restore).toHaveBeenCalledWith(stale.runId, fresher.codeRevision);
+  });
+
+  it('returns the failure to restore code instead of the run', async () => {
+    const state = aRunState({ codePublication: 'deferred', codeRevision: faker.git.commitSha() });
+    const failure = new RunCodeUnavailable({ message: faker.lorem.sentence() });
+    const { store } = await setup({ copies: [state], restored: Result.err(failure) });
+
+    const loaded = await store.load(state.runId);
+
+    expect(loaded.isErr() && loaded.error).toBe(failure);
+  });
+
+  it('refuses copies of one revision that record different code checkpoints', async () => {
+    const first = aRunState({ codePublication: 'deferred', codeRevision: faker.git.commitSha() });
+    const second = { ...first, codeRevision: faker.git.commitSha() };
+    const { store, code } = await setup({ copies: [first, second] });
+
+    const loaded = await store.load(first.runId);
+
+    expect(loaded.isErr() && loaded.error._tag).toBe('RunStateConflict');
+    expect(code.restore).not.toHaveBeenCalled();
+  });
+
+  async function setup(input: {
+    copies: (RunState | undefined)[];
+    serialized?: boolean;
+    checkpoint?: string;
+    restored?: Result<void, RunStoreFailure>;
+  }) {
     const stores = await Promise.all(
       input.copies.map(async (copy) => {
         const memory = input.serialized
@@ -118,6 +193,10 @@ describe('CompositeRunStore', () => {
         });
       }),
     );
-    return { store: new CompositeRunStore(stores), stores };
+    const code = mock<RunCode>({
+      checkpoint: vi.fn().mockResolvedValue(Result.ok(input.checkpoint)),
+      restore: vi.fn().mockResolvedValue(input.restored ?? Result.ok()),
+    });
+    return { store: new CompositeRunStore(stores, code), stores, code };
   }
 });

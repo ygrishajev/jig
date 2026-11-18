@@ -15,6 +15,7 @@ export type JigError =
   | SandboxUnavailable
   | SetupCommandFailed
   | RunStateConflict
+  | RunCodeUnavailable
   | MergeFailed
   | GitCommandFailed
   | CommitImportRefused
@@ -107,6 +108,14 @@ export class RunStateConflict extends TaggedError('RunStateConflict')<{ message:
   readonly kind = 'block' as const;
 }
 
+/**
+ * A saved run names a code checkpoint this machine cannot produce: the commit is neither kept here
+ * nor published on the remote, so resuming would continue from code the state does not describe.
+ */
+export class RunCodeUnavailable extends TaggedError('RunCodeUnavailable')<{ message: string }> {
+  readonly kind = 'block' as const;
+}
+
 export class MergeFailed extends TaggedError('MergeFailed')<{ message: string }> {
   readonly kind = 'block' as const;
 }
@@ -195,6 +204,7 @@ const jigErrorClasses = [
   SandboxUnavailable,
   SetupCommandFailed,
   RunStateConflict,
+  RunCodeUnavailable,
   MergeFailed,
   GitCommandFailed,
   CommitImportRefused,

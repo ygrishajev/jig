@@ -5,6 +5,7 @@ import type {
   GitCommandFailed,
   LocalStateUnwritable,
   RemoteUnavailable,
+  RunCodeUnavailable,
   RunStateConflict,
 } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
@@ -20,4 +21,9 @@ export interface RunStore {
 }
 
 export type RunStoreFailure =
-  RunStateConflict | RemoteUnavailable | ConfigInvalid | GitCommandFailed | LocalStateUnwritable;
+  | RunStateConflict
+  | RemoteUnavailable
+  | ConfigInvalid
+  | GitCommandFailed
+  | LocalStateUnwritable
+  | RunCodeUnavailable;

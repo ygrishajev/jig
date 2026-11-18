@@ -5,12 +5,22 @@ import { runId } from '../../../tests/support/builders.js';
 import {
   acceptedRequest,
   acceptRequest,
+  claimPublication,
   type CommentIdentity,
+  commentMarker,
   commentReceipt,
   emptyOrchestration,
+  orchestrationSchema,
+  ownsPublication,
   pullRequestReceipt,
+  refusalCommentReceipt,
+  refusalMarker,
+  refusalOf,
+  releasePublication,
   withComment,
   withPullRequest,
+  withRefusal,
+  withRefusalComment,
 } from './orchestration-state.js';
 
 describe('orchestration state', () => {
@@ -55,6 +65,67 @@ describe('orchestration state', () => {
     expect(commentReceipt(revised, identity)).toBe(url);
     expect(withComment(commented, identity, faker.internet.url())).toBe(commented);
     expect(withPullRequest(commented, key, { ...pr, url: faker.internet.url() })).toBe(commented);
+  });
+
+  it('loads state saved before refusals and ownership were recorded', () => {
+    const { key, request } = setup();
+    const legacy = { version: 1, requests: { [key]: request }, receipts: {} };
+
+    expect(orchestrationSchema.parse(legacy)).toEqual({
+      ...emptyOrchestration(),
+      requests: { [key]: request },
+    });
+  });
+
+  it('keeps the first refusal of a revision and its comment apart from status comments', () => {
+    const { state, key, request } = setup();
+    const revision = faker.git.commitSha();
+    const refusal = { runId: request.runId, revision, paths: [faker.system.filePath()] };
+    const refused = withRefusal(state, key, refusal);
+    const url = faker.internet.url();
+    const commented = withRefusalComment(refused, key, revision, url);
+
+    expect(refusalOf(refused, key, revision)).toEqual(refusal);
+    expect(withRefusal(refused, key, { ...refusal, paths: [faker.system.filePath()] })).toBe(
+      refused,
+    );
+    expect(refusalOf(refused, key, faker.git.commitSha())).toBeUndefined();
+    expect(refusalCommentReceipt(commented, key, revision)).toBe(url);
+    expect(withRefusalComment(commented, key, revision, faker.internet.url())).toBe(commented);
+    expect(refusalCommentReceipt(commented, key, faker.git.commitSha())).toBeUndefined();
+    expect(commented.comments).toEqual({});
+  });
+
+  it('marks each comment with a marker unique to what it announces', () => {
+    const { key, request } = setup();
+    const revision = faker.git.commitSha();
+    const identity: CommentIdentity = { runId: request.runId, outcome: 'stuck', revision };
+
+    expect(commentMarker(identity)).toBe(commentMarker({ ...identity }));
+    expect(commentMarker(identity)).not.toBe(commentMarker({ ...identity, outcome: 'blocked' }));
+    expect(refusalMarker(key, revision)).toBe(refusalMarker(key, revision));
+    expect(refusalMarker(key, revision)).not.toBe(refusalMarker(key, faker.git.commitSha()));
+    expect(refusalMarker(key, revision)).not.toBe(commentMarker(identity));
+  });
+
+  it('lets one owner publish a request until its lease expires or it releases it', () => {
+    const { state, key } = setup();
+    const now = faker.number.int({ min: 1000, max: 100000 });
+    const first = { token: faker.string.uuid(), expiresAt: now + 10 };
+    const second = { token: faker.string.uuid(), expiresAt: now + 20 };
+    const owned = claimPublication(state, key, first, now);
+
+    expect(ownsPublication(owned, key, first.token)).toBe(true);
+    expect(claimPublication(owned, key, second, now + 9)).toBe(owned);
+    expect(ownsPublication(claimPublication(owned, key, second, now + 10), key, second.token)).toBe(
+      true,
+    );
+    expect(releasePublication(owned, key, second.token)).toBe(owned);
+    const released = releasePublication(owned, key, first.token);
+    expect(ownsPublication(released, key, first.token)).toBe(false);
+    expect(ownsPublication(claimPublication(released, key, second, now), key, second.token)).toBe(
+      true,
+    );
   });
 
   function setup() {

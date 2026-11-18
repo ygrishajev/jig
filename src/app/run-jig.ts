@@ -2,6 +2,7 @@ import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 
 import { getCurrentBranch } from '../adapters/git/branch.js';
+import { exactHead } from '../adapters/git/run-history.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stepCredentials } from '../adapters/sandcastle/open-session.js';
@@ -14,7 +15,7 @@ import {
   RunRequestInvalid,
 } from '../domain/errors.js';
 import { newRunId, type RunId } from '../domain/run-id.js';
-import { type RunState, startRun } from '../domain/run-state.js';
+import { type CodePublication, type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
 import { type EngineResult, runEngine } from '../flow/engine.js';
 import { runFlow } from '../flow/run-flow.js';
@@ -32,12 +33,23 @@ export type RunJigInput =
   { start: StartRequest; runId?: RunId; requiredStores?: string[] } | { resume: RunId };
 
 /** The text of a request and, when it came from one, the file it was read from. */
-export type StartRequest = { text: string; file?: string; merge?: boolean };
+export type StartRequest = {
+  text: string;
+  file?: string;
+  merge?: boolean;
+  codePublication?: CodePublication;
+};
 
 export type RunReport = EngineResult;
 
 /** The run to start or resume: its id, and the request text when one was given. */
-type RunTarget = { runId: RunId; request?: string; merge?: boolean; requiredStores?: string[] };
+type RunTarget = {
+  runId: RunId;
+  request?: string;
+  merge?: boolean;
+  codePublication?: CodePublication;
+  requiredStores?: string[];
+};
 
 /**
  * Runs `input` to its next stop. The whole run holds the run's lock, so a second
@@ -65,6 +77,7 @@ function targetOf(input: RunJigInput): RunTarget {
     requiredStores: input.requiredStores,
     request: start.text,
     merge: start.merge,
+    codePublication: start.codePublication,
     runId: input.runId ?? newRunId(start),
   };
 }
@@ -89,7 +102,7 @@ function runLocked(
 async function startOrResume(
   cradle: AppCradle,
   store: RunStore,
-  { runId, request, merge }: RunTarget,
+  { runId, request, merge, codePublication }: RunTarget,
 ): Promise<Result<RunState, RunStoreFailure | RunRequestInvalid>> {
   const existing = await store.load(runId);
   if (existing.isErr()) return Result.err(existing.error);
@@ -98,7 +111,8 @@ async function startOrResume(
       ? Result.ok(existing.value)
       : Result.err(new RunRequestInvalid({ message: `No run found with id "${runId}".` }));
   }
-  if (!existing.value) return startNewRun(cradle, store, { runId, request, merge });
+  if (!existing.value)
+    return startNewRun(cradle, store, { runId, request, merge, codePublication });
   if (request !== existing.value.request) {
     return Result.err(
       new RunRequestInvalid({
@@ -106,19 +120,33 @@ async function startOrResume(
       }),
     );
   }
-  return Result.ok(existing.value);
+  return Result.ok(adoptingCodePublication(existing.value, codePublication));
 }
 
 async function startNewRun(
   cradle: AppCradle,
   store: RunStore,
-  { runId, request, merge }: { runId: RunId; request: string; merge?: boolean },
+  input: Omit<RunTarget, 'requiredStores'> & { request: string },
 ): Promise<Result<RunState, RunStoreFailure>> {
   const baseBranch = await getCurrentBranch(cradle.repoRoot);
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
-  const started = startRun({ runId, baseBranch: baseBranch.value, request, merge });
+  const startingCommit = await exactHead(cradle.repoRoot, 'HEAD');
+  if (startingCommit.isErr()) return Result.err(startingCommit.error);
+  const started = startRun({
+    ...input,
+    baseBranch: baseBranch.value,
+    startingCommit: startingCommit.value,
+  });
   const saved = await store.save(started);
   return saved.isErr() ? Result.err(saved.error) : Result.ok(started);
+}
+
+/**
+ * A run saved before it could defer its code keeps every recorded field, starting commit
+ * included, and defers from here on: what it already published stays, nothing more is pushed.
+ */
+function adoptingCodePublication(state: RunState, codePublication?: CodePublication): RunState {
+  return codePublication && !state.codePublication ? { ...state, codePublication } : state;
 }
 
 async function advance(

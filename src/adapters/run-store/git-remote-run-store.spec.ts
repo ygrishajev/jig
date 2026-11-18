@@ -210,6 +210,33 @@ describe('GitRemoteRunStore', () => {
     ).toEqual(theirs);
   });
 
+  it('pushes only the state of a run that defers its code, leaving the code unreachable', async () => {
+    const { origin, cloneOf } = await setup();
+    const here = await cloneOf();
+    const id = aRunState().runId;
+    const codeRevision = await commitOnRunBranch(here, id);
+    const state = aRunState({
+      runId: id,
+      phase: 'slices',
+      codePublication: 'deferred',
+      codeRevision,
+    });
+
+    const store = new GitRemoteRunStore(here);
+    unwrap(await store.save(state));
+    unwrap(await store.save(aRunState({ ...state, phase: 'describing' })));
+
+    expect(await refsUnder(origin, 'refs/heads')).not.toContain(`refs/heads/${runBranchFor(id)}`);
+    expect(await objectExists(origin, codeRevision)).toBe(false);
+    const elsewhere = await cloneOf();
+    await simpleGit({ baseDir: elsewhere }).fetch(['origin', `+refs/jig/*:refs/jig/*`]);
+    expect(await objectExists(elsewhere, codeRevision)).toBe(false);
+    expect(unwrap(await new GitRemoteRunStore(elsewhere).load(id))).toMatchObject({
+      phase: 'describing',
+      codeRevision,
+    });
+  });
+
   it('knows nothing about a run that was never pushed', async () => {
     const { cloneOf } = await setup();
 
@@ -250,4 +277,13 @@ async function commitOnRunBranch(repo: string, runId: RunId) {
   const head = await git.revparse(['HEAD']);
   await git.checkout('main');
   return head;
+}
+
+async function objectExists(repo: string, object: string) {
+  return simpleGit({ baseDir: repo })
+    .raw(['cat-file', '-t', object])
+    .then(
+      () => true,
+      () => false,
+    );
 }

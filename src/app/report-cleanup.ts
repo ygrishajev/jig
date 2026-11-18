@@ -1,10 +1,8 @@
 import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
-import type { JigError } from '../domain/errors.js';
-
 /** A failed cleanup is the outcome only when the work itself succeeded; otherwise it is logged. */
-export function reportCleanup<T, E, C extends JigError>(
+export function reportCleanup<T, E, C>(
   used: Result<T, E>,
   cleanup: Result<void, C>,
   logger: Logger,

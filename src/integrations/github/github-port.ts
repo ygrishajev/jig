@@ -18,6 +18,12 @@ export interface GithubPort {
     number: number,
     body: string,
   ): Promise<Result<string, GithubFailure>>;
+  /** The URL of the issue's comment whose body carries `marker`, if one was already posted. */
+  findIssueComment(
+    repository: RepositoryIdentity,
+    number: number,
+    marker: string,
+  ): Promise<Result<string | undefined, GithubFailure>>;
 }
 export interface RepositoryIdentity {
   owner: string;
