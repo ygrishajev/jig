@@ -18,6 +18,7 @@ import {
   runSettings,
 } from '../../tests/support/builders.js';
 import { InMemoryRunStore, RecordingEventSink, SteppingClock } from '../../tests/support/fakes.js';
+import { unwrap } from '../../tests/support/unwrap.js';
 import {
   AgentOutputInvalid,
   AgentRunFailed,
@@ -404,7 +405,7 @@ describe('runEngine', () => {
     );
 
     expect(state.blockedReason).toBeUndefined();
-    expect((await store.load(state.runId)).unwrap()).toMatchObject({ blockedReason: undefined });
+    expect(unwrap(await store.load(state.runId))).toMatchObject({ blockedReason: undefined });
   });
 
   it('blocks straight away on a failure that needs a person', async () => {
