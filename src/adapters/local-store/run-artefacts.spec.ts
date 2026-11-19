@@ -170,7 +170,7 @@ describe('RunArtefacts', () => {
 
       (await artefacts.write(state, status, metrics)).unwrap();
 
-      expect(JSON.parse(await read(state.runId, 'result.json'))).toEqual({
+      expect(JSON.parse(await read(state.runId, 'result.json'))).toStrictEqual({
         runId: state.runId,
         status,
         phase: state.phase,

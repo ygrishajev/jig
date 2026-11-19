@@ -393,7 +393,7 @@ describe('runEngine', () => {
   });
 
   it('clears the blocked reason when a blocked run is resumed', async () => {
-    const { settle } = setup({
+    const { settle, store } = setup({
       flow: linearFlow({
         context: async () => Result.ok({ type: 'contextBuilt', context: aContext() }),
       }),
@@ -404,6 +404,7 @@ describe('runEngine', () => {
     );
 
     expect(state.blockedReason).toBeUndefined();
+    expect((await store.load(state.runId)).unwrap()).toMatchObject({ blockedReason: undefined });
   });
 
   it('blocks straight away on a failure that needs a person', async () => {
