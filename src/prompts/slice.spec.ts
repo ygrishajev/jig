@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { aSlice } from '../../tests/support/builders.js';
 import {
   combinedReviewPrompt,
+  commitRejectedFeedback,
   EARLIER_FEEDBACK_LIMIT,
   implementPrompt,
   reviewPrompt,
@@ -93,6 +94,14 @@ describe('implementPrompt', () => {
 
     expect(prompt).toContain(feedback);
     expect(prompt).toContain(output);
+  });
+
+  it('presents the repository hook output as retry feedback before asking for the commit message', () => {
+    const output = faker.lorem.paragraph();
+    const { prompt } = setup({ rounds: [commitRejectedFeedback(output)] });
+
+    expect(prompt).toContain(output);
+    expect(prompt.indexOf(output)).toBeLessThan(prompt.lastIndexOf('"commitMessage"'));
   });
 
   function setup(input: { rounds: string[] }) {

@@ -109,6 +109,8 @@ function commitMessageReply(): string[] {
     'change. Whatever you leave uncommitted is committed with it, so write it in this',
     "repository's commit convention (its history and any commit-message lint config show it): a",
     'one-line header that says what changed, then a body that says why.',
+    'Jig uses the returned text as the commit message. Keep hook output, retry instructions,',
+    'and notes about editing the message out of both this reply field and any commits you make.',
   ];
 }
 
@@ -137,9 +139,15 @@ export function nothingChangedFeedback(slice: Slice): string {
 
 export function commitRejectedFeedback(hookOutput: string): string {
   return [
-    "The previous attempt's work is still uncommitted: this repository's commit hooks rejected",
-    'the commit made for it. Fix what the hooks report, then commit the work yourself with a',
-    'message they accept. Their output:',
+    "The previous attempt's work is still uncommitted because a repository commit hook rejected it.",
+    'If the hook only rejected the message, leave the pending changes intact and return a corrected',
+    'commitMessage. Jig will retry the commit through the same hooks.',
+    'If the hook reported a problem with the pending changes, fix those changes before committing',
+    'them or returning a commitMessage for Jig to commit them.',
+    'Use the hook output below to make the correction. Keep it and any instructions for correcting',
+    'the message out of the commit history.',
+    '',
+    'Hook output:',
     hookOutput,
   ].join('\n');
 }
