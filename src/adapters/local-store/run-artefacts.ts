@@ -6,9 +6,9 @@ import writeFileAtomic from 'write-file-atomic';
 
 import { designReviewReport } from '../../domain/design-review-report.js';
 import type { LocalStateUnwritable } from '../../domain/errors.js';
+import { type InvocationStatus, outcomeIsComplete } from '../../domain/invocation-status.js';
 import type { RunId } from '../../domain/run-id.js';
 import { type RunPhase, type RunState, runStopReason } from '../../domain/run-state.js';
-import { type EngineStatus, outcomeIsComplete } from '../../flow/engine.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
@@ -20,7 +20,7 @@ export interface RunDocumentFile {
 
 interface RunResult {
   runId: RunId;
-  status: EngineStatus;
+  status: InvocationStatus;
   phase: RunPhase;
   complete: boolean;
   blockedReason: string | undefined;
@@ -37,7 +37,7 @@ export class RunArtefacts {
 
   async write(
     state: RunState,
-    status: EngineStatus,
+    status: InvocationStatus,
     metrics: MetricsSummary,
   ): Promise<Result<void, LocalStateUnwritable>> {
     const directory = stateDirectory(this.repoRoot, state.runId);
@@ -74,7 +74,7 @@ async function writeOrRemove(file: string, contents: string | undefined): Promis
  * A small, stable summary for CI to read instead of parsing output that also carries whatever
  * an agent printed. `complete` and `blockedReason` keep the shape earlier workflows read.
  */
-function resultFor(state: RunState, status: EngineStatus, metrics: MetricsSummary): RunResult {
+function resultFor(state: RunState, status: InvocationStatus, metrics: MetricsSummary): RunResult {
   return {
     runId: state.runId,
     status,

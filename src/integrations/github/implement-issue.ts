@@ -6,9 +6,9 @@ import type { App } from '../../app/container.js';
 import { runJig, type RunReport } from '../../app/run-jig.js';
 import { openRunStore } from '../../app/run-stores.js';
 import type { GitCommandFailed, JigError } from '../../domain/errors.js';
+import { outcomeIsComplete } from '../../domain/invocation-status.js';
 import { runIdFor } from '../../domain/run-id.js';
 import { runBranchFor, type RunState } from '../../domain/run-state.js';
-import { outcomeIsComplete } from '../../flow/engine.js';
 import type { RunStoreFailure } from '../../ports/run-store.js';
 import {
   BaseBranchMismatch,

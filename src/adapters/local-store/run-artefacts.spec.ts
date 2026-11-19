@@ -15,6 +15,7 @@ import {
 } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { designReviewReport } from '../../domain/design-review-report.js';
+import type { InvocationStatus } from '../../domain/invocation-status.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runStopReason } from '../../domain/run-state.js';
 import { formatSummary } from '../../observers/metrics.js';
@@ -154,32 +155,43 @@ describe('RunArtefacts', () => {
     });
   });
 
-  it('summarises a run that finished without merging as complete', async () => {
+  it.each<{ status: InvocationStatus; complete: boolean }>([
+    { status: 'done', complete: true },
+    { status: 'completed', complete: true },
+    { status: 'stuck', complete: false },
+    { status: 'halted', complete: false },
+    { status: 'blocked', complete: false },
+  ])(
+    'saves $status with complete=$complete and omits an absent reason',
+    async ({ status, complete }) => {
+      const { artefacts, read } = await setup();
+      const state = aRunState({ phase: 'context' });
+      const metrics = aMetricsSummary();
+
+      (await artefacts.write(state, status, metrics)).unwrap();
+
+      expect(JSON.parse(await read(state.runId, 'result.json'))).toEqual({
+        runId: state.runId,
+        status,
+        phase: state.phase,
+        complete,
+        metrics,
+      });
+    },
+  );
+
+  it('prefers the saved blocked reason over the terminal reason', async () => {
     const { artefacts, read } = await setup();
-    const state = aRunState({ phase: 'completed', merge: false });
-    const metrics = aMetricsSummary();
-
-    await artefacts.write(state, 'completed', metrics);
-
-    expect(JSON.parse(await read(state.runId, 'result.json'))).toEqual({
-      runId: state.runId,
-      status: 'completed',
-      phase: 'completed',
-      complete: true,
-      metrics,
+    const blockedReason = faker.lorem.sentence();
+    const state = aRunState({
+      phase: 'stuck',
+      slices: [aSlice({ status: 'stuck' })],
+      blockedReason,
     });
-  });
 
-  it('summarises a halted run as not complete', async () => {
-    const { artefacts, read } = await setup();
-    const state = aRunState({ phase: 'paused' });
+    (await artefacts.write(state, 'blocked', aMetricsSummary())).unwrap();
 
-    await artefacts.write(state, 'halted', aMetricsSummary());
-
-    expect(JSON.parse(await read(state.runId, 'result.json'))).toMatchObject({
-      status: 'halted',
-      complete: false,
-    });
+    expect(JSON.parse(await read(state.runId, 'result.json')).blockedReason).toBe(blockedReason);
   });
 
   it('keeps its own directory out of the operator repository', async () => {

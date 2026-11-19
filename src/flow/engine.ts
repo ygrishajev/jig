@@ -3,6 +3,7 @@ import { panic, Result } from 'better-result';
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
 import { isTransient, type JigError, messageOf, rootCause } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
+import type { InvocationStatus } from '../domain/invocation-status.js';
 import type { Outcome } from '../domain/outcome.js';
 import { retryResult, transientRetryPolicy } from '../domain/retry.js';
 import type { RunId } from '../domain/run-id.js';
@@ -43,17 +44,10 @@ type Pass = { result: EngineResult } | { state: RunState };
 
 /** Where an invocation stopped; a blocked run says why. */
 export type EngineResult =
-  | { state: RunState; status: Exclude<EngineStatus, 'blocked'> }
+  | { state: RunState; status: Exclude<InvocationStatus, 'blocked'> }
   | { state: RunState; status: 'blocked'; reason: string };
 
-export type EngineStatus = 'done' | 'completed' | 'stuck' | 'halted' | 'blocked';
-
 type Advance = { state: RunState } | { blockedReason: string };
-
-/** Whether an invocation that ended in `status` finished the run's work, merged or not. */
-export function outcomeIsComplete(status: EngineStatus): boolean {
-  return status === 'done' || status === 'completed';
-}
 
 /**
  * Drives a run through `flow` from its saved phase until it finishes, halts, or blocks. A `fatal`
