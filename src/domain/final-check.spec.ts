@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aRunState, aSlice } from '../../tests/support/builders.js';
+import { aFinalCheckResult, aRunState, aSlice } from '../../tests/support/builders.js';
 import {
   FINAL_CHECK_OUTPUT_TAIL,
   type FinalCheckCompletion,
@@ -190,6 +190,22 @@ describe('recordFinalCheck', () => {
     expect(repaired.finalCheck).toMatchObject({ verified: true, round: 2 });
     expect(finalCheckFailed(repaired)).toBe(false);
     expect(repaired.slices).toEqual(firstFailure.slices);
+  });
+
+  it('retains a legacy final verification failure as passed after a successful check', () => {
+    const command = `npm run ${faker.word.verb()}`;
+    const finalCheck = aFinalCheckResult({ verified: false, command });
+    const state = aRunState({ finalCheck });
+
+    const recorded = recordFinalCheck(state, checkedWith({ verified: true }));
+
+    expect(recorded.failedFinalVerification).toEqual({
+      command,
+      output: { captured: false },
+      round: finalCheck.round,
+      at: 0,
+      passedSince: true,
+    });
   });
 
   it('loads a run saved with a recorded final check back as it was saved', () => {

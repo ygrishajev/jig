@@ -11,9 +11,17 @@ import {
   workObservations,
 } from '../../tests/support/builders.js';
 import { applyOutcome } from './apply-outcome.js';
-import { captureOutput, DIAGNOSTIC_OUTPUT_TAIL, runDiagnostics } from './diagnostics.js';
+import {
+  captureOutput,
+  DIAGNOSTIC_OUTPUT_TAIL,
+  failedFinalVerificationSchema,
+  rejectedReviewSchema,
+  retainedFinalVerificationFailure,
+} from './diagnostics.js';
 import type { Outcome } from './outcome.js';
+import { runDiagnostics } from './run-diagnostics.js';
 import { type RunState, runStateSchema } from './run-state.js';
+import { failedVerificationSchema } from './slice.js';
 
 describe('run diagnostics', () => {
   it('keeps a rejected review unresolved through the implementation and verification failures after it', () => {
@@ -254,6 +262,59 @@ describe('run diagnostics', () => {
       { sliceId: stuck.id, ...rejectedReview },
     ]);
   });
+
+  it.each([false, true])(
+    'prefers saved history when the latest check verified is %s',
+    (verified) => {
+      const failed = { ...aFailedVerification(), round: 1, passedSince: true };
+      const state = aRunState({
+        failedFinalVerification: failed,
+        finalCheck: aFinalCheckResult({ verified, round: 2 }),
+      });
+
+      expect(retainedFinalVerificationFailure(state)).toBe(state.failedFinalVerification);
+    },
+  );
+
+  it('finds no retained failure when the final check is missing or verified', () => {
+    expect(retainedFinalVerificationFailure({})).toBeUndefined();
+    expect(
+      retainedFinalVerificationFailure({ finalCheck: aFinalCheckResult({ verified: true }) }),
+    ).toBeUndefined();
+  });
+
+  it('defaults legacy diagnostic ordering and slice failure capture fields', () => {
+    const feedback = faker.lorem.sentence();
+    const {
+      at: _at,
+      output: _output,
+      passedSince: _passedSince,
+      ...legacy
+    } = aFailedVerification();
+    const { at: _finalAt, ...finalFailure } = { ...aFailedVerification(), round: 1 };
+
+    expect(rejectedReviewSchema.parse({ feedback })).toEqual({ feedback, at: 0 });
+    expect(failedVerificationSchema.parse(legacy)).toEqual({
+      ...legacy,
+      at: 0,
+      output: { captured: false },
+      passedSince: false,
+    });
+    expect(failedFinalVerificationSchema.parse(finalFailure)).toMatchObject({ at: 0 });
+  });
+
+  it('marks undefined output unavailable', () => {
+    expect(captureOutput(undefined)).toEqual({ captured: false });
+  });
+
+  it.each([0, DIAGNOSTIC_OUTPUT_TAIL])(
+    'keeps all %i characters without marking output truncated',
+    (length) => {
+      const output = faker.string.alpha(length);
+
+      expect(captureOutput(output)).toEqual({ captured: true, tail: output, truncated: false });
+    },
+  );
 
   function setup({ approved = false }: { approved?: boolean } = {}) {
     const slice = aSlice({ order: 0, status: approved ? 'approved' : 'pending' });

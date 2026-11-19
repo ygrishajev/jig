@@ -49,8 +49,8 @@ import {
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
-import { runDiagnostics } from '../domain/diagnostics.js';
 import { AgentRunFailed, RunStateConflict, SandboxUnavailable } from '../domain/errors.js';
+import { runDiagnostics } from '../domain/run-diagnostics.js';
 import { enterPhase, type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { PlannedSlice } from '../domain/slice.js';

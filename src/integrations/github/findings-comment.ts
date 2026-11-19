@@ -1,9 +1,9 @@
+import type { CapturedOutput } from '../../domain/diagnostics.js';
 import {
-  type CapturedOutput,
   type RunDiagnostics,
   runDiagnostics,
   type VerificationFailureDiagnostic,
-} from '../../domain/diagnostics.js';
+} from '../../domain/run-diagnostics.js';
 import { type RunState, runStopReason } from '../../domain/run-state.js';
 
 /**

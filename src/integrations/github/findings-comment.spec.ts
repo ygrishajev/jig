@@ -62,6 +62,23 @@ describe('findingsCommentBody', () => {
     for (const gap of gaps) expect(body).toContain(gap);
   });
 
+  it('identifies the slice scope of a retained verification failure', () => {
+    const { state, body } = setup({});
+
+    expect(body).toContain(`slice \`${state.slices[0].id}\``);
+  });
+
+  it('identifies the final check round of a retained verification failure', () => {
+    const failed = aFailedVerification();
+    const round = faker.number.int({ min: 1, max: 2 });
+    const state = aRunState({ failedFinalVerification: { ...failed, round } });
+
+    const body = findingsCommentBody(state, faker.git.commitSha());
+
+    expect(body).toContain(`round ${round} of the final check`);
+    expect(body).toContain(failed.command);
+  });
+
   function setup(input: {
     failed?: Partial<FailedVerification>;
     finalCheck?: { fulfilled: boolean; gaps: string[] };

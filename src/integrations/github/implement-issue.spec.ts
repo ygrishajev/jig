@@ -35,8 +35,8 @@ import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session
 import { createAppContainer } from '../../app/container.js';
 import { parseEnvironment } from '../../config/environment.js';
 import { configFileFor, loadConfig } from '../../config/load-config.js';
-import { runDiagnostics } from '../../domain/diagnostics.js';
 import { AgentRunFailed } from '../../domain/errors.js';
+import { runDiagnostics } from '../../domain/run-diagnostics.js';
 import { type RunId, runIdFor } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type { ExecResult } from '../../ports/agent-session.js';
