@@ -2,9 +2,10 @@
 
 An agentic SDLC orchestrator: a CLI that turns a markdown request into planned slices, has an agent
 implement and another review each one inside a sandbox, and lands them on one run branch.
-[`README.md`](README.md) is the entry point; [`docs/README.md`](docs/README.md) links the
-commands and configuration. Review the [architecture map](docs/architecture.html) and
-current implementation before changing anything structural.
+[`README.md`](README.md) and [`docs/README.md`](docs/README.md) are the public entry points;
+[`CONTRIBUTING.md`](CONTRIBUTING.md) is the developer index. Review the
+[architecture map](docs/architecture.html) and current implementation before changing anything
+structural.
 
 ## House rules
 
@@ -21,6 +22,19 @@ editing, specs included. They are rules, not suggestions, and they override your
 Two procedures are skills: `commit-pr` (committing, naming a branch, opening a PR) and
 `write-request` (a request file, a GitHub issue, or a prompt jig sends — the text is an agent's
 entire input).
+
+## Keep public references accurate
+
+The public guides describe how to use jig today: commands, arguments, flags, supported configuration
+and environment variables, defaults, prerequisites, outputs, and recovery behavior. When a change
+affects that interface, inspect every affected existing reference, including guides outside the
+edited files, and update it in the same slice. Internal-only work needs no public documentation edit.
+
+Write the supported behavior in the present tense. Replace obsolete instructions and values in
+place, and check related links and examples. Keep implementation history and rationale in PR
+descriptions or release notes. Preserve the short architecture description and
+`docs/architecture.html`; update them when an architectural change makes them inaccurate. Do not
+add a guide or changelog entry just to describe a change.
 
 ## Use the library, don't rebuild it
 

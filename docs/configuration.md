@@ -49,7 +49,7 @@ settings. The `agents` setting below pins CLI versions, not models.
 
 | Key              | Default    | Behavior                                                                                                                      |
 | ---------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `verifyCommand`  | Not set    | Runs the configured checks in the sandbox. Verification must pass for the run to be approved.                                 |
+| `verifyCommand`  | Not set    | Runs the configured checks in the sandbox before review. Without it, slices can be approved on the reviewer's judgment alone. |
 | `mergeMode`      | `"manual"` | `manual` waits for you to merge; `auto` merges the run branch. Does not apply to `--no-merge` or `jig github implement` runs. |
 | `designGate`     | `"auto"`   | `checkpoint` pauses after design review and slicing, before implementation.                                                   |
 | `reviewCycleCap` | `3`        | Positive integer; ordinary rejections before a slice is stuck.                                                                |
