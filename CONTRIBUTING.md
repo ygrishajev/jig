@@ -70,16 +70,16 @@ agent calls; it is excluded from `npm test` and `npm run validate`.
 Explore the [interactive architecture map](docs/architecture.html) for module relationships
 and run flows. Download and open it in a browser; GitHub displays HTML as source.
 
-| Directory       | Responsibility                                      |
-| --------------- | --------------------------------------------------- |
-| `src/cli/`      | Commands and input parsing.                         |
-| `src/app/`      | Application lifecycle and dependency wiring.        |
-| `src/domain/`   | State, validation, and domain decisions.            |
-| `src/flow/`     | Pipeline definition and execution.                  |
-| `src/steps/`    | Individual pipeline steps.                          |
-| `src/ports/`    | Interfaces for external operations.                 |
-| `src/adapters/` | Git, containers, storage, terminals, and telemetry. |
-| `src/prompts/`  | Inputs sent to agents.                              |
+| Directory       | Responsibility                                        |
+| --------------- | ----------------------------------------------------- |
+| `src/cli/`      | Commands and input parsing.                           |
+| `src/app/`      | Application lifecycle, workflow assembly, and wiring. |
+| `src/domain/`   | State, validation, and domain decisions.              |
+| `src/flow/`     | Generic flow contracts and execution.                 |
+| `src/steps/`    | Individual pipeline steps.                            |
+| `src/ports/`    | Interfaces for external operations.                   |
+| `src/adapters/` | Git, containers, storage, terminals, and telemetry.   |
+| `src/prompts/`  | Inputs sent to agents.                                |
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,

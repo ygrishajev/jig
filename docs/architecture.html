@@ -265,7 +265,7 @@ svg text{font-family:var(--sans)}
     ["Nothing changed", "reuse the current image.", "step"]
   ]);
 
-  var cFLoop = flowCv("el", "Engine loop", "src/flow/engine.ts. The whole run is data in src/flow/run-flow.ts; this loop drives it.", [
+  var cFLoop = flowCv("el", "Engine loop", "src/flow/engine.ts. The whole run is data in src/app/run-flow.ts; this loop drives it.", [
     ["Start from the saved phase", "a blocked reason is cleared; a halt moves on to its resumeAt.", "domain"],
     ["Look up the phase's node", "a step, the slice loop, a halt or a final.", "domain"],
     ["Run the step", "it gets state, ports and settings; returns Result<Outcome, JigError> without mutating state.", "step"],
@@ -283,7 +283,7 @@ svg text{font-family:var(--sans)}
     ["fatal — ConfigInvalid, RunRequestInvalid, RunInProgress", "also MetricsLogCorrupt; return an Err and print its message.", "fail"],
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]
   ]);
-  var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/flow/run-flow.ts; slices run in order.", [
+  var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/app/run-flow.ts; slices run in order.", [
     ["pending → implement", "implemented → verifying; hookRejected has its own cap of 3; nothingChanged allows 2 empty attempts.", "step"],
     ["verifying → verify", "verified → in_review; verificationFailed returns to pending with its own cap of 3.", "step"],
     ["in_review → review", "approved → approved, or verifying if a verification record is still owed.", "step"],
@@ -417,7 +417,7 @@ svg text{font-family:var(--sans)}
     ["The flow picks what is next", "phase or slice status; guards for the review cap and stuck slices.", "domain"],
     ["Saved, then published", "the checkpoint first, then the events.", "infra"]
   ]);
-  var cCPhase = flowCv("cp", "The run's phases", "runFlow in src/flow/run-flow.ts.", [
+  var cCPhase = flowCv("cp", "The run's phases", "runFlow in src/app/run-flow.ts.", [
     ["context → planning → designing", "Build repository context, feature plan, and human-readable documents.", "domain"],
     ["reviewingDesign", "Approved → slicing; otherwise one revisingDesign and re-review, then resolvingDesign.", "domain"],
     ["slicing → gate", "checkpoint → paused; resume continues to slices.", "step"],
@@ -503,7 +503,7 @@ svg text{font-family:var(--sans)}
   ], { h: 60, gap: 12 });
 
   /* ---------- level 1: the layered map ---------- */
-  var root = cv("Level 1 · Layers", "jig", "src/integrations/github/cli.ts composes the core CLI and the GitHub integration. The integrations layer owns issue snapshots, PR publication and receipts; core modules remain GitHub-neutral. Click a box to open it.", [
+  var root = cv("Level 1 · Layers", "jig", "src/integrations/github/cli.ts composes the CLI. Arrows show execution, not source imports. src/app/run-flow.ts assembles steps; src/flow owns generic contracts and execution, importing neither app nor steps. Click a box to open it.", [
     leaf("band-i", "COMMANDS", "band", 24, 152, 1126, 210, [], { tone: "i" }),
     leaf("band-d", "CORE MODULES", "band", 24, 384, 1126, 210, [], { tone: "d" }),
     leaf("band-x", "INFRA & EXTERNAL", "band", 24, 616, 1126, 177, [], { tone: "x" }),
@@ -512,7 +512,7 @@ svg text{font-family:var(--sans)}
     cont("i-build", "jig build", "iface", 340, 186, 236, ["Builds the sandbox image."], buildCmd, { pills: [{ t: "Docker", go: "x-docker" }] }),
     cont("i-init", "jig init", "iface", 620, 186, 236, ["Sets up and checks the sandbox."], initCmd, { pills: [{ t: "Sandbox", go: "b-sandbox" }] }),
     cont("i-status", "jig status", "iface", 900, 186, 236, ["Where a run is, what it cost."], statusCmd, { pills: [{ t: "Run state", go: "x-state" }] }),
-    cont("d-engine", "Flow engine", "module", 60, 418, 236, ["The run as data, and its loop."], engineModule, { pills: [{ t: "Run state", go: "x-state" }, { t: "Observers", go: "d-obs" }] }),
+    cont("d-engine", "Flow engine", "module", 60, 418, 236, ["Generic definitions and execution."], engineModule, { pills: [{ t: "Run state", go: "x-state" }, { t: "Observers", go: "d-obs" }] }),
     cont("d-steps", "Steps", "module", 340, 418, 236, ["Plan, review design, deliver slices, final check, merge."], stepsModule, { pills: [{ t: "Sandbox", go: "b-sandbox" }, { t: "Git", go: "x-git" }] }),
     cont("d-image", "Sandbox image", "module", 620, 418, 236, ["Builds it, sets up the toolchain."], imageModule, { pills: [{ t: "Docker", go: "x-docker" }, { t: "Sandbox", go: "b-sandbox" }] }),
     cont("d-obs", "Observers", "module", 900, 418, 236, ["Logging, metrics, tracing."], obsModule, { pills: [{ t: "Run state", go: "x-state" }, { t: "OTel", go: "x-otel" }] }),

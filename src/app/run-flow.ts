@@ -9,6 +9,7 @@ import {
   sliceNeedsVerification,
   verificationFailureCapReached,
 } from '../domain/settings.js';
+import { defineRunFlow, defineSliceFlow, type Guard } from '../flow/define-flow.js';
 import { decideCompletionReuse } from '../steps/completion-reuse.js';
 import { resolveDesign, reviewDesign, reviseDesign } from '../steps/design-review.js';
 import { checkWholeRun } from '../steps/final-check.js';
@@ -21,7 +22,6 @@ import {
   writeDesign,
 } from '../steps/planning.js';
 import { implementSlice, reviewSlice, verifySlice } from '../steps/slice.js';
-import { defineRunFlow, defineSliceFlow, type Guard } from './define-flow.js';
 
 const designPassedReview: Guard = ({ state }) => designApproved(state);
 

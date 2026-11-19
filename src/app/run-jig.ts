@@ -18,9 +18,9 @@ import { newRunId, type RunId } from '../domain/run-id.js';
 import { type CodePublication, type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
 import { type EngineResult, runEngine } from '../flow/engine.js';
-import { runFlow } from '../flow/run-flow.js';
 import type { RunStore, RunStoreFailure } from '../ports/run-store.js';
 import { type AppCradle, withRunScope } from './container.js';
+import { runFlow } from './run-flow.js';
 import { openRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
 

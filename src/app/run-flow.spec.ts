@@ -54,10 +54,10 @@ import { runDiagnostics } from '../domain/run-diagnostics.js';
 import { enterPhase, type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { PlannedSlice } from '../domain/slice.js';
+import { finalStatus } from '../flow/define-flow.js';
+import { runEngine } from '../flow/engine.js';
 import type { ExecResult } from '../ports/agent-session.js';
 import type { RunStore } from '../ports/run-store.js';
-import { finalStatus } from './define-flow.js';
-import { runEngine } from './engine.js';
 import { runFlow } from './run-flow.js';
 
 describe('runFlow', () => {
