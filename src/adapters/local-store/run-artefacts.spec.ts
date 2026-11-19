@@ -180,19 +180,37 @@ describe('RunArtefacts', () => {
     },
   );
 
-  it('prefers the saved blocked reason over the terminal reason', async () => {
+  it('summarises a run that finished without merging as complete', async () => {
     const { artefacts, read } = await setup();
-    const blockedReason = faker.lorem.sentence();
-    const state = aRunState({
-      phase: 'stuck',
-      slices: [aSlice({ status: 'stuck' })],
-      blockedReason,
+    const state = aRunState({ phase: 'completed', merge: false });
+    const metrics = aMetricsSummary();
+
+    (await artefacts.write(state, 'completed', metrics)).unwrap();
+
+    expect(JSON.parse(await read(state.runId, 'result.json'))).toStrictEqual({
+      runId: state.runId,
+      status: 'completed',
+      phase: state.phase,
+      complete: true,
+      metrics,
     });
-
-    (await artefacts.write(state, 'blocked', aMetricsSummary())).unwrap();
-
-    expect(JSON.parse(await read(state.runId, 'result.json')).blockedReason).toBe(blockedReason);
   });
+
+  it.each([faker.lorem.sentence(), ''])(
+    'prefers the saved blocked reason %j over the terminal reason',
+    async (blockedReason) => {
+      const { artefacts, read } = await setup();
+      const state = aRunState({
+        phase: 'stuck',
+        slices: [aSlice({ status: 'stuck' })],
+        blockedReason,
+      });
+
+      (await artefacts.write(state, 'blocked', aMetricsSummary())).unwrap();
+
+      expect(JSON.parse(await read(state.runId, 'result.json')).blockedReason).toBe(blockedReason);
+    },
+  );
 
   it('keeps its own directory out of the operator repository', async () => {
     const { artefacts, repoRoot } = await setup();
