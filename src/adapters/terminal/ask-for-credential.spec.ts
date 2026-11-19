@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { codexLogin } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import type { AgentName } from '../sandcastle/agents.js';
+import type { AgentName } from '../../config/agent-policy.js';
 import { askForCredential } from './ask-for-credential.js';
 
 const ENTER = '\r';

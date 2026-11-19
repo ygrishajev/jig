@@ -268,6 +268,20 @@ describe('presets', () => {
       });
     });
 
+    it('discovers model-less providers without constructing or authenticating them', async () => {
+      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
+      const steps = {
+        planner: { provider: 'claude' },
+        implementer: { provider: 'codex' },
+        reviewer: { provider: 'opencode' },
+      };
+      await writePreset('repository', 'shared', steps);
+
+      const presets = unwrap(discoverPresets(locations));
+
+      expect(presets.find(({ name }) => name === 'shared')?.steps).toEqual(steps);
+    });
+
     it('takes an operator preset over the starter of the same name', async () => {
       const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
       const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);

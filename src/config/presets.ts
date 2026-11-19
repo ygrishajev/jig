@@ -4,12 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
-import { JIG_DIR } from '../adapters/local-store/run-paths.js';
 import { type AgentRole, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { describeIssues } from './describe-issues.js';
 import type { JigEnvironment } from './environment.js';
 import { type JigConfig, type StepConfig, stepConfigSchema } from './load-config.js';
+import { JIG_DIR } from './scratch-directory.js';
 
 /** The XDG config home is ignored unless absolute, as the XDG base directory spec requires. */
 export interface PresetLocations extends Pick<JigEnvironment, 'homeDirectory' | 'xdgConfigHome'> {

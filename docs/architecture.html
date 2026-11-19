@@ -503,7 +503,7 @@ svg text{font-family:var(--sans)}
   ], { h: 60, gap: 12 });
 
   /* ---------- level 1: the layered map ---------- */
-  var root = cv("Level 1 · Layers", "jig", "src/integrations/github/cli.ts composes the CLI. Arrows show execution, not source imports. src/app/run-flow.ts assembles steps; src/flow owns generic contracts and execution, importing neither app nor steps. Click a box to open it.", [
+  var root = cv("Level 1 · Layers", "jig", "src/integrations/github/cli.ts composes the CLI. Arrows show execution, not source imports. src/app/run-flow.ts assembles steps; src/flow owns generic contracts and execution, importing neither app nor steps. Configuration owns provider identity, shared default-model policy and the .jig scratch convention; adapters own provider construction, credentials, authentication and scratch filesystem operations. Click a box to open it.", [
     leaf("band-i", "COMMANDS", "band", 24, 152, 1126, 210, [], { tone: "i" }),
     leaf("band-d", "CORE MODULES", "band", 24, 384, 1126, 210, [], { tone: "d" }),
     leaf("band-x", "INFRA & EXTERNAL", "band", 24, 616, 1126, 177, [], { tone: "x" }),

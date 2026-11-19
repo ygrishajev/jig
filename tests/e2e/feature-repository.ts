@@ -7,7 +7,7 @@ import { simpleGit } from 'simple-git';
 import { z } from 'zod';
 
 import { BASE_DOCKERFILE } from '../../src/adapters/sandbox-image/image-recipe.js';
-import type { AgentChoice } from '../../src/adapters/sandcastle/agents.js';
+import type { AgentChoice } from '../../src/config/agent-policy.js';
 import type { AgentRole } from '../../src/domain/agent-role.js';
 import { runStateSchema } from '../../src/domain/run-state.js';
 

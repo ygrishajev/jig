@@ -97,6 +97,16 @@ describe('collectCredentials', () => {
 });
 
 describe('AGENTS', () => {
+  it('constructs Claude with the shared default when the step omits its model', () => {
+    const options = { prompt: faker.lorem.sentence(), dangerouslySkipPermissions: true };
+    const defaultCommand = unwrap(AGENTS.claude.create()).buildPrintCommand(options);
+    const explicitCommand = unwrap(AGENTS.claude.create('opus')).buildPrintCommand(options);
+    const otherCommand = unwrap(AGENTS.claude.create('sonnet')).buildPrintCommand(options);
+
+    expect(defaultCommand).toEqual(explicitCommand);
+    expect(defaultCommand).not.toEqual(otherCommand);
+  });
+
   it("leaves every agent's transcripts in the sandbox instead of copying them to the host", () => {
     const model = `openrouter/${faker.word.noun()}`;
 

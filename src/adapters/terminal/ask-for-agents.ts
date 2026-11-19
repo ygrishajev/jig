@@ -1,7 +1,8 @@
 import { checkbox, input, select } from '@inquirer/prompts';
 
+import { AGENT_NAMES, type AgentChoice, type AgentName } from '../../config/agent-policy.js';
 import type { AgentRole } from '../../domain/agent-role.js';
-import { type AgentChoice, type AgentName, AGENTS, modelProblem } from '../sandcastle/agents.js';
+import { AGENTS, modelProblem } from '../sandcastle/agents.js';
 import { askInTerminal, PROCESS_TERMINAL, type Terminal } from './terminal.js';
 
 /** The agent the operator picks for each role; `undefined` when nobody can answer or they cancel. */
@@ -28,7 +29,7 @@ async function chooseAgents(terminal: Terminal): Promise<AgentChoice[]> {
   const providers = await checkbox<AgentName>(
     {
       message: 'Which agents?',
-      choices: (Object.keys(AGENTS) as AgentName[]).map((value) => ({ value })),
+      choices: AGENT_NAMES.map((value) => ({ value })),
       required: true,
     },
     terminal,

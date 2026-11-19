@@ -7,10 +7,11 @@ import { simpleGit } from 'simple-git';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
+import { JIG_DIR } from '../../config/scratch-directory.js';
 import { ConfigInvalid, type LocalStateUnwritable, messageOf } from '../../domain/errors.js';
 import { refuseSymlinks } from '../find-symlink.js';
 import { onLocalState } from './local-state.js';
-import { ignoreJigDirectory, JIG_DIR } from './run-paths.js';
+import { ignoreJigDirectory } from './run-paths.js';
 
 export function readCredentialsFile(
   repoRoot: string,

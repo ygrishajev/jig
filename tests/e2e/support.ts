@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 
-import type { AgentChoice } from '../../src/adapters/sandcastle/agents.js';
+import type { AgentChoice } from '../../src/config/agent-policy.js';
 import { byRole } from '../../src/domain/agent-role.js';
 
 const codexLoginSchema = z.object({

@@ -6,14 +6,9 @@ import { describe, expect, it } from 'vitest';
 
 import { runId } from '../../../tests/support/builders.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
+import { JIG_DIR } from '../../config/scratch-directory.js';
 import { isWorkingTreeClean } from '../git/repository.js';
-import {
-  agentLogFile,
-  JIG_DIR,
-  makeRunDirectory,
-  runLogFile,
-  stateDirectory,
-} from './run-paths.js';
+import { agentLogFile, makeRunDirectory, runLogFile, stateDirectory } from './run-paths.js';
 
 describe('makeRunDirectory', () => {
   it("keeps everything it puts under .jig out of the target repository's status", async () => {
@@ -48,6 +43,7 @@ describe('run log files', () => {
     const id = runId();
     const directory = stateDirectory(repoRoot, id);
 
+    expect(directory).toBe(path.join(repoRoot, '.jig', id, 'state'));
     expect(path.dirname(runLogFile(repoRoot, id))).toBe(directory);
     expect(path.dirname(agentLogFile(repoRoot, id))).toBe(directory);
     expect(runLogFile(repoRoot, id)).not.toBe(agentLogFile(repoRoot, id));

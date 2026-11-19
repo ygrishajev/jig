@@ -261,3 +261,50 @@ The inventory intentionally uses the pre-move paths; only `flow/run-flow.ts` mov
 - `steps/planning.ts` → `domain/design-docs.ts`, `domain/errors.ts`, `domain/outcome.ts`, `domain/plan-coverage.ts`, `domain/retry.ts`, `domain/run-state.ts`, `domain/slice.ts`, `flow/define-flow.ts`, `prompts/planning.ts`
 - `steps/pull-request-description.ts` → `domain/completion-reuse.ts`, `domain/final-check.ts`, `domain/run-state.ts`, `domain/settings.ts`, `domain/slice.ts`
 - `steps/slice.ts` → `domain/completion-reuse.ts`, `domain/errors.ts`, `domain/final-check.ts`, `domain/outcome.ts`, `domain/protected-paths.ts`, `domain/run-state.ts`, `domain/slice.ts`, `flow/define-flow.ts`, `prompts/slice.ts`
+
+## After configuration ownership
+
+The complete production graph was recomputed with the dependency-cruiser command above,
+including type imports: 127 source files. The aggregate graph is acyclic.
+Configuration imports only domain; adapters consume configuration policy.
+Provider construction, credential checks, authentication and filesystem operations
+remain with their existing owners. No enforcement settings changed.
+
+Dependency-first topological order: `domain`, `ports`, `config`, `observers`, `adapters`, `flow`, `prompts`, `steps`, `app`, `cli`, `integrations`.
+
+```mermaid
+flowchart LR
+  adapters --> config
+  adapters --> domain
+  adapters --> observers
+  adapters --> ports
+  app --> adapters
+  app --> config
+  app --> domain
+  app --> flow
+  app --> observers
+  app --> ports
+  app --> prompts
+  app --> steps
+  cli --> adapters
+  cli --> app
+  cli --> config
+  cli --> domain
+  cli --> observers
+  config --> domain
+  flow --> domain
+  flow --> ports
+  integrations --> adapters
+  integrations --> app
+  integrations --> cli
+  integrations --> domain
+  integrations --> ports
+  observers --> domain
+  observers --> ports
+  ports --> domain
+  prompts --> domain
+  steps --> domain
+  steps --> flow
+  steps --> ports
+  steps --> prompts
+```

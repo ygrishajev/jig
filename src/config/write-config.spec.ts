@@ -3,8 +3,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../tests/support/temp-directory.js';
+import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
-import { configFileFor } from './load-config.js';
+import { configFileFor, loadConfig } from './load-config.js';
 import { updateConfigFile } from './write-config.js';
 
 describe('updateConfigFile', () => {
@@ -18,6 +19,21 @@ describe('updateConfigFile', () => {
     expect(result.isOk()).toBe(true);
 
     expect(await read()).toEqual({ ...kept, setupCommand });
+  });
+
+  it('round trips provider selections without serializing inferred models', async () => {
+    const steps = {
+      planner: { provider: 'claude' },
+      implementer: { provider: 'codex', model: faker.word.noun() },
+      reviewer: { provider: 'opencode', model: `openrouter/${faker.word.noun()}` },
+    };
+    const { configFile, read } = await setup('{}');
+
+    unwrap(await updateConfigFile(configFile, steps));
+
+    expect(await read()).toEqual(steps);
+    expect(unwrap(loadConfig(configFile))).toMatchObject(steps);
+    expect(unwrap(loadConfig(configFile)).planner?.model).toBeUndefined();
   });
 
   it.each([

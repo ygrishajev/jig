@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { JIG_DIR } from '../../config/scratch-directory.js';
 import type { RunId } from '../../domain/run-id.js';
 import { findSymlink } from '../find-symlink.js';
 
@@ -17,9 +18,6 @@ export function stateDirectory(repoRoot: string, runId: RunId): string {
 export function runDirectory(repoRoot: string, runId: RunId): string {
   return path.join(repoRoot, JIG_DIR, runId);
 }
-
-/** jig's scratch space inside the operator's repository; it ignores itself. */
-export const JIG_DIR = '.jig';
 
 /** What the agents printed during a run, kept apart from jig's own log. */
 export function agentLogFile(repoRoot: string, runId: RunId): string {

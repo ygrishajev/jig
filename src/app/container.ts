@@ -14,7 +14,7 @@ import {
 } from '../adapters/logging/create-logger.js';
 import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
-import type { AgentChoice, MissingCredential } from '../adapters/sandcastle/agents.js';
+import type { MissingCredential } from '../adapters/sandcastle/agents.js';
 import {
   openSandcastleSession,
   type OpenSessionInput,
@@ -28,6 +28,7 @@ import {
   askForCredential,
   type EnteredCredential,
 } from '../adapters/terminal/ask-for-credential.js';
+import type { AgentChoice } from '../config/agent-policy.js';
 import type { JigEnvironment } from '../config/environment.js';
 import { type ConfigFile, type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';

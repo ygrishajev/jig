@@ -3,10 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
-import { AGENTS, DEFAULT_CLAUDE_MODEL, isAgentName } from '../adapters/sandcastle/agents.js';
 import { type AgentRole, agentRoleSchema, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid, messageOf } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
+import { AGENT_NAMES, agentNameSchema, resolvedModel } from './agent-policy.js';
 import { describeIssues } from './describe-issues.js';
 
 /** The config a command reads and writes: the repository's own, or a preset named with `--config`. */
@@ -58,10 +58,6 @@ function parseConfig(file: ConfigFile, contents: string): Result<JigConfig, Conf
   });
 }
 
-const agentNameSchema = z
-  .string()
-  .refine(isAgentName, { message: `the agent must be one of ${Object.keys(AGENTS).join(', ')}` });
-
 export const stepConfigSchema = z.object({
   provider: agentNameSchema,
   /** Passed to the agent CLI; claude falls back to a default, opencode requires one ("provider/model"). */
@@ -108,7 +104,7 @@ export function configuredSteps(
   if (parsed.success) return Result.ok(parsed.data);
   return Result.err(
     new ConfigInvalid({
-      message: `No agent set for ${stepsWithoutAgent(config).join(', ')} — set each in the config to { "provider": "${Object.keys(AGENTS).join(' | ')}", "model": "..." }.`,
+      message: `No agent set for ${stepsWithoutAgent(config).join(', ')} — set each in the config to { "provider": "${AGENT_NAMES.join(' | ')}", "model": "..." }.`,
     }),
   );
 }
@@ -131,11 +127,6 @@ function reviewerSharesImplementerModel({ implementer, reviewer }: JigConfig): s
   const model = resolvedModel(implementer);
   if (model === undefined || model !== resolvedModel(reviewer)) return undefined;
   return `The implementer and reviewer are the same model (${implementer.provider}/${model}); a different reviewer catches more.`;
-}
-
-/** Only claude has a model of its own to fall back to; the others run without one only to fail. */
-function resolvedModel(step: StepConfig): string | undefined {
-  return step.model ?? (step.provider === 'claude' ? DEFAULT_CLAUDE_MODEL : undefined);
 }
 
 function approvalWithoutVerify({ verifyCommand }: JigConfig): string | undefined {

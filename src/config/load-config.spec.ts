@@ -7,9 +7,9 @@ import { describe, expect, it } from 'vitest';
 import { everyStepOn } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { DEFAULT_CLAUDE_MODEL } from '../adapters/sandcastle/agents.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS } from '../domain/settings.js';
+import { DEFAULT_CLAUDE_MODEL } from './agent-policy.js';
 import {
   CONFIG_FILE,
   configFileFor,

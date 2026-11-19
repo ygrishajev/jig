@@ -1,6 +1,11 @@
 import { type AgentProvider, claudeCode, codex, opencode } from '@ai-hero/sandcastle';
 import { Result } from 'better-result';
 
+import {
+  type AgentChoice,
+  type AgentName,
+  DEFAULT_CLAUDE_MODEL,
+} from '../../config/agent-policy.js';
 import { ConfigInvalid } from '../../domain/errors.js';
 import { CREDENTIALS_FILE } from '../local-store/credentials-file.js';
 import { codexLoginProblem } from './codex-auth.js';
@@ -21,26 +26,19 @@ export interface AgentDefinition {
   create(model?: string): Result<AgentProvider, ConfigInvalid>;
 }
 
-/** Which agent serves a role, and with which model. */
-export interface AgentChoice {
-  provider: AgentName;
-  model?: string;
-}
-
 /** An agent that has none of the credentials that could authenticate it. */
 export interface MissingCredential {
   provider: AgentName;
   keys: string[];
 }
 
-export function isAgentName(name: string): name is AgentName {
-  return Object.hasOwn(AGENTS, name);
+/** What is wrong with running `provider` on `model`, if anything. */
+export function modelProblem(provider: AgentName, model?: string): string | undefined {
+  const created = AGENTS[provider].create(model);
+  return created.isErr() ? created.error.message : undefined;
 }
 
-/** Used when a step names claude without a model; the CLI accepts the alias. */
-export const DEFAULT_CLAUDE_MODEL = 'opus';
-
-/** Every agent jig can run; adding one here is all the config and the sandbox image need. */
+/** Runtime capabilities for every configured provider. */
 export const AGENTS = {
   claude: {
     npmPackage: '@anthropic-ai/claude-code',
@@ -79,9 +77,7 @@ export const AGENTS = {
             }),
           ),
   },
-} satisfies Record<string, AgentDefinition>;
-
-export type AgentName = keyof typeof AGENTS;
+} satisfies Record<AgentName, AgentDefinition>;
 
 function requireModel(model: string | undefined): Result<string, ConfigInvalid> {
   return model
@@ -96,12 +92,6 @@ function requireModel(model: string | undefined): Result<string, ConfigInvalid> 
 
 function modelProvider(model: string): string {
   return model.split('/')[0] ?? model;
-}
-
-/** What is wrong with running `provider` on `model`, if anything. */
-export function modelProblem(provider: AgentName, model?: string): string | undefined {
-  const created = AGENTS[provider].create(model);
-  return created.isErr() ? created.error.message : undefined;
 }
 
 /**
