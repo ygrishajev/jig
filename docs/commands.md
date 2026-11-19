@@ -4,23 +4,26 @@
 
 | Command                                              | Purpose                                                         |
 | ---------------------------------------------------- | --------------------------------------------------------------- |
-| `jig init [--no-agent]`                              | Create and check the sandbox Dockerfile and config.             |
-| `jig build [--pull-agents]`                          | Build the image; optionally refresh unpinned agent CLIs.        |
-| `jig run [request.md \| -] [--id <id>] [--no-merge]` | Start a run or resume a saved one.                              |
-| `jig status <id>`                                    | Show the phase, branch, documents, slice feedback, and metrics. |
-| `jig github implement --issue <number>`              | Implement an issue and publish a pull request.                  |
-| `jig presets`                                        | List available presets, sources, and descriptions.              |
+| `jig init [--no-agent]`                              | Create and check sandbox and configuration files.               |
+| `jig build [--pull-agents]`                          | Prepare the sandbox image.                                      |
+| `jig run [request.md \| -] [--id <id>] [--no-merge]` | Start or resume a run.                                          |
+| `jig status <id>`                                    | Show the saved phase, branch, documents, feedback, and metrics. |
+| `jig github implement --issue <number>`              | Implement an issue and publish the outcome on GitHub.           |
+| `jig presets`                                        | List available presets and their sources.                       |
 
-Use `jig <command> --help` for flags. `init`, `build`, `run`, and `status` accept
-`--config <path>`. `build` and `run` accept `--preset [name]`. `init`, `build`, and
-`run` accept `--log-format pretty|json`.
+| Option                  | Commands                                             | Behavior                                                                             |
+| ----------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `--config <path>`       | `init`, `build`, `run`, `status`, `github implement` | Select a [configuration file](configuration.md).                                     |
+| `--preset [name]`       | `build`, `run`, `github implement`                   | Apply a named [preset](presets.md). Omit its name to open the interactive picker.    |
+| `--log-format <format>` | `init`, `build`, `run`, `github implement`           | Accepts `pretty` or `json`. Defaults to `pretty` in a terminal and `json` otherwise. |
+
+Use `jig --version` to print the installed version and `jig <command> --help` for command help.
 
 ## Initialize and build
 
 `jig init` writes `.sandcastle/Dockerfile`, `.sandcastle/.gitignore`, and a starter
 `jig.config.json`. In a terminal it asks for missing agents, models, and credentials.
-The planner proposes the toolchain, setup command, and verification command. jig checks
-both commands in a sandbox and gives the planner up to three attempts to fix failures.
+jig can propose and check the toolchain, setup command, and verification command in Docker.
 Review and commit the generated files before starting a run.
 
 With `--no-agent`, jig writes missing starter files and checks configured commands without
@@ -28,7 +31,9 @@ asking an agent to propose them. Set all four agent roles yourself; without a
 `verifyCommand`, it writes the files but cannot report a verified setup.
 
 `jig build` builds when the Dockerfile or agent layer changes. `jig run` also builds
-as needed. Both require all four agent roles, either in the config or a preset.
+as needed. Use `jig build --pull-agents` to refresh unpinned agent CLIs even when
+automatic updates are off. Both commands require all four agent roles, either in the
+config or a preset.
 
 ## Start, inspect, and resume
 
@@ -45,8 +50,8 @@ name, plus a random suffix. With a request and an existing id, it resumes only i
 request matches the saved one. An id without a request must identify a saved run.
 Pass `-` instead of a file to read the request from standard input. A piped request
 without a `# heading` is named `stdin-<random>`. jig refuses empty input, and refuses
-to read when standard input is a terminal. Resuming a piped run needs the same piped
-text with the same `--id`.
+to read when standard input is a terminal. Resume a piped run with `--id` alone,
+or pipe the same request again with that id.
 Ids may contain lowercase letters, digits, and hyphens.
 Use the same `--config` and `--preset` when resuming.
 
@@ -55,49 +60,8 @@ merging. The run ends `completed` and its branch `jig/run/<id>` is left for you 
 review and merge. The choice is saved with the run, so a resumed run keeps it and the
 flag is ignored on resume. `mergeMode` does not apply to these runs.
 
-One process can run a given id at a time. A second invocation fails immediately;
-a lock left by a crashed process expires after 30 seconds.
-
-## Pipeline
-
-1. The planner reads the repository, plans the feature, and writes the design and plan.
-2. The reviewer checks those documents before slicing. Findings get one planner revision
-   and one re-review. Findings still unresolved block the run in either design gate mode.
-   Evidence, uncertainty, and planner dispositions are saved in `design-review.md`.
-3. The planner divides the plan into slices. jig checks that the slices cover its steps.
-   With `designGate: "checkpoint"`, it pauses here. Read the documents, then resume.
-4. For each slice, the implementer changes the code, the verification command runs,
-   and the reviewer checks the changes. Rejections return to implementation.
-   Changes to existing tests or validation settings are flagged for the reviewer.
-   A single-slice run's review also judges the whole request against its plan; the
-   verdict is recorded bound to the exact work, verification, sources and settings
-   it saw, with the facts observed around both.
-5. After all slices pass, jig decides whether the run can finish on that recorded
-   review. It can when the run has one approved slice and no final check yet, the
-   review found the request fulfilled with no gaps, a verify command is configured
-   and passed on exactly the reviewed work, the request, plan and settings are
-   unchanged, and the run branch and sandbox are both clean at that work. Such a run
-   skips the final check: verification and review each ran once. Any other run gets
-   the final check: jig runs verification again and asks the reviewer whether the
-   whole request is fulfilled. A failure gets one repair slice through the same
-   implementation, verification, and review loop, followed by a second final check.
-6. jig writes `PR_DESCRIPTION.md`, then waits for a manual merge or merges automatically.
-   It writes a description; it does not open a pull request. A reused review is
-   reported with the reviewed range, commit and verification it rests on. Before
-   describing, merging, and waiting for a merge, including on resume, jig checks the
-   reused review still holds. If it does not, jig drops the reuse and its description
-   and runs the ordinary final check, which still allows its one repair.
-   Invalidation keeps the saved evidence, spends no repair round, and applies equally to a
-   resumed run reloaded from saved state: a changed request, plan, settings, run range,
-   commit or tree, or a dirty work tree, sends it to the final check. A run saved before
-   evidence was recorded has none to reuse and always takes the final check.
-
-`reviewCycleCap` limits reviewer rejections only (three by default).
-Commit-hook failures and verification failures each have an independent cap of three
-per slice, accumulated across attempts. These counters persist across resume; older snapshots start them at zero.
-Empty implementation attempts and fixes limited to house rules each have a separate
-cap of two. A stuck slice skips the final check. If the second final check fails,
-the run is described and ends as stuck without merging.
+Only one process can run a given id at a time. With `designGate: "checkpoint"`, read
+the design and plan when the run pauses, then resume with `jig run --id <id>`.
 
 ## Outcomes and recovery
 
@@ -130,33 +94,20 @@ jig github implement --issue 42
 
 Run from the default branch of a repository with an `origin` you can push to.
 Set `GITHUB_TOKEN` (or `GH_TOKEN`) with permission to read issues, open pull requests
-and comment on issues. `GITHUB_REPOSITORY=owner/repo` overrides the identity inferred
-from an HTTPS or SSH GitHub origin. Git push authentication is configured separately.
-The command accepts `--config`, `--preset` and `--log-format` like `jig run`.
+and comment on issues and pull requests. `GITHUB_REPOSITORY=owner/repo` overrides the identity inferred
+from an HTTPS or SSH GitHub origin. Configure Git push authentication separately.
 
-The first invocation saves the issue title and body as an immutable request. Repeating
-the command resumes that run, even if the issue was edited. State is always saved to
-`git-remote` as well as configured stores, so another clone can resume it. Unlike
-`jig run`, saves push state only: the run branch stays on the clone that ran it, and the
-state records the branch's commit as a code checkpoint (see
-[deferred code publication](operations.md#deferred-code-publication)).
-The operator branch is never merged. Before any code is pushed, jig inspects the exact
-checkpoint against where it forked from the default branch on `origin`. A run that
-adds, modifies, deletes, retypes or renames anything under `.github/workflows/` is
-refused: nothing is pushed, no PR is opened, and one issue comment names every
-offending path. Otherwise a completed run pushes exactly that commit to its run branch
-and opens a ready PR that closes the issue; a completed run without changes posts one
-issue comment and opens no PR. A stuck run that committed past the commit it started
-from pushes its checkpoint and opens a draft PR with the same head, base, title and
-body rules, plus one PR-level findings comment: why the run stopped, the unresolved
-review feedback, any outstanding final-check gaps, and the last verification failure
-with its output verbatim. Inline review comments are never used. Its commits are pushed
-even when they change no files; if GitHub then refuses the draft, the error says so.
-A stuck run without commits, and halted and blocked runs, comment on the issue with
-their status and reason, without opening a PR or pushing code. Existing open PRs are
-reused. Comment receipts are keyed by run, outcome and code checkpoint (findings
-receipts also by PR), so repeating an outcome at the same checkpoint does not comment
-again.
-The command prints the PR URL (including whether it was reused), a draft PR's URL with its
-findings comment URL, the comment URL and status, or the refused paths and refusal comment
-URL.
+The first invocation uses the issue title and body as the request. Rerun the same command
+to resume that request and reuse its open pull request. See [resuming issue runs](operations.md#github-issue-implementation)
+for repository requirements after an interruption.
+
+- A completed run with changes opens a ready PR. Review and merge it on GitHub.
+- A stuck run with commits opens a draft PR with a conversation comment containing the
+  findings, including any outstanding verification failure.
+- A completed run without changes, a stuck run without commits, or a halted or blocked run
+  posts its outcome on the issue.
+- Changes under `.github/workflows/` prevent publication of the run branch. The issue
+  comment lists the affected paths.
+
+The command prints the URL of the PR or issue comment. For draft PRs it also prints the
+findings comment URL.

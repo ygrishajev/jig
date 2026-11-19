@@ -4,7 +4,7 @@
 
 jig reads `jig.config.json` from the repository root. Unknown top-level keys are errors.
 
-`init`, `build`, `run`, and `status` accept `--config <path>` to select a different file:
+`init`, `build`, `run`, `status`, and `github implement` accept `--config <path>` to select a different file:
 `jig run request.md --config jig.config.cheap.json`. Relative paths resolve from the
 repository root. A named file must exist. Use the same file when resuming.
 
@@ -49,19 +49,13 @@ settings. The `agents` setting below pins CLI versions, not models.
 
 | Key              | Default    | Behavior                                                                                                                      |
 | ---------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `verifyCommand`  | Not set    | Runs before slice review and during the final check; must pass for approval. Required to skip the final check.                |
+| `verifyCommand`  | Not set    | Runs the configured checks in the sandbox. Verification must pass for the run to be approved.                                 |
 | `mergeMode`      | `"manual"` | `manual` waits for you to merge; `auto` merges the run branch. Does not apply to `--no-merge` or `jig github implement` runs. |
 | `designGate`     | `"auto"`   | `checkpoint` pauses after design review and slicing, before implementation.                                                   |
 | `reviewCycleCap` | `3`        | Positive integer; ordinary rejections before a slice is stuck.                                                                |
 | `commitSigning`  | `"skip"`   | `repo` re-signs the run branch during automatic merging.                                                                      |
 
-See [the pipeline](commands.md#pipeline) for review limits and
-[merging and signing](sandbox.md#merging-and-signing) for merge behavior.
-
-jig owns configured full verification. Implementers and reviewers use recorded results and
-focused checks for specific concerns rather than rerunning the command or a broader suite.
-Without a verification command, agents use focused tests and lint and report remaining gaps.
-Mutation testing is not an implementation or review side effect; select it explicitly when needed.
+See [merging and signing](sandbox.md#merging-and-signing) for Git requirements.
 
 ## Sandbox and agent CLIs
 
@@ -82,14 +76,3 @@ See [images and setup](sandbox.md#images-and-setup) for the container lifecycle.
 `runStores` defaults to `["local"]` and must contain at least one entry. Add
 `"git-remote"` to push state and the run branch to `origin`, or supply a path to a
 custom store module. See [saved state and remote resume](operations.md#saved-state-and-remote-resume).
-
-## GitHub integration environment
-
-`jig github implement --issue <number>` reads `GITHUB_TOKEN`, falling back to
-`GH_TOKEN`. It reads `GITHUB_REPOSITORY` as `owner/repo`, or infers that identity from
-the GitHub `origin` URL. These values are read only by the GitHub command; `jig run`
-needs no GitHub environment variables. Tokens are passed directly to the API client,
-never saved in run state, included in errors, or passed to the sandbox. Configure Git authentication separately
-for pushes to `origin`. The command adds `git-remote` to `runStores` for its invocation,
-without changing the config file, and always saves the run with merging disabled.
-`mergeMode` does not apply to these runs, including when configured as `auto`.

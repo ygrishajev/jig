@@ -31,23 +31,13 @@ Codex login copy described below. Sandcastle also injects keys listed in
 
 ## Codex authentication
 
-Codex authentication is an explicit exception to the usual env-only credential rule.
-The production CLI accepts the auth directory through `JIG_CODEX_AUTH_DIR`; it does not
-auto-discover a host login. The adapter locks that login, creates a private temporary
-directory with only `auth.json` (file mode 0600), and mounts the directory writable at
-`/home/agent/.codex`. No other host Codex configuration or sessions are mounted. Codex
-can refresh credentials normally. After the sandbox closes, valid refreshed credentials
-are atomically written back to the selected cache, and the private copy is removed.
-If the source login changed meanwhile, it is preserved and the private cache is retained
-with an error rather than overwriting the newer login. Credentials never enter repository
-artifacts, logs, or Docker image layers. Do not share a login across concurrent jobs or
-machines; jig's lock cannot coordinate with independent Codex clients.
-
-The production CLI requires `JIG_CODEX_AUTH_DIR` even if you are already logged in
-on the host. To select the usual login directory:
+Set `JIG_CODEX_AUTH_DIR` to a directory containing a saved ChatGPT login, even if
+Codex is already signed in on the host.
 
 ```bash
 export JIG_CODEX_AUTH_DIR="$HOME/.codex"
 ```
 
-The [live E2E test](testing.md#agent-credentials) has separate login-discovery behavior.
+The sandbox uses a private copy of `auth.json`. On close, jig writes valid refreshed
+credentials back to the selected cache if the source file stayed unchanged. Use a
+dedicated login cache for each concurrent job or machine.

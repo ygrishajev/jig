@@ -14,28 +14,18 @@ repository. Other branches and the host's `.git/config` stay outside its reach.
 When Codex is configured, only a private copy of its login cache is mounted; see
 [authentication](authentication.md).
 
-Implementation commits reach the host as a Git bundle after each implement step.
-A resumed invocation starts a fresh container from those imported commits.
-Work that was not imported is lost when the container is removed.
+jig imports implementation commits back to the run branch. When resuming, the new
+sandbox starts from the saved commits.
 
 ## Images and setup
 
-`.sandcastle/Dockerfile` defines the repository's base tools and project toolchain.
-jig adds a layer with the configured agent CLIs at exact versions, built per machine
-with your UID. Image labels determine what needs rebuilding. Use `jig build` to
-prepare the image; `jig run` also builds as needed.
+Use `.sandcastle/Dockerfile` to define the repository toolchain, or set `sandboxImage`
+to use an existing image. Use `jig build` to prepare the image in advance. `jig run`
+also builds as needed.
 
-`setupCommand` runs once in each new sandbox and must exit 0 within
-`setupTimeoutSeconds`. During a run, sandbox startup or setup failures are retried
-twice; configuration problems such as missing credentials stop immediately.
-During `jig init`, setup or verification failures go back to the planner for repair;
-other errors stop initialization.
-
-After setup, jig installs the repository's hooks inside the sandbox. Commit-hook
-failures return feedback to the implementer.
-
-See [configuration](configuration.md#sandbox-and-agent-clis) for custom images,
-CLI version pins, updates, and timeouts.
+`setupCommand` runs in each new sandbox and must exit 0 within `setupTimeoutSeconds`.
+Repository Git hooks run inside the sandbox when agents commit. See
+[sandbox configuration](configuration.md#sandbox-and-agent-clis).
 
 ## Merging and signing
 
@@ -51,7 +41,5 @@ also enables signing for the merge.
 
 ## Repository support
 
-The sandbox has no repository remote. Commands that need private package registries
-need their own environment credentials. Submodules retain their Git pointers but are
-not populated automatically. Git LFS has not been verified; check it on a disposable
-repository before relying on it.
+Commands that use private package registries need credentials available inside the
+container. Populate submodules explicitly if your setup requires them.
