@@ -10,6 +10,8 @@
 
 <!-- For reviewers: a short before/after flow in pseudocode when behaviour changed. Explain what differs, when it matters, and why. -->
 
+<!-- Read .claude/skills/pr-dependency-diagram/SKILL.md and follow it to include a diagram when internal TypeScript imports change. -->
+
 ## Verification
 
 <!-- The commands you ran and what they reported. Say what you could not run. -->
