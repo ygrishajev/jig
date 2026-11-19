@@ -45,6 +45,7 @@ describe('validation command', () => {
         'typecheck',
         'lint',
         'lint:duplication',
+        'lint:dependencies',
         'format:check',
         'test:coverage',
         'secretlint',
@@ -60,6 +61,23 @@ describe('validation command', () => {
     const result = await run(['build', 'lint', 'test:mutation']);
     expect(result.exitCode).toBe(0);
     expect(result.all).toContain('test:mutation:end');
+  });
+
+  it('selects dependency checking and waits for other checks after its failure', async () => {
+    const { run } = await setup();
+    const result = await run(['build', 'lint', 'lint:dependencies'], 'lint:dependencies');
+    expect(result.exitCode).toBe(1);
+    expect(result.all).toContain('lint:dependencies:end');
+    expect(result.all).toContain('build:end');
+    expect(result.all).toContain('lint:end');
+  });
+
+  it('skips dependency checking when excluded', async () => {
+    const { run } = await setup();
+    const result = await run(['--skip', 'lint:dependencies']);
+    expect(result.exitCode).toBe(0);
+    expect(result.all).not.toContain('lint:dependencies:start');
+    expect(result.all).toContain('build:end');
   });
 
   it('rejects an empty selection', async () => {
@@ -79,6 +97,7 @@ describe('validation command', () => {
         'lint',
         'typecheck',
         'lint:duplication',
+        'lint:dependencies',
         'format:check',
         'test:coverage',
         'test:mutation',

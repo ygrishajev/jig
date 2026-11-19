@@ -1,16 +1,58 @@
+export const productionModules = [
+  'adapters',
+  'app',
+  'cli',
+  'config',
+  'domain',
+  'flow',
+  'integrations',
+  'observers',
+  'ports',
+  'prompts',
+  'steps',
+];
+export const testFilePattern = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
+export const ownedProductionPath = `^src/(${productionModules.join('|')})/`;
+
 /** @type {import('dependency-cruiser').IConfiguration} */
 export default {
   forbidden: [
     {
-      name: 'no-circular',
-      severity: 'warn',
-      comment:
-        'This dependency is part of a circular relationship. You might want to revise ' +
-        'your solution (i.e. use dependency inversion, make sure the modules have a single responsibility) ',
-      from: {},
-      to: {
-        circular: true,
-      },
+      name: 'no-module-cycles',
+      severity: 'error',
+      scope: 'folder',
+      from: { path: '^src/[^/]+$' },
+      to: { circular: true },
+    },
+    {
+      name: 'domain-is-independent',
+      severity: 'error',
+      from: { path: '^src/domain/' },
+      to: { path: '^src/', pathNot: '^src/domain/' },
+    },
+    {
+      name: 'ports-depend-only-on-domain',
+      severity: 'error',
+      from: { path: '^src/ports/' },
+      to: { path: '^src/', pathNot: '^src/(ports|domain)/' },
+    },
+    {
+      name: 'adapters-do-not-import-flow',
+      severity: 'error',
+      from: { path: '^src/adapters/' },
+      to: { path: '^src/flow/' },
+    },
+    {
+      name: 'flow-does-not-assemble-workflows',
+      severity: 'error',
+      from: { path: '^src/flow/' },
+      to: { path: '^src/(app|steps)/' },
+    },
+    {
+      name: 'github-is-isolated',
+      severity: 'error',
+      from: { pathNot: '^src/integrations/github/' },
+      to: { path: '^src/integrations/github/' },
     },
     {
       name: 'no-orphans',
@@ -127,7 +169,7 @@ export default {
       severity: 'error',
       from: {},
       to: {
-        path: '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$',
+        path: testFilePattern,
       },
     },
     {
@@ -182,7 +224,7 @@ export default {
     // Which modules not to follow further when encountered
     doNotFollow: {
       // path: an array of regular expressions in strings to match against
-      path: ['node_modules'],
+      path: ['node_modules', testFilePattern],
     },
 
     // Which modules to exclude
@@ -231,7 +273,7 @@ export default {
     // false (the default): ignore dependencies that only exist before typescript-to-javascript compilation
     // true: also detect dependencies that only exist before typescript-to-javascript compilation
     // 'specify': for each dependency identify whether it only exists before compilation or also after
-    tsPreCompilationDeps: true,
+    tsPreCompilationDeps: 'specify',
 
     // list of extensions to scan that aren't javascript or compile-to-javascript.
     // Empty by default. Only put extensions in here that you want to take into
@@ -355,4 +397,3 @@ export default {
     },
   },
 };
-// generated: dependency-cruiser@18.7.2 on 2026-11-19T09:15:36.548Z

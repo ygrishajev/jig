@@ -11,6 +11,7 @@ const defaultChecks = [
   'typecheck',
   'lint',
   'lint:duplication',
+  'lint:dependencies',
   'format:check',
   'test:coverage',
   'secretlint',

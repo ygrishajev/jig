@@ -30,6 +30,7 @@
     "dev": "tsx src/integrations/github/cli.ts",
     "lint": "eslint .",
     "lint:duplication": "jscpd",
+    "lint:dependencies": "node scripts/check-dependencies.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run --project unit",
