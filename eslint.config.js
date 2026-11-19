@@ -91,6 +91,10 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   prettier,
   {
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: { module: 'writable' } },
+  },
+  {
     plugins: { 'simple-import-sort': simpleImportSort },
     rules: {
       'simple-import-sort/imports': [
