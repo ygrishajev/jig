@@ -21,10 +21,5 @@
   "refusals": {},
   "refusalComments": {},
   "findingsComments": {},
-  "owners": {
-    "ygrishajev/sdlc#15": {
-      "token": "6e62a73e-6711-4cff-9c32-e727c12d9460",
-      "expiresAt": 1795173965467
-    }
-  }
+  "owners": {}
 }
