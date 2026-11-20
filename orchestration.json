@@ -17,5 +17,14 @@
     "publish-partial-work-as-a-draft-pr-and-2d6a3b10:blocked:41f5af8969bbb8d5a359faa28abed7df45b9edf1": "https://github.com/ygrishajev/jig/issues/14#issuecomment-6973863269",
     "publish-partial-work-as-a-draft-pr-and-2d6a3b10:stuck:9ea35ae29050b4fda5818b2a373ebc3a575d590e": "https://github.com/ygrishajev/jig/issues/14#issuecomment-6975980935",
     "add-jig-github-setup-and-a-manual-89ca2c32:blocked:ac7c501b77fb49c147be9d5768d2dfee56ac1d4c": "https://github.com/ygrishajev/jig/issues/15#issuecomment-6980254644"
+  },
+  "refusals": {},
+  "refusalComments": {},
+  "findingsComments": {},
+  "owners": {
+    "ygrishajev/sdlc#15": {
+      "token": "6e62a73e-6711-4cff-9c32-e727c12d9460",
+      "expiresAt": 1795173965467
+    }
   }
 }
