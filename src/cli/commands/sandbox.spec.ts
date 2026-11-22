@@ -9,8 +9,8 @@ import { presetName } from '../../../tests/support/builders.js';
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { presetFilesOnDisk } from '../../adapters/config/preset-files.js';
 import { configFileSource } from '../../adapters/filesystem/config-source.js';
+import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
 import { createAppContainer } from '../../app/container.js';
 import type { Preset, PresetName } from '../../config/presets.js';
 import type { FailureOutput } from '../with-error-handling.js';
@@ -113,7 +113,7 @@ describe('build --preset', () => {
         createAppContainer: createApp,
         configSourceAt: configFileSource,
         standardInput: fakeStandardInput(),
-        presetFiles: presetFilesOnDisk(builtinPresetsDirectory),
+        presetSourceAt: (locations) => presetDirectoriesSource(locations, builtinPresetsDirectory),
       },
       failureOutput,
     });

@@ -3,8 +3,8 @@ import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMo
 import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
-import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
 import { type ConfigDestination, configFileSource } from '../adapters/filesystem/config-source.js';
+import { presetDirectoriesSource } from '../adapters/filesystem/preset-source.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
@@ -34,7 +34,7 @@ import type { AgentChoice } from '../config/agent-policy.js';
 import type { ConfigSource } from '../config/config-source.js';
 import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
-import type { PresetFiles } from '../config/presets.js';
+import type { PresetSource } from '../config/preset-source.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import { retryResult, transientRetryPolicy } from '../domain/retry.js';
 import { type RunIdentity } from '../domain/run-state.js';
@@ -65,7 +65,7 @@ export interface AppCradle {
   configDestination: ConfigDestination;
   configSource: ConfigSource;
   config: JigConfig;
-  presetFiles: PresetFiles;
+  presetSource: PresetSource;
   settings: RunSettings;
   logger: Logger;
   clock: Clock;
@@ -105,7 +105,7 @@ export function createAppContainer(input: {
   configDestination: ConfigDestination;
   configSource?: ConfigSource;
   config: JigConfig;
-  presetFiles?: PresetFiles;
+  presetSource?: PresetSource;
 }): AwilixContainer<AppCradle> {
   const container = createContainer<AppCradle>({
     injectionMode: InjectionMode.PROXY,
@@ -119,7 +119,10 @@ export function createAppContainer(input: {
     configDestination: asValue(input.configDestination),
     configSource: asValue(input.configSource ?? configFileSource(input.configDestination)),
     config: asValue(input.config),
-    presetFiles: asValue(input.presetFiles ?? presetFilesOnDisk()),
+    presetSource: asValue(
+      input.presetSource ??
+        presetDirectoriesSource({ repoRoot: input.repoRoot, ...input.environment }),
+    ),
     settings: asFunction(({ config }: AppCradle) => runSettingsFrom(config)).singleton(),
     logger: asFunction(({ logFormat, logLevel }: AppCradle) =>
       createConsoleLogger(logFormat, logLevel),

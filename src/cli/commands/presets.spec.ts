@@ -63,11 +63,11 @@ describe('describePresets', () => {
     const lines = describePresets([described, bare]).split('\n');
 
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(new RegExp(`^${described.name}\\s+${described.source}\\s+`));
-    expect(lines[0]?.endsWith(described.path)).toBe(true);
+    expect(lines[0]).toMatch(new RegExp(`^${described.name}\\s+${described.label.source}\\s+`));
+    expect(lines[0]?.endsWith(described.label.path)).toBe(true);
     expect(lines[1]?.trim()).toBe(described.description);
-    expect(lines[2]).toMatch(new RegExp(`^${bare.name}\\s+${bare.source}\\s+`));
-    expect(lines[2]?.endsWith(bare.path)).toBe(true);
+    expect(lines[2]).toMatch(new RegExp(`^${bare.name}\\s+${bare.label.source}\\s+`));
+    expect(lines[2]?.endsWith(bare.label.path)).toBe(true);
   });
 
   it('says there are none rather than printing nothing', () => {

@@ -11,8 +11,8 @@ import { anIssue, FakeGithub } from '../../../tests/support/fake-github.js';
 import { FakeAgentSession, fakeStandardInput } from '../../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
-import { presetFilesOnDisk } from '../../adapters/config/preset-files.js';
 import { configFileSource } from '../../adapters/filesystem/config-source.js';
+import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
 import { createAppContainer } from '../../app/container.js';
 import type { Invocation } from '../../cli/with-app.js';
 import type { FailureOutput } from '../../cli/with-error-handling.js';
@@ -198,7 +198,7 @@ describe('github implement command', () => {
       configSourceAt: configFileSource,
       standardInput: fakeStandardInput(),
       askForPreset: async () => undefined,
-      presetFiles: presetFilesOnDisk(),
+      presetSourceAt: presetDirectoriesSource,
     };
     return {
       output,

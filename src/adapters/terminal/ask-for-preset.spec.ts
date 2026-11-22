@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
-import { aPreset } from '../../../tests/support/builders.js';
+import { aPreset, aPresetLabel } from '../../../tests/support/builders.js';
 import type { Preset } from '../../config/presets.js';
 import { askForPreset } from './ask-for-preset.js';
 
@@ -40,16 +40,16 @@ describe('askForPreset', () => {
   });
 
   it('labels a preset with its source unless it ships with jig', async () => {
-    const operators = aPreset({ source: 'home' });
-    const starter = aPreset({ source: 'builtin' });
+    const operators = aPreset({ label: aPresetLabel({ starter: false }) });
+    const starter = aPreset({ label: aPresetLabel({ starter: true }) });
     const { answer, type, shown } = setup({ presets: [operators, starter] });
 
     await type(CTRL_C);
     await answer;
 
-    expect(shown()).toContain(`${operators.name} (home)`);
+    expect(shown()).toContain(`${operators.name} (${operators.label.source})`);
     expect(shown()).toContain(starter.name);
-    expect(shown()).not.toContain(`${starter.name} (builtin)`);
+    expect(shown()).not.toContain(`${starter.name} (${starter.label.source})`);
   });
 
   it('answers nothing when cancelled', async () => {

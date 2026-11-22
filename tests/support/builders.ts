@@ -1,12 +1,8 @@
 import { faker } from '@faker-js/faker';
 
 import type { StepConfig } from '../../src/config/load-config.js';
-import {
-  type Preset,
-  PRESET_SOURCES,
-  type PresetName,
-  presetNameSchema,
-} from '../../src/config/presets.js';
+import type { PresetLabel } from '../../src/config/preset-source.js';
+import { type Preset, type PresetName, presetNameSchema } from '../../src/config/presets.js';
 import { byRole } from '../../src/domain/agent-role.js';
 import type { CompletionEvidence } from '../../src/domain/completion-reuse.js';
 import type { DesignDocs } from '../../src/domain/design-docs.js';
@@ -434,12 +430,19 @@ export function presetName(): PresetName {
   return presetNameSchema.parse(faker.string.alpha({ length: 8, casing: 'lower' }));
 }
 
+export function aPresetLabel({
+  source = faker.word.noun({ length: { min: 3, max: 10 } }),
+  path = faker.system.filePath(),
+  starter = faker.datatype.boolean(),
+}: Partial<PresetLabel> = {}): PresetLabel {
+  return { source, path, starter };
+}
+
 export function aPreset({
   name = presetName(),
-  source = faker.helpers.arrayElement(PRESET_SOURCES),
-  path = faker.system.filePath(),
+  label = aPresetLabel(),
   description,
   steps = {},
 }: Partial<Preset> = {}): Preset {
-  return { name, source, path, description, steps };
+  return { name, label, description, steps };
 }

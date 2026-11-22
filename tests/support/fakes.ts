@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { Result } from 'better-result';
+import { panic, Result } from 'better-result';
 import { execa } from 'execa';
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -16,16 +16,17 @@ import {
   ConfigUnwritable,
 } from '../../src/config/config-source.js';
 import {
-  type PresetEntry,
-  type PresetFiles,
-  type PresetName,
-  type PresetRoots,
+  type PresetCandidate,
+  type PresetLabel,
+  PresetNotFindable,
   type PresetSource,
-} from '../../src/config/presets.js';
+  PresetsUnlistable,
+  PresetUnreadable,
+} from '../../src/config/preset-source.js';
+import type { PresetName } from '../../src/config/presets.js';
 import {
   AgentOutputInvalid,
   type AgentRunFailed,
-  ConfigInvalid,
   type GitCommandFailed,
   SandboxUnavailable,
 } from '../../src/domain/errors.js';
@@ -41,7 +42,7 @@ import type {
 } from '../../src/ports/agent-session.js';
 import type { Clock, EventSink } from '../../src/ports/observability.js';
 import type { RunStore } from '../../src/ports/run-store.js';
-import { tokenUsage } from './builders.js';
+import { aPresetLabel, tokenUsage } from './builders.js';
 
 /**
  * What the fake agent does for one call: write files into the worktree, return structured output,
@@ -284,94 +285,119 @@ export function fakeStandardInput({
 }
 
 /**
- * Presets held in memory, per directory, failing where the disk would. Records the roots it was
- * given and every directory it listed and file it read, so a spec can tell what policy touched.
+ * Presets held in memory in places of precedence order, failing where a real source can. Records
+ * each place it looked in for a name, each listing and each candidate read, so a spec can tell
+ * what policy touched.
  */
-export class FakePresetFiles implements PresetFiles {
-  readonly rootsGiven: PresetRoots[] = [];
-  readonly listed: string[] = [];
-  readonly readFiles: string[] = [];
-  private readonly contents = new Map<string, unknown>();
-  private readonly unreadable = new Set<string>();
+export class InMemoryPresetSource implements PresetSource {
+  readonly places: string[];
+  readonly lookedIn: string[] = [];
+  readonly readPaths: string[] = [];
+  listings = 0;
+  private readonly held = new Map<string, HeldPreset[]>();
+  private readonly unfindable = new Set<string>();
   private readonly unlistable = new Set<string>();
-  private readonly unreachable = new Set<string>();
 
-  readonly paths: Record<PresetSource, string>;
-
-  constructor(paths: Partial<Record<PresetSource, string>> = {}) {
-    this.paths = { ...distinctPresetDirectories(), ...paths };
+  constructor(placeCount = 4) {
+    this.places = faker.helpers.uniqueArray(() => faker.system.directoryPath(), placeCount);
   }
 
-  directories(roots: PresetRoots) {
-    this.rootsGiven.push(roots);
-    return this.paths;
+  *candidatesNamed(name: PresetName) {
+    for (const place of this.places) {
+      this.lookedIn.push(place);
+      if (this.unfindable.has(place)) {
+        yield Result.err(this.failure(PresetNotFindable, place));
+        return;
+      }
+      const found = this.heldIn(place).find((held) => held.name === name);
+      if (found) yield Result.ok(this.candidateFor(found));
+    }
   }
 
-  filesIn(directory: string) {
-    this.listed.push(directory);
-    if (this.unreachable.has(directory)) return this.failure(`unreachable ${directory}`);
-    if (this.unlistable.has(directory)) return this.failure(`unlistable ${directory}`);
-    const entries = [...this.contents.keys(), ...this.unreadable]
-      .filter((file) => path.dirname(file) === directory)
-      .map((file): PresetEntry => ({ name: path.basename(file, '.json'), path: file }));
-    return Result.ok(faker.helpers.shuffle(entries));
+  candidates() {
+    this.listings += 1;
+    const unavailable = this.places.find(
+      (place) => this.unfindable.has(place) || this.unlistable.has(place),
+    );
+    if (unavailable !== undefined) {
+      return Result.err(
+        this.unfindable.has(unavailable)
+          ? this.failure(PresetNotFindable, unavailable)
+          : this.failure(PresetsUnlistable, unavailable),
+      );
+    }
+    return Result.ok(
+      this.places.flatMap((place) =>
+        [...this.heldIn(place)]
+          .sort((first, second) => (first.name < second.name ? -1 : 1))
+          .map((held) => this.candidateFor(held)),
+      ),
+    );
   }
 
-  fileFor(directory: string, name: PresetName) {
-    return this.pathOf(directory, name);
+  /** Puts a preset in the place at `rank`, under any name, valid or not; returns where it says it is. */
+  put(rank: number, name: string, json: unknown): PresetLabel {
+    return this.hold(rank, { name, label: aLabel(this.placeAt(rank), name), json });
   }
 
-  isPresent(entryPath: string) {
-    if (this.unreachable.has(path.dirname(entryPath))) return this.failure(entryPath);
-    return Result.ok(this.contents.has(entryPath) || this.unreadable.has(entryPath));
+  /** A candidate that is present but cannot be read, like a dangling link or malformed JSON. */
+  putUnreadable(rank: number, name: string): PresetLabel {
+    return this.hold(rank, { name, label: aLabel(this.placeAt(rank), name), unreadable: true });
   }
 
-  read(filePath: string) {
-    this.readFiles.push(filePath);
-    if (!this.contents.has(filePath)) return this.failure(filePath);
-    return Result.ok(this.contents.get(filePath));
+  /** Nothing in the place can be looked at, like a directory under a file. */
+  makeUnfindable(rank: number) {
+    this.unfindable.add(this.placeAt(rank));
   }
 
-  /** Puts a preset file under any name, valid or not; returns where it is. */
-  put(source: PresetSource, name: string, json: unknown) {
-    const file = this.pathOf(this.paths[source], name);
-    this.contents.set(file, json);
-    return file;
+  makeUnlistable(rank: number) {
+    this.unlistable.add(this.placeAt(rank));
   }
 
-  /** A file that is present but cannot be read, like a dangling link or malformed JSON. */
-  putUnreadable(source: PresetSource, name: string) {
-    const file = this.pathOf(this.paths[source], name);
-    this.unreadable.add(file);
-    return file;
+  placeAt(rank: number): string {
+    return this.places[rank] ?? panic(`No preset place ranked ${rank}`);
   }
 
-  makeUnlistable(source: PresetSource) {
-    this.unlistable.add(this.paths[source]);
+  private hold(rank: number, preset: HeldPreset) {
+    const place = this.placeAt(rank);
+    this.held.set(place, [...this.heldIn(place), preset]);
+    return preset.label;
   }
 
-  /** Neither the directory nor anything in it can be looked at, like one under a file. */
-  makeUnreachable(source: PresetSource) {
-    this.unreachable.add(this.paths[source]);
+  private heldIn(place: string) {
+    return this.held.get(place) ?? [];
   }
 
-  private pathOf(directory: string, name: string) {
-    return path.join(directory, `${name}.json`);
+  private candidateFor(held: HeldPreset): PresetCandidate {
+    return {
+      name: held.name,
+      label: held.label,
+      read: () => {
+        this.readPaths.push(held.label.path);
+        return held.unreadable
+          ? Result.err(this.failure(PresetUnreadable, held.label.path))
+          : Result.ok(held.json);
+      },
+    };
   }
 
-  private failure(message: string) {
-    return Result.err(new ConfigInvalid({ message }));
+  private failure<Failure>(
+    Kind: new (fields: { location: string; detail: string }) => Failure,
+    location: string,
+  ) {
+    return new Kind({ location, detail: faker.lorem.sentence() });
   }
 }
 
-function distinctPresetDirectories(): Record<PresetSource, string> {
-  const root = path.join('/', faker.string.uuid());
-  return {
-    repository: path.join(root, 'repository'),
-    home: path.join(root, 'home'),
-    xdg: path.join(root, 'xdg'),
-    builtin: path.join(root, 'builtin'),
-  };
+interface HeldPreset {
+  name: string;
+  label: PresetLabel;
+  json?: unknown;
+  unreadable?: boolean;
+}
+
+function aLabel(place: string, name: string): PresetLabel {
+  return aPresetLabel({ path: path.join(place, `${name}.${faker.system.fileExt()}`) });
 }
 
 /**

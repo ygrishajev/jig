@@ -13,8 +13,7 @@ export function registerPresetsCommand(program: Command): void {
     .action(
       withErrorHandling(async () => {
         return withApp({ logFormat: defaultLogFormat() }, async (app) => {
-          const { presetFiles, repoRoot, environment } = app.cradle;
-          const presets = discoverPresets(presetFiles, { repoRoot, ...environment });
+          const presets = discoverPresets(app.cradle.presetSource);
           if (presets.isErr()) return Result.err(presets.error);
           console.log(describePresets(presets.value));
           return Result.ok();
@@ -26,8 +25,8 @@ export function registerPresetsCommand(program: Command): void {
 export function describePresets(presets: Preset[]): string {
   if (presets.length === 0) return 'No presets found.';
   return presets
-    .map(({ name, source, path, description }) => {
-      const line = `${name.padEnd(20)} ${source.padEnd(10)} ${path}`;
+    .map(({ name, label, description }) => {
+      const line = `${name.padEnd(20)} ${label.source.padEnd(10)} ${label.path}`;
       return description ? `${line}\n  ${description}` : line;
     })
     .join('\n');
