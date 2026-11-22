@@ -14,18 +14,24 @@ import { ConfigInvalid, messageOf } from '../../domain/errors.js';
 
 export function readConfigFile(file: ConfigFile): Result<JigConfig, ConfigInvalid> {
   if (mayBeAbsent(file) && !existsSync(file.path)) return configFrom(file, {});
-  return Result.gen(function* () {
-    const contents = yield* Result.try({
-      try: () => readFileSync(file.path, 'utf-8'),
-      catch: (cause) =>
-        new ConfigInvalid({ message: `Cannot read ${file.name}: ${messageOf(cause)}` }),
-    });
-    const json = yield* Result.try({
-      try: (): unknown => JSON.parse(contents),
-      catch: (cause) =>
-        new ConfigInvalid({ message: `${file.name} is not valid JSON: ${messageOf(cause)}` }),
-    });
-    return configFrom(file, json);
+  return contentsOf(file)
+    .andThen((contents) => jsonIn(file, contents))
+    .andThen((json) => configFrom(file, json));
+}
+
+function contentsOf(file: ConfigFile): Result<string, ConfigInvalid> {
+  return Result.try({
+    try: () => readFileSync(file.path, 'utf-8'),
+    catch: (cause) =>
+      new ConfigInvalid({ message: `Cannot read ${file.name}: ${messageOf(cause)}` }),
+  });
+}
+
+function jsonIn(file: ConfigFile, contents: string): Result<unknown, ConfigInvalid> {
+  return Result.try({
+    try: (): unknown => JSON.parse(contents),
+    catch: (cause) =>
+      new ConfigInvalid({ message: `${file.name} is not valid JSON: ${messageOf(cause)}` }),
   });
 }
 
