@@ -21,7 +21,7 @@ paths:
 
 ## Target and current layout
 
-The ownership above is the target in [`docs/specs/application-boundaries.md`](../../docs/specs/application-boundaries.md). Parts of `src` predate it and are not patterns to copy: CLI commands receive the container through `src/cli/app-action.ts` and `src/cli/with-app.ts`, `src/app/container.ts` is today's composition root, `MAX_STEP_RETRIES` and `RETRY_DELAY_MS` sit in `src/domain/settings.ts`, and configuration code still reads and writes files. Planned slices move them. New code follows the target where today's layout allows; where it does not, extend the existing shape and say in the PR which owner the code belongs to.
+The ownership above is the target in [`docs/specs/application-boundaries.md`](../../docs/specs/application-boundaries.md). Parts of `src` predate it and are not patterns to copy: CLI commands receive the container through `src/cli/app-action.ts` and `src/cli/with-app.ts`, `src/app/container.ts` is today's composition root, `MAX_STEP_RETRIES` and `RETRY_DELAY_MS` sit in `src/domain/settings.ts`, and preset discovery in `src/config/presets.ts` still reads files. Planned slices move them. New code follows the target where today's layout allows; where it does not, extend the existing shape and say in the PR which owner the code belongs to.
 
 ## Signals
 

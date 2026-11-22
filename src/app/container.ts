@@ -3,6 +3,7 @@ import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMo
 import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
+import { readConfigFile, updateConfigFile } from '../adapters/config/config-file.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
@@ -30,7 +31,13 @@ import {
 } from '../adapters/terminal/ask-for-credential.js';
 import type { AgentChoice } from '../config/agent-policy.js';
 import type { JigEnvironment } from '../config/environment.js';
-import { type ConfigFile, type JigConfig, runSettingsFrom } from '../config/load-config.js';
+import {
+  type ConfigFile,
+  type JigConfig,
+  type ReadConfig,
+  runSettingsFrom,
+  type UpdateConfig,
+} from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import { retryResult, transientRetryPolicy } from '../domain/retry.js';
 import { type RunIdentity } from '../domain/run-state.js';
@@ -60,6 +67,8 @@ export interface AppCradle {
   logLevel: string;
   configFile: ConfigFile;
   config: JigConfig;
+  readConfig: ReadConfig;
+  updateConfig: UpdateConfig;
   settings: RunSettings;
   logger: Logger;
   clock: Clock;
@@ -110,6 +119,8 @@ export function createAppContainer(input: {
     logLevel: asValue(input.logLevel ?? 'info'),
     configFile: asValue(input.configFile),
     config: asValue(input.config),
+    readConfig: asValue(readConfigFile),
+    updateConfig: asValue(updateConfigFile),
     settings: asFunction(({ config }: AppCradle) => runSettingsFrom(config)).singleton(),
     logger: asFunction(({ logFormat, logLevel }: AppCradle) =>
       createConsoleLogger(logFormat, logLevel),

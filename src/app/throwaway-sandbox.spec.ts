@@ -11,9 +11,10 @@ import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { readConfigFile } from '../adapters/config/config-file.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor, loadConfig } from '../config/load-config.js';
+import { configFileFor } from '../config/load-config.js';
 import {
   GitCommandFailed,
   MergeFailed,
@@ -124,7 +125,7 @@ describe('withThrowawaySandbox', () => {
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(parseEnvironment({})),
-      config: unwrap(loadConfig(configFileFor(repoRoot))),
+      config: unwrap(readConfigFile(configFileFor(repoRoot))),
     });
     app.register({
       openSession: asValue(async ({ run }: OpenSessionInput) => {

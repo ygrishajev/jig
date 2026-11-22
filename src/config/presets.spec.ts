@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
-import { configFileFor, loadConfig } from './load-config.js';
+import { configFileFor, configFrom } from './load-config.js';
 import {
   configWithPreset,
   discoverPresets,
@@ -449,11 +449,11 @@ describe('presets', () => {
 
   describe('configWithPreset', () => {
     it('replaces the steps the preset names and keeps the project settings and other steps', async () => {
-      const { locations, writePreset, writeProjectConfig } = await setup({ xdgConfigHome: 'set' });
+      const { locations, writePreset, projectConfig } = await setup({ xdgConfigHome: 'set' });
       const verifyCommand = `npm run ${faker.word.verb()}`;
       const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
       const plannerModel = faker.word.noun();
-      await writeProjectConfig({
+      const config = projectConfig({
         mergeMode: 'auto',
         verifyCommand,
         reviewCycleCap,
@@ -461,7 +461,6 @@ describe('presets', () => {
         implementer: { provider: 'opencode', model: `openrouter/${faker.word.noun()}` },
       });
       await writePreset('home', 'swap', { implementer: { provider: 'claude' } });
-      const config = unwrap(loadConfig(configFileFor(locations.repoRoot)));
 
       const applied = unwrap(configWithPreset(config, locations, presetName('swap')));
 
@@ -479,10 +478,10 @@ describe('presets', () => {
     });
 
     it('adds a step the project left unset', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
+      const { locations, writePreset, projectConfig } = await setup({ xdgConfigHome: 'set' });
       const model = faker.word.noun();
       await writePreset('repository', 'add', { reviewer: { provider: 'claude', model } });
-      const config = unwrap(loadConfig(configFileFor(locations.repoRoot)));
+      const config = projectConfig({});
 
       const applied = unwrap(configWithPreset(config, locations, presetName('add')));
 
@@ -491,17 +490,16 @@ describe('presets', () => {
     });
 
     it("keeps the project's config as it is when no preset is named", async () => {
-      const { locations, writeProjectConfig } = await setup({ xdgConfigHome: 'set' });
-      await writeProjectConfig({ reviewer: { provider: 'claude', model: faker.word.noun() } });
-      const config = unwrap(loadConfig(configFileFor(locations.repoRoot)));
+      const { locations, projectConfig } = await setup({ xdgConfigHome: 'set' });
+      const config = projectConfig({ reviewer: { provider: 'claude', model: faker.word.noun() } });
 
       expect(unwrap(configWithPreset(config, locations, undefined))).toBe(config);
     });
 
     it('refuses rather than runs on the project agents when the named preset does not load', async () => {
-      const { locations, writeRaw } = await setup({ xdgConfigHome: 'set' });
+      const { locations, writeRaw, projectConfig } = await setup({ xdgConfigHome: 'set' });
       await writeRaw('home', 'broken.json', '{ not json');
-      const config = unwrap(loadConfig(configFileFor(locations.repoRoot)));
+      const config = projectConfig({});
 
       const applied = configWithPreset(config, locations, presetName('broken'));
 
@@ -524,8 +522,8 @@ describe('presets', () => {
     };
     const writePreset = (source: PresetSource, name: string, contents: unknown) =>
       writeRaw(source, `${name}.json`, JSON.stringify(contents));
-    const writeProjectConfig = (contents: unknown) =>
-      writeFile(configFileFor(locations.repoRoot).path, JSON.stringify(contents));
+    const projectConfig = (contents: Record<string, unknown>) =>
+      unwrap(configFrom(configFileFor(locations.repoRoot), contents));
     const makeRepositoryJigUnreachable = () =>
       symlink('.jig', path.join(locations.repoRoot, '.jig'));
     const linkDangling = async (source: PresetSource, fileName: string) => {
@@ -539,7 +537,7 @@ describe('presets', () => {
       locations,
       writePreset,
       writeRaw,
-      writeProjectConfig,
+      projectConfig,
       makeRepositoryJigUnreachable,
       linkDangling,
       makeHomeJigAFile,

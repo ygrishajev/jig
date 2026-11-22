@@ -1,13 +1,15 @@
 import { Result } from 'better-result';
-import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
 import { type AgentRole, agentRoleSchema, byRole } from '../domain/agent-role.js';
-import { ConfigInvalid, messageOf } from '../domain/errors.js';
+import { ConfigInvalid } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
 import { AGENT_NAMES, agentNameSchema, resolvedModel } from './agent-policy.js';
 import { describeIssues } from './describe-issues.js';
+
+/** Reads the config a command selected: its own settings over every default. */
+export type ReadConfig = (file: ConfigFile) => Result<JigConfig, ConfigInvalid>;
 
 /** The config a command reads and writes: the repository's own, or a preset named with `--config`. */
 export interface ConfigFile {
@@ -16,6 +18,12 @@ export interface ConfigFile {
   /** A preset the operator named must exist; the repository's own may be absent. */
   named: boolean;
 }
+
+/** Sets the given keys in the config a command selected, keeping every other key as written. */
+export type UpdateConfig = (
+  file: ConfigFile,
+  values: Record<string, unknown>,
+) => Promise<Result<void, ConfigInvalid>>;
 
 /** A named preset resolves against the repository root, where every command starts. */
 export function configFileFor(repoRoot: string, preset?: string): ConfigFile {
@@ -26,36 +34,19 @@ export function configFileFor(repoRoot: string, preset?: string): ConfigFile {
 
 export const CONFIG_FILE = 'jig.config.json';
 
-export function loadConfig(file: ConfigFile): Result<JigConfig, ConfigInvalid> {
-  return readConfigFile(file).andThen((contents) => parseConfig(file, contents));
+export function mayBeAbsent(file: ConfigFile): boolean {
+  return !file.named;
 }
 
-function readConfigFile(file: ConfigFile): Result<string, ConfigInvalid> {
-  if (!file.named && !existsSync(file.path)) return Result.ok('{}');
-  return Result.try({
-    try: () => readFileSync(file.path, 'utf-8'),
-    catch: (cause) =>
-      new ConfigInvalid({ message: `Cannot read ${file.name}: ${messageOf(cause)}` }),
-  });
-}
-
-function parseConfig(file: ConfigFile, contents: string): Result<JigConfig, ConfigInvalid> {
-  return Result.try({
-    try: (): unknown => JSON.parse(contents),
-    catch: (cause) =>
-      new ConfigInvalid({
-        message: `${file.name} is not valid JSON: ${messageOf(cause)}`,
-      }),
-  }).andThen((json) => {
-    const parsed = configSchema.safeParse(json);
-    return parsed.success
-      ? Result.ok(parsed.data)
-      : Result.err(
-          new ConfigInvalid({
-            message: `${file.name} is not valid — ${describeIssues(parsed.error)}`,
-          }),
-        );
-  });
+export function configFrom(file: ConfigFile, json: unknown): Result<JigConfig, ConfigInvalid> {
+  const parsed = configSchema.safeParse(json);
+  return parsed.success
+    ? Result.ok(parsed.data)
+    : Result.err(
+        new ConfigInvalid({
+          message: `${file.name} is not valid — ${describeIssues(parsed.error)}`,
+        }),
+      );
 }
 
 export const stepConfigSchema = z.object({

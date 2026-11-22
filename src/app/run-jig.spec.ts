@@ -35,6 +35,7 @@ import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-wo
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { readConfigFile } from '../adapters/config/config-file.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
@@ -43,12 +44,7 @@ import { DOCKERFILE, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-r
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import {
-  configFileFor,
-  type JigConfig,
-  loadConfig,
-  validationWarnings,
-} from '../config/load-config.js';
+import { configFileFor, type JigConfig, validationWarnings } from '../config/load-config.js';
 import { designReviewStage } from '../domain/design-review.js';
 import { designReviewReport } from '../domain/design-review-report.js';
 import {
@@ -505,7 +501,7 @@ describe('runJig', () => {
           options.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
         ),
       ),
-      config: unwrap(loadConfig(configFileFor(repo.dir))),
+      config: unwrap(readConfigFile(configFileFor(repo.dir))),
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
@@ -535,7 +531,7 @@ describe('runJig', () => {
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
     app.register({
       config: asValue({
-        ...unwrap(loadConfig(configFileFor(repo.dir))),
+        ...unwrap(readConfigFile(configFileFor(repo.dir))),
         ...everyStepOn(),
         sandboxImage,
         ...options.config,

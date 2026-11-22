@@ -1,11 +1,9 @@
 import { faker } from '@faker-js/faker';
 import type { Result } from 'better-result';
-import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { everyStepOn } from '../../tests/support/builders.js';
-import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { MAX_STEP_RETRIES, RETRY_DELAY_MS } from '../domain/settings.js';
@@ -13,18 +11,19 @@ import { DEFAULT_CLAUDE_MODEL } from './agent-policy.js';
 import {
   CONFIG_FILE,
   configFileFor,
+  configFrom,
   configuredSteps,
   type JigConfig,
-  loadConfig,
+  mayBeAbsent,
   runSettingsFrom,
   type StepConfig,
   stepsWithoutAgent,
   validationWarnings,
 } from './load-config.js';
 
-describe('loadConfig', () => {
-  it('merges by hand and picks no agent when the repository has no config', async () => {
-    const config = unwrap(loadConfig(await setupFile()));
+describe('configFrom', () => {
+  it('merges by hand and picks no agent when the file sets nothing', () => {
+    const config = unwrap(configFrom(aConfigFile(), {}));
 
     expect(config).toMatchObject({
       mergeMode: 'manual',
@@ -34,11 +33,12 @@ describe('loadConfig', () => {
     expect(stepsWithoutAgent(config)).toEqual(['planner', 'implementer', 'reviewer', 'describer']);
   });
 
-  it('names the steps that still have no agent', async () => {
+  it('names the steps that still have no agent', () => {
     const config = unwrap(
-      loadConfig(
-        await setupFile({ planner: { provider: 'claude' }, reviewer: { provider: 'claude' } }),
-      ),
+      configFrom(aConfigFile(), {
+        planner: { provider: 'claude' },
+        reviewer: { provider: 'claude' },
+      }),
     );
 
     const steps = configuredSteps(config);
@@ -47,25 +47,23 @@ describe('loadConfig', () => {
     expect(steps.isErr() && steps.error.message).toContain('implementer, describer');
   });
 
-  it('gives every step its agent once all of them have one', async () => {
+  it('gives every step its agent once all of them have one', () => {
     const step = { provider: 'opencode', model: `openrouter/${faker.word.noun()}` } as const;
-    const config = unwrap(loadConfig(await setupFile(everyStepOn(step))));
+    const config = unwrap(configFrom(aConfigFile(), everyStepOn(step)));
 
     expect(unwrap(configuredSteps(config))).toEqual(everyStepOn(step));
   });
 
-  it('takes per-step agents and models from the config file', async () => {
+  it('takes per-step agents and models from the config file', () => {
     const model = `openrouter/${faker.word.noun()}`;
     const verifyCommand = `npm run ${faker.word.verb()}`;
 
     const config = unwrap(
-      loadConfig(
-        await setupFile({
-          implementer: { provider: 'opencode', model },
-          verifyCommand,
-          commitSigning: 'skip',
-        }),
-      ),
+      configFrom(aConfigFile(), {
+        implementer: { provider: 'opencode', model },
+        verifyCommand,
+        commitSigning: 'skip',
+      }),
     );
 
     expect(config).toMatchObject({
@@ -75,61 +73,50 @@ describe('loadConfig', () => {
     });
   });
 
-  it('takes the commands that prepare and check the sandbox', async () => {
+  it('takes the commands that prepare and check the sandbox', () => {
     const setupCommand = `npm ${faker.word.verb()}`;
 
-    const config = unwrap(loadConfig(await setupFile({ setupCommand, setupTimeoutSeconds: 120 })));
+    const config = unwrap(configFrom(aConfigFile(), { setupCommand, setupTimeoutSeconds: 120 }));
 
     expect(config).toMatchObject({ setupCommand, setupTimeoutSeconds: 120 });
   });
 
-  it('reads a preset named by the operator instead of the repository config', async () => {
-    const repoRoot = await setup({ mergeMode: 'manual' });
-    const preset = `${faker.word.noun()}.json`;
-    await writeFile(path.join(repoRoot, preset), JSON.stringify({ mergeMode: 'auto' }));
+  it('rejects a misspelled key instead of ignoring it, naming the file', () => {
+    const file = aConfigFile();
 
-    expect(unwrap(loadConfig(configFileFor(repoRoot, preset))).mergeMode).toBe('auto');
+    const result = configFrom(file, { implement: { provider: 'claude' } });
+
+    expectInvalid(result, 'implement');
+    expectInvalid(result, file.name);
   });
 
-  it('refuses a named preset that does not exist instead of falling back to defaults', async () => {
-    const preset = `${faker.word.noun()}.json`;
-
-    expectInvalid(loadConfig(configFileFor(await setup(), preset)), preset);
+  it('rejects an unknown key as invalid config', () => {
+    expectInvalid(configFrom(aConfigFile(), { mergeMod: 'auto' }), 'mergeMod');
   });
 
-  it('rejects a misspelled key instead of ignoring it', async () => {
-    const repoRoot = await setup({ implement: { provider: 'claude' } });
+  it('rejects a file that does not hold an object', () => {
+    const file = aConfigFile();
 
-    expectInvalid(loadConfig(configFileFor(repoRoot)), 'implement');
+    expectInvalid(configFrom(file, [faker.word.noun()]), file.name);
   });
 
-  it('rejects an unknown key as invalid config', async () => {
-    const repoRoot = await setup({ mergeMod: 'auto' });
-
-    expectInvalid(loadConfig(configFileFor(repoRoot)), 'mergeMod');
+  it('rejects an agent it does not know', () => {
+    expectInvalid(
+      configFrom(aConfigFile(), { reviewer: { provider: faker.word.noun() } }),
+      'reviewer',
+    );
   });
 
-  it('reports a config file that is not JSON as invalid config', async () => {
-    const repoRoot = await setup();
-    await writeFile(path.join(repoRoot, CONFIG_FILE), '{"mergeMode":');
-
-    expectInvalid(loadConfig(configFileFor(repoRoot)), CONFIG_FILE);
-  });
-
-  it('rejects an agent it does not know', async () => {
-    const repoRoot = await setup({ reviewer: { provider: faker.word.noun() } });
-
-    expectInvalid(loadConfig(configFileFor(repoRoot)), 'reviewer');
-  });
-
-  it('takes a version pin for a known agent and rejects one for an agent it does not know', async () => {
+  it('takes a version pin for a known agent and rejects one for an agent it does not know', () => {
     const version = faker.system.semver();
 
-    expect(unwrap(loadConfig(await setupFile({ agents: { opencode: version } }))).agents).toEqual({
+    expect(unwrap(configFrom(aConfigFile(), { agents: { opencode: version } })).agents).toEqual({
       opencode: version,
     });
-    const repoRoot = await setup({ agents: { [faker.word.noun()]: version } });
-    expectInvalid(loadConfig(configFileFor(repoRoot)), 'agents');
+    expectInvalid(
+      configFrom(aConfigFile(), { agents: { [faker.word.noun()]: version } }),
+      'agents',
+    );
   });
 
   function expectInvalid(result: Result<JigConfig, ConfigInvalid>, mention: string): void {
@@ -137,24 +124,39 @@ describe('loadConfig', () => {
     expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
     expect(result.isErr() && result.error.message).toContain(mention);
   }
+});
 
-  async function setup(contents?: Record<string, unknown>) {
-    const repoRoot = await tempDirectory('jig-config-');
-    if (contents) await writeFile(path.join(repoRoot, CONFIG_FILE), JSON.stringify(contents));
-    return repoRoot;
-  }
+describe('configFileFor', () => {
+  it("selects the repository's own config, which may be absent", () => {
+    const repoRoot = faker.system.directoryPath();
 
-  async function setupFile(contents?: Record<string, unknown>) {
-    return configFileFor(await setup(contents));
-  }
+    const file = configFileFor(repoRoot);
+
+    expect(file).toEqual({
+      path: path.join(repoRoot, CONFIG_FILE),
+      name: CONFIG_FILE,
+      named: false,
+    });
+    expect(mayBeAbsent(file)).toBe(true);
+  });
+
+  it('selects a preset named by the operator against the repository root, which must exist', () => {
+    const repoRoot = faker.system.directoryPath();
+    const preset = `${faker.word.noun()}.json`;
+
+    const file = configFileFor(repoRoot, preset);
+
+    expect(file).toEqual({ path: path.join(repoRoot, preset), name: preset, named: true });
+    expect(mayBeAbsent(file)).toBe(false);
+  });
 });
 
 describe('runSettingsFrom', () => {
-  it("takes how a run moves from the config, and the retry policy from jig's own", async () => {
+  it("takes how a run moves from the config, and the retry policy from jig's own", () => {
     const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const config = {
-      ...unwrap(loadConfig(configFileFor(await tempDirectory('jig-config-')))),
+      ...unwrap(configFrom(aConfigFile(), {})),
       reviewCycleCap,
       verifyCommand,
       designGate: 'checkpoint' as const,
@@ -173,8 +175,8 @@ describe('runSettingsFrom', () => {
 });
 
 describe('validationWarnings', () => {
-  it('warns about nothing when the reviewer differs and a verifyCommand is set', async () => {
-    const config = await setup({
+  it('warns about nothing when the reviewer differs and a verifyCommand is set', () => {
+    const config = setup({
       implementer: { provider: 'claude', model: 'sonnet' },
       reviewer: { provider: 'claude', model: 'opus' },
       verifyCommand: aVerifyCommand(),
@@ -183,13 +185,13 @@ describe('validationWarnings', () => {
     expect(validationWarnings(config)).toEqual([]);
   });
 
-  it('warns once for the defaults, which pick no agent and set no verifyCommand', async () => {
-    expect(validationWarnings(await setup({}))).toHaveLength(1);
+  it('warns once for the defaults, which pick no agent and set no verifyCommand', () => {
+    expect(validationWarnings(setup({}))).toHaveLength(1);
   });
 
-  it('names the provider and model when the reviewer runs the same model as the implementer', async () => {
+  it('names the provider and model when the reviewer runs the same model as the implementer', () => {
     const step = { provider: 'opencode', model: `openrouter/${faker.word.noun()}` } as const;
-    const config = await setup({
+    const config = setup({
       implementer: step,
       reviewer: step,
       verifyCommand: aVerifyCommand(),
@@ -203,18 +205,18 @@ describe('validationWarnings', () => {
 
   it.each(['manual', 'auto'] as const)(
     'warns once when no verifyCommand is set and mergeMode is %s',
-    async (mergeMode) => {
-      const config = await setup({ mergeMode });
+    (mergeMode) => {
+      const config = setup({ mergeMode });
 
       expect(validationWarnings(config)).toHaveLength(1);
       expect(validationWarnings({ ...config, verifyCommand: aVerifyCommand() })).toEqual([]);
     },
   );
 
-  it('names the shared model before the missing verifyCommand when both apply', async () => {
+  it('names the shared model before the missing verifyCommand when both apply', () => {
     const step = { provider: 'codex', model: faker.word.noun() } as const;
-    const config = await setup({ implementer: step, reviewer: step });
-    const unverifiedOnlyWarnings = validationWarnings(await setup({}));
+    const config = setup({ implementer: step, reviewer: step });
+    const unverifiedOnlyWarnings = validationWarnings(setup({}));
 
     const warnings = validationWarnings(config);
 
@@ -260,18 +262,15 @@ describe('validationWarnings', () => {
       reviewer: { provider: 'codex', model: 'gpt-6-luna' },
       shared: false,
     },
-  ])(
-    'decides whether $case is a shared reviewer model',
-    async ({ implementer, reviewer, shared }) => {
-      const config = await setup({ implementer, reviewer, verifyCommand: aVerifyCommand() });
+  ])('decides whether $case is a shared reviewer model', ({ implementer, reviewer, shared }) => {
+    const config = setup({ implementer, reviewer, verifyCommand: aVerifyCommand() });
 
-      expect(validationWarnings(config)).toHaveLength(shared ? 1 : 0);
-    },
-  );
+    expect(validationWarnings(config)).toHaveLength(shared ? 1 : 0);
+  });
 
-  it('names claude with its default model when neither step names one', async () => {
+  it('names claude with its default model when neither step names one', () => {
     const step = { provider: 'claude' } as const;
-    const config = await setup({
+    const config = setup({
       implementer: step,
       reviewer: step,
       verifyCommand: aVerifyCommand(),
@@ -282,8 +281,8 @@ describe('validationWarnings', () => {
 
   it.each(['implementer', 'reviewer'] as const)(
     'compares no models while the %s has no agent',
-    async (configured) => {
-      const config = await setup({
+    (configured) => {
+      const config = setup({
         [configured]: { provider: 'claude' },
         verifyCommand: aVerifyCommand(),
       });
@@ -292,12 +291,14 @@ describe('validationWarnings', () => {
     },
   );
 
-  async function setup(contents: Record<string, unknown>) {
-    const repoRoot = await tempDirectory('jig-config-');
-    await writeFile(path.join(repoRoot, CONFIG_FILE), JSON.stringify(contents));
-    return unwrap(loadConfig(configFileFor(repoRoot)));
+  function setup(contents: Record<string, unknown>) {
+    return unwrap(configFrom(aConfigFile(), contents));
   }
 });
+
+function aConfigFile() {
+  return configFileFor(faker.system.directoryPath());
+}
 
 function aVerifyCommand() {
   return `npm run ${faker.word.verb()}`;

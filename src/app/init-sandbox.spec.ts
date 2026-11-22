@@ -12,13 +12,14 @@ import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { readConfigFile } from '../adapters/config/config-file.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import type { EnteredCredential } from '../adapters/terminal/ask-for-credential.js';
 import type { AgentChoice } from '../config/agent-policy.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor, loadConfig } from '../config/load-config.js';
+import { configFileFor } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import type { ExecResult } from '../ports/agent-session.js';
@@ -295,8 +296,24 @@ describe('initSandbox', () => {
     expect(agent.calls).toHaveLength(1);
   });
 
+  it('stops before checking a toolchain it could not save to the config', async () => {
+    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
+    const { initResult, agent } = await setup({
+      configured: true,
+      proposals: [toolchainProposal()],
+      exec: () => ({ exitCode: 0, output: '' }),
+      configUpdateFailure: failure,
+    });
+
+    const result = await initResult({ useAgent: true });
+
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(agent.commands).toEqual([]);
+  });
+
   async function setup(input: {
     configured?: boolean;
+    configUpdateFailure?: ConfigInvalid;
     answer?: AgentChoice;
     environment?: NodeJS.ProcessEnv;
     credential?: EnteredCredential;
@@ -328,7 +345,7 @@ describe('initSandbox', () => {
           },
         ),
       ),
-      config: unwrap(loadConfig(configFileFor(repo.dir))),
+      config: unwrap(readConfigFile(configFileFor(repo.dir))),
     });
     const images = mock<SandboxImages>({
       labels: vi.fn().mockResolvedValue(Result.ok(undefined)),
@@ -344,6 +361,9 @@ describe('initSandbox', () => {
         return answer && Object.fromEntries(roles.map((role) => [role, answer]));
       }),
       latestVersions: asValue(async () => ({})),
+      ...(input.configUpdateFailure && {
+        updateConfig: asValue(async () => Result.err(input.configUpdateFailure)),
+      }),
       openSession: asValue(async ({ setupCommand }: OpenSessionInput) => {
         const failure = setupCommand === null ? undefined : checkSandboxFailures.shift();
         if (failure) return Result.err(failure);
