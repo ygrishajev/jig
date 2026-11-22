@@ -264,6 +264,35 @@ describe('presets', () => {
       expect(source.readLocations).toEqual([]);
     });
 
+    it('says there are no presets when no place holds one anyone could ask for', () => {
+      const { source } = setup();
+      source.putUnreadable(faker.number.int({ min: 0, max: PLACE_COUNT - 1 }), 'Not Safe');
+      const missing = presetName();
+
+      const preset = loadPreset(source, missing);
+
+      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
+      expect(preset.isErr() && preset.error.message).toBe(
+        `No preset named ${missing} — looked in ${source.places.join(', ')}; there are none.`,
+      );
+      expect(source.readLocations).toEqual([]);
+    });
+
+    it('refuses a winner that is not JSON, naming where it is and why it does not parse', () => {
+      const { source } = setup();
+      const name = presetName();
+      const detail = faker.lorem.sentence();
+      const winner = source.putNotJson(0, name, detail);
+      source.put(1, name, {});
+
+      const preset = loadPreset(source, name);
+
+      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
+      expect(preset.isErr() && preset.error.message).toBe(
+        `${winner.location} is not valid JSON: ${detail}`,
+      );
+    });
+
     it('refuses with the listing failure when it cannot say which presets exist', () => {
       const { source } = setup();
       const rank = faker.number.int({ min: 0, max: PLACE_COUNT - 1 });

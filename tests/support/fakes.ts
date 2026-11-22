@@ -19,6 +19,7 @@ import {
   type PresetCandidate,
   type PresetLabel,
   PresetNotFindable,
+  PresetNotJson,
   type PresetSource,
   PresetsUnlistable,
   PresetUnreadable,
@@ -340,9 +341,21 @@ export class InMemoryPresetSource implements PresetSource {
     return this.hold(rank, { name, label: aLabel(this.placeAt(rank), name), json });
   }
 
-  /** A candidate that is present but cannot be read, like a dangling link or malformed JSON. */
+  /** A candidate that is present but cannot be read, like a dangling link. */
   putUnreadable(rank: number, name: string): PresetLabel {
-    return this.hold(rank, { name, label: aLabel(this.placeAt(rank), name), unreadable: true });
+    const label = aLabel(this.placeAt(rank), name);
+    return this.hold(rank, {
+      name,
+      label,
+      failure: this.failure(PresetUnreadable, label.location),
+    });
+  }
+
+  /** A candidate that can be read but does not hold JSON, failing with `detail`. */
+  putNotJson(rank: number, name: string, detail: string): PresetLabel {
+    const label = aLabel(this.placeAt(rank), name);
+    const failure = new PresetNotJson({ location: label.location, detail });
+    return this.hold(rank, { name, label, failure });
   }
 
   /** Nothing in the place can be looked at, like a directory under a file. */
@@ -374,9 +387,7 @@ export class InMemoryPresetSource implements PresetSource {
       label: held.label,
       read: () => {
         this.readLocations.push(held.label.location);
-        return held.unreadable
-          ? Result.err(this.failure(PresetUnreadable, held.label.location))
-          : Result.ok(held.json);
+        return held.failure ? Result.err(held.failure) : Result.ok(held.json);
       },
     };
   }
@@ -393,7 +404,7 @@ interface HeldPreset {
   name: string;
   label: PresetLabel;
   json?: unknown;
-  unreadable?: boolean;
+  failure?: PresetUnreadable | PresetNotJson;
 }
 
 function aLabel(place: string, name: string): PresetLabel {
