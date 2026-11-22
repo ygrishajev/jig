@@ -13,6 +13,7 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { readConfigFile } from '../adapters/config/config-file.js';
+import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
 import type { PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
 import type { ReadConfig } from '../config/load-config.js';
@@ -299,7 +300,7 @@ describe('withApp', () => {
           createAppContainer: createApp,
           readConfig: input.readConfig ?? readConfigFile,
           standardInput: fakeStandardInput(),
-          builtinPresetsDirectory,
+          presetFiles: presetFilesOnDisk(builtinPresetsDirectory),
         },
       );
     return { run, disposed, cwd, askForPreset, createApp, logger };

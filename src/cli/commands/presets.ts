@@ -13,10 +13,8 @@ export function registerPresetsCommand(program: Command): void {
     .action(
       withErrorHandling(async () => {
         return withApp({ logFormat: defaultLogFormat() }, async (app) => {
-          const presets = discoverPresets({
-            repoRoot: app.cradle.repoRoot,
-            ...app.cradle.environment,
-          });
+          const { presetFiles, repoRoot, environment } = app.cradle;
+          const presets = discoverPresets(presetFiles, { repoRoot, ...environment });
           if (presets.isErr()) return Result.err(presets.error);
           console.log(describePresets(presets.value));
           return Result.ok();

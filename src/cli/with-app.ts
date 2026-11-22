@@ -2,6 +2,7 @@ import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 
 import { readConfigFile } from '../adapters/config/config-file.js';
+import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
 import { ensureRepositoryRoot } from '../adapters/git/repository.js';
 import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import type { LogFormat } from '../adapters/logging/create-logger.js';
@@ -14,6 +15,7 @@ import {
   configWithPreset,
   discoverPresets,
   type Preset,
+  type PresetFiles,
   type PresetLocations,
   type PresetName,
 } from '../config/presets.js';
@@ -28,8 +30,7 @@ export interface Invocation {
   createAppContainer: typeof createAppContainer;
   readConfig: ReadConfig;
   standardInput: StandardInput;
-  /** The starters' folder; the package's own unless a spec points elsewhere. */
-  builtinPresetsDirectory?: string;
+  presetFiles: PresetFiles;
 }
 
 /** How the operator asked the command to run: how it logs, the config file it reads, and the preset over it. */
@@ -62,6 +63,7 @@ export function processInvocation(): Invocation {
     createAppContainer,
     readConfig: readConfigFile,
     standardInput: processStandardInput(),
+    presetFiles: presetFilesOnDisk(),
   };
 }
 
@@ -73,7 +75,7 @@ function openApp(
     askForPreset: ask,
     createAppContainer: createApp,
     readConfig,
-    builtinPresetsDirectory,
+    presetFiles,
   }: Invocation,
 ): Promise<Result<AwilixContainer<AppCradle>, JigError>> {
   return Result.gen(async function* () {
@@ -83,19 +85,18 @@ function openApp(
     const jigEnvironment = withCredentials(parsedEnvironment, savedCredentials);
     const configFile = configFileFor(cwd, configPath);
     const projectConfig = yield* readConfig(configFile);
-    const presetLocations = {
-      repoRoot: cwd,
-      builtinDirectory: builtinPresetsDirectory,
-      ...jigEnvironment,
-    };
-    const presetName = yield* Result.await(selectedPreset(preset, presetLocations, ask));
-    const config = yield* configWithPreset(projectConfig, presetLocations, presetName);
+    const presetLocations = { repoRoot: cwd, ...jigEnvironment };
+    const presetName = yield* Result.await(
+      selectedPreset(preset, presetFiles, presetLocations, ask),
+    );
+    const config = yield* configWithPreset(projectConfig, presetFiles, presetLocations, presetName);
     const app = createApp({
       repoRoot: cwd,
       logFormat,
       environment: jigEnvironment,
       configFile,
       config,
+      presetFiles,
     });
     if (presetName !== undefined) {
       app.cradle.logger.info({ preset: presetName }, `Using preset ${presetName}`);
@@ -106,12 +107,13 @@ function openApp(
 
 function selectedPreset(
   selection: PresetSelection | undefined,
+  files: PresetFiles,
   locations: PresetLocations,
   ask: Invocation['askForPreset'],
 ): Promise<Result<PresetName | undefined, ConfigInvalid>> {
   return Result.gen(async function* () {
     if (selection?.kind !== 'ask') return Result.ok(selection?.name);
-    const presets = yield* discoverPresets(locations);
+    const presets = yield* discoverPresets(files, locations);
     const pick = presets.length > 0 ? await ask(presets) : undefined;
     if (pick === undefined) {
       return Result.err(

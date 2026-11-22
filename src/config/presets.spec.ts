@@ -1,22 +1,18 @@
 import { faker } from '@faker-js/faker';
-import { readdirSync } from 'node:fs';
-import { mkdir, symlink, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { tempDirectory } from '../../tests/support/temp-directory.js';
+import { presetName } from '../../tests/support/builders.js';
+import { FakePresetFiles } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
-import { configFileFor, configFrom } from './load-config.js';
+import { configFileFor, configFrom, runSettingsFrom } from './load-config.js';
 import {
   configWithPreset,
   discoverPresets,
   loadPreset,
-  type Preset,
+  PRESET_SOURCES,
   presetDirectories,
   type PresetLocations,
-  type PresetName,
   presetNameSchema,
   type PresetSource,
 } from './presets.js';
@@ -36,358 +32,239 @@ describe('presets', () => {
       'two--hyphens',
       '-leading',
       'a.b',
+      'a'.repeat(65),
     ])('refuses %j', (name) => {
       expect(presetNameSchema.safeParse(name).success).toBe(false);
     });
   });
 
   describe('presetDirectories', () => {
-    it('looks in the repository, the home directory, the XDG config directory, then the starters', async () => {
-      const { locations } = await setup({ xdgConfigHome: 'set' });
+    it('looks in the repository, the home directory, the XDG config directory, then the starters', () => {
+      const { files, locations } = setup({});
 
-      expect(presetDirectories(locations)).toEqual([
-        { source: 'repository', path: path.join(locations.repoRoot, '.jig', 'presets') },
-        { source: 'home', path: path.join(locations.homeDirectory, '.jig', 'presets') },
-        { source: 'xdg', path: path.join(locations.xdgConfigHome ?? '', 'jig', 'presets') },
-        { source: 'builtin', path: SHIPPED_PRESETS_DIRECTORY },
-      ]);
+      expect(presetDirectories(files, locations)).toEqual(
+        PRESET_SOURCES.map((source) => ({ source, path: files.paths[source] })),
+      );
+    });
+
+    it('asks for the directories under the repository, the home directory and an absolute XDG config home', () => {
+      const { files, locations } = setup({});
+
+      presetDirectories(files, locations);
+
+      expect(files.rootsGiven).toEqual([locations]);
     });
 
     it.each([undefined, '', 'relative/config'])(
-      'falls back to ~/.config when XDG_CONFIG_HOME is %j',
-      async (xdgConfigHome) => {
-        const { locations } = await setup({ xdgConfigHome: 'unset' });
+      'leaves the XDG config home to its default when XDG_CONFIG_HOME is %j',
+      (xdgConfigHome) => {
+        const { files, locations } = setup({ xdgConfigHome });
 
-        const directories = presetDirectories({ ...locations, xdgConfigHome });
+        presetDirectories(files, locations);
 
-        expect(directories.find(({ source }) => source === 'xdg')).toEqual({
-          source: 'xdg',
-          path: path.join(locations.homeDirectory, '.config', 'jig', 'presets'),
-        });
+        expect(files.rootsGiven).toEqual([
+          {
+            repoRoot: locations.repoRoot,
+            homeDirectory: locations.homeDirectory,
+            xdgConfigHome: undefined,
+          },
+        ]);
       },
     );
 
-    it('names a directory once when the repository is the home directory', async () => {
-      const { locations } = await setup({ xdgConfigHome: 'set' });
-
-      const directories = presetDirectories({
-        ...locations,
-        repoRoot: `${locations.homeDirectory}${path.sep}`,
+    it('names a directory two sources share once, for the one that takes precedence', () => {
+      const shared = faker.system.directoryPath();
+      const { files, locations } = setup({
+        paths: { home: shared, builtin: shared },
       });
 
-      expect(directories.map(({ source }) => source)).toEqual(['repository', 'xdg', 'builtin']);
+      expect(presetDirectories(files, locations)).toEqual([
+        { source: 'repository', path: files.paths.repository },
+        { source: 'home', path: shared },
+        { source: 'xdg', path: files.paths.xdg },
+      ]);
     });
   });
 
   describe('discoverPresets', () => {
-    it('lists every shipped starter as builtin when the operator has no presets', async () => {
-      const { locations } = await setup({ xdgConfigHome: 'set' });
-
-      const presets = unwrap(discoverPresets(locations));
-
-      expect(presets.map(({ name, source, path }) => ({ name, source, path }))).toEqual(
-        SHIPPED_STARTERS.map((name) => ({
-          name,
-          source: 'builtin',
-          path: path.join(SHIPPED_PRESETS_DIRECTORY, `${name}.json`),
-        })),
-      );
-    });
-
-    it('reads every starter with a description and an agent for each step', async () => {
-      const { locations } = await setup({ xdgConfigHome: 'set' });
-
-      const presets = unwrap(discoverPresets(locations));
-
-      for (const preset of presets) {
-        expect(preset.description).toEqual(expect.any(String));
-        expect(Object.keys(preset.steps).sort()).toEqual([
-          'describer',
-          'implementer',
-          'planner',
-          'reviewer',
-        ]);
-      }
-    });
-
-    it('lists an operator preset in place of the starter of the same name', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
-      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
-      await writePreset('xdg', starter, { planner: { provider: 'claude' } });
-
-      const presets = unwrap(discoverPresets(locations));
-
-      expect(presets.filter(({ name }) => name === starter).map(({ source }) => source)).toEqual([
-        'xdg',
-      ]);
-      expect(presets).toHaveLength(SHIPPED_STARTERS.length);
-    });
-
-    it('refuses rather than lists the starter when an operator preset of its name is broken', async () => {
-      const { locations, writeRaw } = await setup({ xdgConfigHome: 'set' });
-      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
-      await writeRaw('home', `${starter}.json`, '{ not json');
-
-      const presets = discoverPresets(locations);
-
-      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(
-        path.join(locations.homeDirectory, '.jig', 'presets', `${starter}.json`),
-      );
-    });
-
-    it('collects presets from every directory with where each came from', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
+    it('collects presets from every directory with where each came from', () => {
+      const { files, locations } = setup({});
       const description = faker.lorem.sentence();
       const model = faker.word.noun();
-      await writePreset('home', 'alpha', { description, reviewer: { provider: 'claude', model } });
-      await writePreset('xdg', 'beta', { planner: { provider: 'codex' } });
+      const alpha = files.put('home', 'alpha', {
+        description,
+        reviewer: { provider: 'claude', model },
+      });
+      const beta = files.put('xdg', 'beta', { planner: { provider: 'codex' } });
 
-      const presets = operatorPresets(unwrap(discoverPresets(locations)));
+      const presets = unwrap(discoverPresets(files, locations));
 
       expect(presets).toEqual([
         {
           name: 'alpha',
           source: 'home',
-          path: path.join(locations.homeDirectory, '.jig', 'presets', 'alpha.json'),
+          path: alpha,
           description,
           steps: { reviewer: { provider: 'claude', model } },
         },
         {
           name: 'beta',
           source: 'xdg',
-          path: path.join(locations.xdgConfigHome ?? '', 'jig', 'presets', 'beta.json'),
+          path: beta,
           description: undefined,
           steps: { planner: { provider: 'codex' } },
         },
       ]);
     });
 
-    it('lets the repository shadow a preset of the same name and skips the shadowed file', async () => {
-      const { locations, writePreset, writeRaw } = await setup({ xdgConfigHome: 'set' });
-      const model = faker.word.noun();
-      await writePreset('repository', 'shared', { implementer: { provider: 'claude', model } });
-      await writeRaw('home', 'shared.json', '{ not json');
+    it('lists the presets of a directory by name', () => {
+      const { files, locations } = setup({});
+      const names = faker.helpers.uniqueArray(() => presetName(), 5);
+      for (const name of names) files.put('repository', name, {});
 
-      const presets = operatorPresets(unwrap(discoverPresets(locations)));
+      const presets = unwrap(discoverPresets(files, locations));
 
-      expect(presets.map(({ name, source }) => ({ name, source }))).toEqual([
-        { name: 'shared', source: 'repository' },
-      ]);
-      expect(presets[0]?.steps.implementer?.model).toBe(model);
+      expect(presets.map(({ name }) => name)).toEqual([...names].sort());
     });
 
-    it('keeps the repository preset winning even when it is invalid', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('repository', 'shared', { implementer: { provider: 'nobody' } });
-      await writePreset('home', 'shared', { implementer: { provider: 'claude' } });
+    it('lists only the highest-precedence preset of a name and never reads the ones it shadows', () => {
+      const { files, locations } = setup({});
+      const chosen = faker.helpers.arrayElements(PRESET_SOURCES, { min: 2, max: 4 });
+      const sources = PRESET_SOURCES.filter((source) => chosen.includes(source));
+      const name = presetName();
+      const [winner, ...shadowed] = sources.map((source) => ({
+        source,
+        path: files.put(source, name, {}),
+      }));
 
-      const presets = discoverPresets(locations);
+      const presets = unwrap(discoverPresets(files, locations));
 
-      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(
-        path.join(locations.repoRoot, '.jig', 'presets', 'shared.json'),
-      );
+      expect(presets.map(({ source, path }) => ({ source, path }))).toEqual([winner]);
+      expect(files.readFiles).toEqual([winner?.path]);
+      expect(shadowed).not.toHaveLength(0);
     });
 
-    it('ignores files that are not presets or have names no one could ask for', async () => {
-      const { locations, writePreset, writeRaw } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('repository', 'kept', { planner: { provider: 'claude' } });
-      await writeRaw('repository', 'notes.md', faker.lorem.paragraph());
-      await writeRaw('repository', 'Not Safe.json', '{ not json');
+    it('refuses rather than lists a lower-precedence preset when the winner cannot be read', () => {
+      const { files, locations } = setup({});
+      const name = presetName();
+      const winner = files.putUnreadable('home', name);
+      files.put('builtin', name, {});
 
-      const presets = operatorPresets(unwrap(discoverPresets(locations)));
-
-      expect(presets.map(({ name }) => name)).toEqual(['kept']);
-    });
-
-    it('refuses a preset directory that cannot be listed', async () => {
-      const { locations } = await setup({ xdgConfigHome: 'set' });
-      await mkdir(path.join(locations.homeDirectory, '.jig'), { recursive: true });
-      await writeFile(path.join(locations.homeDirectory, '.jig', 'presets'), '');
-
-      const presets = discoverPresets(locations);
-
-      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(
-        path.join(locations.homeDirectory, '.jig', 'presets'),
-      );
-    });
-
-    it('refuses rather than falls back when the repository presets cannot be looked at', async () => {
-      const { locations, writePreset, makeRepositoryJigUnreachable } = await setup({
-        xdgConfigHome: 'set',
-      });
-      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
-      await makeRepositoryJigUnreachable();
-
-      const presets = discoverPresets(locations);
-
-      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(
-        path.join(locations.repoRoot, '.jig', 'presets'),
-      );
-    });
-
-    it('keeps a dangling repository preset winning over the home one of the same name', async () => {
-      const { locations, writePreset, linkDangling } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
-      const winner = await linkDangling('repository', 'shared.json');
-
-      const presets = discoverPresets(locations);
+      const presets = discoverPresets(files, locations);
 
       expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
       expect(presets.isErr() && presets.error.message).toContain(winner);
     });
 
-    it('refuses rather than skips a preset directory under a path that is not a directory', async () => {
-      const { locations, writePreset, makeHomeJigAFile } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('xdg', 'shared', { planner: { provider: 'claude' } });
-      await makeHomeJigAFile();
+    it('refuses rather than lists a lower-precedence preset when the winner is invalid', () => {
+      const { files, locations } = setup({});
+      const name = presetName();
+      const winner = files.put('repository', name, { implementer: { provider: 'nobody' } });
+      files.put('home', name, { implementer: { provider: 'claude' } });
 
-      const presets = discoverPresets(locations);
+      const presets = discoverPresets(files, locations);
 
       expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(
-        path.join(locations.homeDirectory, '.jig', 'presets'),
-      );
-    });
-  });
-
-  describe('loadPreset', () => {
-    it('loads a starter by name from the package', async () => {
-      const { locations } = await setup({ xdgConfigHome: 'set' });
-      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
-
-      const preset = unwrap(loadPreset(locations, starter));
-
-      expect(preset).toMatchObject({
-        name: starter,
-        source: 'builtin',
-        path: path.join(SHIPPED_PRESETS_DIRECTORY, `${starter}.json`),
-      });
+      expect(presets.isErr() && presets.error.message).toContain(winner);
     });
 
-    it('discovers model-less providers without constructing or authenticating them', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
+    it('ignores files with names no one could ask for, without reading them', () => {
+      const { files, locations } = setup({});
+      const kept = presetName();
+      files.put('repository', kept, {});
+      files.putUnreadable('repository', 'Not Safe');
+
+      const presets = unwrap(discoverPresets(files, locations));
+
+      expect(presets.map(({ name }) => name)).toEqual([kept]);
+      expect(files.readFiles).toHaveLength(1);
+    });
+
+    it.each(PRESET_SOURCES)('refuses when the %s directory cannot be listed', (source) => {
+      const { files, locations } = setup({});
+      files.makeUnlistable(source);
+
+      const presets = discoverPresets(files, locations);
+
+      expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
+      expect(presets.isErr() && presets.error.message).toContain(files.paths[source]);
+    });
+
+    it('discovers model-less providers without constructing or authenticating them', () => {
+      const { files, locations } = setup({});
       const steps = {
         planner: { provider: 'claude' },
         implementer: { provider: 'codex' },
         reviewer: { provider: 'opencode' },
       };
-      await writePreset('repository', 'shared', steps);
+      const name = presetName();
+      files.put('repository', name, steps);
 
-      const presets = unwrap(discoverPresets(locations));
+      const presets = unwrap(discoverPresets(files, locations));
 
-      expect(presets.find(({ name }) => name === 'shared')?.steps).toEqual(steps);
+      expect(presets.find((preset) => preset.name === name)?.steps).toEqual(steps);
+    });
+  });
+
+  describe('loadPreset', () => {
+    it.each(precedencePairs())(
+      'takes the %s preset over the %s one of the same name',
+      (higher, lower) => {
+        const { files, locations } = setup({});
+        const name = presetName();
+        const model = faker.word.noun();
+        files.put(lower, name, { planner: { provider: 'codex' } });
+        const winner = files.put(higher, name, { reviewer: { provider: 'claude', model } });
+
+        const preset = unwrap(loadPreset(files, locations, name));
+
+        expect(preset).toEqual({
+          name,
+          source: higher,
+          path: winner,
+          description: undefined,
+          steps: { reviewer: { provider: 'claude', model } },
+        });
+      },
+    );
+
+    it('reads only the winning file and lists no directory', () => {
+      const { files, locations } = setup({});
+      const name = presetName();
+      files.putUnreadable('repository', presetName());
+      const winner = files.put('xdg', name, {});
+      files.put('builtin', name, {});
+
+      unwrap(loadPreset(files, locations, name));
+
+      expect(files.readFiles).toEqual([winner]);
+      expect(files.listed).toEqual([]);
     });
 
-    it('takes an operator preset over the starter of the same name', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
-      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
-      const model = faker.word.noun();
-      await writePreset('xdg', starter, { reviewer: { provider: 'claude', model } });
+    it('refuses rather than falls back when the winner is present but cannot be read', () => {
+      const { files, locations } = setup({});
+      const name = presetName();
+      const winner = files.putUnreadable('repository', name);
+      files.put('home', name, {});
 
-      const preset = unwrap(loadPreset(locations, starter));
-
-      expect(preset.source).toBe('xdg');
-      expect(preset.steps).toEqual({ reviewer: { provider: 'claude', model } });
-    });
-
-    it('refuses rather than falls back to the starter when an operator preset of its name is invalid', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
-      const starter = faker.helpers.arrayElement(SHIPPED_STARTERS);
-      await writePreset('repository', starter, { planner: { provider: 'nobody' } });
-
-      const preset = loadPreset(locations, starter);
-
-      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(
-        path.join(locations.repoRoot, '.jig', 'presets', `${starter}.json`),
-      );
-    });
-
-    it('keeps a dangling repository preset winning over the home one of the same name', async () => {
-      const { locations, writePreset, linkDangling } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
-      const winner = await linkDangling('repository', 'shared.json');
-
-      const preset = loadPreset(locations, presetName('shared'));
+      const preset = loadPreset(files, locations, name);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       expect(preset.isErr() && preset.error.message).toContain(winner);
     });
 
-    it('refuses rather than falls back to the XDG preset when the home preset sits under a file', async () => {
-      const { locations, writePreset, makeHomeJigAFile } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('xdg', 'shared', { planner: { provider: 'claude' } });
-      await makeHomeJigAFile();
+    it('refuses rather than falls back when a higher-precedence directory cannot be looked at', () => {
+      const { files, locations } = setup({});
+      const name = presetName();
+      files.makeUnreachable('home');
+      files.put('xdg', name, {});
 
-      const preset = loadPreset(locations, presetName('shared'));
-
-      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(
-        path.join(locations.homeDirectory, '.jig', 'presets', 'shared.json'),
-      );
-    });
-
-    it('loads a preset from the XDG config directory', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
-      const model = faker.word.noun();
-      await writePreset('xdg', 'remote', { describer: { provider: 'opencode', model } });
-
-      const preset = unwrap(loadPreset(locations, presetName('remote')));
-
-      expect(preset.source).toBe('xdg');
-      expect(preset.steps).toEqual({ describer: { provider: 'opencode', model } });
-    });
-
-    it('takes the home preset over the XDG one of the same name', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
-      await writePreset('xdg', 'shared', { planner: { provider: 'codex' } });
-
-      const preset = unwrap(loadPreset(locations, presetName('shared')));
-
-      expect(preset.source).toBe('home');
-    });
-
-    it('keeps the repository preset winning even when it is malformed', async () => {
-      const { locations, writePreset, writeRaw } = await setup({ xdgConfigHome: 'set' });
-      await writeRaw('repository', 'shared.json', '{ not json');
-      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
-
-      const preset = loadPreset(locations, presetName('shared'));
+      const preset = loadPreset(files, locations, name);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       expect(preset.isErr() && preset.error.message).toContain(
-        path.join(locations.repoRoot, '.jig', 'presets', 'shared.json'),
+        files.fileFor(files.paths.home, name),
       );
-    });
-
-    it('refuses rather than falls back to the home preset when the repository one cannot be looked at', async () => {
-      const { locations, writePreset, makeRepositoryJigUnreachable } = await setup({
-        xdgConfigHome: 'set',
-      });
-      await writePreset('home', 'shared', { planner: { provider: 'claude' } });
-      await makeRepositoryJigUnreachable();
-
-      const preset = loadPreset(locations, presetName('shared'));
-
-      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(
-        path.join(locations.repoRoot, '.jig', 'presets', 'shared.json'),
-      );
-    });
-
-    it('loads a preset while an unrelated one is malformed', async () => {
-      const { locations, writePreset, writeRaw } = await setup({ xdgConfigHome: 'set' });
-      await writeRaw('repository', 'broken.json', '{ not json');
-      await writePreset('home', 'wanted', { planner: { provider: 'claude' } });
-
-      const preset = unwrap(loadPreset(locations, presetName('wanted')));
-
-      expect(preset.name).toBe('wanted');
     });
 
     it.each([
@@ -395,167 +272,113 @@ describe('presets', () => {
       ['an unknown step key', { planner: { provider: 'claude', modle: 'opus' } }, 'modle'],
       ['a project setting', { mergeMode: 'auto' }, 'mergeMode'],
       ['an unknown agent', { planner: { provider: 'nobody' } }, 'planner.provider'],
-    ])('refuses a preset with %s', async (_, contents, offendingKey) => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('repository', 'strict', contents);
+    ])('refuses a preset with %s', (_, contents, offendingKey) => {
+      const { files, locations } = setup({});
+      const name = presetName();
+      const file = files.put('repository', name, contents);
 
-      const preset = loadPreset(locations, presetName('strict'));
+      const preset = loadPreset(files, locations, name);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       expect(preset.isErr() && preset.error.message).toContain(offendingKey);
+      expect(preset.isErr() && preset.error.message).toContain(file);
     });
 
-    it('refuses a preset that is not JSON', async () => {
-      const { locations, writeRaw } = await setup({ xdgConfigHome: 'set' });
-      await writeRaw('home', 'broken.json', '{ "planner": ');
+    it('names where it looked and the winning presets there when no preset has the name', () => {
+      const { files, locations } = setup({});
+      const [first, second] = faker.helpers.uniqueArray(() => presetName(), 2);
+      files.put('repository', first, {});
+      files.put('xdg', second, {});
+      files.put('builtin', first, {});
+      const missing = presetName();
 
-      const preset = loadPreset(locations, presetName('broken'));
-
-      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(
-        path.join(locations.homeDirectory, '.jig', 'presets', 'broken.json'),
-      );
-    });
-
-    it('refuses a preset path it cannot read', async () => {
-      const { locations } = await setup({ xdgConfigHome: 'set' });
-      await mkdir(path.join(locations.repoRoot, '.jig', 'presets', 'folder.json'), {
-        recursive: true,
-      });
-
-      const preset = loadPreset(locations, presetName('folder'));
-
-      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(
-        path.join(locations.repoRoot, '.jig', 'presets', 'folder.json'),
-      );
-    });
-
-    it('names where it looked and what exists when no preset has the name', async () => {
-      const { locations, writePreset } = await setup({ xdgConfigHome: 'set' });
-      await writePreset('repository', 'first', { planner: { provider: 'claude' } });
-      await writePreset('xdg', 'second', { planner: { provider: 'claude' } });
-
-      const preset = loadPreset(locations, presetName('missing'));
+      const preset = loadPreset(files, locations, missing);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       const message = preset.isErr() ? preset.error.message : '';
-      expect(message).toContain('missing');
-      for (const directory of presetDirectories(locations))
-        expect(message).toContain(directory.path);
-      expect(message).toContain('first, second');
+      expect(message).toContain(missing);
+      for (const source of PRESET_SOURCES) expect(message).toContain(files.paths[source]);
+      expect(message).toContain(`${first}, ${second}.`);
+    });
+
+    it('refuses with the listing failure when it cannot say which presets exist', () => {
+      const { files, locations } = setup({});
+      files.makeUnlistable('home');
+
+      const preset = loadPreset(files, locations, presetName());
+
+      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
+      expect(preset.isErr() && preset.error.message).toContain(files.paths.home);
     });
   });
 
   describe('configWithPreset', () => {
-    it('replaces the steps the preset names and keeps the project settings and other steps', async () => {
-      const { locations, writePreset, projectConfig } = await setup({ xdgConfigHome: 'set' });
-      const verifyCommand = `npm run ${faker.word.verb()}`;
-      const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
-      const plannerModel = faker.word.noun();
+    it('replaces the steps the preset names and keeps every run setting and other step', () => {
+      const { files, locations, projectConfig } = setup({});
       const config = projectConfig({
-        mergeMode: 'auto',
-        verifyCommand,
-        reviewCycleCap,
-        planner: { provider: 'claude', model: plannerModel },
+        mergeMode: faker.helpers.arrayElement(['manual', 'auto']),
+        reviewCycleCap: faker.number.int({ min: 1, max: 9 }),
+        designGate: faker.helpers.arrayElement(['auto', 'checkpoint']),
+        verifyCommand: `npm run ${faker.word.verb()}`,
+        setupCommand: `npm ${faker.word.verb()}`,
+        planner: { provider: 'claude', model: faker.word.noun() },
         implementer: { provider: 'opencode', model: `openrouter/${faker.word.noun()}` },
       });
-      await writePreset('home', 'swap', { implementer: { provider: 'claude' } });
+      const name = presetName();
+      files.put('home', name, { implementer: { provider: 'claude' } });
 
-      const applied = unwrap(configWithPreset(config, locations, presetName('swap')));
+      const applied = unwrap(configWithPreset(config, files, locations, name));
 
-      expect(applied).toEqual({
-        ...config,
-        implementer: { provider: 'claude' },
-      });
-      expect(applied).toMatchObject({
-        mergeMode: 'auto',
-        verifyCommand,
-        reviewCycleCap,
-        planner: { provider: 'claude', model: plannerModel },
-      });
-      expect(applied.implementer).not.toHaveProperty('model');
+      expect(applied).toEqual({ ...config, implementer: { provider: 'claude' } });
+      expect(runSettingsFrom(applied)).toEqual(runSettingsFrom(config));
     });
 
-    it('adds a step the project left unset', async () => {
-      const { locations, writePreset, projectConfig } = await setup({ xdgConfigHome: 'set' });
+    it('adds a step the project left unset', () => {
+      const { files, locations, projectConfig } = setup({});
       const model = faker.word.noun();
-      await writePreset('repository', 'add', { reviewer: { provider: 'claude', model } });
-      const config = projectConfig({});
+      const name = presetName();
+      files.put('repository', name, { reviewer: { provider: 'claude', model } });
 
-      const applied = unwrap(configWithPreset(config, locations, presetName('add')));
+      const applied = unwrap(configWithPreset(projectConfig({}), files, locations, name));
 
       expect(applied.reviewer).toEqual({ provider: 'claude', model });
       expect(applied.planner).toBeUndefined();
     });
 
-    it("keeps the project's config as it is when no preset is named", async () => {
-      const { locations, projectConfig } = await setup({ xdgConfigHome: 'set' });
+    it("keeps the project's config as it is and touches no preset when none is named", () => {
+      const { files, locations, projectConfig } = setup({});
       const config = projectConfig({ reviewer: { provider: 'claude', model: faker.word.noun() } });
 
-      expect(unwrap(configWithPreset(config, locations, undefined))).toBe(config);
+      expect(unwrap(configWithPreset(config, files, locations, undefined))).toBe(config);
+      expect(files.rootsGiven).toEqual([]);
     });
 
-    it('refuses rather than runs on the project agents when the named preset does not load', async () => {
-      const { locations, writeRaw, projectConfig } = await setup({ xdgConfigHome: 'set' });
-      await writeRaw('home', 'broken.json', '{ not json');
-      const config = projectConfig({});
+    it('refuses rather than runs on the project agents when the named preset does not load', () => {
+      const { files, locations, projectConfig } = setup({});
+      const name = presetName();
+      files.putUnreadable('home', name);
 
-      const applied = configWithPreset(config, locations, presetName('broken'));
+      const applied = configWithPreset(projectConfig({}), files, locations, name);
 
       expect(applied.isErr() && applied.error).toBeInstanceOf(ConfigInvalid);
     });
   });
 
-  async function setup(input: { xdgConfigHome: 'set' | 'unset' }) {
+  function setup(input: { xdgConfigHome?: string; paths?: Partial<Record<PresetSource, string>> }) {
+    const files = new FakePresetFiles(input.paths);
     const locations: PresetLocations = {
-      repoRoot: await tempDirectory('jig-preset-repo-'),
-      homeDirectory: await tempDirectory('jig-preset-home-'),
-      xdgConfigHome:
-        input.xdgConfigHome === 'set' ? await tempDirectory('jig-preset-xdg-') : undefined,
+      repoRoot: faker.system.directoryPath(),
+      homeDirectory: faker.system.directoryPath(),
+      xdgConfigHome: 'xdgConfigHome' in input ? input.xdgConfigHome : faker.system.directoryPath(),
     };
-    const directoryOf = (source: PresetSource) =>
-      presetDirectories(locations).find((directory) => directory.source === source)?.path ?? '';
-    const writeRaw = async (source: PresetSource, fileName: string, contents: string) => {
-      await mkdir(directoryOf(source), { recursive: true });
-      await writeFile(path.join(directoryOf(source), fileName), contents);
-    };
-    const writePreset = (source: PresetSource, name: string, contents: unknown) =>
-      writeRaw(source, `${name}.json`, JSON.stringify(contents));
     const projectConfig = (contents: Record<string, unknown>) =>
       unwrap(configFrom(configFileFor(locations.repoRoot), contents));
-    const makeRepositoryJigUnreachable = () =>
-      symlink('.jig', path.join(locations.repoRoot, '.jig'));
-    const linkDangling = async (source: PresetSource, fileName: string) => {
-      const link = path.join(directoryOf(source), fileName);
-      await mkdir(directoryOf(source), { recursive: true });
-      await symlink(path.join(directoryOf(source), faker.string.uuid()), link);
-      return link;
-    };
-    const makeHomeJigAFile = () => writeFile(path.join(locations.homeDirectory, '.jig'), '');
-    return {
-      locations,
-      writePreset,
-      writeRaw,
-      projectConfig,
-      makeRepositoryJigUnreachable,
-      linkDangling,
-      makeHomeJigAFile,
-    };
+    return { files, locations, projectConfig };
   }
 });
 
-function presetName(name: string): PresetName {
-  return presetNameSchema.parse(name);
+function precedencePairs(): [PresetSource, PresetSource][] {
+  return PRESET_SOURCES.flatMap((higher, index) =>
+    PRESET_SOURCES.slice(index + 1).map((lower): [PresetSource, PresetSource] => [higher, lower]),
+  );
 }
-
-function operatorPresets(presets: Preset[]): Preset[] {
-  return presets.filter(({ source }) => source !== 'builtin');
-}
-
-/** Read from the repository's own `presets/`, not through the module, so the spec checks where the module looks. */
-const SHIPPED_PRESETS_DIRECTORY = fileURLToPath(new URL('../../presets', import.meta.url));
-
-const SHIPPED_STARTERS = readdirSync(SHIPPED_PRESETS_DIRECTORY)
-  .map((entry) => presetName(path.basename(entry, '.json')))
-  .sort();

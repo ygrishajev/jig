@@ -10,6 +10,7 @@ import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { readConfigFile } from '../../adapters/config/config-file.js';
+import { presetFilesOnDisk } from '../../adapters/config/preset-files.js';
 import { createAppContainer } from '../../app/container.js';
 import { CONFIG_FILE } from '../../config/load-config.js';
 import type { Preset, PresetName } from '../../config/presets.js';
@@ -112,7 +113,7 @@ describe('build --preset', () => {
         createAppContainer: createApp,
         readConfig: readConfigFile,
         standardInput: fakeStandardInput(),
-        builtinPresetsDirectory,
+        presetFiles: presetFilesOnDisk(builtinPresetsDirectory),
       },
       failureOutput,
     });

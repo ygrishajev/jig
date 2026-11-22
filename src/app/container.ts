@@ -4,6 +4,7 @@ import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
 import { readConfigFile, updateConfigFile } from '../adapters/config/config-file.js';
+import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
@@ -38,6 +39,7 @@ import {
   runSettingsFrom,
   type UpdateConfig,
 } from '../config/load-config.js';
+import type { PresetFiles } from '../config/presets.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import { retryResult, transientRetryPolicy } from '../domain/retry.js';
 import { type RunIdentity } from '../domain/run-state.js';
@@ -69,6 +71,7 @@ export interface AppCradle {
   config: JigConfig;
   readConfig: ReadConfig;
   updateConfig: UpdateConfig;
+  presetFiles: PresetFiles;
   settings: RunSettings;
   logger: Logger;
   clock: Clock;
@@ -107,6 +110,7 @@ export function createAppContainer(input: {
   environment: JigEnvironment;
   configFile: ConfigFile;
   config: JigConfig;
+  presetFiles?: PresetFiles;
 }): AwilixContainer<AppCradle> {
   const container = createContainer<AppCradle>({
     injectionMode: InjectionMode.PROXY,
@@ -121,6 +125,7 @@ export function createAppContainer(input: {
     config: asValue(input.config),
     readConfig: asValue(readConfigFile),
     updateConfig: asValue(updateConfigFile),
+    presetFiles: asValue(input.presetFiles ?? presetFilesOnDisk()),
     settings: asFunction(({ config }: AppCradle) => runSettingsFrom(config)).singleton(),
     logger: asFunction(({ logFormat, logLevel }: AppCradle) =>
       createConsoleLogger(logFormat, logLevel),

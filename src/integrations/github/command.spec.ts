@@ -12,6 +12,7 @@ import { FakeAgentSession, fakeStandardInput } from '../../../tests/support/fake
 import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { readConfigFile } from '../../adapters/config/config-file.js';
+import { presetFilesOnDisk } from '../../adapters/config/preset-files.js';
 import { createAppContainer } from '../../app/container.js';
 import type { Invocation } from '../../cli/with-app.js';
 import type { FailureOutput } from '../../cli/with-error-handling.js';
@@ -196,6 +197,7 @@ describe('github implement command', () => {
       readConfig: readConfigFile,
       standardInput: fakeStandardInput(),
       askForPreset: async () => undefined,
+      presetFiles: presetFilesOnDisk(),
     };
     return {
       output,

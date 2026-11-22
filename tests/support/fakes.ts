@@ -9,8 +9,16 @@ import type { ZodType } from 'zod';
 
 import type { StandardInput } from '../../src/adapters/terminal/standard-input.js';
 import {
+  type PresetEntry,
+  type PresetFiles,
+  type PresetName,
+  type PresetRoots,
+  type PresetSource,
+} from '../../src/config/presets.js';
+import {
   AgentOutputInvalid,
   type AgentRunFailed,
+  ConfigInvalid,
   type GitCommandFailed,
   SandboxUnavailable,
 } from '../../src/domain/errors.js';
@@ -266,4 +274,95 @@ export function fakeStandardInput({
   isTerminal = false,
 }: { text?: string; isTerminal?: boolean } = {}): StandardInput {
   return { isTerminal, readAll: vi.fn(async () => text) };
+}
+
+/**
+ * Presets held in memory, per directory, failing where the disk would. Records the roots it was
+ * given and every directory it listed and file it read, so a spec can tell what policy touched.
+ */
+export class FakePresetFiles implements PresetFiles {
+  readonly rootsGiven: PresetRoots[] = [];
+  readonly listed: string[] = [];
+  readonly readFiles: string[] = [];
+  private readonly contents = new Map<string, unknown>();
+  private readonly unreadable = new Set<string>();
+  private readonly unlistable = new Set<string>();
+  private readonly unreachable = new Set<string>();
+
+  readonly paths: Record<PresetSource, string>;
+
+  constructor(paths: Partial<Record<PresetSource, string>> = {}) {
+    this.paths = { ...distinctPresetDirectories(), ...paths };
+  }
+
+  directories(roots: PresetRoots) {
+    this.rootsGiven.push(roots);
+    return this.paths;
+  }
+
+  filesIn(directory: string) {
+    this.listed.push(directory);
+    if (this.unreachable.has(directory)) return this.failure(`unreachable ${directory}`);
+    if (this.unlistable.has(directory)) return this.failure(`unlistable ${directory}`);
+    const entries = [...this.contents.keys(), ...this.unreadable]
+      .filter((file) => path.dirname(file) === directory)
+      .map((file): PresetEntry => ({ name: path.basename(file, '.json'), path: file }));
+    return Result.ok(faker.helpers.shuffle(entries));
+  }
+
+  fileFor(directory: string, name: PresetName) {
+    return this.pathOf(directory, name);
+  }
+
+  isPresent(entryPath: string) {
+    if (this.unreachable.has(path.dirname(entryPath))) return this.failure(entryPath);
+    return Result.ok(this.contents.has(entryPath) || this.unreadable.has(entryPath));
+  }
+
+  read(filePath: string) {
+    this.readFiles.push(filePath);
+    if (!this.contents.has(filePath)) return this.failure(filePath);
+    return Result.ok(this.contents.get(filePath));
+  }
+
+  /** Puts a preset file under any name, valid or not; returns where it is. */
+  put(source: PresetSource, name: string, json: unknown) {
+    const file = this.pathOf(this.paths[source], name);
+    this.contents.set(file, json);
+    return file;
+  }
+
+  /** A file that is present but cannot be read, like a dangling link or malformed JSON. */
+  putUnreadable(source: PresetSource, name: string) {
+    const file = this.pathOf(this.paths[source], name);
+    this.unreadable.add(file);
+    return file;
+  }
+
+  makeUnlistable(source: PresetSource) {
+    this.unlistable.add(this.paths[source]);
+  }
+
+  /** Neither the directory nor anything in it can be looked at, like one under a file. */
+  makeUnreachable(source: PresetSource) {
+    this.unreachable.add(this.paths[source]);
+  }
+
+  private pathOf(directory: string, name: string) {
+    return path.join(directory, `${name}.json`);
+  }
+
+  private failure(message: string) {
+    return Result.err(new ConfigInvalid({ message }));
+  }
+}
+
+function distinctPresetDirectories(): Record<PresetSource, string> {
+  const root = path.join('/', faker.string.uuid());
+  return {
+    repository: path.join(root, 'repository'),
+    home: path.join(root, 'home'),
+    xdg: path.join(root, 'xdg'),
+    builtin: path.join(root, 'builtin'),
+  };
 }
