@@ -2,22 +2,13 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { presetName } from '../../tests/support/builders.js';
-import { FakePresetFiles, InMemoryConfigSource } from '../../tests/support/fakes.js';
+import { InMemoryConfigSource, InMemoryPresetSource } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { loadConfig, runSettingsFrom } from './load-config.js';
-import {
-  configWithPreset,
-  discoverPresets,
-  loadPreset,
-  presetDirectories,
-  type PresetLocations,
-  presetNameSchema,
-  type PresetSource,
-} from './presets.js';
+import { configWithPreset, discoverPresets, loadPreset, presetNameSchema } from './presets.js';
 
-/** Written out here, not taken from production, so a reordering of the sources fails these specs. */
-const PRECEDENCE: PresetSource[] = ['repository', 'home', 'xdg', 'builtin'];
+const PLACE_COUNT = 4;
 
 describe('presets', () => {
   describe('presetNameSchema', () => {
@@ -40,172 +31,127 @@ describe('presets', () => {
     });
   });
 
-  describe('presetDirectories', () => {
-    it('looks in the repository, the home directory, the XDG config directory, then the starters', () => {
-      const { files, locations } = setup({});
-
-      expect(presetDirectories(files, locations)).toEqual([
-        { source: 'repository', path: files.paths.repository },
-        { source: 'home', path: files.paths.home },
-        { source: 'xdg', path: files.paths.xdg },
-        { source: 'builtin', path: files.paths.builtin },
-      ]);
-    });
-
-    it('asks for the directories under the repository, the home directory and an absolute XDG config home', () => {
-      const { files, locations } = setup({});
-
-      presetDirectories(files, locations);
-
-      expect(files.rootsGiven).toEqual([locations]);
-    });
-
-    it.each([undefined, '', 'relative/config'])(
-      'leaves the XDG config home to its default when XDG_CONFIG_HOME is %j',
-      (xdgConfigHome) => {
-        const { files, locations } = setup({ xdgConfigHome });
-
-        presetDirectories(files, locations);
-
-        expect(files.rootsGiven).toEqual([
-          {
-            repoRoot: locations.repoRoot,
-            homeDirectory: locations.homeDirectory,
-            xdgConfigHome: undefined,
-          },
-        ]);
-      },
-    );
-
-    it('names a directory two sources share once, for the one that takes precedence', () => {
-      const shared = faker.system.directoryPath();
-      const { files, locations } = setup({
-        paths: { home: shared, builtin: shared },
-      });
-
-      expect(presetDirectories(files, locations)).toEqual([
-        { source: 'repository', path: files.paths.repository },
-        { source: 'home', path: shared },
-        { source: 'xdg', path: files.paths.xdg },
-      ]);
-    });
-  });
-
   describe('discoverPresets', () => {
-    it('collects presets from every directory with where each came from', () => {
-      const { files, locations } = setup({});
+    it('collects the presets of every place with the label each was found under', () => {
+      const { source } = setup();
       const description = faker.lorem.sentence();
       const model = faker.word.noun();
-      const alpha = files.put('home', 'alpha', {
+      const [first, second] = faker.helpers.uniqueArray(() => presetName(), 2);
+      const firstLabel = source.put(1, first, {
         description,
         reviewer: { provider: 'claude', model },
       });
-      const beta = files.put('xdg', 'beta', { planner: { provider: 'codex' } });
+      const secondLabel = source.put(2, second, { planner: { provider: 'codex' } });
 
-      const presets = unwrap(discoverPresets(files, locations));
+      const presets = unwrap(discoverPresets(source));
 
       expect(presets).toEqual([
         {
-          name: 'alpha',
-          source: 'home',
-          path: alpha,
+          name: first,
+          label: firstLabel,
           description,
           steps: { reviewer: { provider: 'claude', model } },
         },
         {
-          name: 'beta',
-          source: 'xdg',
-          path: beta,
+          name: second,
+          label: secondLabel,
           description: undefined,
           steps: { planner: { provider: 'codex' } },
         },
       ]);
     });
 
-    it('lists the presets of a directory by name', () => {
-      const { files, locations } = setup({});
-      const names = faker.helpers.uniqueArray(() => presetName(), 5);
-      for (const name of names) files.put('repository', name, {});
+    it('lists the presets in the order the source gives them', () => {
+      const { source } = setup();
+      const names = faker.helpers.uniqueArray(() => presetName(), 6);
+      const [lower, higher] = [names.slice(0, 3), names.slice(3)];
+      for (const name of lower) source.put(3, name, {});
+      for (const name of higher) source.put(0, name, {});
 
-      const presets = unwrap(discoverPresets(files, locations));
+      const presets = unwrap(discoverPresets(source));
 
-      expect(presets.map(({ name }) => name)).toEqual([...names].sort());
+      expect(presets.map(({ name }) => name)).toEqual([
+        ...[...higher].sort(),
+        ...[...lower].sort(),
+      ]);
     });
 
     it('lists only the highest-precedence preset of a name and never reads the ones it shadows', () => {
-      const { files, locations } = setup({});
-      const chosen = faker.helpers.arrayElements(PRECEDENCE, { min: 2, max: 4 });
-      const sources = PRECEDENCE.filter((source) => chosen.includes(source));
+      const { source } = setup();
+      const ranks = faker.helpers
+        .arrayElements([0, 1, 2, 3], { min: 2, max: 4 })
+        .sort((first, second) => first - second);
       const name = presetName();
-      const [winner, ...shadowed] = sources.map((source) => ({
-        source,
-        path: files.put(source, name, {}),
-      }));
+      const [winner, ...shadowed] = ranks.map((rank) => source.put(rank, name, {}));
 
-      const presets = unwrap(discoverPresets(files, locations));
+      const presets = unwrap(discoverPresets(source));
 
-      expect(presets.map(({ source, path }) => ({ source, path }))).toEqual([winner]);
-      expect(files.readFiles).toEqual([winner?.path]);
+      expect(presets.map(({ label }) => label)).toEqual([winner]);
+      expect(source.readPaths).toEqual([winner?.path]);
       expect(shadowed).not.toHaveLength(0);
     });
 
     it('refuses rather than lists a lower-precedence preset when the winner cannot be read', () => {
-      const { files, locations } = setup({});
+      const { source } = setup();
       const name = presetName();
-      const winner = files.putUnreadable('home', name);
-      files.put('builtin', name, {});
+      const winner = source.putUnreadable(1, name);
+      source.put(3, name, {});
 
-      const presets = discoverPresets(files, locations);
+      const presets = discoverPresets(source);
 
       expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(winner);
+      expect(presets.isErr() && presets.error.message).toContain(winner.path);
     });
 
     it('refuses rather than lists a lower-precedence preset when the winner is invalid', () => {
-      const { files, locations } = setup({});
+      const { source } = setup();
       const name = presetName();
-      const winner = files.put('repository', name, { implementer: { provider: 'nobody' } });
-      files.put('home', name, { implementer: { provider: 'claude' } });
+      const winner = source.put(0, name, { implementer: { provider: 'nobody' } });
+      source.put(1, name, { implementer: { provider: 'claude' } });
 
-      const presets = discoverPresets(files, locations);
+      const presets = discoverPresets(source);
 
       expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(winner);
+      expect(presets.isErr() && presets.error.message).toContain(winner.path);
     });
 
-    it('ignores files with names no one could ask for, without reading them', () => {
-      const { files, locations } = setup({});
+    it('ignores candidates with names no one could ask for, without reading them', () => {
+      const { source } = setup();
       const kept = presetName();
-      files.put('repository', kept, {});
-      files.putUnreadable('repository', 'Not Safe');
+      const keptLabel = source.put(1, kept, {});
+      source.putUnreadable(0, 'Not Safe');
 
-      const presets = unwrap(discoverPresets(files, locations));
+      const presets = unwrap(discoverPresets(source));
 
       expect(presets.map(({ name }) => name)).toEqual([kept]);
-      expect(files.readFiles).toHaveLength(1);
+      expect(source.readPaths).toEqual([keptLabel.path]);
     });
 
-    it.each(PRECEDENCE)('refuses when the %s directory cannot be listed', (source) => {
-      const { files, locations } = setup({});
-      files.makeUnlistable(source);
+    it.each([
+      ['listed', (source: InMemoryPresetSource, rank: number) => source.makeUnlistable(rank)],
+      ['looked at', (source: InMemoryPresetSource, rank: number) => source.makeUnfindable(rank)],
+    ])('refuses when a place cannot be %s', (_, breakPlace) => {
+      const { source } = setup();
+      const rank = faker.number.int({ min: 0, max: PLACE_COUNT - 1 });
+      breakPlace(source, rank);
 
-      const presets = discoverPresets(files, locations);
+      const presets = discoverPresets(source);
 
       expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(files.paths[source]);
+      expect(presets.isErr() && presets.error.message).toContain(source.placeAt(rank));
     });
 
     it('discovers model-less providers without constructing or authenticating them', () => {
-      const { files, locations } = setup({});
+      const { source } = setup();
       const steps = {
         planner: { provider: 'claude' },
         implementer: { provider: 'codex' },
         reviewer: { provider: 'opencode' },
       };
       const name = presetName();
-      files.put('repository', name, steps);
+      source.put(0, name, steps);
 
-      const presets = unwrap(discoverPresets(files, locations));
+      const presets = unwrap(discoverPresets(source));
 
       expect(presets.find((preset) => preset.name === name)?.steps).toEqual(steps);
     });
@@ -213,63 +159,65 @@ describe('presets', () => {
 
   describe('loadPreset', () => {
     it.each(precedencePairs())(
-      'takes the %s preset over the %s one of the same name',
+      'takes the preset of the place ranked %i over the one ranked %i',
       (higher, lower) => {
-        const { files, locations } = setup({});
+        const { source } = setup();
         const name = presetName();
         const model = faker.word.noun();
-        files.put(lower, name, { planner: { provider: 'codex' } });
-        const winner = files.put(higher, name, { reviewer: { provider: 'claude', model } });
+        source.put(lower, name, { planner: { provider: 'codex' } });
+        const winner = source.put(higher, name, { reviewer: { provider: 'claude', model } });
 
-        const preset = unwrap(loadPreset(files, locations, name));
+        const preset = unwrap(loadPreset(source, name));
 
         expect(preset).toEqual({
           name,
-          source: higher,
-          path: winner,
+          label: winner,
           description: undefined,
           steps: { reviewer: { provider: 'claude', model } },
         });
       },
     );
 
-    it('reads only the winning file and lists no directory', () => {
-      const { files, locations } = setup({});
+    it('reads only the winner, looks in no place after it and lists nothing', () => {
+      const { source } = setup();
       const name = presetName();
-      files.putUnreadable('repository', presetName());
-      const winner = files.put('xdg', name, {});
-      files.put('builtin', name, {});
+      source.putUnreadable(0, presetName());
+      source.putUnreadable(1, 'Not Safe');
+      const winner = source.put(2, name, {});
+      source.putUnreadable(3, name);
+      source.makeUnlistable(3);
 
-      unwrap(loadPreset(files, locations, name));
+      unwrap(loadPreset(source, name));
 
-      expect(files.readFiles).toEqual([winner]);
-      expect(files.listed).toEqual([]);
+      expect(source.readPaths).toEqual([winner.path]);
+      expect(source.lookedIn).toEqual(source.places.slice(0, 3));
+      expect(source.listings).toBe(0);
     });
 
     it('refuses rather than falls back when the winner is present but cannot be read', () => {
-      const { files, locations } = setup({});
+      const { source } = setup();
       const name = presetName();
-      const winner = files.putUnreadable('repository', name);
-      files.put('home', name, {});
+      const winner = source.putUnreadable(0, name);
+      source.put(1, name, {});
 
-      const preset = loadPreset(files, locations, name);
+      const preset = loadPreset(source, name);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(winner);
+      expect(preset.isErr() && preset.error.message).toContain(winner.path);
+      expect(source.readPaths).toEqual([winner.path]);
     });
 
-    it('refuses rather than falls back when a higher-precedence directory cannot be looked at', () => {
-      const { files, locations } = setup({});
+    it('refuses rather than falls back when a higher-precedence place cannot be looked at', () => {
+      const { source } = setup();
       const name = presetName();
-      files.makeUnreachable('home');
-      files.put('xdg', name, {});
+      source.makeUnfindable(1);
+      source.put(2, name, {});
 
-      const preset = loadPreset(files, locations, name);
+      const preset = loadPreset(source, name);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(
-        files.fileFor(files.paths.home, name),
-      );
+      expect(preset.isErr() && preset.error.message).toContain(source.placeAt(1));
+      expect(source.readPaths).toEqual([]);
     });
 
     it.each([
@@ -281,48 +229,51 @@ describe('presets', () => {
       ['a retry delay', { retryDelayMs: 1000 }, 'retryDelayMs'],
       ['an unknown agent', { planner: { provider: 'nobody' } }, 'planner.provider'],
     ])('refuses a preset with %s', (_, contents, offendingKey) => {
-      const { files, locations } = setup({});
+      const { source } = setup();
       const name = presetName();
-      const file = files.put('repository', name, contents);
+      const label = source.put(0, name, contents);
 
-      const preset = loadPreset(files, locations, name);
+      const preset = loadPreset(source, name);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       expect(preset.isErr() && preset.error.message).toContain(offendingKey);
-      expect(preset.isErr() && preset.error.message).toContain(file);
+      expect(preset.isErr() && preset.error.message).toContain(label.path);
     });
 
-    it('names where it looked and the winning presets there when no preset has the name', () => {
-      const { files, locations } = setup({});
-      const [first, second] = faker.helpers.uniqueArray(() => presetName(), 2);
-      files.put('repository', first, {});
-      files.put('xdg', second, {});
-      files.put('builtin', first, {});
+    it('names every place it looked in and the winning presets there when no preset has the name', () => {
+      const { source } = setup();
+      const [first, second] = faker.helpers.uniqueArray(() => presetName(), 2).sort();
+      source.put(0, first, {});
+      source.put(2, second, {});
+      source.putUnreadable(3, first);
+      source.putUnreadable(1, 'Not Safe');
       const missing = presetName();
 
-      const preset = loadPreset(files, locations, missing);
+      const preset = loadPreset(source, missing);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       const message = preset.isErr() ? preset.error.message : '';
       expect(message).toContain(missing);
-      for (const source of PRECEDENCE) expect(message).toContain(files.paths[source]);
+      expect(message).toContain(source.places.join(', '));
       expect(message).toContain(`${first}, ${second}.`);
+      expect(source.readPaths).toEqual([]);
     });
 
     it('refuses with the listing failure when it cannot say which presets exist', () => {
-      const { files, locations } = setup({});
-      files.makeUnlistable('home');
+      const { source } = setup();
+      const rank = faker.number.int({ min: 0, max: PLACE_COUNT - 1 });
+      source.makeUnlistable(rank);
 
-      const preset = loadPreset(files, locations, presetName());
+      const preset = loadPreset(source, presetName());
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(files.paths.home);
+      expect(preset.isErr() && preset.error.message).toContain(source.placeAt(rank));
     });
   });
 
   describe('configWithPreset', () => {
     it('replaces the steps the preset names and keeps every run setting and other step', () => {
-      const { files, locations, projectConfig } = setup({});
+      const { source, projectConfig } = setup();
       const config = projectConfig({
         mergeMode: faker.helpers.arrayElement(['manual', 'auto']),
         reviewCycleCap: faker.number.int({ min: 1, max: 9 }),
@@ -333,65 +284,61 @@ describe('presets', () => {
         implementer: { provider: 'opencode', model: `openrouter/${faker.word.noun()}` },
       });
       const name = presetName();
-      files.put('home', name, { implementer: { provider: 'claude' } });
+      source.put(1, name, { implementer: { provider: 'claude' } });
 
-      const applied = unwrap(configWithPreset(config, files, locations, name));
+      const applied = unwrap(configWithPreset(config, source, name));
 
       expect(applied).toEqual({ ...config, implementer: { provider: 'claude' } });
       expect(runSettingsFrom(applied)).toEqual(runSettingsFrom(config));
     });
 
     it('adds a step the project left unset', () => {
-      const { files, locations, projectConfig } = setup({});
+      const { source, projectConfig } = setup();
       const model = faker.word.noun();
       const name = presetName();
-      files.put('repository', name, { reviewer: { provider: 'claude', model } });
+      source.put(0, name, { reviewer: { provider: 'claude', model } });
 
-      const applied = unwrap(configWithPreset(projectConfig({}), files, locations, name));
+      const applied = unwrap(configWithPreset(projectConfig({}), source, name));
 
       expect(applied.reviewer).toEqual({ provider: 'claude', model });
       expect(applied.planner).toBeUndefined();
     });
 
     it("keeps the project's config as it is and touches no preset when none is named", () => {
-      const { files, locations, projectConfig } = setup({});
+      const { source, projectConfig } = setup();
       const config = projectConfig({ reviewer: { provider: 'claude', model: faker.word.noun() } });
 
-      expect(unwrap(configWithPreset(config, files, locations, undefined))).toBe(config);
-      expect(files.rootsGiven).toEqual([]);
+      expect(unwrap(configWithPreset(config, source, undefined))).toBe(config);
+      expect(source.lookedIn).toEqual([]);
+      expect(source.listings).toBe(0);
     });
 
     it('refuses rather than runs on the project agents when the named preset does not load', () => {
-      const { files, locations, projectConfig } = setup({});
+      const { source, projectConfig } = setup();
       const name = presetName();
-      files.putUnreadable('home', name);
+      source.putUnreadable(1, name);
 
-      const applied = configWithPreset(projectConfig({}), files, locations, name);
+      const applied = configWithPreset(projectConfig({}), source, name);
 
       expect(applied.isErr() && applied.error).toBeInstanceOf(ConfigInvalid);
     });
   });
 
-  function setup(input: { xdgConfigHome?: string; paths?: Partial<Record<PresetSource, string>> }) {
-    const files = new FakePresetFiles(input.paths);
-    const locations: PresetLocations = {
-      repoRoot: faker.system.directoryPath(),
-      homeDirectory: faker.system.directoryPath(),
-      xdgConfigHome: 'xdgConfigHome' in input ? input.xdgConfigHome : faker.system.directoryPath(),
-    };
+  function setup() {
+    const source = new InMemoryPresetSource(PLACE_COUNT);
     const projectConfig = (contents: Record<string, unknown>) =>
       unwrap(loadConfig(new InMemoryConfigSource({ json: contents })));
-    return { files, locations, projectConfig };
+    return { source, projectConfig };
   }
 });
 
-function precedencePairs(): [PresetSource, PresetSource][] {
+function precedencePairs(): [number, number][] {
   return [
-    ['repository', 'home'],
-    ['repository', 'xdg'],
-    ['repository', 'builtin'],
-    ['home', 'xdg'],
-    ['home', 'builtin'],
-    ['xdg', 'builtin'],
+    [0, 1],
+    [0, 2],
+    [0, 3],
+    [1, 2],
+    [1, 3],
+    [2, 3],
   ];
 }

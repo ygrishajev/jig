@@ -12,8 +12,8 @@ import { fakeStandardInput, InMemoryConfigSource } from '../../tests/support/fak
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
 import { configFileSource } from '../adapters/filesystem/config-source.js';
+import { presetDirectoriesSource } from '../adapters/filesystem/preset-source.js';
 import type { PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
 import type { ConfigSource } from '../config/config-source.js';
@@ -330,7 +330,8 @@ describe('withApp', () => {
           createAppContainer: createApp,
           configSourceAt: (destination) => input.configSource ?? configFileSource(destination),
           standardInput: fakeStandardInput(),
-          presetFiles: presetFilesOnDisk(builtinPresetsDirectory),
+          presetSourceAt: (locations) =>
+            presetDirectoriesSource(locations, builtinPresetsDirectory),
         },
       );
     return { run, disposed, cwd, askForPreset, createApp, logger };

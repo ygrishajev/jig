@@ -9,8 +9,8 @@ import { aRunState, aSlice, presetName, runId } from '../../../tests/support/bui
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { presetFilesOnDisk } from '../../adapters/config/preset-files.js';
 import { configFileSource } from '../../adapters/filesystem/config-source.js';
+import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
 import type { StandardInput } from '../../adapters/terminal/standard-input.js';
 import { createAppContainer } from '../../app/container.js';
 import type { Preset, PresetName } from '../../config/presets.js';
@@ -195,7 +195,7 @@ describe('run -', () => {
         createAppContainer: createApp,
         configSourceAt: configFileSource,
         standardInput: input.standardInput,
-        presetFiles: presetFilesOnDisk(),
+        presetSourceAt: presetDirectoriesSource,
       },
       failureOutput,
     });
@@ -254,7 +254,7 @@ describe('run --preset', () => {
         createAppContainer: createApp,
         configSourceAt: configFileSource,
         standardInput: fakeStandardInput(),
-        presetFiles: presetFilesOnDisk(builtinPresetsDirectory),
+        presetSourceAt: (locations) => presetDirectoriesSource(locations, builtinPresetsDirectory),
       },
       failureOutput,
     });

@@ -1,98 +1,75 @@
 import { Result } from 'better-result';
-import path from 'node:path';
 import { z } from 'zod';
 
 import { type AgentRole, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { describeIssues } from './describe-issues.js';
-import type { JigEnvironment } from './environment.js';
 import { type JigConfig, type StepConfig, stepConfigSchema } from './load-config.js';
-
-export interface PresetLocations extends Pick<JigEnvironment, 'homeDirectory' | 'xdgConfigHome'> {
-  repoRoot: string;
-}
-
-export interface PresetFiles {
-  /** Each source's preset directory, absolute; the starters' is the package's own. */
-  directories(roots: PresetRoots): Record<PresetSource, string>;
-  /** The preset files in a directory, none when nothing is at its path. */
-  filesIn(directory: string): Result<PresetEntry[], ConfigInvalid>;
-  fileFor(directory: string, name: PresetName): string;
-  /** Anything at the path counts, a dangling link included; only an absent entry is not present. */
-  isPresent(entryPath: string): Result<boolean, ConfigInvalid>;
-  /** The file's JSON, not yet checked against the preset schema. */
-  read(filePath: string): Result<unknown, ConfigInvalid>;
-}
-
-export interface PresetRoots {
-  repoRoot: string;
-  homeDirectory: string;
-  /** Only an absolute XDG config home; without one, the XDG default under the home directory. */
-  xdgConfigHome?: string;
-}
-
-/** A preset file in a directory, under the name its file gives it, which may be no valid preset name. */
-export interface PresetEntry {
-  name: string;
-  path: string;
-}
+import type {
+  PresetCandidate,
+  PresetLabel,
+  PresetNotFindable,
+  PresetNotJson,
+  PresetSource,
+  PresetsUnlistable,
+  PresetUnreadable,
+} from './preset-source.js';
 
 export interface Preset {
   name: PresetName;
-  source: PresetSource;
-  path: string;
+  label: PresetLabel;
   description?: string;
   steps: PresetSteps;
 }
 
 export type PresetSteps = Partial<Record<AgentRole, StepConfig>>;
 
-export interface PresetDirectory {
-  source: PresetSource;
-  path: string;
-}
-
-interface PresetFile {
+interface NamedCandidate {
   name: PresetName;
-  source: PresetSource;
-  path: string;
+  candidate: PresetCandidate;
 }
 
-export function discoverPresets(
-  files: PresetFiles,
-  locations: PresetLocations,
-): Result<Preset[], ConfigInvalid> {
-  return winningPresetFiles(files, presetDirectories(files, locations)).andThen((found) =>
-    Result.all(found.map((file) => readPreset(files, file))),
+type PresetSourceFailure = PresetNotFindable | PresetsUnlistable | PresetUnreadable | PresetNotJson;
+
+export function discoverPresets(source: PresetSource): Result<Preset[], ConfigInvalid> {
+  return winningCandidates(source).andThen((winners) => Result.all(winners.map(readPreset)));
+}
+
+/** Each name's first candidate, so a preset found earlier shadows the rest and they are never read. */
+function winningCandidates(source: PresetSource): Result<NamedCandidate[], ConfigInvalid> {
+  return source
+    .candidates()
+    .mapError(sourceFailure)
+    .map((candidates) => shadowedRemoved(candidates.flatMap(validlyNamed)));
+}
+
+function sourceFailure(failure: PresetSourceFailure): ConfigInvalid {
+  return new ConfigInvalid({ message: sourceFailureMessage(failure) });
+}
+
+function sourceFailureMessage(failure: PresetSourceFailure): string {
+  switch (failure._tag) {
+    case 'PresetNotFindable':
+      return `Cannot look for ${failure.location}: ${failure.detail}`;
+    case 'PresetsUnlistable':
+      return `Cannot list presets in ${failure.location}: ${failure.detail}`;
+    case 'PresetUnreadable':
+      return `Cannot read ${failure.location}: ${failure.detail}`;
+    case 'PresetNotJson':
+      return `${failure.location} is not valid JSON: ${failure.detail}`;
+  }
+}
+
+function shadowedRemoved(candidates: NamedCandidate[]): NamedCandidate[] {
+  return candidates.filter(
+    (candidate, index) => candidates.findIndex(({ name }) => name === candidate.name) === index,
   );
 }
 
-function winningPresetFiles(
-  files: PresetFiles,
-  directories: PresetDirectory[],
-): Result<PresetFile[], ConfigInvalid> {
-  return Result.all(directories.map((directory) => presetFilesIn(files, directory))).map(
-    (perDirectory) => shadowedRemoved(perDirectory.flat()),
-  );
-}
-
-function presetFilesIn(
-  files: PresetFiles,
-  directory: PresetDirectory,
-): Result<PresetFile[], ConfigInvalid> {
-  return files
-    .filesIn(directory.path)
-    .map((entries) =>
-      entries
-        .flatMap((entry) => presetFileFrom(entry, directory.source))
-        .sort((first, second) => (first.name < second.name ? -1 : 1)),
-    );
-}
-
-/** A file named so that no one could ask for it is not a preset, and is never read. */
-function presetFileFrom(entry: PresetEntry, source: PresetSource): PresetFile[] {
-  const name = presetNameSchema.safeParse(entry.name);
-  return name.success ? [{ name: name.data, source, path: entry.path }] : [];
+/** A candidate named so that no one could ask for it is not a preset, and is never read. */
+function validlyNamed(candidate: PresetCandidate): NamedCandidate[] {
+  const name = presetNameSchema.safeParse(candidate.name);
+  return name.success ? [{ name: name.data, candidate }] : [];
 }
 
 /** A preset name becomes a file name, so nothing that could leave the presets directory gets through. */
@@ -107,48 +84,28 @@ export const presetNameSchema = z
 
 export type PresetName = z.infer<typeof presetNameSchema>;
 
-function shadowedRemoved(files: PresetFile[]): PresetFile[] {
-  return files.filter((file, index) => files.findIndex(({ name }) => name === file.name) === index);
+function readPreset({ name, candidate }: NamedCandidate): Result<Preset, ConfigInvalid> {
+  return candidate
+    .read()
+    .mapError(sourceFailure)
+    .andThen((json) => parsePreset(name, candidate.label, json));
 }
 
-/** Each source's directory in precedence order, a directory two sources share named once, by the first. */
-export function presetDirectories(
-  files: PresetFiles,
-  locations: PresetLocations,
-): PresetDirectory[] {
-  const paths = files.directories(presetRoots(locations));
-  const directories = PRESET_SOURCES.map((source) => ({ source, path: paths[source] }));
-  return directories.filter(
-    (directory, index) => directories.findIndex(({ path }) => path === directory.path) === index,
-  );
-}
-
-/** The XDG config home is ignored unless absolute, as the XDG base directory spec requires. */
-function presetRoots({ repoRoot, homeDirectory, xdgConfigHome }: PresetLocations): PresetRoots {
-  const acceptedXdgConfigHome =
-    xdgConfigHome && path.isAbsolute(xdgConfigHome) ? xdgConfigHome : undefined;
-  return { repoRoot, homeDirectory, xdgConfigHome: acceptedXdgConfigHome };
-}
-
-/** Where presets are looked for, highest precedence first: a name found earlier shadows the rest. */
-export const PRESET_SOURCES = ['repository', 'home', 'xdg', 'builtin'] as const;
-export type PresetSource = (typeof PRESET_SOURCES)[number];
-
-function readPreset(files: PresetFiles, file: PresetFile): Result<Preset, ConfigInvalid> {
-  return files.read(file.path).andThen((json) => parsePresetFile(file, json));
-}
-
-function parsePresetFile(file: PresetFile, json: unknown): Result<Preset, ConfigInvalid> {
+function parsePreset(
+  name: PresetName,
+  label: PresetLabel,
+  json: unknown,
+): Result<Preset, ConfigInvalid> {
   const parsed = presetFileSchema.safeParse(json);
   if (!parsed.success) {
     return Result.err(
       new ConfigInvalid({
-        message: `${file.path} is not valid — ${describeIssues(parsed.error)}`,
+        message: `${label.path} is not valid — ${describeIssues(parsed.error)}`,
       }),
     );
   }
   const { description, ...steps } = parsed.data;
-  return Result.ok({ ...file, description, steps });
+  return Result.ok({ name, label, description, steps });
 }
 
 /** Strict, so a misspelled step fails at load instead of silently leaving the project's agent. */
@@ -161,48 +118,29 @@ const presetFileSchema = z
 
 export function configWithPreset(
   config: JigConfig,
-  files: PresetFiles,
-  locations: PresetLocations,
+  source: PresetSource,
   name: PresetName | undefined,
 ): Result<JigConfig, ConfigInvalid> {
   if (name === undefined) return Result.ok(config);
-  return loadPreset(files, locations, name).map((preset) => applyPreset(config, preset));
+  return loadPreset(source, name).map((preset) => applyPreset(config, preset));
 }
 
 /**
- * Reads only the file that holds `name`, so a broken unrelated preset does not get in the way. The
- * first present candidate wins even when it cannot be read, so a broken winner never yields to a
- * lower-precedence preset.
+ * Takes the first candidate for `name` and looks no further, so a broken unrelated preset does not
+ * get in the way and a broken winner never yields to a lower-precedence preset.
  */
-export function loadPreset(
-  files: PresetFiles,
-  locations: PresetLocations,
-  name: PresetName,
-): Result<Preset, ConfigInvalid> {
-  const directories = presetDirectories(files, locations);
-  return Result.gen(function* () {
-    for (const directory of directories) {
-      const candidate = {
-        name,
-        source: directory.source,
-        path: files.fileFor(directory.path, name),
-      };
-      if (yield* files.isPresent(candidate.path)) return readPreset(files, candidate);
-    }
-    return missingPreset(files, name, directories);
-  });
+export function loadPreset(source: PresetSource, name: PresetName): Result<Preset, ConfigInvalid> {
+  const [winner] = source.candidatesNamed(name);
+  if (winner === undefined) return missingPreset(source, name);
+  return winner.mapError(sourceFailure).andThen((candidate) => readPreset({ name, candidate }));
 }
 
-function missingPreset(
-  files: PresetFiles,
-  name: PresetName,
-  directories: PresetDirectory[],
-): Result<never, ConfigInvalid> {
-  return winningPresetFiles(files, directories).andThen((available) => {
-    const searched = directories.map((directory) => directory.path).join(', ');
+function missingPreset(source: PresetSource, name: PresetName): Result<never, ConfigInvalid> {
+  return winningCandidates(source).andThen((available) => {
+    const searched = source.places.join(', ');
     const offered =
       available.length > 0
-        ? `available: ${available.map((file) => file.name).join(', ')}`
+        ? `available: ${available.map((winner) => winner.name).join(', ')}`
         : 'there are none';
     return Result.err(
       new ConfigInvalid({

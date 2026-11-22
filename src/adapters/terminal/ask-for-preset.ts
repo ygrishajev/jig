@@ -29,7 +29,7 @@ export function askForPreset(
   );
 }
 
-function choiceFor({ name, source, description }: Preset): PresetChoice {
-  const label = source === 'builtin' ? name : `${name} (${source})`;
-  return { name: label, value: { kind: 'preset', name }, description };
+function choiceFor({ name, label, description }: Preset): PresetChoice {
+  const choice = label.starter ? name : `${name} (${label.source})`;
+  return { name: choice, value: { kind: 'preset', name }, description };
 }

@@ -1,12 +1,9 @@
 import { faker } from '@faker-js/faker';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { FakePresetFiles } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { parseEnvironment, withCredentials } from './environment.js';
-import { presetDirectories } from './presets.js';
 
 describe('parseEnvironment', () => {
   it('reads the image cache and the Codex auth directory', () => {
@@ -57,40 +54,23 @@ describe('parseEnvironment', () => {
     },
   );
 
-  it('hands preset resolution the home directory and an absolute XDG config home', () => {
-    const homeDirectory = faker.system.directoryPath();
+  it('reads the XDG config home', () => {
     const xdgConfigHome = faker.system.directoryPath();
-    const repoRoot = faker.system.directoryPath();
-    const files = new FakePresetFiles();
+
     const environment = unwrap(
-      parseEnvironment(
-        { HOME: homeDirectory, XDG_CONFIG_HOME: xdgConfigHome },
-        faker.system.directoryPath(),
-      ),
+      parseEnvironment({ XDG_CONFIG_HOME: xdgConfigHome }, faker.system.directoryPath()),
     );
 
-    presetDirectories(files, { repoRoot, ...environment });
-
-    expect(files.rootsGiven).toEqual([{ repoRoot, homeDirectory, xdgConfigHome }]);
+    expect(environment.xdgConfigHome).toBe(xdgConfigHome);
   });
 
-  it.each(['', path.join(faker.word.noun(), faker.word.noun())])(
-    'leaves preset resolution to the XDG default when XDG_CONFIG_HOME is %j',
-    (xdgConfigHome) => {
-      const fallbackHomeDirectory = faker.system.directoryPath();
-      const repoRoot = faker.system.directoryPath();
-      const files = new FakePresetFiles();
-      const environment = unwrap(
-        parseEnvironment({ XDG_CONFIG_HOME: xdgConfigHome }, fallbackHomeDirectory),
-      );
+  it('leaves the XDG config home unset when XDG_CONFIG_HOME is empty', () => {
+    const environment = unwrap(
+      parseEnvironment({ XDG_CONFIG_HOME: '' }, faker.system.directoryPath()),
+    );
 
-      presetDirectories(files, { repoRoot, ...environment });
-
-      expect(files.rootsGiven).toEqual([
-        { repoRoot, homeDirectory: fallbackHomeDirectory, xdgConfigHome: undefined },
-      ]);
-    },
-  );
+    expect(environment.xdgConfigHome).toBeUndefined();
+  });
 
   it.each(['OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT'])(
     'turns telemetry on once %s is set, forwarding only OTEL_ variables',

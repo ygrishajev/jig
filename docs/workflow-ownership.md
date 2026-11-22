@@ -312,7 +312,24 @@ flowchart LR
 ## Configuration I/O and defaults
 
 Configuration file reading and writing, preset discovery and reading, and environment capture
-have left `src/config`. `src/adapters/config/preset-files.ts` finds and reads preset files.
+have left `src/config`.
+
+Presets cross the `PresetSource` contract in `src/config/preset-source.ts`. A source names the
+places it looks in, highest precedence first; for one name it yields the present candidates in
+that order, looking at each place only when reached; and it lists every present candidate, each
+place's in name order. A candidate carries the name its place gives it, an opaque label (source,
+path and whether it is a shipped starter) and a `read` that decodes its JSON only when called.
+The source fails narrowly as not findable, unlistable, unreadable or not JSON.
+`src/config/presets.ts` owns the selection rule: it skips candidates whose names are not valid
+preset names without reading them, lets the first candidate of a name win and shadow the rest
+unread, refuses a broken winner instead of falling back, validates the strict preset schema,
+replaces whole roles, and turns source failures into `ConfigInvalid` messages that name the
+location. A named lookup reads only its winner and lists nothing; only a missing name lists the
+places to say which presets exist. `src/adapters/filesystem/preset-source.ts` owns the ordering:
+the repository's `.jig/presets`, the home directory's `.jig/presets`, the XDG config home's
+`jig/presets` (`~/.config` unless `XDG_CONFIG_HOME` is absolute) and the packaged starters, a
+directory two sources share looked in once. It maps a name to its `.json` file, counts any entry
+`lstat` finds as present, a dangling link included, and reads and parses the file.
 
 Settings cross one boundary, the `ConfigSource` contract in `src/config/config-source.ts`. A
 source reports its destination's name, whether the operator chose it with `--config`, and either
@@ -329,7 +346,8 @@ write the starter file and to refuse symbolic links at both starter destinations
 either.
 `src/cli/with-app.ts` captures `process.env`, the working directory and the fallback home
 directory at the process edge and passes them to `parseEnvironment`. Config keeps the schemas,
-defaults, provider and model policy, preset-name validation, precedence and selection.
+defaults, provider and model policy, preset-name validation, first-winner selection and the
+preset schema.
 
 The step retry count (2) and first retry delay (5000 ms) are private defaults in
 `src/config/load-config.ts`, which `runSettingsFrom` resolves into `RunSettings`. They are not
