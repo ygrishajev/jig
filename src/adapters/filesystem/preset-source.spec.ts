@@ -51,8 +51,8 @@ describe('presetDirectoriesSource', () => {
 
   describe('places', () => {
     it('looks in the repository and home scratch directories, the XDG config home, then the starters', () => {
-      const locations = { ...someLocations(), xdgConfigHome: faker.system.directoryPath() };
-      const starterDirectory = faker.system.directoryPath();
+      const [repoRoot, homeDirectory, xdgConfigHome, starterDirectory] = distinctDirectories(4);
+      const locations = { repoRoot, homeDirectory, xdgConfigHome };
 
       expect(presetDirectoriesSource(locations, starterDirectory).places).toEqual([
         path.join(locations.repoRoot, '.jig', 'presets'),
@@ -383,7 +383,12 @@ function onlyCandidate(source: PresetSource, name: PresetName) {
 }
 
 function someLocations(): PresetLocations {
-  return { repoRoot: faker.system.directoryPath(), homeDirectory: faker.system.directoryPath() };
+  const [repoRoot, homeDirectory] = distinctDirectories(2);
+  return { repoRoot, homeDirectory };
+}
+
+function distinctDirectories(count: number): string[] {
+  return faker.helpers.uniqueArray(() => faker.system.directoryPath(), count);
 }
 
 async function emptyLocations(): Promise<PresetLocations> {
