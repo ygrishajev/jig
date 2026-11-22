@@ -190,6 +190,7 @@ describe('run -', () => {
       invocation: {
         cwd: repo.dir,
         environment: { HOME: home },
+        fallbackHomeDirectory: home,
         askForPreset: vi.fn(async (_presets: Preset[]) => undefined),
         createAppContainer: createApp,
         readConfig: readConfigFile,
@@ -248,6 +249,7 @@ describe('run --preset', () => {
       invocation: {
         cwd: repo.dir,
         environment: { HOME: home },
+        fallbackHomeDirectory: home,
         askForPreset,
         createAppContainer: createApp,
         readConfig: readConfigFile,

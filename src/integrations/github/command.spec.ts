@@ -193,6 +193,7 @@ describe('github implement command', () => {
     const invocation: Invocation = {
       cwd,
       environment,
+      fallbackHomeDirectory: faker.system.directoryPath(),
       createAppContainer: createApp,
       readConfig: readConfigFile,
       standardInput: fakeStandardInput(),

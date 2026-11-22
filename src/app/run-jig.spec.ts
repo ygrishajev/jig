@@ -499,6 +499,7 @@ describe('runJig', () => {
       environment: unwrap(
         parseEnvironment(
           options.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
+          faker.system.directoryPath(),
         ),
       ),
       config: unwrap(readConfigFile(configFileFor(repo.dir))),

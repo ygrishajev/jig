@@ -1,5 +1,4 @@
 import { Result } from 'better-result';
-import { homedir } from 'node:os';
 import { z } from 'zod';
 
 import { ConfigInvalid } from '../domain/errors.js';
@@ -26,8 +25,14 @@ export interface TelemetrySettings {
   forwarded: Record<string, string>;
 }
 
-/** An empty variable counts as unset, as it does for a shell's `${VAR:-default}`. */
-export function parseEnvironment(raw: NodeJS.ProcessEnv): Result<JigEnvironment, ConfigInvalid> {
+/**
+ * An empty variable counts as unset, as it does for a shell's `${VAR:-default}`. The fallback home
+ * directory stands in for an unset `HOME`; the edge that captures the environment supplies it.
+ */
+export function parseEnvironment(
+  raw: NodeJS.ProcessEnv,
+  fallbackHomeDirectory: string,
+): Result<JigEnvironment, ConfigInvalid> {
   const variables = setVariables(raw);
   const parsed = knownVariablesSchema.safeParse(variables);
   if (!parsed.success) {
@@ -41,7 +46,7 @@ export function parseEnvironment(raw: NodeJS.ProcessEnv): Result<JigEnvironment,
   return Result.ok({
     imageCache: known.JIG_IMAGE_CACHE,
     codexAuthDirectory: known.JIG_CODEX_AUTH_DIR,
-    homeDirectory: known.HOME ?? homedir(),
+    homeDirectory: known.HOME ?? fallbackHomeDirectory,
     xdgConfigHome: known.XDG_CONFIG_HOME,
     telemetry:
       known.OTEL_EXPORTER_OTLP_ENDPOINT || known.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT

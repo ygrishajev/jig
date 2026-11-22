@@ -93,7 +93,7 @@ describe('readRunStatus', () => {
         configFile: configFileFor(repoRoot),
         logFormat: 'json',
         logLevel: 'silent',
-        environment: unwrap(parseEnvironment({})),
+        environment: unwrap(parseEnvironment({}, faker.system.directoryPath())),
         config: unwrap(readConfigFile(configFileFor(repoRoot))),
       });
       onTestFinished(() => app.dispose());

@@ -1,38 +1,96 @@
 import { faker } from '@faker-js/faker';
-import { homedir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { FakePresetFiles } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
-import { parseEnvironment } from './environment.js';
+import { parseEnvironment, withCredentials } from './environment.js';
+import { presetDirectories } from './presets.js';
 
 describe('parseEnvironment', () => {
   it('reads the image cache and the Codex auth directory', () => {
     const directory = faker.system.directoryPath();
 
     const environment = unwrap(
-      parseEnvironment({ JIG_IMAGE_CACHE: 'gha', JIG_CODEX_AUTH_DIR: directory }),
+      parseEnvironment(
+        { JIG_IMAGE_CACHE: 'gha', JIG_CODEX_AUTH_DIR: directory },
+        faker.system.directoryPath(),
+      ),
     );
 
     expect(environment).toMatchObject({ imageCache: 'gha', codexAuthDirectory: directory });
   });
 
-  it('reads where presets live in the home and XDG config directories', () => {
+  it('leaves every optional setting unset when no variable is given', () => {
+    const fallbackHomeDirectory = faker.system.directoryPath();
+
+    const environment = unwrap(parseEnvironment({}, fallbackHomeDirectory));
+
+    expect(environment).toMatchObject({
+      imageCache: undefined,
+      codexAuthDirectory: undefined,
+      homeDirectory: fallbackHomeDirectory,
+      xdgConfigHome: undefined,
+      telemetry: undefined,
+    });
+  });
+
+  it('takes the home directory from HOME over the fallback it was given', () => {
     const homeDirectory = faker.system.directoryPath();
-    const xdgConfigHome = faker.system.directoryPath();
 
     const environment = unwrap(
-      parseEnvironment({ HOME: homeDirectory, XDG_CONFIG_HOME: xdgConfigHome }),
+      parseEnvironment({ HOME: homeDirectory }, faker.system.directoryPath()),
     );
 
-    expect(environment).toMatchObject({ homeDirectory, xdgConfigHome });
+    expect(environment.homeDirectory).toBe(homeDirectory);
   });
 
-  it("falls back to the user's home directory when HOME is unset", () => {
-    const environment = unwrap(parseEnvironment({ HOME: '' }));
+  it.each([{}, { HOME: '' }])(
+    'falls back to the home directory it was given when HOME is unset in %j',
+    (variables) => {
+      const fallbackHomeDirectory = faker.system.directoryPath();
 
-    expect(environment.homeDirectory).toBe(homedir());
+      const environment = unwrap(parseEnvironment(variables, fallbackHomeDirectory));
+
+      expect(environment.homeDirectory).toBe(fallbackHomeDirectory);
+    },
+  );
+
+  it('hands preset resolution the home directory and an absolute XDG config home', () => {
+    const homeDirectory = faker.system.directoryPath();
+    const xdgConfigHome = faker.system.directoryPath();
+    const repoRoot = faker.system.directoryPath();
+    const files = new FakePresetFiles();
+    const environment = unwrap(
+      parseEnvironment(
+        { HOME: homeDirectory, XDG_CONFIG_HOME: xdgConfigHome },
+        faker.system.directoryPath(),
+      ),
+    );
+
+    presetDirectories(files, { repoRoot, ...environment });
+
+    expect(files.rootsGiven).toEqual([{ repoRoot, homeDirectory, xdgConfigHome }]);
   });
+
+  it.each(['', path.join(faker.word.noun(), faker.word.noun())])(
+    'leaves preset resolution to the XDG default when XDG_CONFIG_HOME is %j',
+    (xdgConfigHome) => {
+      const fallbackHomeDirectory = faker.system.directoryPath();
+      const repoRoot = faker.system.directoryPath();
+      const files = new FakePresetFiles();
+      const environment = unwrap(
+        parseEnvironment({ XDG_CONFIG_HOME: xdgConfigHome }, fallbackHomeDirectory),
+      );
+
+      presetDirectories(files, { repoRoot, ...environment });
+
+      expect(files.rootsGiven).toEqual([
+        { repoRoot, homeDirectory: fallbackHomeDirectory, xdgConfigHome: undefined },
+      ]);
+    },
+  );
 
   it.each(['OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT'])(
     'turns telemetry on once %s is set, forwarding only OTEL_ variables',
@@ -41,11 +99,15 @@ describe('parseEnvironment', () => {
       const serviceName = faker.word.noun();
 
       const { telemetry } = unwrap(
-        parseEnvironment({
-          [endpointVariable]: endpoint,
-          OTEL_SERVICE_NAME: serviceName,
-          CLAUDE_CODE_OAUTH_TOKEN: faker.string.alphanumeric(40),
-        }),
+        parseEnvironment(
+          {
+            [endpointVariable]: endpoint,
+            OTEL_SERVICE_NAME: serviceName,
+            OTEL_RESOURCE_ATTRIBUTES: '',
+            CLAUDE_CODE_OAUTH_TOKEN: faker.string.alphanumeric(40),
+          },
+          faker.system.directoryPath(),
+        ),
       );
 
       expect(telemetry).toEqual({
@@ -58,8 +120,12 @@ describe('parseEnvironment', () => {
   it('leaves telemetry off without an endpoint, and names the service jig by default', () => {
     const endpoint = faker.internet.url();
 
-    const withoutEndpoint = unwrap(parseEnvironment({ OTEL_SERVICE_NAME: faker.word.noun() }));
-    const withEndpoint = unwrap(parseEnvironment({ OTEL_EXPORTER_OTLP_ENDPOINT: endpoint }));
+    const withoutEndpoint = unwrap(
+      parseEnvironment({ OTEL_SERVICE_NAME: faker.word.noun() }, faker.system.directoryPath()),
+    );
+    const withEndpoint = unwrap(
+      parseEnvironment({ OTEL_EXPORTER_OTLP_ENDPOINT: endpoint }, faker.system.directoryPath()),
+    );
 
     expect(withoutEndpoint.telemetry).toBeUndefined();
     expect(withEndpoint.telemetry?.serviceName).toBe('jig');
@@ -69,22 +135,93 @@ describe('parseEnvironment', () => {
     const key = faker.string.alphanumeric(40);
 
     const environment = unwrap(
-      parseEnvironment({ OPENROUTER_API_KEY: key, ANTHROPIC_API_KEY: '' }),
+      parseEnvironment(
+        { OPENROUTER_API_KEY: key, ANTHROPIC_API_KEY: '' },
+        faker.system.directoryPath(),
+      ),
     );
 
     expect(environment.credential('OPENROUTER_API_KEY')).toBe(key);
     expect(environment.credential('ANTHROPIC_API_KEY')).toBeUndefined();
-    expect(unwrap(parseEnvironment({ JIG_IMAGE_CACHE: '' })).imageCache).toBeUndefined();
+    expect(
+      unwrap(parseEnvironment({ JIG_IMAGE_CACHE: '' }, faker.system.directoryPath())).imageCache,
+    ).toBeUndefined();
   });
 
   it.each([
     ['JIG_IMAGE_CACHE', faker.word.noun()],
     ['OTEL_EXPORTER_OTLP_ENDPOINT', faker.word.noun()],
+    ['OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', faker.word.noun()],
   ])('refuses %s set to a value jig cannot use, naming the variable', (variable, value) => {
-    const result = parseEnvironment({ [variable]: value });
+    const result = parseEnvironment({ [variable]: value }, faker.system.directoryPath());
 
     expect(result.isErr()).toBe(true);
     expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
     expect(result.isErr() && result.error.message).toContain(variable);
+  });
+});
+
+describe('withCredentials', () => {
+  it('keeps a credential set in the environment over the saved one', () => {
+    const fromEnvironment = faker.string.alphanumeric(40);
+    const environment = unwrap(
+      parseEnvironment({ ANTHROPIC_API_KEY: fromEnvironment }, faker.system.directoryPath()),
+    );
+
+    const combined = withCredentials(environment, {
+      ANTHROPIC_API_KEY: faker.string.alphanumeric(40),
+    });
+
+    expect(combined.credential('ANTHROPIC_API_KEY')).toBe(fromEnvironment);
+  });
+
+  it('takes a saved credential the environment leaves unset or empty', () => {
+    const saved = faker.string.alphanumeric(40);
+    const savedCodexAuthDirectory = faker.system.directoryPath();
+    const environment = unwrap(
+      parseEnvironment({ ANTHROPIC_API_KEY: '' }, faker.system.directoryPath()),
+    );
+
+    const combined = withCredentials(environment, {
+      ANTHROPIC_API_KEY: saved,
+      JIG_CODEX_AUTH_DIR: savedCodexAuthDirectory,
+      OPENROUTER_API_KEY: '',
+    });
+
+    expect(combined.credential('ANTHROPIC_API_KEY')).toBe(saved);
+    expect(combined.codexAuthDirectory).toBe(savedCodexAuthDirectory);
+    expect(combined.credential('OPENROUTER_API_KEY')).toBeUndefined();
+  });
+
+  it('keeps the Codex auth directory set in the environment over the saved one', () => {
+    const fromEnvironment = faker.system.directoryPath();
+    const environment = unwrap(
+      parseEnvironment({ JIG_CODEX_AUTH_DIR: fromEnvironment }, faker.system.directoryPath()),
+    );
+
+    const combined = withCredentials(environment, {
+      JIG_CODEX_AUTH_DIR: faker.system.directoryPath(),
+    });
+
+    expect(combined.codexAuthDirectory).toBe(fromEnvironment);
+  });
+
+  it('takes nothing but credentials from the saved file', () => {
+    const fallbackHomeDirectory = faker.system.directoryPath();
+    const environment = unwrap(parseEnvironment({}, fallbackHomeDirectory));
+
+    const combined = withCredentials(environment, {
+      JIG_IMAGE_CACHE: 'gha',
+      HOME: faker.system.directoryPath(),
+      XDG_CONFIG_HOME: faker.system.directoryPath(),
+      OTEL_EXPORTER_OTLP_ENDPOINT: faker.internet.url(),
+    });
+
+    expect(combined).toMatchObject({
+      imageCache: undefined,
+      homeDirectory: fallbackHomeDirectory,
+      xdgConfigHome: undefined,
+      telemetry: undefined,
+    });
   });
 });

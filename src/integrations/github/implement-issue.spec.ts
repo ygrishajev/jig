@@ -771,11 +771,14 @@ describe('implementIssue', () => {
         configFile: configFileFor(repoRoot),
         config: unwrap(readConfigFile(configFileFor(repoRoot))),
         environment: unwrap(
-          parseEnvironment({
-            ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
-            GITHUB_TOKEN: faker.string.alphanumeric(20),
-            GH_TOKEN: faker.string.alphanumeric(20),
-          }),
+          parseEnvironment(
+            {
+              ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
+              GITHUB_TOKEN: faker.string.alphanumeric(20),
+              GH_TOKEN: faker.string.alphanumeric(20),
+            },
+            faker.system.directoryPath(),
+          ),
         ),
       });
       app.register({ logger: asValue(logger) });
