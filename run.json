@@ -1,6 +1,6 @@
 {
   "runId": "docs-add-ownership-guidance-to-house-4523be07",
-  "revision": 8,
+  "revision": 9,
   "baseBranch": "main",
   "request": "# docs: add ownership guidance to house rules and the PR procedure\n\nOne slice of the application-boundaries refactor. **Treat this request as self-contained**: everything needed is below and in `docs/specs/application-boundaries.md`. Do not assume access to the parent issue or its siblings.\n\n## What\n\nWrite down where each kind of code belongs, so contributors and agents put new code in the right\nplace without having to ask.\n\n## Why\n\nThe upcoming restructuring moves code between owners. Unless the rules explain the reasoning,\nlater changes will drift back to the old layout.\n\n## Context — read this first\n\njig is a TypeScript CLI that turns a markdown request into planned slices, has agents implement and\nreview each one in a sandbox, and lands them on one run branch. Source owners under `src/`:\n`domain` (business rules), `ports` (external capability contracts), `config` (settings schemas and\npolicy), `flow`/`steps` (workflow execution), `prompts`, `observers` (events and reporting),\n`adapters` (Git, GitHub, files, containers, terminal, logging), `app` (use cases) and `cli` (commands).\nSpecs sit beside the code they cover (`foo.ts` → `foo.spec.ts`). Before editing, read `AGENTS.md`,\nthe house rules in `.claude/rules/` that cover the files you change, and `docs/architecture.html`.\n\nThis issue implements one part of the design in `docs/specs/application-boundaries.md`. That file is\nin the repository; read the sections named below. Where this issue and the spec disagree, follow\nthe spec and say so in the PR.\n\n## Don't undo these\n\n- Agents run unattended only inside the sandbox. Never add an agent call that runs on the host.\n- Credentials never land in a file jig writes, a log line or the image. The one exception:\n  `jig init` saves a credential to `.jig/.env` (owner-only, git-ignored) after the operator agrees.\n- Nothing touches the target repository's tracked files outside the run's worktree.\n- Keep commands, flags, defaults, help, error tags and messages, exit codes, configuration\n  precedence and recovery behavior unchanged unless this issue says otherwise.\n- Expected failures are `Result` values; bugs panic. jig never throws.\n- Keep dependency policy in `.dependency-cruiser.mjs` and `scripts/check-dependencies.mjs`, with\n  fixtures in `scripts/check-dependencies.spec.ts`. Do not write another source scanner.\n- No release tags and no version bumps; `main` publishes on its own.\n- If you change where something lives, update `docs/architecture.html`, `docs/workflow-ownership.md`\n  and the code map in `CONTRIBUTING.md`, and any guide that names a moved path. Describe current\n  behavior in the present tense.\n\n## Target\n\nSpec sections: \"Target responsibilities\", \"Error ownership and technical failure handling\",\n\"House rules and review\".\n\n- `.claude/rules/callee-owns-its-rules.md`, `.claude/rules/errors-as-values.md`,\n  `.claude/rules/parse-input-at-the-edge.md`: add short ownership guidance with concrete examples:\n  - CLI does not receive a container or cradle; it calls an application operation and presents the result.\n  - Configurable defaults (for example the step retry count) are not domain rules; domain consumes\n    resolved `RunSettings`.\n  - A capability failure (storage, Git, sandbox) belongs with its port contract, not in domain just\n    because several modules return it.\n  - Composition only wires: it chooses implementations and starts the executable, and makes no\n    resume, retry, locking or publication decisions.\n- `.claude/skills/commit-pr/SKILL.md` and `.github/pull_request_template.md`: a PR that changes\n  ownership states the owner, why the concept belongs there, and whether it introduces a pattern\n  agents should copy. Add this to the existing procedure; do not create a parallel guide.\n- Also update `.agents/` copies of these rules or skills if they exist and are tracked.\n\nThis issue changes documentation only. Do not move code, and do not enforce ownership through\nnames (such as `DEFAULT_*`) or tests that check prose.\n\n## Done when\n\n- [ ] The rules above carry the four examples, each in the rule that owns it.\n- [ ] The PR procedure and template ask for an ownership rationale.\n- [ ] `npm run format:check` and `npm run lint` pass.\n\n\nSource: https://github.com/ygrishajev/jig/issues/54\n",
   "merge": false,
@@ -38,14 +38,43 @@
       "title": "docs(agents): align ownership rules and PR rationale",
       "description": "Implements plan steps 1-4. Reconcile the applicable rules, architecture, three named spec sections, and current implementation, then update the five requested documents and any tracked .agents mirrors as one coherent guidance change. Require container-free CLI application calls and composition-only wiring; assign configuration schemas and configurable defaults to config, using step retry count as the example; assign storage, Git, and sandbox capability failures to their port contracts by meaning. Correct surrounding examples while preserving domain business schemas, resolved RunSettings, safety rules, and Result/panic, narrow-union, adapter translation, and cleanup guidance. Require ownership changes to explain their owner, rationale, and whether they establish a pattern agents should copy in both commit-pr and the template's How instructions. Review all four required examples and distinguish target guidance from the unchanged implementation. Keep runtime files, architecture maps, dependency policy, and public behavior unchanged. Run format:check and lint with the supported runtime, fix affected formatting, and report actual results, blockers, and any spec-driven deviation without adding prose tests or source scanners. These edits belong together because the ownership rules, examples, and review requirements must communicate one consistent standard.",
       "order": 0,
-      "status": "verifying",
+      "status": "in_review",
       "reviewCycles": 0,
       "hookFailures": 0,
       "verificationFailures": 0,
       "emptyAttempts": 0,
       "ruleFixCycles": 0,
       "feedbackHistory": [],
-      "commit": "63e11212faea976c2129bc53d4a36a1e42e7edc4"
+      "commit": "63e11212faea976c2129bc53d4a36a1e42e7edc4",
+      "verification": {
+        "command": "npm run validate",
+        "observed": {
+          "before": {
+            "host": {
+              "commit": "63e11212faea976c2129bc53d4a36a1e42e7edc4",
+              "tree": "7a7c876a4f9dd3cb155a153c24724cd32fbc7797",
+              "clean": true
+            },
+            "sandbox": {
+              "commit": "63e11212faea976c2129bc53d4a36a1e42e7edc4",
+              "tree": "7a7c876a4f9dd3cb155a153c24724cd32fbc7797",
+              "clean": true
+            }
+          },
+          "after": {
+            "host": {
+              "commit": "63e11212faea976c2129bc53d4a36a1e42e7edc4",
+              "tree": "7a7c876a4f9dd3cb155a153c24724cd32fbc7797",
+              "clean": true
+            },
+            "sandbox": {
+              "commit": "63e11212faea976c2129bc53d4a36a1e42e7edc4",
+              "tree": "7a7c876a4f9dd3cb155a153c24724cd32fbc7797",
+              "clean": true
+            }
+          }
+        }
+      }
     }
   ],
   "diagnosticSequence": 0,
