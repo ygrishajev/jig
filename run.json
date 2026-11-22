@@ -1,6 +1,6 @@
 {
   "runId": "refactor-config-split-config-i-o-from-03a30de4",
-  "revision": 5,
+  "revision": 6,
   "baseBranch": "main",
   "request": "# refactor(config): split config I/O from policy and own retry defaults\n\nOne slice of the application-boundaries refactor. **Treat this request as self-contained**: everything needed is below and in `docs/specs/application-boundaries.md`. Do not assume access to the parent issue or its siblings.\n\n## What\n\nSettings files and the environment are still read the same way and give the same results, but the\ncode that decides what a setting means no longer reads files itself.\n\n## Why\n\nConfiguration rules are mixed with file and directory access. That makes them hard to reuse from\nanything other than the command line, and hard to test without a disk. Retry defaults also live with\nbusiness rules even though they are configurable values.\n\n## Context — read this first\n\njig is a TypeScript CLI that turns a markdown request into planned slices, has agents implement and\nreview each one in a sandbox, and lands them on one run branch. Source owners under `src/`:\n`domain` (business rules), `ports` (external capability contracts), `config` (settings schemas and\npolicy), `flow`/`steps` (workflow execution), `prompts`, `observers` (events and reporting),\n`adapters` (Git, GitHub, files, containers, terminal, logging), `app` (use cases) and `cli` (commands).\nSpecs sit beside the code they cover (`foo.ts` → `foo.spec.ts`). Before editing, read `AGENTS.md`,\nthe house rules in `.claude/rules/` that cover the files you change, and `docs/architecture.html`.\n\nThis issue implements one part of the design in `docs/specs/application-boundaries.md`. That file is\nin the repository; read the sections named below. Where this issue and the spec disagree, follow\nthe spec and say so in the PR.\n\n## Don't undo these\n\n- Agents run unattended only inside the sandbox. Never add an agent call that runs on the host.\n- Credentials never land in a file jig writes, a log line or the image. The one exception:\n  `jig init` saves a credential to `.jig/.env` (owner-only, git-ignored) after the operator agrees.\n- Nothing touches the target repository's tracked files outside the run's worktree.\n- Keep commands, flags, defaults, help, error tags and messages, exit codes, configuration\n  precedence and recovery behavior unchanged unless this issue says otherwise.\n- Expected failures are `Result` values; bugs panic. jig never throws.\n- Keep dependency policy in `.dependency-cruiser.mjs` and `scripts/check-dependencies.mjs`, with\n  fixtures in `scripts/check-dependencies.spec.ts`. Do not write another source scanner.\n- No release tags and no version bumps; `main` publishes on its own.\n- If you change where something lives, update `docs/architecture.html`, `docs/workflow-ownership.md`\n  and the code map in `CONTRIBUTING.md`, and any guide that names a moved path. Describe current\n  behavior in the present tense.\n\n## Target\n\nSpec sections: \"Configuration and defaults\", \"Application preparation and resource lifetime\".\n\n- `src/config/load-config.ts` (`loadConfig`, `configFileFor`), `src/config/presets.ts`\n  (`discoverPresets`, `presetDirectories`, `loadPreset`), `src/config/write-config.ts`\n  (`updateConfigFile`) and `src/config/environment.ts` mix schemas and resolution with file reads\n  and writes, directory discovery and `process.env`.\n- Config keeps the schemas, default values, provider/model policy, preset-name validation,\n  precedence and selection. Move file reading and writing, and preset directory discovery, to\n  adapters behind narrow capabilities (functions or small port interfaces). Environment capture\n  moves to the process edge. Config parses the raw values it is given. Parse each input once, at its\n  edge; never copy a schema into a caller.\n- `src/domain/settings.ts` exports `MAX_STEP_RETRIES = 2` and `RETRY_DELAY_MS = 5000`, and\n  `runSettingsFrom` in `load-config.ts` imports them. Move both to config-owned defaults with the\n  same values. Domain keeps `RunSettings` and rules such as comparing review cycles with the\n  resolved cap. Do not add operator overrides (separate work), and do not let presets set run settings.\n- Do not move other caps just because they are numbers. Genuine safety and stopping rules stay in domain.\n- Error classes stay where they are for now; a later issue reassigns them. Keep returning the same\n  `ConfigInvalid` values.\n\n## Done when\n\n- [ ] No file under `src/config/` imports `node:fs` or reads `process.env`\n      (`grep -rnE \"node:fs|process\\.env\" src/config --include=*.ts | grep -v spec` finds nothing).\n- [ ] `src/domain/settings.ts` no longer exports the retry defaults; config supplies 2 and 5000 ms.\n- [ ] Existing config, preset and environment behavior tests pass. New tests cover the moved I/O\n      through fakes or temporary directories.\n- [ ] The verification below passes.\n\n## Verification\n\nFrom the repository root using the pinned Node version (`volta` in `package.json`):\n\n```sh\nnpm run lint:dependencies\nnpm run lint\nnpm run typecheck\nnpm test\nnpm run build\nnpm run format:check\nnpm run validate -- --skip test:mutation\n```\n\nNo check may start an agent on the host or publish to GitHub. In the PR, state which owner each\nmoved concept now belongs to and why.\n\n\nSource: https://github.com/ygrishajev/jig/issues/55\n",
   "merge": false,
@@ -38,8 +38,61 @@
       }
     ]
   },
-  "slices": [],
+  "slices": [
+    {
+      "id": "extract-config-file-operations",
+      "title": "refactor(config): move configuration file I/O into adapters",
+      "description": "Implements plan steps 1 and 6. Treat this slice as self-contained. Separate configuration file access from policy, wiring configuration preparation and init end to end through narrowly supplied functions at existing construction seams. Review applicable house rules and existing tests first. Keep schemas, pure file selection, validation, and merge policy in config; place reads and atomic updates under src/adapters/config/, applying each owning schema once at its file boundary and retaining typed Results. Preserve implicit missing-file defaults, explicit missing-file failures, diagnostics, permissive object updates, unrelated keys, formatting, atomic persistence, initialization ordering, symlink refusal, consent, and write scope. Move disk cases into adapter specs with temporary directories; keep pure cases in config specs and use narrow fakes for unreliable filesystem failures. Follow setup, mock<T>(), faker-built data, and no-module-mock conventions. Update affected imports and stale references. This slice lands before subsequent preset and environment changes that may share preparation files. Use Node 26.13.0, inspect verification scripts for host-agent execution and publishing, and run focused affected specs. Done when consumers use the extracted operations and compatibility tests pass; report actual results.",
+      "order": 0,
+      "status": "pending",
+      "reviewCycles": 0,
+      "hookFailures": 0,
+      "verificationFailures": 0,
+      "emptyAttempts": 0,
+      "ruleFixCycles": 0,
+      "feedbackHistory": []
+    },
+    {
+      "id": "separate-preset-access",
+      "title": "refactor(config): separate preset access from selection policy",
+      "description": "Implements plan steps 2 and 6. Treat this slice as self-contained. Land on top of the configuration file extraction because shared config and preparation files may change. This deserves separate review because preset discovery and named loading have their own precedence, shadowing, and filesystem failure contract. Review applicable rules and current implementation. Extract location construction, package asset resolution, directory enumeration, lstat probing, and reads into the preset adapter capability. Keep precedence, XDG acceptance, directory deduplication, name validation, shadow selection, schema parsing, missing-name diagnostics, and role replacement in config. Wire discovery, explicit and interactive selection, and listing end to end; named loading must remain independent of full discovery. Preserve cancellation and output. Test repository > home > XDG > builtin precedence, repeated directories, invalid names, shipped starters, broken higher-precedence winners, dangling links, non-directory ancestors, list/probe/read errors, unrelated malformed presets, and missing-name diagnostics. Test pure policy with supplied data and adapter access with temporary directories or narrow fakes, following repository test conventions. Verify source and built module locations resolve the same packaged starters and preset application preserves every run setting. Update stale references. Use Node 26.13.0 and inspect scripts before running focused specs and build verification. Done when all preset consumers use the capability and compatibility checks pass; report actual results.",
+      "order": 1,
+      "status": "pending",
+      "reviewCycles": 0,
+      "hookFailures": 0,
+      "verificationFailures": 0,
+      "emptyAttempts": 0,
+      "ruleFixCycles": 0,
+      "feedbackHistory": []
+    },
+    {
+      "id": "capture-home-at-invocation",
+      "title": "refactor(config): supply home fallback from the process edge",
+      "description": "Implements plan steps 3 and 6. Treat this slice as self-contained. Land after preset access separation and work on top of its preparation and preset changes. This lands separately because removing implicit process and OS inputs is an independently testable invocation contract, distinct from preset filesystem access. Review applicable rules. Capture the home-directory fallback alongside raw environment values at invocation, require it explicitly in parseEnvironment and every caller, and remove node:os access from config. Update environment and preparation specs with deterministic inputs. Verify absent, empty, and explicit HOME; relative and absolute XDG behavior through preset resolution; empty-as-unset credentials; environment-over-saved-credential precedence; telemetry validation; defaults; and forwarding. Preserve repository-check and loading-failure order, help/version bypass, status loading saved credentials without requiring agent credentials or opening a sandbox, and resource-free cancellation. Keep credentials out of logs and newly written files. Update affected references. Use Node 26.13.0, inspect scripts, and run focused environment, preparation, and preset specs. Done when config receives its environment inputs explicitly, has no OS home-directory access, and operation-specific compatibility checks pass; report actual results.",
+      "order": 2,
+      "status": "pending",
+      "reviewCycles": 0,
+      "hookFailures": 0,
+      "verificationFailures": 0,
+      "emptyAttempts": 0,
+      "ruleFixCycles": 0,
+      "feedbackHistory": []
+    },
+    {
+      "id": "enforce-configuration-ownership",
+      "title": "refactor(config): own retry defaults and enforce boundaries",
+      "description": "Implements plan steps 4-6. Treat this slice as self-contained. Land after the three access refactors and work on top of any shared config, settings, dependency, and documentation files. This lands separately because it completes and enforces the resulting ownership contract once legitimate config I/O dependencies have been removed. Review applicable rules, docs/architecture.html, current implementation, and dependency fixtures. Move the two retry defaults from domain/settings.ts into config, updating runSettingsFrom and references while retaining RunSettings, resolved-cap comparisons, and genuine stopping constants in domain. Verify resolved defaults remain 2 retries and 5000 ms, override keys remain unsupported, preset schemas reject run settings, and retry execution is unchanged. Extend existing Dependency Cruiser rules and fixtures to reject config dependencies on filesystem implementations and concrete adapters, allow adapter-to-config dependencies, and retain the ports-only-depend-on-domain restriction; do not add a source scanner. Update docs/architecture.html, docs/workflow-ownership.md, and CONTRIBUTING.md to describe policy/default ownership, adapter I/O, process-edge capture, and actual remaining preparation/composition seams. Replace stale moved-path references across existing guides and source without changing unchanged public behavior documentation. Prepare PR rationale for each moved concept and explicitly describe deferred preparation/container migration and any actual spec disagreement. Using Node 26.13.0, inspect scripts to ensure they neither launch agents on the host nor publish to GitHub. From the repository root run npm run lint:dependencies, npm run lint, npm run typecheck, npm test, npm run build, npm run format:check, and npm run validate -- --skip test:mutation. Run grep -rnE \"node:fs|process\\.env\" src/config --include=*.ts | grep -v spec and confirm zero production matches; also confirm no config OS home-directory access and no domain retry-default exports. Inspect the cumulative diff for accidental behavior, credential, safety, version, or release changes. Done when boundary fixtures, compatibility checks, and all required verification pass; fix failures, rerun affected checks, and report actual results and unresolved blockers without claiming unexecuted checks passed.",
+      "order": 3,
+      "status": "pending",
+      "reviewCycles": 0,
+      "hookFailures": 0,
+      "verificationFailures": 0,
+      "emptyAttempts": 0,
+      "ruleFixCycles": 0,
+      "feedbackHistory": []
+    }
+  ],
   "diagnosticSequence": 0,
-  "phase": "slicing",
+  "phase": "gate",
   "codeRevision": "63e11212faea976c2129bc53d4a36a1e42e7edc4"
 }
