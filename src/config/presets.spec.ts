@@ -10,12 +10,14 @@ import {
   configWithPreset,
   discoverPresets,
   loadPreset,
-  PRESET_SOURCES,
   presetDirectories,
   type PresetLocations,
   presetNameSchema,
   type PresetSource,
 } from './presets.js';
+
+/** Written out here, not taken from production, so a reordering of the sources fails these specs. */
+const PRECEDENCE: PresetSource[] = ['repository', 'home', 'xdg', 'builtin'];
 
 describe('presets', () => {
   describe('presetNameSchema', () => {
@@ -42,9 +44,12 @@ describe('presets', () => {
     it('looks in the repository, the home directory, the XDG config directory, then the starters', () => {
       const { files, locations } = setup({});
 
-      expect(presetDirectories(files, locations)).toEqual(
-        PRESET_SOURCES.map((source) => ({ source, path: files.paths[source] })),
-      );
+      expect(presetDirectories(files, locations)).toEqual([
+        { source: 'repository', path: files.paths.repository },
+        { source: 'home', path: files.paths.home },
+        { source: 'xdg', path: files.paths.xdg },
+        { source: 'builtin', path: files.paths.builtin },
+      ]);
     });
 
     it('asks for the directories under the repository, the home directory and an absolute XDG config home', () => {
@@ -129,8 +134,8 @@ describe('presets', () => {
 
     it('lists only the highest-precedence preset of a name and never reads the ones it shadows', () => {
       const { files, locations } = setup({});
-      const chosen = faker.helpers.arrayElements(PRESET_SOURCES, { min: 2, max: 4 });
-      const sources = PRESET_SOURCES.filter((source) => chosen.includes(source));
+      const chosen = faker.helpers.arrayElements(PRECEDENCE, { min: 2, max: 4 });
+      const sources = PRECEDENCE.filter((source) => chosen.includes(source));
       const name = presetName();
       const [winner, ...shadowed] = sources.map((source) => ({
         source,
@@ -180,7 +185,7 @@ describe('presets', () => {
       expect(files.readFiles).toHaveLength(1);
     });
 
-    it.each(PRESET_SOURCES)('refuses when the %s directory cannot be listed', (source) => {
+    it.each(PRECEDENCE)('refuses when the %s directory cannot be listed', (source) => {
       const { files, locations } = setup({});
       files.makeUnlistable(source);
 
@@ -297,7 +302,7 @@ describe('presets', () => {
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       const message = preset.isErr() ? preset.error.message : '';
       expect(message).toContain(missing);
-      for (const source of PRESET_SOURCES) expect(message).toContain(files.paths[source]);
+      for (const source of PRECEDENCE) expect(message).toContain(files.paths[source]);
       expect(message).toContain(`${first}, ${second}.`);
     });
 
@@ -378,7 +383,12 @@ describe('presets', () => {
 });
 
 function precedencePairs(): [PresetSource, PresetSource][] {
-  return PRESET_SOURCES.flatMap((higher, index) =>
-    PRESET_SOURCES.slice(index + 1).map((lower): [PresetSource, PresetSource] => [higher, lower]),
-  );
+  return [
+    ['repository', 'home'],
+    ['repository', 'xdg'],
+    ['repository', 'builtin'],
+    ['home', 'xdg'],
+    ['home', 'builtin'],
+    ['xdg', 'builtin'],
+  ];
 }
