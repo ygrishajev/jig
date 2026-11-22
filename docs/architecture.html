@@ -138,7 +138,7 @@ svg text{font-family:var(--sans)}
       <tr><td>ports</td><td>External capability contracts</td><td>domain</td></tr>
       <tr><td>config</td><td>Settings parsing, provider policy, presets and scratch naming</td><td>domain</td></tr>
       <tr><td>observers</td><td>Events, metrics, logging and tracing observers</td><td>domain, ports</td></tr>
-      <tr><td>adapters</td><td>Git, persistence, configuration file, sandbox, terminal and telemetry I/O</td><td>config, domain, observers, ports</td></tr>
+      <tr><td>adapters</td><td>Git, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, observers, ports</td></tr>
       <tr><td>flow</td><td>Generic flow contracts and engine</td><td>domain, ports</td></tr>
       <tr><td>prompts</td><td>Agent request construction</td><td>domain</td></tr>
       <tr><td>steps</td><td>Individual workflow operations</td><td>domain, flow, ports, prompts</td></tr>
@@ -152,7 +152,8 @@ svg text{font-family:var(--sans)}
     <code>src/config/agent-policy.ts</code> owns provider identity and shared model defaults;
     <code>src/config/scratch-directory.ts</code> owns the <code>.jig</code> convention.
     <code>src/config/load-config.ts</code> owns the configuration schema and its validation;
-    <code>src/adapters/config</code> reads and updates the configuration file.
+    <code>src/config/presets.ts</code> owns preset names, precedence, shadowing and the preset schema;
+    <code>src/adapters/config</code> reads and updates the configuration file and finds and reads preset files.
     Adapters own provider construction, credentials, authentication and scratch filesystem operations.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
