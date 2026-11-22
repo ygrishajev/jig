@@ -136,7 +136,7 @@ svg text{font-family:var(--sans)}
     <tbody>
       <tr><td>domain</td><td>State, outcomes, errors and pure rules</td><td>None</td></tr>
       <tr><td>ports</td><td>External capability contracts</td><td>domain</td></tr>
-      <tr><td>config</td><td>Settings parsing, provider policy, presets and scratch naming</td><td>domain</td></tr>
+      <tr><td>config</td><td>Configuration and environment schemas and defaults, run settings, provider policy, presets and scratch naming</td><td>domain</td></tr>
       <tr><td>observers</td><td>Events, metrics, logging and tracing observers</td><td>domain, ports</td></tr>
       <tr><td>adapters</td><td>Git, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, observers, ports</td></tr>
       <tr><td>flow</td><td>Generic flow contracts and engine</td><td>domain, ports</td></tr>
@@ -151,10 +151,19 @@ svg text{font-family:var(--sans)}
     The engine calls supplied steps without importing their implementations.
     <code>src/config/agent-policy.ts</code> owns provider identity and shared model defaults;
     <code>src/config/scratch-directory.ts</code> owns the <code>.jig</code> convention.
-    <code>src/config/load-config.ts</code> owns the configuration schema and its validation;
+    <code>src/config/load-config.ts</code> owns the configuration schema, its validation and its defaults,
+    including the step retry count (2) and first retry delay (5000 ms) that <code>runSettingsFrom</code>
+    resolves into <code>RunSettings</code>; neither is an operator setting.
+    <code>src/domain/settings.ts</code> keeps <code>RunSettings</code>, the rules that compare a slice with
+    the resolved settings, and the stopping caps such as <code>HOOK_FAILURE_CAP</code>.
     <code>src/config/presets.ts</code> owns preset names, precedence, shadowing and the preset schema;
     <code>src/adapters/config</code> reads and updates the configuration file and finds and reads preset files.
-    Adapters own provider construction, credentials, authentication and scratch filesystem operations.</p>
+    Adapters own provider construction, credentials, authentication and scratch filesystem operations.
+    Config reads no file, environment variable or home directory: <code>src/cli/with-app.ts</code> captures
+    <code>process.env</code>, the working directory and the fallback home directory at the process edge
+    and hands them to <code>parseEnvironment</code>. That handler still prepares the invocation and
+    receives the container from <code>src/app/container.ts</code>, today's composition root;
+    moving preparation into application operations and composition out of <code>app</code> is later work.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
     of these owners. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
@@ -162,6 +171,8 @@ svg text{font-family:var(--sans)}
     runtime file cycles; intra-module type cycles and mixed cycles broken by erasure pass.</p>
   <ul>
     <li>Domain imports no other source owner; ports import only domain or ports.</li>
+    <li>Config imports no adapter and no filesystem or OS module (<code>node:fs</code>, <code>node:os</code>,
+      <code>write-file-atomic</code>); adapters may import config.</li>
     <li>Adapters cannot import flow; flow cannot import app or steps.</li>
     <li>Sources outside <code>integrations/github/</code> cannot import that integration.
       ESLint and <code>src/boundary.spec.ts</code> also preserve isolation for specs.</li>

@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { type AgentRole, agentRoleSchema, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid } from '../domain/errors.js';
-import { MAX_STEP_RETRIES, RETRY_DELAY_MS, type RunSettings } from '../domain/settings.js';
+import type { RunSettings } from '../domain/settings.js';
 import { AGENT_NAMES, agentNameSchema, resolvedModel } from './agent-policy.js';
 import { describeIssues } from './describe-issues.js';
 
@@ -125,14 +125,20 @@ function approvalWithoutVerify({ verifyCommand }: JigConfig): string | undefined
   return "No verifyCommand is set: slices are approved on the reviewer's word alone. Run `jig init` to have one proposed, or set it in jig.config.json.";
 }
 
-/** The parts of the config that decide how a run moves, with the retry policy jig fixes. */
+/** The parts of the config that decide how a run moves, with the retry defaults jig fixes. */
 export function runSettingsFrom(config: JigConfig): RunSettings {
   return {
     reviewCycleCap: config.reviewCycleCap,
-    maxStepRetries: MAX_STEP_RETRIES,
-    retryDelayMs: RETRY_DELAY_MS,
+    maxStepRetries: STEP_RETRIES,
+    retryDelayMs: STEP_RETRY_DELAY_MS,
     designGate: config.designGate,
     mergeMode: config.mergeMode,
     verifyCommand: config.verifyCommand,
   };
 }
+
+/** How many times a step that failed transiently is tried again before the run blocks. */
+const STEP_RETRIES = 2;
+
+/** Long enough for a rate limit or a container hiccup to clear. */
+const STEP_RETRY_DELAY_MS = 5000;
