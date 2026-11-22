@@ -532,12 +532,7 @@ describe('runJig', () => {
     };
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
     app.register({
-      config: asValue({
-        ...aJigConfig(),
-        ...everyStepOn(),
-        sandboxImage,
-        ...options.config,
-      }),
+      config: asValue(aJigConfig({ ...everyStepOn(), sandboxImage, ...options.config })),
     });
     const logger = mock<Logger>();
     const images = mock<SandboxImages>();

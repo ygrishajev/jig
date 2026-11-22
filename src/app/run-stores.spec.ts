@@ -54,7 +54,7 @@ describe('openRunStore', () => {
     const store = (
       await openRunStore({
         repoRoot,
-        config: { ...aJigConfig(), runStores },
+        config: aJigConfig({ runStores }),
       })
     ).unwrap();
     const state = aRunState();
@@ -66,7 +66,7 @@ describe('openRunStore', () => {
     const reopened = (
       await openRunStore({
         repoRoot,
-        config: { ...aJigConfig(), runStores },
+        config: aJigConfig({ runStores }),
       })
     ).unwrap();
     expect((await reopened.load(state.runId)).unwrap()).toEqual(saved);
@@ -82,10 +82,7 @@ describe('openRunStore', () => {
          save: async () => {},
        });`,
     );
-    const config = {
-      ...aJigConfig(),
-      runStores: ['load-only-store.mjs'],
-    };
+    const config = aJigConfig({ runStores: ['load-only-store.mjs'] });
 
     const store = (await openRunStore({ repoRoot, config })).unwrap();
 
@@ -103,10 +100,7 @@ describe('openRunStore', () => {
          save: async (state) => writeFileSync(path.join(repoRoot, 'saved.json'), JSON.stringify(state)),
        });`,
     );
-    const config = {
-      ...aJigConfig(),
-      runStores: ['file-store.mjs'],
-    };
+    const config = aJigConfig({ runStores: ['file-store.mjs'] });
     const state = aRunState();
 
     await (await openRunStore({ repoRoot, config })).unwrap().save(state);
@@ -124,10 +118,7 @@ describe('openRunStore', () => {
         path.join(repoRoot, 'empty-store.mjs'),
         `export default () => ({ load: async () => ${answer}, save: async () => {} });`,
       );
-      const config = {
-        ...aJigConfig(),
-        runStores: ['empty-store.mjs'],
-      };
+      const config = aJigConfig({ runStores: ['empty-store.mjs'] });
 
       const store = (await openRunStore({ repoRoot, config })).unwrap();
 
@@ -141,10 +132,7 @@ describe('openRunStore', () => {
       path.join(repoRoot, 'broken-store.mjs'),
       `export default () => ({ load: async () => ({ phase: 'nowhere' }), save: async () => {} });`,
     );
-    const config = {
-      ...aJigConfig(),
-      runStores: ['broken-store.mjs'],
-    };
+    const config = aJigConfig({ runStores: ['broken-store.mjs'] });
     const store = (await openRunStore({ repoRoot, config })).unwrap();
 
     const loaded = await store.load(aRunState().runId);
@@ -161,10 +149,7 @@ describe('openRunStore', () => {
          save: async () => {},
        });`,
     );
-    const config = {
-      ...aJigConfig(),
-      runStores: ['throwing-store.mjs'],
-    };
+    const config = aJigConfig({ runStores: ['throwing-store.mjs'] });
     const store = (await openRunStore({ repoRoot, config })).unwrap();
 
     const loaded = await store.load(aRunState().runId);
@@ -179,10 +164,7 @@ describe('openRunStore', () => {
       path.join(repoRoot, 'half-a-store.mjs'),
       'export default () => ({ load: async () => undefined });',
     );
-    const config = {
-      ...aJigConfig(),
-      runStores: ['half-a-store.mjs'],
-    };
+    const config = aJigConfig({ runStores: ['half-a-store.mjs'] });
 
     const opened = await openRunStore({ repoRoot, config });
 
@@ -192,10 +174,7 @@ describe('openRunStore', () => {
   it('refuses a module that does not export a store factory', async () => {
     const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(path.join(repoRoot, 'not-a-store.mjs'), 'export const store = {};');
-    const config = {
-      ...aJigConfig(),
-      runStores: ['not-a-store.mjs'],
-    };
+    const config = aJigConfig({ runStores: ['not-a-store.mjs'] });
 
     const opened = await openRunStore({ repoRoot, config });
 
