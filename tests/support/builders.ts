@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 
-import type { StepConfig } from '../../src/config/load-config.js';
+import { type JigConfig, loadConfig, type StepConfig } from '../../src/config/load-config.js';
 import type { PresetLabel } from '../../src/config/preset-source.js';
 import { type Preset, type PresetName, presetNameSchema } from '../../src/config/presets.js';
 import { byRole } from '../../src/domain/agent-role.js';
@@ -36,6 +36,8 @@ import type {
   WorkObservations,
 } from '../../src/domain/work-facts.js';
 import type { MetricsSummary } from '../../src/observers/metrics.js';
+import { InMemoryConfigSource } from './fakes.js';
+import { unwrap } from './unwrap.js';
 
 export function everyStepOn(step: StepConfig = { provider: 'claude' }) {
   return byRole(() => step);
@@ -445,4 +447,8 @@ export function aPreset({
   steps = {},
 }: Partial<Preset> = {}): Preset {
   return { name, label, description, steps };
+}
+
+export function aJigConfig(overrides: Partial<JigConfig> = {}): JigConfig {
+  return { ...unwrap(loadConfig(new InMemoryConfigSource({ custom: false }))), ...overrides };
 }

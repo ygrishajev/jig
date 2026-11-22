@@ -3,9 +3,8 @@ import { asValue } from 'awilix';
 import { Result } from 'better-result';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { runId } from '../../tests/support/builders.js';
+import { aJigConfig, runId } from '../../tests/support/builders.js';
 import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js';
-import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
@@ -64,7 +63,7 @@ describe('withRunScope', () => {
   async function setup(input: { failWith?: SandboxUnavailable } = {}) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
-    const config = repositoryConfig(repoRoot);
+    const config = aJigConfig();
     const app = createAppContainer({
       repoRoot,
       configDestination: configDestination(repoRoot),

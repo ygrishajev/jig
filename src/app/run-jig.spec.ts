@@ -23,6 +23,7 @@ import {
   aDesignFinding,
   aDisposition,
   aFeaturePlan,
+  aJigConfig,
   aPlannedSlice,
   aRunState,
   designDocs,
@@ -32,7 +33,6 @@ import {
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
-import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
@@ -503,7 +503,7 @@ describe('runJig', () => {
           faker.system.directoryPath(),
         ),
       ),
-      config: repositoryConfig(repo.dir),
+      config: aJigConfig(),
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
@@ -533,7 +533,7 @@ describe('runJig', () => {
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
     app.register({
       config: asValue({
-        ...repositoryConfig(repo.dir),
+        ...aJigConfig(),
         ...everyStepOn(),
         sandboxImage,
         ...options.config,

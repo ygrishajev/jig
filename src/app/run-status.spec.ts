@@ -7,12 +7,12 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import {
   aDesignFinding,
+  aJigConfig,
   aRunBlockedByDesignReview,
   aRunState,
   aSlice,
   runId,
 } from '../../tests/support/builders.js';
-import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
@@ -94,11 +94,11 @@ describe('readRunStatus', () => {
         logFormat: 'json',
         logLevel: 'silent',
         environment: unwrap(parseEnvironment({}, faker.system.directoryPath())),
-        config: repositoryConfig(repoRoot),
+        config: aJigConfig(),
       });
       onTestFinished(() => app.dispose());
       app.register({
-        config: asValue({ ...repositoryConfig(repoRoot), runStores }),
+        config: asValue({ ...aJigConfig(), runStores }),
       });
       return readRunStatus(app, id);
     };
