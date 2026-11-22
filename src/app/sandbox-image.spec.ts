@@ -5,8 +5,7 @@ import path from 'node:path';
 import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
 
-import { everyStepOn } from '../../tests/support/builders.js';
-import { repositoryConfig } from '../../tests/support/repository-config.js';
+import { aJigConfig, everyStepOn } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import { ConfigInvalid, ImageBuildFailed } from '../domain/errors.js';
@@ -175,7 +174,7 @@ describe('ensureSandboxImage', () => {
     };
     await writeDockerfile(faker.lorem.lines(3));
     const removeDockerfile = () => rm(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE));
-    const loaded = repositoryConfig(repoRoot);
+    const loaded = aJigConfig();
     const config = {
       ...loaded,
       ...(input.withoutAgents ? {} : everyStepOn()),

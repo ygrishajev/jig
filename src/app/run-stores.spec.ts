@@ -4,8 +4,7 @@ import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it } from 'vitest';
 
-import { aRunState } from '../../tests/support/builders.js';
-import { repositoryConfig } from '../../tests/support/repository-config.js';
+import { aJigConfig, aRunState } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
@@ -30,7 +29,7 @@ describe('openRunStore', () => {
 
   it('saves to the local store by default', async () => {
     const repoRoot = await tempDirectory('jig-stores-');
-    const store = (await openRunStore({ repoRoot, config: repositoryConfig(repoRoot) })).unwrap();
+    const store = (await openRunStore({ repoRoot, config: aJigConfig() })).unwrap();
     const state = aRunState();
 
     await store.save(state);
@@ -55,7 +54,7 @@ describe('openRunStore', () => {
     const store = (
       await openRunStore({
         repoRoot,
-        config: { ...repositoryConfig(repoRoot), runStores },
+        config: { ...aJigConfig(), runStores },
       })
     ).unwrap();
     const state = aRunState();
@@ -67,7 +66,7 @@ describe('openRunStore', () => {
     const reopened = (
       await openRunStore({
         repoRoot,
-        config: { ...repositoryConfig(repoRoot), runStores },
+        config: { ...aJigConfig(), runStores },
       })
     ).unwrap();
     expect((await reopened.load(state.runId)).unwrap()).toEqual(saved);
@@ -84,7 +83,7 @@ describe('openRunStore', () => {
        });`,
     );
     const config = {
-      ...repositoryConfig(repoRoot),
+      ...aJigConfig(),
       runStores: ['load-only-store.mjs'],
     };
 
@@ -105,7 +104,7 @@ describe('openRunStore', () => {
        });`,
     );
     const config = {
-      ...repositoryConfig(repoRoot),
+      ...aJigConfig(),
       runStores: ['file-store.mjs'],
     };
     const state = aRunState();
@@ -126,7 +125,7 @@ describe('openRunStore', () => {
         `export default () => ({ load: async () => ${answer}, save: async () => {} });`,
       );
       const config = {
-        ...repositoryConfig(repoRoot),
+        ...aJigConfig(),
         runStores: ['empty-store.mjs'],
       };
 
@@ -143,7 +142,7 @@ describe('openRunStore', () => {
       `export default () => ({ load: async () => ({ phase: 'nowhere' }), save: async () => {} });`,
     );
     const config = {
-      ...repositoryConfig(repoRoot),
+      ...aJigConfig(),
       runStores: ['broken-store.mjs'],
     };
     const store = (await openRunStore({ repoRoot, config })).unwrap();
@@ -163,7 +162,7 @@ describe('openRunStore', () => {
        });`,
     );
     const config = {
-      ...repositoryConfig(repoRoot),
+      ...aJigConfig(),
       runStores: ['throwing-store.mjs'],
     };
     const store = (await openRunStore({ repoRoot, config })).unwrap();
@@ -181,7 +180,7 @@ describe('openRunStore', () => {
       'export default () => ({ load: async () => undefined });',
     );
     const config = {
-      ...repositoryConfig(repoRoot),
+      ...aJigConfig(),
       runStores: ['half-a-store.mjs'],
     };
 
@@ -194,7 +193,7 @@ describe('openRunStore', () => {
     const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(path.join(repoRoot, 'not-a-store.mjs'), 'export const store = {};');
     const config = {
-      ...repositoryConfig(repoRoot),
+      ...aJigConfig(),
       runStores: ['not-a-store.mjs'],
     };
 
@@ -267,7 +266,7 @@ describe('openRunStore', () => {
     return {
       repoRoot,
       cloneOf,
-      config: repositoryConfig(repoRoot),
+      config: aJigConfig(),
       state: aRunState(),
       deferred: aRunState({ codePublication: 'deferred' }),
     };

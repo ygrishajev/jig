@@ -5,9 +5,8 @@ import pino, { type Logger } from 'pino';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
-import { everyStepOn, runId } from '../../../tests/support/builders.js';
+import { aJigConfig, everyStepOn, runId } from '../../../tests/support/builders.js';
 import { RecordingEventSink } from '../../../tests/support/fakes.js';
-import { repositoryConfig } from '../../../tests/support/repository-config.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { parseEnvironment } from '../../config/environment.js';
@@ -78,7 +77,7 @@ describe('sandcastleSessionOptions', () => {
   async function setup(input: { config?: Partial<JigConfig>; environment?: NodeJS.ProcessEnv }) {
     const repoRoot = await tempDirectory('jig-session-');
     const config = {
-      ...repositoryConfig(repoRoot),
+      ...aJigConfig(),
       ...everyStepOn(),
       ...input.config,
     };

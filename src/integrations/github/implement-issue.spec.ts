@@ -17,6 +17,7 @@ import {
   scriptWholeRun,
 } from '../../../tests/support/agent-scripts.js';
 import {
+  aJigConfig,
   aPlannedSlice,
   aRunState,
   everyStepOn,
@@ -26,7 +27,6 @@ import {
 import { anIssue, FakeGithub } from '../../../tests/support/fake-github.js';
 import { FakeAgentSession } from '../../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
-import { repositoryConfig } from '../../../tests/support/repository-config.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { configDestination } from '../../adapters/filesystem/config-source.js';
@@ -769,7 +769,7 @@ describe('implementIssue', () => {
         logFormat: 'json',
         logLevel: 'silent',
         configDestination: configDestination(repoRoot),
-        config: repositoryConfig(repoRoot),
+        config: aJigConfig(),
         environment: unwrap(
           parseEnvironment(
             {
