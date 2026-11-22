@@ -2,16 +2,21 @@ import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 import { homedir } from 'node:os';
 
-import { readConfigFile } from '../adapters/config/config-file.js';
 import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
+import {
+  type ConfigDestination,
+  configDestination,
+  configFileSource,
+} from '../adapters/filesystem/config-source.js';
 import { ensureRepositoryRoot } from '../adapters/git/repository.js';
 import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import type { LogFormat } from '../adapters/logging/create-logger.js';
 import { askForPreset, type PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import { processStandardInput, type StandardInput } from '../adapters/terminal/standard-input.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
+import type { ConfigSource } from '../config/config-source.js';
 import { parseEnvironment, withCredentials } from '../config/environment.js';
-import { configFileFor, type ReadConfig } from '../config/load-config.js';
+import { loadConfig } from '../config/load-config.js';
 import {
   configWithPreset,
   discoverPresets,
@@ -31,7 +36,7 @@ export interface Invocation {
   fallbackHomeDirectory: string;
   askForPreset: (presets: Preset[]) => Promise<PresetPick | undefined>;
   createAppContainer: typeof createAppContainer;
-  readConfig: ReadConfig;
+  configSourceAt: (destination: ConfigDestination) => ConfigSource;
   standardInput: StandardInput;
   presetFiles: PresetFiles;
 }
@@ -65,7 +70,7 @@ export function processInvocation(): Invocation {
     fallbackHomeDirectory: homedir(),
     askForPreset,
     createAppContainer,
-    readConfig: readConfigFile,
+    configSourceAt: configFileSource,
     standardInput: processStandardInput(),
     presetFiles: presetFilesOnDisk(),
   };
@@ -79,7 +84,7 @@ function openApp(
     fallbackHomeDirectory,
     askForPreset: ask,
     createAppContainer: createApp,
-    readConfig,
+    configSourceAt,
     presetFiles,
   }: Invocation,
 ): Promise<Result<AwilixContainer<AppCradle>, JigError>> {
@@ -88,8 +93,9 @@ function openApp(
     const parsedEnvironment = yield* parseEnvironment(environment, fallbackHomeDirectory);
     const savedCredentials = yield* readCredentialsFile(cwd);
     const jigEnvironment = withCredentials(parsedEnvironment, savedCredentials);
-    const configFile = configFileFor(cwd, configPath);
-    const projectConfig = yield* readConfig(configFile);
+    const destination = configDestination(cwd, configPath);
+    const configSource = configSourceAt(destination);
+    const projectConfig = yield* loadConfig(configSource);
     const presetLocations = { repoRoot: cwd, ...jigEnvironment };
     const presetName = yield* Result.await(
       selectedPreset(preset, presetFiles, presetLocations, ask),
@@ -99,7 +105,8 @@ function openApp(
       repoRoot: cwd,
       logFormat,
       environment: jigEnvironment,
-      configFile,
+      configDestination: destination,
+      configSource,
       config,
       presetFiles,
     });

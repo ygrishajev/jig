@@ -32,10 +32,11 @@ import {
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
+import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { readConfigFile } from '../adapters/config/config-file.js';
+import { configDestination } from '../adapters/filesystem/config-source.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
@@ -44,7 +45,7 @@ import { DOCKERFILE, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-r
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor, type JigConfig, validationWarnings } from '../config/load-config.js';
+import { type JigConfig, validationWarnings } from '../config/load-config.js';
 import { designReviewStage } from '../domain/design-review.js';
 import { designReviewReport } from '../domain/design-review-report.js';
 import {
@@ -493,7 +494,7 @@ describe('runJig', () => {
 
     const app = createAppContainer({
       repoRoot: repo.dir,
-      configFile: configFileFor(repo.dir),
+      configDestination: configDestination(repo.dir),
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(
@@ -502,7 +503,7 @@ describe('runJig', () => {
           faker.system.directoryPath(),
         ),
       ),
-      config: unwrap(readConfigFile(configFileFor(repo.dir))),
+      config: repositoryConfig(repo.dir),
     });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
@@ -532,7 +533,7 @@ describe('runJig', () => {
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
     app.register({
       config: asValue({
-        ...unwrap(readConfigFile(configFileFor(repo.dir))),
+        ...repositoryConfig(repo.dir),
         ...everyStepOn(),
         sandboxImage,
         ...options.config,

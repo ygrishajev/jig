@@ -7,11 +7,11 @@ import { mock } from 'vitest-mock-extended';
 
 import { everyStepOn, runId } from '../../../tests/support/builders.js';
 import { RecordingEventSink } from '../../../tests/support/fakes.js';
+import { repositoryConfig } from '../../../tests/support/repository-config.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { parseEnvironment } from '../../config/environment.js';
-import { configFileFor, type JigConfig } from '../../config/load-config.js';
-import { readConfigFile } from '../config/config-file.js';
+import { type JigConfig } from '../../config/load-config.js';
 import { stateDirectory } from '../local-store/run-paths.js';
 import {
   type OpenSessionInput,
@@ -78,7 +78,7 @@ describe('sandcastleSessionOptions', () => {
   async function setup(input: { config?: Partial<JigConfig>; environment?: NodeJS.ProcessEnv }) {
     const repoRoot = await tempDirectory('jig-session-');
     const config = {
-      ...unwrap(readConfigFile(configFileFor(repoRoot))),
+      ...repositoryConfig(repoRoot),
       ...everyStepOn(),
       ...input.config,
     };

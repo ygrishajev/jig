@@ -9,23 +9,22 @@ import { presetName } from '../../../tests/support/builders.js';
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { readConfigFile } from '../../adapters/config/config-file.js';
 import { presetFilesOnDisk } from '../../adapters/config/preset-files.js';
+import { configFileSource } from '../../adapters/filesystem/config-source.js';
 import { createAppContainer } from '../../app/container.js';
-import { CONFIG_FILE } from '../../config/load-config.js';
 import type { Preset, PresetName } from '../../config/presets.js';
 import type { FailureOutput } from '../with-error-handling.js';
 import { buildInputSchema, initSummary, registerSandboxCommands } from './sandbox.js';
 
 describe('initSummary', () => {
   it('tells the operator to check the starter files without an agent', () => {
-    expect(initSummary({ status: 'written' }, CONFIG_FILE)).toContain('jig init --no-agent');
+    expect(initSummary({ status: 'written' }, configName())).toContain('jig init --no-agent');
   });
 
   it('passes on what to set when steps have no agent', () => {
     const instruction = faker.lorem.sentence();
 
-    expect(initSummary({ status: 'needs-agents', instruction }, CONFIG_FILE)).toContain(
+    expect(initSummary({ status: 'needs-agents', instruction }, configName())).toContain(
       instruction,
     );
   });
@@ -33,21 +32,21 @@ describe('initSummary', () => {
   it('counts the attempts a verified sandbox took only when it took more than one', () => {
     const attempts = faker.number.int({ min: 2, max: 3 });
 
-    expect(initSummary({ status: 'verified', attempts }, CONFIG_FILE)).toContain(
+    expect(initSummary({ status: 'verified', attempts }, configName())).toContain(
       `${attempts} attempts`,
     );
-    expect(initSummary({ status: 'verified', attempts: 1 }, CONFIG_FILE)).not.toContain('attempt');
+    expect(initSummary({ status: 'verified', attempts: 1 }, configName())).not.toContain('attempt');
   });
 
   it('shows why the sandbox failed, and how many attempts were spent on it', () => {
     const failure = faker.lorem.paragraph();
     const attempts = faker.number.int({ min: 2, max: 3 });
 
-    const summary = initSummary({ status: 'failed', attempts, failure }, CONFIG_FILE);
+    const summary = initSummary({ status: 'failed', attempts, failure }, configName());
 
     expect(summary).toContain(failure);
     expect(summary).toContain(`${attempts} attempts`);
-    expect(initSummary({ status: 'failed', attempts: 1, failure }, CONFIG_FILE)).not.toContain(
+    expect(initSummary({ status: 'failed', attempts: 1, failure }, configName())).not.toContain(
       'attempts',
     );
   });
@@ -112,7 +111,7 @@ describe('build --preset', () => {
         fallbackHomeDirectory: home,
         askForPreset,
         createAppContainer: createApp,
-        readConfig: readConfigFile,
+        configSourceAt: configFileSource,
         standardInput: fakeStandardInput(),
         presetFiles: presetFilesOnDisk(builtinPresetsDirectory),
       },
@@ -124,3 +123,7 @@ describe('build --preset', () => {
     return { parse, askForPreset, createApp, failureOutput };
   }
 });
+
+function configName() {
+  return `${faker.word.noun()}.json`;
+}

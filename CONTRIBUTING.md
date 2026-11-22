@@ -83,8 +83,10 @@ and run flows. Download and open it in a browser; GitHub displays HTML as source
 | `src/prompts/`  | Inputs sent to agents.                                            |
 
 Config owns policy and defaults, including the step retry count and delay that resolve into
-`RunSettings`; domain owns `RunSettings` and the rules and stopping caps that read it. Adapters
-read and write configuration and preset files, and the CLI captures the process environment, working
+`RunSettings`; domain owns `RunSettings` and the rules and stopping caps that read it. Settings
+cross the `ConfigSource` contract in `src/config/config-source.ts`: config decides absence, schema,
+defaults and update merging, and `src/adapters/filesystem/config-source.ts` resolves the file and
+moves its raw JSON. Adapters also read preset files, and the CLI captures the process environment, working
 directory and home directory before config parses them. `npm run lint:dependencies` rejects config
 imports of adapters and filesystem or OS modules.
 

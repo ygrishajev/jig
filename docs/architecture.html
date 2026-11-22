@@ -157,7 +157,11 @@ svg text{font-family:var(--sans)}
     <code>src/domain/settings.ts</code> keeps <code>RunSettings</code>, the rules that compare a slice with
     the resolved settings, and the stopping caps such as <code>HOOK_FAILURE_CAP</code>.
     <code>src/config/presets.ts</code> owns preset names, precedence, shadowing and the preset schema;
-    <code>src/adapters/config</code> reads and updates the configuration file and finds and reads preset files.
+    <code>src/config/config-source.ts</code> is the settings boundary: <code>loadConfig</code> and
+    <code>updateConfig</code> decide required absence, schema validation, defaults and update merging
+    over a source that only moves raw JSON. <code>src/adapters/filesystem/config-source.ts</code> resolves
+    the settings file, reads and parses it and writes it atomically; <code>jig init</code> also takes its
+    concrete path to write the starter file. <code>src/adapters/config</code> finds and reads preset files.
     Adapters own provider construction, credentials, authentication and scratch filesystem operations.
     Config reads no file, environment variable or home directory: <code>src/cli/with-app.ts</code> captures
     <code>process.env</code>, the working directory and the fallback home directory at the process edge

@@ -3,8 +3,8 @@ import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMo
 import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
-import { readConfigFile, updateConfigFile } from '../adapters/config/config-file.js';
 import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
+import { type ConfigDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
@@ -31,14 +31,9 @@ import {
   type EnteredCredential,
 } from '../adapters/terminal/ask-for-credential.js';
 import type { AgentChoice } from '../config/agent-policy.js';
+import type { ConfigSource } from '../config/config-source.js';
 import type { JigEnvironment } from '../config/environment.js';
-import {
-  type ConfigFile,
-  type JigConfig,
-  type ReadConfig,
-  runSettingsFrom,
-  type UpdateConfig,
-} from '../config/load-config.js';
+import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import type { PresetFiles } from '../config/presets.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import { retryResult, transientRetryPolicy } from '../domain/retry.js';
@@ -67,10 +62,9 @@ export interface AppCradle {
   environment: JigEnvironment;
   logFormat: LogFormat;
   logLevel: string;
-  configFile: ConfigFile;
+  configDestination: ConfigDestination;
+  configSource: ConfigSource;
   config: JigConfig;
-  readConfig: ReadConfig;
-  updateConfig: UpdateConfig;
   presetFiles: PresetFiles;
   settings: RunSettings;
   logger: Logger;
@@ -108,7 +102,8 @@ export function createAppContainer(input: {
   logFormat: LogFormat;
   logLevel?: string;
   environment: JigEnvironment;
-  configFile: ConfigFile;
+  configDestination: ConfigDestination;
+  configSource?: ConfigSource;
   config: JigConfig;
   presetFiles?: PresetFiles;
 }): AwilixContainer<AppCradle> {
@@ -121,10 +116,9 @@ export function createAppContainer(input: {
     environment: asValue(input.environment),
     logFormat: asValue(input.logFormat),
     logLevel: asValue(input.logLevel ?? 'info'),
-    configFile: asValue(input.configFile),
+    configDestination: asValue(input.configDestination),
+    configSource: asValue(input.configSource ?? configFileSource(input.configDestination)),
     config: asValue(input.config),
-    readConfig: asValue(readConfigFile),
-    updateConfig: asValue(updateConfigFile),
     presetFiles: asValue(input.presetFiles ?? presetFilesOnDisk()),
     settings: asFunction(({ config }: AppCradle) => runSettingsFrom(config)).singleton(),
     logger: asFunction(({ logFormat, logLevel }: AppCradle) =>

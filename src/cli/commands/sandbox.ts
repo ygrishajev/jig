@@ -26,7 +26,7 @@ export function registerSandboxCommands(program: Command, io?: CommandIo): void 
         async ({ agent }, app) => {
           const result = await initSandbox(app, { useAgent: agent });
           if (result.isErr()) return Result.err(result.error);
-          app.cradle.logger.info(initSummary(result.value, app.cradle.configFile.name));
+          app.cradle.logger.info(initSummary(result.value, app.cradle.configSource.name));
           if (result.value.status === 'failed') process.exitCode = 1;
           return Result.ok();
         },

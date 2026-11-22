@@ -12,14 +12,15 @@ import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { readConfigFile } from '../adapters/config/config-file.js';
+import { configDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import type { EnteredCredential } from '../adapters/terminal/ask-for-credential.js';
 import type { AgentChoice } from '../config/agent-policy.js';
+import { ConfigUnwritable } from '../config/config-source.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor } from '../config/load-config.js';
+import { loadConfig } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
 import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import type { ExecResult } from '../ports/agent-session.js';
@@ -297,23 +298,62 @@ describe('initSandbox', () => {
   });
 
   it('stops before checking a toolchain it could not save to the config', async () => {
-    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
+    const failure = new ConfigUnwritable({
+      location: faker.system.filePath(),
+      detail: faker.lorem.sentence(),
+    });
     const { initResult, agent } = await setup({
       configured: true,
       proposals: [toolchainProposal()],
       exec: () => ({ exitCode: 0, output: '' }),
-      configUpdateFailure: failure,
+      configWriteFailure: failure,
     });
 
     const result = await initResult({ useAgent: true });
 
-    expect(result.isErr() && result.error).toBe(failure);
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error.message).toBe(
+      `Cannot read or write ${failure.location}: ${failure.detail}`,
+    );
     expect(agent.commands).toEqual([]);
+  });
+
+  it('starts, reads and updates the config the operator chose instead of the repository one', async () => {
+    const customConfig = path.join(faker.word.noun(), `${faker.word.noun()}.json`);
+    const answer = { provider: 'codex', model: faker.word.noun() } as const;
+    const proposal = toolchainProposal();
+    const { init, file, exists, write } = await setup({
+      customConfig,
+      answer,
+      proposals: [proposal],
+      exec: () => ({ exitCode: 0, output: '' }),
+    });
+    await write(path.join(path.dirname(customConfig), '.keep'), '');
+
+    expect(await init({ useAgent: true })).toEqual({ status: 'verified', attempts: 1 });
+    expect(JSON.parse(await file(customConfig))).toEqual({
+      ...everyStepOn(answer),
+      setupCommand: proposal.setupCommand,
+      verifyCommand: proposal.verifyCommand,
+    });
+    expect(exists('jig.config.json')).toBe(false);
+  });
+
+  it('writes neither starter file when the config is a link', async () => {
+    const { initResult, write, linkTo, exists } = await setup({});
+    await write('.sandcastle/keep', '');
+    await linkTo(path.join(await tempDirectory(), faker.string.uuid()), 'jig.config.json');
+
+    const refusal = await initResult({ useAgent: false });
+
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+    expect(exists('.sandcastle/Dockerfile')).toBe(false);
   });
 
   async function setup(input: {
     configured?: boolean;
-    configUpdateFailure?: ConfigInvalid;
+    configWriteFailure?: ConfigUnwritable;
+    customConfig?: string;
     answer?: AgentChoice;
     environment?: NodeJS.ProcessEnv;
     credential?: EnteredCredential;
@@ -331,9 +371,15 @@ describe('initSandbox', () => {
     for (const proposal of input.proposals ?? []) agent.script('planner', { output: proposal });
 
     const checkSandboxFailures = [...(input.checkSandboxFailures ?? [])];
+    const destination = configDestination(repo.dir, input.customConfig);
+    const source = configFileSource(destination);
+    const writeFailure = input.configWriteFailure;
     const app = createAppContainer({
       repoRoot: repo.dir,
-      configFile: configFileFor(repo.dir),
+      configDestination: destination,
+      configSource: writeFailure
+        ? { ...source, write: async () => Result.err(writeFailure) }
+        : source,
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(
@@ -346,7 +392,7 @@ describe('initSandbox', () => {
           faker.system.directoryPath(),
         ),
       ),
-      config: unwrap(readConfigFile(configFileFor(repo.dir))),
+      config: unwrap(loadConfig(configFileSource(configDestination(repo.dir)))),
     });
     const images = mock<SandboxImages>({
       labels: vi.fn().mockResolvedValue(Result.ok(undefined)),
@@ -362,9 +408,6 @@ describe('initSandbox', () => {
         return answer && Object.fromEntries(roles.map((role) => [role, answer]));
       }),
       latestVersions: asValue(async () => ({})),
-      ...(input.configUpdateFailure && {
-        updateConfig: asValue(async () => Result.err(input.configUpdateFailure)),
-      }),
       openSession: asValue(async ({ setupCommand }: OpenSessionInput) => {
         const failure = setupCommand === null ? undefined : checkSandboxFailures.shift();
         if (failure) return Result.err(failure);

@@ -9,6 +9,13 @@ import type { ZodType } from 'zod';
 
 import type { StandardInput } from '../../src/adapters/terminal/standard-input.js';
 import {
+  type ConfigContents,
+  ConfigNotJson,
+  type ConfigSource,
+  ConfigUnreadable,
+  ConfigUnwritable,
+} from '../../src/config/config-source.js';
+import {
   type PresetEntry,
   type PresetFiles,
   type PresetName,
@@ -365,4 +372,51 @@ function distinctPresetDirectories(): Record<PresetSource, string> {
     xdg: path.join(root, 'xdg'),
     builtin: path.join(root, 'builtin'),
   };
+}
+
+/**
+ * Settings kept in memory, so config's policy is checked without a filesystem. `stored` is what
+ * the last write left; `failure` makes reads or writes fail as a real destination can.
+ */
+export class InMemoryConfigSource implements ConfigSource {
+  readonly name: string;
+  readonly custom: boolean;
+  stored: ConfigContents;
+  private readonly failure?: 'unreadable' | 'not-json' | 'unwritable';
+  readonly location = faker.system.filePath();
+  readonly detail = faker.lorem.sentence();
+
+  constructor({
+    name = `${faker.word.noun()}.json`,
+    custom = faker.datatype.boolean(),
+    json,
+    failure,
+  }: {
+    name?: string;
+    custom?: boolean;
+    json?: unknown;
+    failure?: 'unreadable' | 'not-json' | 'unwritable';
+  } = {}) {
+    this.name = name;
+    this.custom = custom;
+    this.failure = failure;
+    this.stored =
+      json === undefined ? { kind: 'absent', detail: this.detail } : { kind: 'present', json };
+  }
+
+  read(): Result<ConfigContents, ConfigUnreadable | ConfigNotJson> {
+    if (this.failure === 'unreadable') {
+      return Result.err(new ConfigUnreadable({ location: this.location, detail: this.detail }));
+    }
+    if (this.failure === 'not-json') return Result.err(new ConfigNotJson({ detail: this.detail }));
+    return Result.ok(this.stored);
+  }
+
+  async write(settings: Record<string, unknown>): Promise<Result<void, ConfigUnwritable>> {
+    if (this.failure === 'unwritable') {
+      return Result.err(new ConfigUnwritable({ location: this.location, detail: this.detail }));
+    }
+    this.stored = { kind: 'present', json: structuredClone(settings) };
+    return Result.ok();
+  }
 }

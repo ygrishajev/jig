@@ -8,13 +8,13 @@ import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { readConfigFile } from '../adapters/config/config-file.js';
+import { configDestination } from '../adapters/filesystem/config-source.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor } from '../config/load-config.js';
 import {
   GitCommandFailed,
   MergeFailed,
@@ -121,11 +121,11 @@ describe('withThrowawaySandbox', () => {
     let opened = 0;
     const app = createAppContainer({
       repoRoot,
-      configFile: configFileFor(repoRoot),
+      configDestination: configDestination(repoRoot),
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(parseEnvironment({}, faker.system.directoryPath())),
-      config: unwrap(readConfigFile(configFileFor(repoRoot))),
+      config: repositoryConfig(repoRoot),
     });
     app.register({
       openSession: asValue(async ({ run }: OpenSessionInput) => {

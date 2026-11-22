@@ -5,11 +5,11 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { runId } from '../../tests/support/builders.js';
 import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js';
+import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { readConfigFile } from '../adapters/config/config-file.js';
+import { configDestination } from '../adapters/filesystem/config-source.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor } from '../config/load-config.js';
 import { MergeFailed, SandboxUnavailable } from '../domain/errors.js';
 import { createAppContainer, withRunScope } from './container.js';
 
@@ -64,10 +64,10 @@ describe('withRunScope', () => {
   async function setup(input: { failWith?: SandboxUnavailable } = {}) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
-    const config = unwrap(readConfigFile(configFileFor(repoRoot)));
+    const config = repositoryConfig(repoRoot);
     const app = createAppContainer({
       repoRoot,
-      configFile: configFileFor(repoRoot),
+      configDestination: configDestination(repoRoot),
       logFormat: 'json',
       logLevel: 'silent',
       environment: unwrap(parseEnvironment({}, faker.system.directoryPath())),

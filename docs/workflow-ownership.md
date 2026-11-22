@@ -312,8 +312,21 @@ flowchart LR
 ## Configuration I/O and defaults
 
 Configuration file reading and writing, preset discovery and reading, and environment capture
-have left `src/config`. `src/adapters/config/config-file.ts` reads and updates
-`jig.config.json`; `src/adapters/config/preset-files.ts` finds and reads preset files.
+have left `src/config`. `src/adapters/config/preset-files.ts` finds and reads preset files.
+
+Settings cross one boundary, the `ConfigSource` contract in `src/config/config-source.ts`. A
+source reports its destination's name, whether the operator chose it with `--config`, and either
+the raw JSON it holds or that nothing is there, with the native reason; it fails narrowly as
+unreadable, not JSON or unwritable, and writes whole settings. `loadConfig` in
+`src/config/load-config.ts` decides that only the repository's own settings may be absent,
+applies the strict schema and its defaults, and so refuses the retry defaults as keys.
+`updateConfig` in `src/config/update-config.ts` merges new keys over the current object, creates
+absent settings and refuses anything that is not an object. Both turn source failures into
+`ConfigInvalid` messages. `src/adapters/filesystem/config-source.ts` resolves the destination
+(`jig.config.json` in the repository root, or a `--config` path resolved against it), reads and
+parses its JSON and writes it atomically. `jig init` takes that concrete destination separately to
+write the starter file and to refuse symbolic links at both starter destinations before writing
+either.
 `src/cli/with-app.ts` captures `process.env`, the working directory and the fallback home
 directory at the process edge and passes them to `parseEnvironment`. Config keeps the schemas,
 defaults, provider and model policy, preset-name validation, precedence and selection.
