@@ -12,13 +12,11 @@ export interface PresetLocations extends Pick<JigEnvironment, 'homeDirectory' | 
   repoRoot: string;
 }
 
-/** The file system behind preset discovery and named loading: where presets are, and what they hold. */
 export interface PresetFiles {
   /** Each source's preset directory, absolute; the starters' is the package's own. */
   directories(roots: PresetRoots): Record<PresetSource, string>;
   /** The preset files in a directory, none when nothing is at its path. */
   filesIn(directory: string): Result<PresetEntry[], ConfigInvalid>;
-  /** Where a preset of this name would be in a directory. */
   fileFor(directory: string, name: PresetName): string;
   /** Anything at the path counts, a dangling link included; only an absent entry is not present. */
   isPresent(entryPath: string): Result<boolean, ConfigInvalid>;
@@ -26,7 +24,6 @@ export interface PresetFiles {
   read(filePath: string): Result<unknown, ConfigInvalid>;
 }
 
-/** The roots each source's preset directory is found under, as preset policy accepts them. */
 export interface PresetRoots {
   repoRoot: string;
   homeDirectory: string;

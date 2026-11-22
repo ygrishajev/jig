@@ -7,7 +7,6 @@ import type { PresetEntry, PresetFiles, PresetRoots, PresetSource } from '../../
 import { JIG_DIR } from '../../config/scratch-directory.js';
 import { ConfigInvalid, messageOf } from '../../domain/errors.js';
 
-/** Presets on disk; the starters are read from `builtinDirectory`, the package's own unless a spec points elsewhere. */
 export function presetFilesOnDisk(builtinDirectory = packagedPresetsDirectory()): PresetFiles {
   return {
     directories: (roots) => presetDirectoriesUnder(roots, builtinDirectory),
