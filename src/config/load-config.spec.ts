@@ -1,28 +1,25 @@
 import { faker } from '@faker-js/faker';
 import type { Result } from 'better-result';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { everyStepOn } from '../../tests/support/builders.js';
+import { InMemoryConfigSource } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { DEFAULT_CLAUDE_MODEL } from './agent-policy.js';
 import {
-  CONFIG_FILE,
-  configFileFor,
-  configFrom,
   configuredSteps,
   type JigConfig,
-  mayBeAbsent,
+  loadConfig,
   runSettingsFrom,
   type StepConfig,
   stepsWithoutAgent,
   validationWarnings,
 } from './load-config.js';
 
-describe('configFrom', () => {
+describe('loadConfig', () => {
   it('merges by hand and picks no agent when the file sets nothing', () => {
-    const config = unwrap(configFrom(aConfigFile(), {}));
+    const config = unwrap(loadSettings({}));
 
     expect(config).toMatchObject({
       mergeMode: 'manual',
@@ -34,7 +31,7 @@ describe('configFrom', () => {
 
   it('names the steps that still have no agent', () => {
     const config = unwrap(
-      configFrom(aConfigFile(), {
+      loadSettings({
         planner: { provider: 'claude' },
         reviewer: { provider: 'claude' },
       }),
@@ -48,7 +45,7 @@ describe('configFrom', () => {
 
   it('gives every step its agent once all of them have one', () => {
     const step = { provider: 'opencode', model: `openrouter/${faker.word.noun()}` } as const;
-    const config = unwrap(configFrom(aConfigFile(), everyStepOn(step)));
+    const config = unwrap(loadSettings(everyStepOn(step)));
 
     expect(unwrap(configuredSteps(config))).toEqual(everyStepOn(step));
   });
@@ -58,7 +55,7 @@ describe('configFrom', () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;
 
     const config = unwrap(
-      configFrom(aConfigFile(), {
+      loadSettings({
         implementer: { provider: 'opencode', model },
         verifyCommand,
         commitSigning: 'skip',
@@ -75,54 +72,48 @@ describe('configFrom', () => {
   it('takes the commands that prepare and check the sandbox', () => {
     const setupCommand = `npm ${faker.word.verb()}`;
 
-    const config = unwrap(configFrom(aConfigFile(), { setupCommand, setupTimeoutSeconds: 120 }));
+    const config = unwrap(loadSettings({ setupCommand, setupTimeoutSeconds: 120 }));
 
     expect(config).toMatchObject({ setupCommand, setupTimeoutSeconds: 120 });
   });
 
   it('rejects a misspelled key instead of ignoring it, naming the file', () => {
-    const file = aConfigFile();
+    const source = new InMemoryConfigSource({ json: { implement: { provider: 'claude' } } });
 
-    const result = configFrom(file, { implement: { provider: 'claude' } });
+    const result = loadConfig(source);
 
     expectInvalid(result, 'implement');
-    expectInvalid(result, file.name);
+    expectInvalid(result, `${source.name} is not valid — `);
   });
 
   it('rejects an unknown key as invalid config', () => {
-    expectInvalid(configFrom(aConfigFile(), { mergeMod: 'auto' }), 'mergeMod');
+    expectInvalid(loadSettings({ mergeMod: 'auto' }), 'mergeMod');
   });
 
   it.each([
     ['maxStepRetries', faker.number.int({ min: 0, max: 9 })],
     ['retryDelayMs', faker.number.int({ min: 0, max: 9999 })],
   ])('refuses %s, which the retry defaults do not let a project override', (key, value) => {
-    expectInvalid(configFrom(aConfigFile(), { [key]: value }), key);
+    expectInvalid(loadSettings({ [key]: value }), key);
   });
 
   it('rejects a file that does not hold an object', () => {
-    const file = aConfigFile();
+    const source = new InMemoryConfigSource({ json: [faker.word.noun()] });
 
-    expectInvalid(configFrom(file, [faker.word.noun()]), file.name);
+    expectInvalid(loadConfig(source), source.name);
   });
 
   it('rejects an agent it does not know', () => {
-    expectInvalid(
-      configFrom(aConfigFile(), { reviewer: { provider: faker.word.noun() } }),
-      'reviewer',
-    );
+    expectInvalid(loadSettings({ reviewer: { provider: faker.word.noun() } }), 'reviewer');
   });
 
   it('takes a version pin for a known agent and rejects one for an agent it does not know', () => {
     const version = faker.system.semver();
 
-    expect(unwrap(configFrom(aConfigFile(), { agents: { opencode: version } })).agents).toEqual({
+    expect(unwrap(loadSettings({ agents: { opencode: version } })).agents).toEqual({
       opencode: version,
     });
-    expectInvalid(
-      configFrom(aConfigFile(), { agents: { [faker.word.noun()]: version } }),
-      'agents',
-    );
+    expectInvalid(loadSettings({ agents: { [faker.word.noun()]: version } }), 'agents');
   });
 
   function expectInvalid(result: Result<JigConfig, ConfigInvalid>, mention: string): void {
@@ -132,29 +123,35 @@ describe('configFrom', () => {
   }
 });
 
-describe('configFileFor', () => {
-  it("selects the repository's own config, which may be absent", () => {
-    const repoRoot = faker.system.directoryPath();
+describe('loadConfig from its source', () => {
+  it("gives every default when the repository's own settings are absent", () => {
+    const source = new InMemoryConfigSource({ custom: false });
 
-    const file = configFileFor(repoRoot);
-
-    expect(file).toEqual({
-      path: path.join(repoRoot, CONFIG_FILE),
-      name: CONFIG_FILE,
-      named: false,
-    });
-    expect(mayBeAbsent(file)).toBe(true);
+    expect(unwrap(loadConfig(source))).toEqual(unwrap(loadSettings({})));
   });
 
-  it('selects a preset named by the operator against the repository root, which must exist', () => {
-    const repoRoot = faker.system.directoryPath();
-    const preset = `${faker.word.noun()}.json`;
+  it('refuses absent settings the operator chose, with why nothing was found', () => {
+    const source = new InMemoryConfigSource({ custom: true });
 
-    const file = configFileFor(repoRoot, preset);
-
-    expect(file).toEqual({ path: path.join(repoRoot, preset), name: preset, named: true });
-    expect(mayBeAbsent(file)).toBe(false);
+    expectExactly(loadConfig(source), `Cannot read ${source.name}: ${source.detail}`);
   });
+
+  it('refuses settings it cannot read, with why', () => {
+    const source = new InMemoryConfigSource({ failure: 'unreadable' });
+
+    expectExactly(loadConfig(source), `Cannot read ${source.name}: ${source.detail}`);
+  });
+
+  it('refuses settings that are not JSON, with why', () => {
+    const source = new InMemoryConfigSource({ failure: 'not-json' });
+
+    expectExactly(loadConfig(source), `${source.name} is not valid JSON: ${source.detail}`);
+  });
+
+  function expectExactly(result: Result<JigConfig, ConfigInvalid>, message: string): void {
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error.message).toBe(message);
+  }
 });
 
 describe('runSettingsFrom', () => {
@@ -162,7 +159,7 @@ describe('runSettingsFrom', () => {
     const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const config = {
-      ...unwrap(configFrom(aConfigFile(), {})),
+      ...unwrap(loadSettings({})),
       reviewCycleCap,
       verifyCommand,
       designGate: 'checkpoint' as const,
@@ -298,12 +295,12 @@ describe('validationWarnings', () => {
   );
 
   function setup(contents: Record<string, unknown>) {
-    return unwrap(configFrom(aConfigFile(), contents));
+    return unwrap(loadSettings(contents));
   }
 });
 
-function aConfigFile() {
-  return configFileFor(faker.system.directoryPath());
+function loadSettings(json: unknown) {
+  return loadConfig(new InMemoryConfigSource({ json }));
 }
 
 function aVerifyCommand() {

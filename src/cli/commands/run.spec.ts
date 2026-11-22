@@ -9,8 +9,8 @@ import { aRunState, aSlice, presetName, runId } from '../../../tests/support/bui
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { readConfigFile } from '../../adapters/config/config-file.js';
 import { presetFilesOnDisk } from '../../adapters/config/preset-files.js';
+import { configFileSource } from '../../adapters/filesystem/config-source.js';
 import type { StandardInput } from '../../adapters/terminal/standard-input.js';
 import { createAppContainer } from '../../app/container.js';
 import type { Preset, PresetName } from '../../config/presets.js';
@@ -193,7 +193,7 @@ describe('run -', () => {
         fallbackHomeDirectory: home,
         askForPreset: vi.fn(async (_presets: Preset[]) => undefined),
         createAppContainer: createApp,
-        readConfig: readConfigFile,
+        configSourceAt: configFileSource,
         standardInput: input.standardInput,
         presetFiles: presetFilesOnDisk(),
       },
@@ -252,7 +252,7 @@ describe('run --preset', () => {
         fallbackHomeDirectory: home,
         askForPreset,
         createAppContainer: createApp,
-        readConfig: readConfigFile,
+        configSourceAt: configFileSource,
         standardInput: fakeStandardInput(),
         presetFiles: presetFilesOnDisk(builtinPresetsDirectory),
       },

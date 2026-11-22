@@ -12,13 +12,13 @@ import {
   aSlice,
   runId,
 } from '../../tests/support/builders.js';
+import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { readConfigFile } from '../adapters/config/config-file.js';
+import { configDestination } from '../adapters/filesystem/config-source.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
@@ -90,15 +90,15 @@ describe('readRunStatus', () => {
     const statusIn = async (repoRoot: string, runStores: string[], id: RunId) => {
       const app = createAppContainer({
         repoRoot,
-        configFile: configFileFor(repoRoot),
+        configDestination: configDestination(repoRoot),
         logFormat: 'json',
         logLevel: 'silent',
         environment: unwrap(parseEnvironment({}, faker.system.directoryPath())),
-        config: unwrap(readConfigFile(configFileFor(repoRoot))),
+        config: repositoryConfig(repoRoot),
       });
       onTestFinished(() => app.dispose());
       app.register({
-        config: asValue({ ...unwrap(readConfigFile(configFileFor(repoRoot))), runStores }),
+        config: asValue({ ...repositoryConfig(repoRoot), runStores }),
       });
       return readRunStatus(app, id);
     };

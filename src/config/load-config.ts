@@ -1,50 +1,56 @@
 import { Result } from 'better-result';
-import path from 'node:path';
 import { z } from 'zod';
 
 import { type AgentRole, agentRoleSchema, byRole } from '../domain/agent-role.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
 import { AGENT_NAMES, agentNameSchema, resolvedModel } from './agent-policy.js';
+import {
+  type ConfigContents,
+  ConfigNotJson,
+  type ConfigSource,
+  type ConfigUnreadable,
+} from './config-source.js';
 import { describeIssues } from './describe-issues.js';
 
-/** Reads the config a command selected: its own settings over every default. */
-export type ReadConfig = (file: ConfigFile) => Result<JigConfig, ConfigInvalid>;
-
-/** The config a command reads and writes: the repository's own, or a preset named with `--config`. */
-export interface ConfigFile {
-  path: string;
-  name: string;
-  /** A preset the operator named must exist; the repository's own may be absent. */
-  named: boolean;
+/** The settings at the source over every default; only the repository's own may be absent. */
+export function loadConfig(source: ConfigSource): Result<JigConfig, ConfigInvalid> {
+  return source
+    .read()
+    .mapError((failure) => unreadableConfig(source, failure))
+    .andThen((contents) => settingsIn(source, contents))
+    .andThen((json) => configFrom(source, json));
 }
 
-/** Sets the given keys in the config a command selected, keeping every other key as written. */
-export type UpdateConfig = (
-  file: ConfigFile,
-  values: Record<string, unknown>,
-) => Promise<Result<void, ConfigInvalid>>;
-
-/** A named preset resolves against the repository root, where every command starts. */
-export function configFileFor(repoRoot: string, preset?: string): ConfigFile {
-  return preset === undefined
-    ? { path: path.join(repoRoot, CONFIG_FILE), name: CONFIG_FILE, named: false }
-    : { path: path.resolve(repoRoot, preset), name: preset, named: true };
+function unreadableConfig(
+  source: ConfigSource,
+  failure: ConfigUnreadable | ConfigNotJson,
+): ConfigInvalid {
+  return new ConfigInvalid({
+    message:
+      failure instanceof ConfigNotJson
+        ? `${source.name} is not valid JSON: ${failure.detail}`
+        : `Cannot read ${source.name}: ${failure.detail}`,
+  });
 }
 
-export const CONFIG_FILE = 'jig.config.json';
-
-export function mayBeAbsent(file: ConfigFile): boolean {
-  return !file.named;
+function settingsIn(
+  source: ConfigSource,
+  contents: ConfigContents,
+): Result<unknown, ConfigInvalid> {
+  if (contents.kind === 'present') return Result.ok(contents.json);
+  return source.custom
+    ? Result.err(new ConfigInvalid({ message: `Cannot read ${source.name}: ${contents.detail}` }))
+    : Result.ok({});
 }
 
-export function configFrom(file: ConfigFile, json: unknown): Result<JigConfig, ConfigInvalid> {
+function configFrom(source: ConfigSource, json: unknown): Result<JigConfig, ConfigInvalid> {
   const parsed = configSchema.safeParse(json);
   return parsed.success
     ? Result.ok(parsed.data)
     : Result.err(
         new ConfigInvalid({
-          message: `${file.name} is not valid — ${describeIssues(parsed.error)}`,
+          message: `${source.name} is not valid — ${describeIssues(parsed.error)}`,
         }),
       );
 }

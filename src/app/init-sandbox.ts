@@ -5,6 +5,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 
+import type { ConfigDestination } from '../adapters/filesystem/config-source.js';
 import { refuseSymlinks } from '../adapters/find-symlink.js';
 import { saveCredential } from '../adapters/local-store/credentials-file.js';
 import {
@@ -21,12 +22,13 @@ import {
 } from '../adapters/sandcastle/sandcastle-session.js';
 import { withCredentials } from '../config/environment.js';
 import {
-  type ConfigFile,
   configuredSteps,
   type JigConfig,
+  loadConfig,
   type StepConfig,
   stepsWithoutAgent,
 } from '../config/load-config.js';
+import { updateConfig } from '../config/update-config.js';
 import {
   type AgentOutputInvalid,
   type AgentRunFailed,
@@ -67,10 +69,10 @@ export function initSandbox(
   options: { useAgent: boolean },
 ): Promise<Result<InitResult, InitFailure>> {
   return Result.gen(async function* () {
-    const { repoRoot, configFile, readConfig, updateConfig } = app.cradle;
-    yield* Result.await(writeStarterFiles(repoRoot, configFile));
+    const { repoRoot, configDestination, configSource } = app.cradle;
+    yield* Result.await(writeStarterFiles(repoRoot, configDestination));
     if (options.useAgent) yield* Result.await(chooseMissingAgents(app));
-    const config = yield* readConfig(configFile);
+    const config = yield* loadConfig(configSource);
     app.register({ config: asValue(config) });
     const steps = configuredSteps(config);
     if (steps.isErr()) {
@@ -87,7 +89,7 @@ export function initSandbox(
       const proposal = yield* Result.await(proposeToolchain(app, previousFailure));
       yield* Result.await(writeToolchain(repoRoot, proposal.toolchain));
       yield* Result.await(
-        updateConfig(configFile, {
+        updateConfig(configSource, {
           setupCommand: proposal.setupCommand,
           verifyCommand: proposal.verifyCommand,
         }),
@@ -109,12 +111,12 @@ export function initSandbox(
 
 async function writeStarterFiles(
   repoRoot: string,
-  configFile: ConfigFile,
+  configDestination: ConfigDestination,
 ): Promise<Result<void, ConfigInvalid>> {
   const ignored = await ignoreSandcastleDirectory(repoRoot);
   if (ignored.isErr()) return ignored;
   const dockerfile = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
-  const config = configFile.path;
+  const config = configDestination.path;
   const refused = refuseSymlinks([dockerfile, config]);
   if (refused.isErr()) return refused;
   const written = await writeIfMissing(dockerfile, BASE_DOCKERFILE);
@@ -137,13 +139,13 @@ function writeRepoFile(file: string, contents: string): Promise<Result<void, Con
 async function chooseMissingAgents(
   app: AwilixContainer<AppCradle>,
 ): Promise<Result<void, ConfigInvalid>> {
-  const { configFile, askForAgents, readConfig, updateConfig } = app.cradle;
-  const config = readConfig(configFile);
+  const { configSource, askForAgents } = app.cradle;
+  const config = loadConfig(configSource);
   if (config.isErr()) return Result.err(config.error);
   const missing = stepsWithoutAgent(config.value);
   if (missing.length === 0) return Result.ok();
   const agents = await askForAgents(missing);
-  return agents ? updateConfig(configFile, agents) : Result.ok();
+  return agents ? updateConfig(configSource, agents) : Result.ok();
 }
 
 async function checkConfiguredCommands(
@@ -229,8 +231,8 @@ async function proposeToolchain(
   previousFailure?: string,
 ): Promise<Result<z.infer<typeof toolchainSchema>, InitFailure>> {
   return Result.gen(async function* () {
-    const { repoRoot, configFile, readConfig } = app.cradle;
-    const config = yield* readConfig(configFile);
+    const { repoRoot, configSource } = app.cradle;
+    const config = yield* loadConfig(configSource);
     const dockerfile = yield* Result.await(readSandboxDockerfile(repoRoot));
     const proposed = yield* Result.await(
       withSandbox(app, null, (session) =>

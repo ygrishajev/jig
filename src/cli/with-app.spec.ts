@@ -8,15 +8,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { presetName } from '../../tests/support/builders.js';
-import { fakeStandardInput } from '../../tests/support/fakes.js';
+import { fakeStandardInput, InMemoryConfigSource } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { readConfigFile } from '../adapters/config/config-file.js';
 import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
+import { configFileSource } from '../adapters/filesystem/config-source.js';
 import type { PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
-import type { ReadConfig } from '../config/load-config.js';
+import type { ConfigSource } from '../config/config-source.js';
 import type { Preset, PresetName } from '../config/presets.js';
 import { ConfigInvalid, type JigError } from '../domain/errors.js';
 import type { PresetSelection } from './config-option.js';
@@ -93,13 +93,16 @@ describe('withApp', () => {
   });
 
   it('refuses a config it cannot read, before the command runs', async () => {
-    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
-    const { run, createApp } = await setup({ readConfig: () => Result.err(failure) });
+    const source = new InMemoryConfigSource({ failure: 'unreadable' });
+    const { run, createApp } = await setup({ configSource: source });
     const command = vi.fn();
 
     const result = await run(command);
 
-    expect(result.isErr() && result.error).toBe(failure);
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error.message).toBe(
+      `Cannot read ${source.name}: ${source.detail}`,
+    );
     expect(command).not.toHaveBeenCalled();
     expect(createApp).not.toHaveBeenCalled();
   });
@@ -111,11 +114,15 @@ describe('withApp', () => {
 
     const opened = (
       await run(async (app) =>
-        Result.ok({ file: app.cradle.configFile.path, mergeMode: app.cradle.config.mergeMode }),
+        Result.ok({
+          file: app.cradle.configDestination.path,
+          name: app.cradle.configSource.name,
+          mergeMode: app.cradle.config.mergeMode,
+        }),
       )
     ).unwrap();
 
-    expect(opened).toEqual({ file: path.join(cwd, preset), mergeMode: 'auto' });
+    expect(opened).toEqual({ file: path.join(cwd, preset), name: preset, mergeMode: 'auto' });
   });
 
   it("swaps in the agents of the preset it was given from the operator's home directory", async () => {
@@ -288,7 +295,7 @@ describe('withApp', () => {
       config?: string;
       preset?: PresetSelection;
       pick?: PresetPick;
-      readConfig?: ReadConfig;
+      configSource?: ConfigSource;
     } = {},
   ) {
     const repo = await createTempRepo();
@@ -321,7 +328,7 @@ describe('withApp', () => {
           fallbackHomeDirectory,
           askForPreset,
           createAppContainer: createApp,
-          readConfig: input.readConfig ?? readConfigFile,
+          configSourceAt: (destination) => input.configSource ?? configFileSource(destination),
           standardInput: fakeStandardInput(),
           presetFiles: presetFilesOnDisk(builtinPresetsDirectory),
         },

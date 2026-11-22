@@ -5,12 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { readConfigFile } from '../../src/adapters/config/config-file.js';
 import { sandboxImageName } from '../../src/app/sandbox-image.js';
-import { configFileFor } from '../../src/config/load-config.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import { runBranchFor } from '../../src/domain/run-state.js';
-import { unwrap } from '../support/unwrap.js';
+import { repositoryConfig } from '../support/repository-config.js';
 import {
   createFeatureRepository,
   FEATURE_FIXTURE,
@@ -77,7 +75,7 @@ describe('live feature pipeline', () => {
       }
       console.error(`E2E artifacts retained at ${repo}`);
     });
-    const image = sandboxImageName(repo, unwrap(readConfigFile(configFileFor(repo))));
+    const image = sandboxImageName(repo, repositoryConfig(repo));
     return {
       repo,
       jig: async (...args: string[]) => {

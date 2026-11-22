@@ -2,10 +2,10 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { presetName } from '../../tests/support/builders.js';
-import { FakePresetFiles } from '../../tests/support/fakes.js';
+import { FakePresetFiles, InMemoryConfigSource } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
-import { configFileFor, configFrom, runSettingsFrom } from './load-config.js';
+import { loadConfig, runSettingsFrom } from './load-config.js';
 import {
   configWithPreset,
   discoverPresets,
@@ -380,7 +380,7 @@ describe('presets', () => {
       xdgConfigHome: 'xdgConfigHome' in input ? input.xdgConfigHome : faker.system.directoryPath(),
     };
     const projectConfig = (contents: Record<string, unknown>) =>
-      unwrap(configFrom(configFileFor(locations.repoRoot), contents));
+      unwrap(loadConfig(new InMemoryConfigSource({ json: contents })));
     return { files, locations, projectConfig };
   }
 });
