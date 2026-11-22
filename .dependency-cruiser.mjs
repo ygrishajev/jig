@@ -37,6 +37,21 @@ export default {
       to: { path: '^src/', pathNot: '^src/(ports|domain)/' },
     },
     {
+      name: 'config-does-no-io',
+      comment:
+        'Config owns schemas, defaults and selection policy. Reading files, the home directory ' +
+        'and the environment happens in adapters and at the process edge, which hand config values.',
+      severity: 'error',
+      from: { path: '^src/config/' },
+      to: {
+        path: [
+          '^(node:)?(fs|fs/promises|os)$',
+          '^src/adapters/',
+          'node_modules/write-file-atomic/',
+        ],
+      },
+    },
+    {
       name: 'adapters-do-not-import-flow',
       severity: 'error',
       from: { path: '^src/adapters/' },

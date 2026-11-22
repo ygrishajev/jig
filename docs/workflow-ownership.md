@@ -308,3 +308,26 @@ flowchart LR
   steps --> ports
   steps --> prompts
 ```
+
+## Configuration I/O and defaults
+
+Configuration file reading and writing, preset discovery and reading, and environment capture
+have left `src/config`. `src/adapters/config/config-file.ts` reads and updates
+`jig.config.json`; `src/adapters/config/preset-files.ts` finds and reads preset files.
+`src/cli/with-app.ts` captures `process.env`, the working directory and the fallback home
+directory at the process edge and passes them to `parseEnvironment`. Config keeps the schemas,
+defaults, provider and model policy, preset-name validation, precedence and selection.
+
+The step retry count (2) and first retry delay (5000 ms) are private defaults in
+`src/config/load-config.ts`, which `runSettingsFrom` resolves into `RunSettings`. They are not
+configuration keys, and presets still override agent roles only. `src/domain/settings.ts` keeps
+`RunSettings`, `reviewCapReached`, `sliceNeedsVerification` and the stopping caps
+(`HOOK_FAILURE_CAP`, `VERIFICATION_FAILURE_CAP`, `EMPTY_ATTEMPT_CAP`, `RULE_FIX_CAP`).
+`retryResult` reads the resolved count and delay unchanged.
+
+Dependency-cruiser's `config-does-no-io` rule rejects config imports of adapters, `node:fs`,
+`node:fs/promises`, `node:os` and `write-file-atomic`. Adapters may import config, and ports
+still depend only on domain. CLI commands still receive the container through
+`src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepares the invocation, and
+`src/app/container.ts` remains the composition root; moving preparation into application
+operations and composition out of `app` are separate slices.

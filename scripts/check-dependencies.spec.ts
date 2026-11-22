@@ -93,6 +93,31 @@ describe('dependency checking command', () => {
     expect(result.all).toContain(`src/${to}/b.ts`);
   });
 
+  it.each([
+    "import { readFileSync } from 'node:fs'; export const a = readFileSync;",
+    "import { readFile } from 'node:fs/promises'; export const a = readFile;",
+    "import { readFile } from 'fs/promises'; export const a = readFile;",
+    "import { homedir } from 'node:os'; export const a = homedir;",
+    "import type { B } from '../../adapters/config/b.js'; export type A = B;",
+  ])('rejects config reaching for I/O: %s', async (source) => {
+    const { run } = await setup({
+      'config/nested/a.ts': source,
+      'adapters/config/b.ts': 'export type B = string;',
+    });
+    const result = await run();
+    expect(result.exitCode).toBe(1);
+    expect(result.all).toContain('config-does-no-io');
+    expect(result.all).toContain('src/config/nested/a.ts');
+  });
+
+  it('accepts adapters that read config policy and config that resolves paths', async () => {
+    const { run } = await setup({
+      'adapters/config/a.ts': "import { b } from '../../config/b.js'; export const a = b;",
+      'config/b.ts': "import path from 'node:path'; export const b = path.join('a', 'b');",
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
   it.each(['unknown/a.ts', 'stray.ts', 'app-other/a.ts'])(
     'rejects unowned production file %s',
     async (file) => {

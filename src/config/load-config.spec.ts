@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 import { everyStepOn } from '../../tests/support/builders.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { ConfigInvalid } from '../domain/errors.js';
-import { MAX_STEP_RETRIES, RETRY_DELAY_MS } from '../domain/settings.js';
 import { DEFAULT_CLAUDE_MODEL } from './agent-policy.js';
 import {
   CONFIG_FILE,
@@ -94,6 +93,13 @@ describe('configFrom', () => {
     expectInvalid(configFrom(aConfigFile(), { mergeMod: 'auto' }), 'mergeMod');
   });
 
+  it.each([
+    ['maxStepRetries', faker.number.int({ min: 0, max: 9 })],
+    ['retryDelayMs', faker.number.int({ min: 0, max: 9999 })],
+  ])('refuses %s, which the retry defaults do not let a project override', (key, value) => {
+    expectInvalid(configFrom(aConfigFile(), { [key]: value }), key);
+  });
+
   it('rejects a file that does not hold an object', () => {
     const file = aConfigFile();
 
@@ -152,7 +158,7 @@ describe('configFileFor', () => {
 });
 
 describe('runSettingsFrom', () => {
-  it("takes how a run moves from the config, and the retry policy from jig's own", () => {
+  it('takes how a run moves from the config, and retries a failed step twice from 5000 ms', () => {
     const reviewCycleCap = faker.number.int({ min: 1, max: 9 });
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const config = {
@@ -168,8 +174,8 @@ describe('runSettingsFrom', () => {
       verifyCommand,
       designGate: 'checkpoint',
       mergeMode: 'auto',
-      maxStepRetries: MAX_STEP_RETRIES,
-      retryDelayMs: RETRY_DELAY_MS,
+      maxStepRetries: 2,
+      retryDelayMs: 5000,
     });
   });
 });

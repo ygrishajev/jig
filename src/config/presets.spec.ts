@@ -276,6 +276,9 @@ describe('presets', () => {
       ['an unknown top-level key', { planer: { provider: 'claude' } }, 'planer'],
       ['an unknown step key', { planner: { provider: 'claude', modle: 'opus' } }, 'modle'],
       ['a project setting', { mergeMode: 'auto' }, 'mergeMode'],
+      ['a review cap', { reviewCycleCap: 5 }, 'reviewCycleCap'],
+      ['a step retry count', { maxStepRetries: 1 }, 'maxStepRetries'],
+      ['a retry delay', { retryDelayMs: 1000 }, 'retryDelayMs'],
       ['an unknown agent', { planner: { provider: 'nobody' } }, 'planner.provider'],
     ])('refuses a preset with %s', (_, contents, offendingKey) => {
       const { files, locations } = setup({});

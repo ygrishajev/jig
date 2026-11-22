@@ -70,16 +70,23 @@ agent calls; it is excluded from `npm test` and `npm run validate`.
 Explore the [interactive architecture map](docs/architecture.html) for module relationships
 and run flows. Download and open it in a browser; GitHub displays HTML as source.
 
-| Directory       | Responsibility                                        |
-| --------------- | ----------------------------------------------------- |
-| `src/cli/`      | Commands and input parsing.                           |
-| `src/app/`      | Application lifecycle, workflow assembly, and wiring. |
-| `src/domain/`   | State, validation, and domain decisions.              |
-| `src/flow/`     | Generic flow contracts and execution.                 |
-| `src/steps/`    | Individual pipeline steps.                            |
-| `src/ports/`    | Interfaces for external operations.                   |
-| `src/adapters/` | Git, containers, storage, terminals, and telemetry.   |
-| `src/prompts/`  | Inputs sent to agents.                                |
+| Directory       | Responsibility                                                    |
+| --------------- | ----------------------------------------------------------------- |
+| `src/cli/`      | Commands and input parsing.                                       |
+| `src/app/`      | Application lifecycle, workflow assembly, and wiring.             |
+| `src/config/`   | Configuration schemas, defaults, presets, and policy.             |
+| `src/domain/`   | State, validation, and domain decisions.                          |
+| `src/flow/`     | Generic flow contracts and execution.                             |
+| `src/steps/`    | Individual pipeline steps.                                        |
+| `src/ports/`    | Interfaces for external operations.                               |
+| `src/adapters/` | Git, containers, storage, config files, terminals, and telemetry. |
+| `src/prompts/`  | Inputs sent to agents.                                            |
+
+Config owns policy and defaults, including the step retry count and delay that resolve into
+`RunSettings`; domain owns `RunSettings` and the rules and stopping caps that read it. Adapters
+read and write configuration and preset files, and the CLI captures the process environment, working
+directory and home directory before config parses them. `npm run lint:dependencies` rejects config
+imports of adapters and filesystem or OS modules.
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,
