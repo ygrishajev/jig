@@ -39,5 +39,11 @@ description: jig's conventions for committing, naming a branch and opening a pul
    terms. Those go in **How**.
 3. Reference the issue in **Why**: `Closes` / `Fixes` / `Resolves #123` when the PR fully
    resolves it, `Refs #123` when it only partly does.
-4. **Verification** lists the commands actually run and what they reported, and says what was not
+4. When the change decides where something lives — a module owner, a schema, a default, a failure
+   class, a port, wiring — **How** names the owner, says why the concept belongs there, and says
+   whether it sets a pattern agents should copy or is a one-off they should not. Dependency lint
+   checks import directions; reviewers judge ownership from what you write here. Name the owner in
+   the target layout of `docs/specs/application-boundaries.md`, and say so when today's layout
+   keeps the code elsewhere.
+5. **Verification** lists the commands actually run and what they reported, and says what was not
    run. Don't tick a box you didn't run.
