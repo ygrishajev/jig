@@ -8,9 +8,10 @@ import { aRunState } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { readConfigFile } from '../adapters/config/config-file.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
-import { configFileFor, loadConfig } from '../config/load-config.js';
+import { configFileFor } from '../config/load-config.js';
 import { ConfigInvalid } from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { openRunStore } from './run-stores.js';
@@ -31,7 +32,7 @@ describe('openRunStore', () => {
   it('saves to the local store by default', async () => {
     const repoRoot = await tempDirectory('jig-stores-');
     const store = (
-      await openRunStore({ repoRoot, config: unwrap(loadConfig(configFileFor(repoRoot))) })
+      await openRunStore({ repoRoot, config: unwrap(readConfigFile(configFileFor(repoRoot))) })
     ).unwrap();
     const state = aRunState();
 
@@ -57,7 +58,7 @@ describe('openRunStore', () => {
     const store = (
       await openRunStore({
         repoRoot,
-        config: { ...unwrap(loadConfig(configFileFor(repoRoot))), runStores },
+        config: { ...unwrap(readConfigFile(configFileFor(repoRoot))), runStores },
       })
     ).unwrap();
     const state = aRunState();
@@ -69,7 +70,7 @@ describe('openRunStore', () => {
     const reopened = (
       await openRunStore({
         repoRoot,
-        config: { ...unwrap(loadConfig(configFileFor(repoRoot))), runStores },
+        config: { ...unwrap(readConfigFile(configFileFor(repoRoot))), runStores },
       })
     ).unwrap();
     expect((await reopened.load(state.runId)).unwrap()).toEqual(saved);
@@ -86,7 +87,7 @@ describe('openRunStore', () => {
        });`,
     );
     const config = {
-      ...unwrap(loadConfig(configFileFor(repoRoot))),
+      ...unwrap(readConfigFile(configFileFor(repoRoot))),
       runStores: ['load-only-store.mjs'],
     };
 
@@ -107,7 +108,7 @@ describe('openRunStore', () => {
        });`,
     );
     const config = {
-      ...unwrap(loadConfig(configFileFor(repoRoot))),
+      ...unwrap(readConfigFile(configFileFor(repoRoot))),
       runStores: ['file-store.mjs'],
     };
     const state = aRunState();
@@ -128,7 +129,7 @@ describe('openRunStore', () => {
         `export default () => ({ load: async () => ${answer}, save: async () => {} });`,
       );
       const config = {
-        ...unwrap(loadConfig(configFileFor(repoRoot))),
+        ...unwrap(readConfigFile(configFileFor(repoRoot))),
         runStores: ['empty-store.mjs'],
       };
 
@@ -145,7 +146,7 @@ describe('openRunStore', () => {
       `export default () => ({ load: async () => ({ phase: 'nowhere' }), save: async () => {} });`,
     );
     const config = {
-      ...unwrap(loadConfig(configFileFor(repoRoot))),
+      ...unwrap(readConfigFile(configFileFor(repoRoot))),
       runStores: ['broken-store.mjs'],
     };
     const store = (await openRunStore({ repoRoot, config })).unwrap();
@@ -165,7 +166,7 @@ describe('openRunStore', () => {
        });`,
     );
     const config = {
-      ...unwrap(loadConfig(configFileFor(repoRoot))),
+      ...unwrap(readConfigFile(configFileFor(repoRoot))),
       runStores: ['throwing-store.mjs'],
     };
     const store = (await openRunStore({ repoRoot, config })).unwrap();
@@ -183,7 +184,7 @@ describe('openRunStore', () => {
       'export default () => ({ load: async () => undefined });',
     );
     const config = {
-      ...unwrap(loadConfig(configFileFor(repoRoot))),
+      ...unwrap(readConfigFile(configFileFor(repoRoot))),
       runStores: ['half-a-store.mjs'],
     };
 
@@ -196,7 +197,7 @@ describe('openRunStore', () => {
     const repoRoot = await tempDirectory('jig-stores-');
     await writeFile(path.join(repoRoot, 'not-a-store.mjs'), 'export const store = {};');
     const config = {
-      ...unwrap(loadConfig(configFileFor(repoRoot))),
+      ...unwrap(readConfigFile(configFileFor(repoRoot))),
       runStores: ['not-a-store.mjs'],
     };
 
@@ -269,7 +270,7 @@ describe('openRunStore', () => {
     return {
       repoRoot,
       cloneOf,
-      config: unwrap(loadConfig(configFileFor(repoRoot))),
+      config: unwrap(readConfigFile(configFileFor(repoRoot))),
       state: aRunState(),
       deferred: aRunState({ codePublication: 'deferred' }),
     };

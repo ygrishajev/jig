@@ -7,8 +7,9 @@ import { runId } from '../../tests/support/builders.js';
 import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { readConfigFile } from '../adapters/config/config-file.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor, loadConfig } from '../config/load-config.js';
+import { configFileFor } from '../config/load-config.js';
 import { MergeFailed, SandboxUnavailable } from '../domain/errors.js';
 import { createAppContainer, withRunScope } from './container.js';
 
@@ -63,7 +64,7 @@ describe('withRunScope', () => {
   async function setup(input: { failWith?: SandboxUnavailable } = {}) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
-    const config = unwrap(loadConfig(configFileFor(repoRoot)));
+    const config = unwrap(readConfigFile(configFileFor(repoRoot)));
     const app = createAppContainer({
       repoRoot,
       configFile: configFileFor(repoRoot),

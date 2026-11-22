@@ -14,10 +14,11 @@ import {
 } from '../../tests/support/builders.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { readConfigFile } from '../adapters/config/config-file.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { parseEnvironment } from '../config/environment.js';
-import { configFileFor, loadConfig } from '../config/load-config.js';
+import { configFileFor } from '../config/load-config.js';
 import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
@@ -93,11 +94,11 @@ describe('readRunStatus', () => {
         logFormat: 'json',
         logLevel: 'silent',
         environment: unwrap(parseEnvironment({})),
-        config: unwrap(loadConfig(configFileFor(repoRoot))),
+        config: unwrap(readConfigFile(configFileFor(repoRoot))),
       });
       onTestFinished(() => app.dispose());
       app.register({
-        config: asValue({ ...unwrap(loadConfig(configFileFor(repoRoot))), runStores }),
+        config: asValue({ ...unwrap(readConfigFile(configFileFor(repoRoot))), runStores }),
       });
       return readRunStatus(app, id);
     };

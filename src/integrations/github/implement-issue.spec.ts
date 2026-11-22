@@ -28,13 +28,14 @@ import { FakeAgentSession } from '../../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
+import { readConfigFile } from '../../adapters/config/config-file.js';
 import { GitRunCode } from '../../adapters/git/run-code.js';
 import { CompositeRunStore } from '../../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store.js';
 import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session.js';
 import { createAppContainer } from '../../app/container.js';
 import { parseEnvironment } from '../../config/environment.js';
-import { configFileFor, loadConfig } from '../../config/load-config.js';
+import { configFileFor } from '../../config/load-config.js';
 import { AgentRunFailed } from '../../domain/errors.js';
 import { runDiagnostics } from '../../domain/run-diagnostics.js';
 import { type RunId, runIdFor } from '../../domain/run-id.js';
@@ -768,7 +769,7 @@ describe('implementIssue', () => {
         logFormat: 'json',
         logLevel: 'silent',
         configFile: configFileFor(repoRoot),
-        config: unwrap(loadConfig(configFileFor(repoRoot))),
+        config: unwrap(readConfigFile(configFileFor(repoRoot))),
         environment: unwrap(
           parseEnvironment({
             ANTHROPIC_API_KEY: faker.string.alphanumeric(20),

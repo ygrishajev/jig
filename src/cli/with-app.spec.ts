@@ -12,8 +12,10 @@ import { fakeStandardInput } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { readConfigFile } from '../adapters/config/config-file.js';
 import type { PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
+import type { ReadConfig } from '../config/load-config.js';
 import type { Preset, PresetName } from '../config/presets.js';
 import { ConfigInvalid, type JigError } from '../domain/errors.js';
 import type { PresetSelection } from './config-option.js';
@@ -87,6 +89,18 @@ describe('withApp', () => {
 
     expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
     expect(command).not.toHaveBeenCalled();
+  });
+
+  it('refuses a config it cannot read, before the command runs', async () => {
+    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
+    const { run, createApp } = await setup({ readConfig: () => Result.err(failure) });
+    const command = vi.fn();
+
+    const result = await run(command);
+
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(command).not.toHaveBeenCalled();
+    expect(createApp).not.toHaveBeenCalled();
   });
 
   it('opens the app on the config preset it was given', async () => {
@@ -253,6 +267,7 @@ describe('withApp', () => {
       config?: string;
       preset?: PresetSelection;
       pick?: PresetPick;
+      readConfig?: ReadConfig;
     } = {},
   ) {
     const repo = await createTempRepo();
@@ -282,6 +297,7 @@ describe('withApp', () => {
           environment: input.environment ?? {},
           askForPreset,
           createAppContainer: createApp,
+          readConfig: input.readConfig ?? readConfigFile,
           standardInput: fakeStandardInput(),
           builtinPresetsDirectory,
         },

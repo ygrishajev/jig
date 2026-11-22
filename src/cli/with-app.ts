@@ -1,6 +1,7 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 
+import { readConfigFile } from '../adapters/config/config-file.js';
 import { ensureRepositoryRoot } from '../adapters/git/repository.js';
 import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import type { LogFormat } from '../adapters/logging/create-logger.js';
@@ -8,7 +9,7 @@ import { askForPreset, type PresetPick } from '../adapters/terminal/ask-for-pres
 import { processStandardInput, type StandardInput } from '../adapters/terminal/standard-input.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
 import { parseEnvironment, withCredentials } from '../config/environment.js';
-import { configFileFor, loadConfig } from '../config/load-config.js';
+import { configFileFor, type ReadConfig } from '../config/load-config.js';
 import {
   configWithPreset,
   discoverPresets,
@@ -25,6 +26,7 @@ export interface Invocation {
   environment: NodeJS.ProcessEnv;
   askForPreset: (presets: Preset[]) => Promise<PresetPick | undefined>;
   createAppContainer: typeof createAppContainer;
+  readConfig: ReadConfig;
   standardInput: StandardInput;
   /** The starters' folder; the package's own unless a spec points elsewhere. */
   builtinPresetsDirectory?: string;
@@ -58,6 +60,7 @@ export function processInvocation(): Invocation {
     environment: process.env,
     askForPreset,
     createAppContainer,
+    readConfig: readConfigFile,
     standardInput: processStandardInput(),
   };
 }
@@ -69,6 +72,7 @@ function openApp(
     environment,
     askForPreset: ask,
     createAppContainer: createApp,
+    readConfig,
     builtinPresetsDirectory,
   }: Invocation,
 ): Promise<Result<AwilixContainer<AppCradle>, JigError>> {
@@ -78,7 +82,7 @@ function openApp(
     const savedCredentials = yield* readCredentialsFile(cwd);
     const jigEnvironment = withCredentials(parsedEnvironment, savedCredentials);
     const configFile = configFileFor(cwd, configPath);
-    const projectConfig = yield* loadConfig(configFile);
+    const projectConfig = yield* readConfig(configFile);
     const presetLocations = {
       repoRoot: cwd,
       builtinDirectory: builtinPresetsDirectory,

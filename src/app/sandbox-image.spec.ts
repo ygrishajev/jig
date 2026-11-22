@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest';
 import { everyStepOn } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { readConfigFile } from '../adapters/config/config-file.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
-import { configFileFor, loadConfig } from '../config/load-config.js';
+import { configFileFor } from '../config/load-config.js';
 import { ConfigInvalid, ImageBuildFailed } from '../domain/errors.js';
 import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
 import {
@@ -176,7 +177,7 @@ describe('ensureSandboxImage', () => {
     };
     await writeDockerfile(faker.lorem.lines(3));
     const removeDockerfile = () => rm(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE));
-    const loaded = unwrap(loadConfig(configFileFor(repoRoot)));
+    const loaded = unwrap(readConfigFile(configFileFor(repoRoot)));
     const config = {
       ...loaded,
       ...(input.withoutAgents ? {} : everyStepOn()),
