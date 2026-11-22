@@ -90,8 +90,9 @@ moves its raw JSON. Presets cross the `PresetSource` contract in `src/config/pre
 `src/adapters/filesystem/preset-source.ts` orders the preset directories and yields candidates
 lazily, while config skips invalid names, lets the first candidate of a name win, validates it and
 merges whole roles. The CLI captures the process environment, working directory and home directory
-before config parses them. `npm run lint:dependencies` rejects config
-imports of adapters and filesystem or OS modules.
+before config parses them. `npm run lint:dependencies` allows production config to import only
+`src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
+exempt.
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,

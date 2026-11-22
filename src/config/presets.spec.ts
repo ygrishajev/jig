@@ -87,7 +87,7 @@ describe('presets', () => {
       const presets = unwrap(discoverPresets(source));
 
       expect(presets.map(({ label }) => label)).toEqual([winner]);
-      expect(source.readPaths).toEqual([winner?.path]);
+      expect(source.readLocations).toEqual([winner?.location]);
       expect(shadowed).not.toHaveLength(0);
     });
 
@@ -100,7 +100,7 @@ describe('presets', () => {
       const presets = discoverPresets(source);
 
       expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(winner.path);
+      expect(presets.isErr() && presets.error.message).toContain(winner.location);
     });
 
     it('refuses rather than lists a lower-precedence preset when the winner is invalid', () => {
@@ -112,7 +112,7 @@ describe('presets', () => {
       const presets = discoverPresets(source);
 
       expect(presets.isErr() && presets.error).toBeInstanceOf(ConfigInvalid);
-      expect(presets.isErr() && presets.error.message).toContain(winner.path);
+      expect(presets.isErr() && presets.error.message).toContain(winner.location);
     });
 
     it('ignores candidates with names no one could ask for, without reading them', () => {
@@ -124,7 +124,7 @@ describe('presets', () => {
       const presets = unwrap(discoverPresets(source));
 
       expect(presets.map(({ name }) => name)).toEqual([kept]);
-      expect(source.readPaths).toEqual([keptLabel.path]);
+      expect(source.readLocations).toEqual([keptLabel.location]);
     });
 
     const breakages = [
@@ -194,7 +194,7 @@ describe('presets', () => {
 
       unwrap(loadPreset(source, name));
 
-      expect(source.readPaths).toEqual([winner.path]);
+      expect(source.readLocations).toEqual([winner.location]);
       expect(source.lookedIn).toEqual(source.places.slice(0, 3));
       expect(source.listings).toBe(0);
     });
@@ -208,8 +208,8 @@ describe('presets', () => {
       const preset = loadPreset(source, name);
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
-      expect(preset.isErr() && preset.error.message).toContain(winner.path);
-      expect(source.readPaths).toEqual([winner.path]);
+      expect(preset.isErr() && preset.error.message).toContain(winner.location);
+      expect(source.readLocations).toEqual([winner.location]);
     });
 
     it('refuses rather than falls back when a higher-precedence place cannot be looked at', () => {
@@ -222,7 +222,7 @@ describe('presets', () => {
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       expect(preset.isErr() && preset.error.message).toContain(source.placeAt(1));
-      expect(source.readPaths).toEqual([]);
+      expect(source.readLocations).toEqual([]);
     });
 
     it.each([
@@ -242,7 +242,7 @@ describe('presets', () => {
 
       expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       expect(preset.isErr() && preset.error.message).toContain(offendingKey);
-      expect(preset.isErr() && preset.error.message).toContain(label.path);
+      expect(preset.isErr() && preset.error.message).toContain(label.location);
     });
 
     it('names every place it looked in and the winning presets there when no preset has the name', () => {
@@ -261,7 +261,7 @@ describe('presets', () => {
       expect(message).toContain(missing);
       expect(message).toContain(source.places.join(', '));
       expect(message).toContain(`${first}, ${second}.`);
-      expect(source.readPaths).toEqual([]);
+      expect(source.readLocations).toEqual([]);
     });
 
     it('refuses with the listing failure when it cannot say which presets exist', () => {

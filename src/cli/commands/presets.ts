@@ -26,7 +26,7 @@ export function describePresets(presets: Preset[]): string {
   if (presets.length === 0) return 'No presets found.';
   return presets
     .map(({ name, label, description }) => {
-      const line = `${name.padEnd(20)} ${label.source.padEnd(10)} ${label.path}`;
+      const line = `${name.padEnd(20)} ${label.source.padEnd(10)} ${label.location}`;
       return description ? `${line}\n  ${description}` : line;
     })
     .join('\n');

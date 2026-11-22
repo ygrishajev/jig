@@ -27,7 +27,7 @@ export interface PresetCandidate {
 /** Where a candidate was found, for the operator; config hands it on without reading it. */
 export interface PresetLabel {
   source: string;
-  path: string;
+  location: string;
   /** One of the starters jig ships, rather than a preset the operator keeps. */
   starter: boolean;
 }

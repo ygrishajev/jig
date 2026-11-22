@@ -114,7 +114,7 @@ describe('presetDirectoriesSource', () => {
 
       expect(candidate).toMatchObject({
         name: 'Not Safe',
-        label: { source: 'home', path: file, starter: false },
+        label: { source: 'home', location: file, starter: false },
       });
     });
 
@@ -193,8 +193,8 @@ describe('presetDirectoriesSource', () => {
       const found = [...source.candidatesNamed(name)].map((candidate) => unwrap(candidate));
 
       expect(found.map(({ name: foundName, label }) => ({ name: foundName, label }))).toEqual([
-        { name, label: { source: 'home', path: home, starter: false } },
-        { name, label: { source: 'builtin', path: builtin, starter: true } },
+        { name, label: { source: 'home', location: home, starter: false } },
+        { name, label: { source: 'builtin', location: builtin, starter: true } },
       ]);
     });
 
@@ -212,7 +212,7 @@ describe('presetDirectoriesSource', () => {
 
       const [candidate] = source.candidatesNamed(name);
 
-      expect(candidate && unwrap(candidate).label.path).toBe(link);
+      expect(candidate && unwrap(candidate).label.location).toBe(link);
     });
 
     it('looks at no directory past the first that has the name', async () => {
@@ -223,7 +223,7 @@ describe('presetDirectoriesSource', () => {
 
       const [candidate] = presetDirectoriesSource(root, root.starters).candidatesNamed(name);
 
-      expect(candidate && unwrap(candidate).label.path).toBe(winner);
+      expect(candidate && unwrap(candidate).label.location).toBe(winner);
     });
 
     it('refuses rather than answers for a directory under a file, and looks no further', async () => {
@@ -299,7 +299,7 @@ describe('presetDirectoriesSource', () => {
           name,
           label: {
             source: 'builtin',
-            path: path.join(SHIPPED_PRESETS_DIRECTORY, `${name}.json`),
+            location: path.join(SHIPPED_PRESETS_DIRECTORY, `${name}.json`),
             starter: true,
           },
         })),

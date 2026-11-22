@@ -12,7 +12,7 @@ export const agentNameSchema = z
   .string()
   .refine(isAgentName, { message: `the agent must be one of ${AGENT_NAMES.join(', ')}` });
 
-export function isAgentName(name: string): name is AgentName {
+function isAgentName(name: string): name is AgentName {
   return AGENT_NAMES.some((provider) => provider === name);
 }
 
