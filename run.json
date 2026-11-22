@@ -1,6 +1,6 @@
 {
   "runId": "refactor-config-split-config-i-o-from-03a30de4",
-  "revision": 22,
+  "revision": 23,
   "baseBranch": "main",
   "request": "# refactor(config): split config I/O from policy and own retry defaults\n\nOne slice of the application-boundaries refactor. **Treat this request as self-contained**: everything needed is below and in `docs/specs/application-boundaries.md`. Do not assume access to the parent issue or its siblings.\n\n## What\n\nSettings files and the environment are still read the same way and give the same results, but the\ncode that decides what a setting means no longer reads files itself.\n\n## Why\n\nConfiguration rules are mixed with file and directory access. That makes them hard to reuse from\nanything other than the command line, and hard to test without a disk. Retry defaults also live with\nbusiness rules even though they are configurable values.\n\n## Context — read this first\n\njig is a TypeScript CLI that turns a markdown request into planned slices, has agents implement and\nreview each one in a sandbox, and lands them on one run branch. Source owners under `src/`:\n`domain` (business rules), `ports` (external capability contracts), `config` (settings schemas and\npolicy), `flow`/`steps` (workflow execution), `prompts`, `observers` (events and reporting),\n`adapters` (Git, GitHub, files, containers, terminal, logging), `app` (use cases) and `cli` (commands).\nSpecs sit beside the code they cover (`foo.ts` → `foo.spec.ts`). Before editing, read `AGENTS.md`,\nthe house rules in `.claude/rules/` that cover the files you change, and `docs/architecture.html`.\n\nThis issue implements one part of the design in `docs/specs/application-boundaries.md`. That file is\nin the repository; read the sections named below. Where this issue and the spec disagree, follow\nthe spec and say so in the PR.\n\n## Don't undo these\n\n- Agents run unattended only inside the sandbox. Never add an agent call that runs on the host.\n- Credentials never land in a file jig writes, a log line or the image. The one exception:\n  `jig init` saves a credential to `.jig/.env` (owner-only, git-ignored) after the operator agrees.\n- Nothing touches the target repository's tracked files outside the run's worktree.\n- Keep commands, flags, defaults, help, error tags and messages, exit codes, configuration\n  precedence and recovery behavior unchanged unless this issue says otherwise.\n- Expected failures are `Result` values; bugs panic. jig never throws.\n- Keep dependency policy in `.dependency-cruiser.mjs` and `scripts/check-dependencies.mjs`, with\n  fixtures in `scripts/check-dependencies.spec.ts`. Do not write another source scanner.\n- No release tags and no version bumps; `main` publishes on its own.\n- If you change where something lives, update `docs/architecture.html`, `docs/workflow-ownership.md`\n  and the code map in `CONTRIBUTING.md`, and any guide that names a moved path. Describe current\n  behavior in the present tense.\n\n## Target\n\nSpec sections: \"Configuration and defaults\", \"Application preparation and resource lifetime\".\n\n- `src/config/load-config.ts` (`loadConfig`, `configFileFor`), `src/config/presets.ts`\n  (`discoverPresets`, `presetDirectories`, `loadPreset`), `src/config/write-config.ts`\n  (`updateConfigFile`) and `src/config/environment.ts` mix schemas and resolution with file reads\n  and writes, directory discovery and `process.env`.\n- Config keeps the schemas, default values, provider/model policy, preset-name validation,\n  precedence and selection. Move file reading and writing, and preset directory discovery, to\n  adapters behind narrow capabilities (functions or small port interfaces). Environment capture\n  moves to the process edge. Config parses the raw values it is given. Parse each input once, at its\n  edge; never copy a schema into a caller.\n- `src/domain/settings.ts` exports `MAX_STEP_RETRIES = 2` and `RETRY_DELAY_MS = 5000`, and\n  `runSettingsFrom` in `load-config.ts` imports them. Move both to config-owned defaults with the\n  same values. Domain keeps `RunSettings` and rules such as comparing review cycles with the\n  resolved cap. Do not add operator overrides (separate work), and do not let presets set run settings.\n- Do not move other caps just because they are numbers. Genuine safety and stopping rules stay in domain.\n- Error classes stay where they are for now; a later issue reassigns them. Keep returning the same\n  `ConfigInvalid` values.\n\n## Done when\n\n- [ ] No file under `src/config/` imports `node:fs` or reads `process.env`\n      (`grep -rnE \"node:fs|process\\.env\" src/config --include=*.ts | grep -v spec` finds nothing).\n- [ ] `src/domain/settings.ts` no longer exports the retry defaults; config supplies 2 and 5000 ms.\n- [ ] Existing config, preset and environment behavior tests pass. New tests cover the moved I/O\n      through fakes or temporary directories.\n- [ ] The verification below passes.\n\n## Verification\n\nFrom the repository root using the pinned Node version (`volta` in `package.json`):\n\n```sh\nnpm run lint:dependencies\nnpm run lint\nnpm run typecheck\nnpm test\nnpm run build\nnpm run format:check\nnpm run validate -- --skip test:mutation\n```\n\nNo check may start an agent on the host or publish to GitHub. In the PR, state which owner each\nmoved concept now belongs to and why.\n\n\nSource: https://github.com/ygrishajev/jig/issues/55\n",
   "merge": false,
@@ -171,14 +171,43 @@
       "title": "refactor(config): supply home fallback from the process edge",
       "description": "Implements plan steps 3 and 6. Treat this slice as self-contained. Land after preset access separation and work on top of its preparation and preset changes. This lands separately because removing implicit process and OS inputs is an independently testable invocation contract, distinct from preset filesystem access. Review applicable rules. Capture the home-directory fallback alongside raw environment values at invocation, require it explicitly in parseEnvironment and every caller, and remove node:os access from config. Update environment and preparation specs with deterministic inputs. Verify absent, empty, and explicit HOME; relative and absolute XDG behavior through preset resolution; empty-as-unset credentials; environment-over-saved-credential precedence; telemetry validation; defaults; and forwarding. Preserve repository-check and loading-failure order, help/version bypass, status loading saved credentials without requiring agent credentials or opening a sandbox, and resource-free cancellation. Keep credentials out of logs and newly written files. Update affected references. Use Node 26.13.0, inspect scripts, and run focused environment, preparation, and preset specs. Done when config receives its environment inputs explicitly, has no OS home-directory access, and operation-specific compatibility checks pass; report actual results.",
       "order": 2,
-      "status": "verifying",
+      "status": "in_review",
       "reviewCycles": 0,
       "hookFailures": 0,
       "verificationFailures": 0,
       "emptyAttempts": 0,
       "ruleFixCycles": 0,
       "feedbackHistory": [],
-      "commit": "752448782dfc4f7688649b0d4aed66aa59f6ce03"
+      "commit": "752448782dfc4f7688649b0d4aed66aa59f6ce03",
+      "verification": {
+        "command": "npm run validate",
+        "observed": {
+          "before": {
+            "host": {
+              "commit": "752448782dfc4f7688649b0d4aed66aa59f6ce03",
+              "tree": "ec52600c497ba627d50d5bdc7f745000c8bf9acc",
+              "clean": true
+            },
+            "sandbox": {
+              "commit": "752448782dfc4f7688649b0d4aed66aa59f6ce03",
+              "tree": "ec52600c497ba627d50d5bdc7f745000c8bf9acc",
+              "clean": true
+            }
+          },
+          "after": {
+            "host": {
+              "commit": "752448782dfc4f7688649b0d4aed66aa59f6ce03",
+              "tree": "ec52600c497ba627d50d5bdc7f745000c8bf9acc",
+              "clean": true
+            },
+            "sandbox": {
+              "commit": "752448782dfc4f7688649b0d4aed66aa59f6ce03",
+              "tree": "ec52600c497ba627d50d5bdc7f745000c8bf9acc",
+              "clean": true
+            }
+          }
+        }
+      }
     },
     {
       "id": "enforce-configuration-ownership",
