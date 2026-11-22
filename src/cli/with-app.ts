@@ -1,5 +1,6 @@
 import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
+import { homedir } from 'node:os';
 
 import { readConfigFile } from '../adapters/config/config-file.js';
 import { presetFilesOnDisk } from '../adapters/config/preset-files.js';
@@ -26,6 +27,8 @@ import type { PresetSelection } from './config-option.js';
 export interface Invocation {
   cwd: string;
   environment: NodeJS.ProcessEnv;
+  /** The operator's home directory as the OS reports it, used when `HOME` is unset. */
+  fallbackHomeDirectory: string;
   askForPreset: (presets: Preset[]) => Promise<PresetPick | undefined>;
   createAppContainer: typeof createAppContainer;
   readConfig: ReadConfig;
@@ -59,6 +62,7 @@ export function processInvocation(): Invocation {
   return {
     cwd: process.cwd(),
     environment: process.env,
+    fallbackHomeDirectory: homedir(),
     askForPreset,
     createAppContainer,
     readConfig: readConfigFile,
@@ -72,6 +76,7 @@ function openApp(
   {
     cwd,
     environment,
+    fallbackHomeDirectory,
     askForPreset: ask,
     createAppContainer: createApp,
     readConfig,
@@ -80,7 +85,7 @@ function openApp(
 ): Promise<Result<AwilixContainer<AppCradle>, JigError>> {
   return Result.gen(async function* () {
     yield* Result.await(ensureRepositoryRoot(cwd));
-    const parsedEnvironment = yield* parseEnvironment(environment);
+    const parsedEnvironment = yield* parseEnvironment(environment, fallbackHomeDirectory);
     const savedCredentials = yield* readCredentialsFile(cwd);
     const jigEnvironment = withCredentials(parsedEnvironment, savedCredentials);
     const configFile = configFileFor(cwd, configPath);

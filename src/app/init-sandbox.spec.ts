@@ -343,6 +343,7 @@ describe('initSandbox', () => {
             JIG_CODEX_AUTH_DIR: codexHome,
             OPENROUTER_API_KEY: faker.string.alphanumeric(20),
           },
+          faker.system.directoryPath(),
         ),
       ),
       config: unwrap(readConfigFile(configFileFor(repo.dir))),

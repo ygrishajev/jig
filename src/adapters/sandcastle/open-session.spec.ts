@@ -83,7 +83,10 @@ describe('sandcastleSessionOptions', () => {
       ...input.config,
     };
     const environment = unwrap(
-      parseEnvironment(input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) }),
+      parseEnvironment(
+        input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
+        faker.system.directoryPath(),
+      ),
     );
     const options = (overrides: Partial<OpenSessionInput> = {}) =>
       unwrap(

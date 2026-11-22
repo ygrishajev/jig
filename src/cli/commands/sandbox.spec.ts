@@ -109,6 +109,7 @@ describe('build --preset', () => {
       invocation: {
         cwd: repo.dir,
         environment: { HOME: home },
+        fallbackHomeDirectory: home,
         askForPreset,
         createAppContainer: createApp,
         readConfig: readConfigFile,

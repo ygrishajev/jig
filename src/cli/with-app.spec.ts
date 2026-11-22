@@ -134,6 +134,25 @@ describe('withApp', () => {
     expect(logger.info).toHaveBeenCalledWith({ preset }, expect.any(String));
   });
 
+  it.each([{}, { HOME: '' }])(
+    'looks for presets in the home directory it was given when HOME is unset in %j',
+    async (environment) => {
+      const fallbackHomeDirectory = await tempDirectory('jig-with-app-fallback-home-');
+      const model = faker.word.noun();
+      const preset = presetName();
+      await writePreset(fallbackHomeDirectory, preset, { reviewer: { provider: 'claude', model } });
+      const { run } = await setup({
+        preset: { kind: 'named', name: preset },
+        environment,
+        fallbackHomeDirectory,
+      });
+
+      const reviewer = unwrap(await run(async (app) => Result.ok(app.cradle.config.reviewer)));
+
+      expect(reviewer).toEqual({ provider: 'claude', model });
+    },
+  );
+
   it('refuses a preset it cannot find, before the command runs', async () => {
     const home = await tempDirectory('jig-with-app-home-');
     const { run, askForPreset, createApp } = await setup({
@@ -265,6 +284,7 @@ describe('withApp', () => {
     input: {
       belowRoot?: boolean;
       environment?: NodeJS.ProcessEnv;
+      fallbackHomeDirectory?: string;
       config?: string;
       preset?: PresetSelection;
       pick?: PresetPick;
@@ -274,6 +294,8 @@ describe('withApp', () => {
     const repo = await createTempRepo();
     const askForPreset = vi.fn(async (_presets: Preset[]) => input.pick);
     const builtinPresetsDirectory = await tempDirectory('jig-with-app-builtin-');
+    const fallbackHomeDirectory =
+      input.fallbackHomeDirectory ?? (await tempDirectory('jig-with-app-fallback-home-'));
     const cwd = input.belowRoot ? path.join(repo.dir, faker.word.noun()) : repo.dir;
     await mkdir(cwd, { recursive: true });
     const disposed = vi.fn();
@@ -296,6 +318,7 @@ describe('withApp', () => {
         {
           cwd,
           environment: input.environment ?? {},
+          fallbackHomeDirectory,
           askForPreset,
           createAppContainer: createApp,
           readConfig: input.readConfig ?? readConfigFile,
