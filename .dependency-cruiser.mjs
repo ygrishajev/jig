@@ -13,6 +13,11 @@ export const productionModules = [
 ];
 export const testFilePattern = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 export const ownedProductionPath = `^src/(${productionModules.join('|')})/`;
+const configAllowlist = [
+  '^src/(config|domain)/',
+  '(^|/)node_modules/better-result/',
+  '(^|/)node_modules/zod/',
+];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 export default {
@@ -37,19 +42,15 @@ export default {
       to: { path: '^src/', pathNot: '^src/(ports|domain)/' },
     },
     {
-      name: 'config-does-no-io',
+      name: 'config-imports-only-approved-dependencies',
       comment:
-        'Config owns schemas, defaults and selection policy. Reading files, the home directory ' +
-        'and the environment happens in adapters and at the process edge, which hand config values.',
+        'Production config owns schemas, defaults and selection policy over domain types. It may ' +
+        'import only config, domain, better-result and zod. Files, paths, processes, the home ' +
+        'directory and the environment belong to adapters and the process edge, which hand ' +
+        'config values.',
       severity: 'error',
-      from: { path: '^src/config/' },
-      to: {
-        path: [
-          '^(node:)?(fs|fs/promises|os)$',
-          '^src/adapters/',
-          'node_modules/write-file-atomic/',
-        ],
-      },
+      from: { path: '^src/config/', pathNot: testFilePattern },
+      to: { pathNot: configAllowlist },
     },
     {
       name: 'adapters-do-not-import-flow',

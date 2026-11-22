@@ -22,7 +22,7 @@ export interface Preset {
   steps: PresetSteps;
 }
 
-export type PresetSteps = Partial<Record<AgentRole, StepConfig>>;
+type PresetSteps = Partial<Record<AgentRole, StepConfig>>;
 
 interface NamedCandidate {
   name: PresetName;
@@ -72,7 +72,7 @@ function validlyNamed(candidate: PresetCandidate): NamedCandidate[] {
   return name.success ? [{ name: name.data, candidate }] : [];
 }
 
-/** A preset name becomes a file name, so nothing that could leave the presets directory gets through. */
+/** A preset name holds no separator or dot, so no source can be led outside the place it looks in. */
 export const presetNameSchema = z
   .string()
   .max(64)
@@ -96,11 +96,11 @@ function parsePreset(
   label: PresetLabel,
   json: unknown,
 ): Result<Preset, ConfigInvalid> {
-  const parsed = presetFileSchema.safeParse(json);
+  const parsed = presetSchema.safeParse(json);
   if (!parsed.success) {
     return Result.err(
       new ConfigInvalid({
-        message: `${label.path} is not valid — ${describeIssues(parsed.error)}`,
+        message: `${label.location} is not valid — ${describeIssues(parsed.error)}`,
       }),
     );
   }
@@ -109,7 +109,7 @@ function parsePreset(
 }
 
 /** Strict, so a misspelled step fails at load instead of silently leaving the project's agent. */
-const presetFileSchema = z
+const presetSchema = z
   .object({
     description: z.string().optional(),
     ...byRole(() => stepConfigSchema.strict().optional()),

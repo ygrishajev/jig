@@ -311,14 +311,14 @@ flowchart LR
 
 ## Configuration I/O and defaults
 
-Configuration file reading and writing, preset discovery and reading, and environment capture
-have left `src/config`.
+Adapters read and write the settings file and find and read presets, and the process edge captures
+the environment. `src/config` does none of these: it owns the contracts and the policy over them.
 
 Presets cross the `PresetSource` contract in `src/config/preset-source.ts`. A source names the
 places it looks in, highest precedence first; for one name it yields the present candidates in
 that order, looking at each place only when reached; and it lists every present candidate, each
 place's in name order. A candidate carries the name its place gives it, an opaque label (source,
-path and whether it is a shipped starter) and a `read` that decodes its JSON only when called.
+location and whether it is a shipped starter) and a `read` that decodes its JSON only when called.
 The source fails narrowly as not findable, unlistable, unreadable or not JSON.
 `src/config/presets.ts` owns the selection rule: it skips candidates whose names are not valid
 preset names without reading them, lets the first candidate of a name win and shadow the rest
@@ -356,9 +356,11 @@ configuration keys, and presets still override agent roles only. `src/domain/set
 (`HOOK_FAILURE_CAP`, `VERIFICATION_FAILURE_CAP`, `EMPTY_ATTEMPT_CAP`, `RULE_FIX_CAP`).
 `retryResult` reads the resolved count and delay unchanged.
 
-Dependency-cruiser's `config-does-no-io` rule rejects config imports of adapters, `node:fs`,
-`node:fs/promises`, `node:os` and `write-file-atomic`. Adapters may import config, and ports
-still depend only on domain. CLI commands still receive the container through
+Dependency-cruiser's `config-imports-only-approved-dependencies` rule allows production config to
+import only `src/config`, `src/domain`, `better-result` and `zod`. Anything else fails, including
+adapters, ports, `node:fs`, `node:os`, `node:path`, `node:child_process`, `execa` and
+`write-file-atomic`. Config specs and the test packages they use are exempt. Adapters may import
+config's contracts, and ports still depend only on domain. CLI commands still receive the container through
 `src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepares the invocation, and
 `src/app/container.ts` remains the composition root; moving preparation into application
 operations and composition out of `app` are separate slices.

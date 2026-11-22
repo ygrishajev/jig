@@ -86,7 +86,7 @@ function* candidatesNamed(
 ): Generator<Result<PresetCandidate, PresetNotFindable>> {
   for (const directory of directories) {
     const candidate = candidateAt(directory, name);
-    const present = isPresent(candidate.label.path);
+    const present = isPresent(candidate.label.location);
     if (present.isErr()) {
       yield Result.err(present.error);
       return;
@@ -99,7 +99,11 @@ function candidateAt(directory: PresetDirectory, name: string): PresetCandidate 
   const filePath = path.join(directory.path, `${name}${PRESET_EXTENSION}`);
   return {
     name,
-    label: { source: directory.source, path: filePath, starter: directory.source === 'builtin' },
+    label: {
+      source: directory.source,
+      location: filePath,
+      starter: directory.source === 'builtin',
+    },
     read: () => readJson(filePath),
   };
 }

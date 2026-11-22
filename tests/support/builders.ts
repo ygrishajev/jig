@@ -432,10 +432,10 @@ export function presetName(): PresetName {
 
 export function aPresetLabel({
   source = faker.word.noun({ length: { min: 3, max: 10 } }),
-  path = faker.system.filePath(),
+  location = faker.system.filePath(),
   starter = faker.datatype.boolean(),
 }: Partial<PresetLabel> = {}): PresetLabel {
-  return { source, path, starter };
+  return { source, location, starter };
 }
 
 export function aPreset({

@@ -292,7 +292,7 @@ export function fakeStandardInput({
 export class InMemoryPresetSource implements PresetSource {
   readonly places: string[];
   readonly lookedIn: string[] = [];
-  readonly readPaths: string[] = [];
+  readonly readLocations: string[] = [];
   listings = 0;
   private readonly held = new Map<string, HeldPreset[]>();
   private readonly unfindable = new Set<string>();
@@ -373,9 +373,9 @@ export class InMemoryPresetSource implements PresetSource {
       name: held.name,
       label: held.label,
       read: () => {
-        this.readPaths.push(held.label.path);
+        this.readLocations.push(held.label.location);
         return held.unreadable
-          ? Result.err(this.failure(PresetUnreadable, held.label.path))
+          ? Result.err(this.failure(PresetUnreadable, held.label.location))
           : Result.ok(held.json);
       },
     };
@@ -397,7 +397,7 @@ interface HeldPreset {
 }
 
 function aLabel(place: string, name: string): PresetLabel {
-  return aPresetLabel({ path: path.join(place, `${name}.${faker.system.fileExt()}`) });
+  return aPresetLabel({ location: path.join(place, `${name}.${faker.system.fileExt()}`) });
 }
 
 /**
