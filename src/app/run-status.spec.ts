@@ -98,7 +98,7 @@ describe('readRunStatus', () => {
       });
       onTestFinished(() => app.dispose());
       app.register({
-        config: asValue({ ...aJigConfig(), runStores }),
+        config: asValue(aJigConfig({ runStores })),
       });
       return readRunStatus(app, id);
     };

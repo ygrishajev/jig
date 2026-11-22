@@ -76,11 +76,7 @@ describe('sandcastleSessionOptions', () => {
 
   async function setup(input: { config?: Partial<JigConfig>; environment?: NodeJS.ProcessEnv }) {
     const repoRoot = await tempDirectory('jig-session-');
-    const config = {
-      ...aJigConfig(),
-      ...everyStepOn(),
-      ...input.config,
-    };
+    const config = aJigConfig({ ...everyStepOn(), ...input.config });
     const environment = unwrap(
       parseEnvironment(
         input.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
