@@ -127,12 +127,17 @@ describe('presets', () => {
       expect(source.readPaths).toEqual([keptLabel.path]);
     });
 
-    it.each([
+    const breakages = [
       ['listed', (source: InMemoryPresetSource, rank: number) => source.makeUnlistable(rank)],
       ['looked at', (source: InMemoryPresetSource, rank: number) => source.makeUnfindable(rank)],
-    ])('refuses when a place cannot be %s', (_, breakPlace) => {
+    ] as const;
+
+    it.each(
+      breakages.flatMap(([kind, breakPlace]) =>
+        Array.from({ length: PLACE_COUNT }, (_, rank) => ({ kind, rank, breakPlace })),
+      ),
+    )('refuses when the place at rank $rank cannot be $kind', ({ rank, breakPlace }) => {
       const { source } = setup();
-      const rank = faker.number.int({ min: 0, max: PLACE_COUNT - 1 });
       breakPlace(source, rank);
 
       const presets = discoverPresets(source);

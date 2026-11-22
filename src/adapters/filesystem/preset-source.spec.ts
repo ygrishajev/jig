@@ -22,6 +22,7 @@ import {
   type PresetName,
   presetNameSchema,
 } from '../../config/presets.js';
+import { ConfigInvalid } from '../../domain/errors.js';
 import {
   packagedPresetsDirectory,
   presetDirectoriesSource,
@@ -341,6 +342,7 @@ describe('presetDirectoriesSource', () => {
 
       const preset = loadPreset(presetDirectoriesSource(locations), starter);
 
+      expect(preset.isErr() && preset.error).toBeInstanceOf(ConfigInvalid);
       expect(preset.isErr() && preset.error.message).toContain(winner);
     });
   });
