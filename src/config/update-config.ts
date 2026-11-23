@@ -1,8 +1,8 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { ConfigInvalid } from '../domain/errors.js';
 import { type ConfigSource, ConfigUnreadable } from './config-source.js';
+import { ConfigInvalid } from './errors.js';
 
 /**
  * Sets the given keys over every other key as the operator wrote it. Absent settings are created;

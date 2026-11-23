@@ -8,8 +8,13 @@ import { describe, expect, it } from 'vitest';
 import { aJigConfig, everyStepOn } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
-import { ConfigInvalid, ImageBuildFailed } from '../domain/errors.js';
-import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
+import { ConfigInvalid } from '../config/errors.js';
+import { SandboxPreparationInvalid } from '../ports/agent-session.js';
+import {
+  ImageBuildFailed,
+  type ImageBuildSpec,
+  type SandboxImages,
+} from '../ports/sandbox-images.js';
 import {
   type AgentNeeded,
   type AgentUpdatePolicy,
@@ -136,7 +141,7 @@ describe('ensureSandboxImage', () => {
 
     const result = await ensure();
 
-    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(SandboxPreparationInvalid);
     expect(images.built).toEqual([]);
   });
 

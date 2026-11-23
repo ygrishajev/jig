@@ -17,8 +17,9 @@ import { presetDirectoriesSource } from '../adapters/filesystem/preset-source.js
 import type { PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
 import type { ConfigSource } from '../config/config-source.js';
+import { ConfigInvalid } from '../config/errors.js';
 import type { Preset, PresetName } from '../config/presets.js';
-import { ConfigInvalid, type JigError } from '../domain/errors.js';
+import { RepositoryInvalid } from '../ports/git-failures.js';
 import type { PresetSelection } from './config-option.js';
 import { withApp } from './with-app.js';
 
@@ -283,7 +284,7 @@ describe('withApp', () => {
 
     const result = await run(command);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(RepositoryInvalid);
     expect(command).not.toHaveBeenCalled();
   });
 
@@ -310,7 +311,9 @@ describe('withApp', () => {
     const createApp = vi.fn((options: Parameters<typeof createAppContainer>[0]) =>
       createAppContainer(options).register({ logger: asValue(logger) }),
     );
-    const run = <T>(command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, JigError>>) =>
+    const run = <T>(
+      command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, { message: string }>>,
+    ) =>
       withApp(
         { logFormat: 'json', config: input.config, preset: input.preset },
         async (app) => {

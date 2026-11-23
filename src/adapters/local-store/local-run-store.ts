@@ -4,10 +4,10 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
-import { ConfigInvalid } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { type RunState, runStateSchema } from '../../domain/run-state.js';
 import { messageOf } from '../../failures/messages.js';
+import { RunStateInvalid } from '../../ports/run-state-failures.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
@@ -43,10 +43,12 @@ export class LocalRunStore implements RunStore {
 
 const STATE_FILE = 'run.json';
 
-function parseRun(file: string, contents: string): Result<RunState, ConfigInvalid> {
+function parseRun(file: string, contents: string): Result<RunState, RunStateInvalid> {
   return Result.try({
     try: () => runStateSchema.parse(JSON.parse(contents)),
     catch: (cause) =>
-      new ConfigInvalid({ message: `The saved run in ${file} is not valid: ${messageOf(cause)}` }),
+      new RunStateInvalid({
+        message: `The saved run in ${file} is not valid: ${messageOf(cause)}`,
+      }),
   });
 }

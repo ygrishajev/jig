@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { aRunState } from '../../../tests/support/builders.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { RunStateConflict } from '../../domain/errors.js';
+import { RunStateConflict } from '../../ports/run-state-failures.js';
 import { RemoteRef } from './remote-ref.js';
 
 describe('RemoteRef', () => {

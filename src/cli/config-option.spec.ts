@@ -3,9 +3,8 @@ import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 
 import { presetName } from '../../tests/support/builders.js';
-import { CommandInputInvalid, type JigError } from '../domain/errors.js';
 import { presetInputSchema, presetOption, type PresetSelection } from './config-option.js';
-import { withInput } from './with-input.js';
+import { CommandInputInvalid, withInput } from './with-input.js';
 
 describe('presetOption', () => {
   it('hands the action the preset it names', async () => {
@@ -44,7 +43,7 @@ describe('presetOption', () => {
 
   function setup() {
     let received: PresetSelection | undefined;
-    let outcome: Result<void, JigError> = Result.ok();
+    let outcome: Result<void, CommandInputInvalid> = Result.ok();
     const action = withInput(presetInputSchema, async ({ preset }) => {
       received = preset;
       return Result.ok();

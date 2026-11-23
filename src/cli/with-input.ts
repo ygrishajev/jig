@@ -1,9 +1,8 @@
-import { panic, Result } from 'better-result';
+import { panic, Result, TaggedError } from 'better-result';
 import { Command } from 'commander';
 import type { z } from 'zod';
 
 import { describeIssues } from '../config/describe-issues.js';
-import { CommandInputInvalid } from '../domain/errors.js';
 
 /**
  * A commander action that receives the command's arguments and options as one object, parsed
@@ -30,4 +29,9 @@ function inputOf(command: Command): Record<string, unknown> {
     command.processedArgs[index],
   ]);
   return { ...Object.fromEntries(named), ...command.opts() };
+}
+
+/** What the operator typed does not fit the command. */
+export class CommandInputInvalid extends TaggedError('CommandInputInvalid')<{ message: string }> {
+  readonly kind = 'fatal' as const;
 }

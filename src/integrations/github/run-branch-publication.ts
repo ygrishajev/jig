@@ -9,9 +9,10 @@ import {
   hasCommit,
   mergeBaseWith,
 } from '../../adapters/git/run-history.js';
-import type { GitCommandFailed, RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor, type RunState } from '../../domain/run-state.js';
+import type { GitCommandFailed, RemoteUnavailable } from '../../ports/git-failures.js';
+import type { RunStateConflict } from '../../ports/run-state-failures.js';
 import { RunBranchUnpublishable } from './errors.js';
 
 export type RunBranchPublication =

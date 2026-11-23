@@ -1,15 +1,14 @@
-import type { Result } from 'better-result';
+import { type Result, TaggedError } from 'better-result';
 
-import type {
-  ConfigInvalid,
-  GitCommandFailed,
-  LocalStateUnwritable,
-  RemoteUnavailable,
-  RunCodeUnavailable,
-  RunStateConflict,
-} from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import type { RunState } from '../domain/run-state.js';
+import type { GitCommandFailed, RemoteUnavailable } from './git-failures.js';
+import type { LocalStateUnwritable } from './local-state.js';
+import type {
+  RunCodeUnavailable,
+  RunStateConflict,
+  RunStateInvalid,
+} from './run-state-failures.js';
 
 /** Where run state lives between invocations. Saved after every transition. */
 export interface RunStore {
@@ -23,7 +22,15 @@ export interface RunStore {
 export type RunStoreFailure =
   | RunStateConflict
   | RemoteUnavailable
-  | ConfigInvalid
+  | RunStateInvalid
+  | RunStoreOperationFailed
   | GitCommandFailed
   | LocalStateUnwritable
   | RunCodeUnavailable;
+
+/** The operator's own run store module threw while loading, peeking or saving a run. */
+export class RunStoreOperationFailed extends TaggedError('RunStoreOperationFailed')<{
+  message: string;
+}> {
+  readonly kind = 'fatal' as const;
+}

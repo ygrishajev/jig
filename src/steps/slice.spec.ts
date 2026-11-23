@@ -20,13 +20,12 @@ import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
 import { completionStillReusable, settingsIdentityOf } from '../domain/completion-reuse.js';
-import { AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunPhase, RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice } from '../domain/slice.js';
 import type { SliceStep } from '../flow/define-flow.js';
-import type { ExecResult } from '../ports/agent-session.js';
+import { AgentRunFailed, type ExecResult, SandboxUnavailable } from '../ports/agent-session.js';
 import { implementSlice, reviewSlice, verifySlice } from './slice.js';
 
 describe('slice steps', () => {

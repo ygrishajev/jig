@@ -6,7 +6,8 @@ import {
   type AgentName,
   DEFAULT_CLAUDE_MODEL,
 } from '../../config/agent-policy.js';
-import { ConfigInvalid } from '../../domain/errors.js';
+import { ConfigInvalid } from '../../config/errors.js';
+import { SandboxCredentialsInvalid } from '../../ports/agent-session.js';
 import { CREDENTIALS_FILE } from '../local-store/credentials-file.js';
 import { codexLoginProblem } from './codex-auth.js';
 
@@ -101,14 +102,14 @@ function modelProvider(model: string): string {
 export function collectCredentials(
   steps: AgentChoice[],
   credential: (name: string) => string | undefined,
-): Result<Record<string, string>, ConfigInvalid> {
+): Result<Record<string, string>, ConfigInvalid | SandboxCredentialsInvalid> {
   return missingCredentials(steps, credential).andThen((missing) => {
     if (missing.length > 0) {
       const wanted = missing
         .map(({ provider, keys }) => `${provider}: ${keys.join(' or ')}`)
         .join('; ');
       return Result.err(
-        new ConfigInvalid({
+        new SandboxCredentialsInvalid({
           message: `Agent credentials are missing — set ${wanted} in the environment or in ${CREDENTIALS_FILE}.`,
         }),
       );
@@ -123,7 +124,8 @@ export function collectCredentials(
     );
     for (const [key, { value, provider }] of collected) {
       const problem = AGENTS[provider].credentialProblem(value);
-      if (problem) return Result.err(new ConfigInvalid({ message: `${key}: ${problem}` }));
+      if (problem)
+        return Result.err(new SandboxCredentialsInvalid({ message: `${key}: ${problem}` }));
     }
     return Result.ok(Object.fromEntries([...collected].map(([key, { value }]) => [key, value])));
   });

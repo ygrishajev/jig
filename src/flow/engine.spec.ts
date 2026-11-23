@@ -5,7 +5,7 @@ import {
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 import { Panic, panic, Result } from 'better-result';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import {
@@ -19,31 +19,27 @@ import {
 } from '../../tests/support/builders.js';
 import { InMemoryRunStore, RecordingEventSink, SteppingClock } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import {
-  AgentOutputInvalid,
-  AgentRunFailed,
-  ConfigInvalid,
-  MergeFailed,
-  RunStateConflict,
-} from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import { type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
-import type { AgentSession } from '../ports/agent-session.js';
+import { AgentOutputInvalid, AgentRunFailed, type AgentSession } from '../ports/agent-session.js';
+import { LocalStateUnwritable } from '../ports/local-state.js';
 import type { EventSink } from '../ports/observability.js';
-import type { RunStore } from '../ports/run-store.js';
-import type { Workspace } from '../ports/workspace.js';
+import { RunStateConflict } from '../ports/run-state-failures.js';
+import type { RunStore, RunStoreFailure } from '../ports/run-store.js';
+import { MergeFailed, type Workspace } from '../ports/workspace.js';
 import {
   defineRunFlow,
   defineSliceFlow,
+  type FatalStepFailure,
   type RunFlow,
   type RunStep,
   type SliceFlow,
   type SliceStep,
 } from './define-flow.js';
-import { runEngine } from './engine.js';
+import { type EngineFailure, runEngine } from './engine.js';
 
 describe('runEngine', () => {
   it('walks phases by the outcome each step returns and finishes done', async () => {
@@ -341,14 +337,15 @@ describe('runEngine', () => {
     const { run, events } = setup({
       flow: linearFlow({
         context: async () => Result.ok({ type: 'contextBuilt', context: aContext() }),
-        planning: async () => Result.err(new ConfigInvalid({ message: reason })),
+        planning: async () =>
+          Result.err(new LocalStateUnwritable({ message: reason, path: faker.system.filePath() })),
       }),
     });
     const initial = aDescribedRun({ phase: 'context' });
 
     const result = await run(initial);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(LocalStateUnwritable);
     expect(events.ofType('runFailed')).toEqual([
       { type: 'runFailed', runId: initial.runId, phase: 'planning', reason },
     ]);
@@ -365,7 +362,13 @@ describe('runEngine', () => {
     const { run } = setup({
       events,
       flow: linearFlow({
-        context: async () => Result.err(new ConfigInvalid({ message: faker.lorem.sentence() })),
+        context: async () =>
+          Result.err(
+            new LocalStateUnwritable({
+              message: faker.lorem.sentence(),
+              path: faker.system.filePath(),
+            }),
+          ),
       }),
     });
 
@@ -439,7 +442,10 @@ describe('runEngine', () => {
   });
 
   it('ends the invocation on a fatal failure and says so', async () => {
-    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
+    const failure = new LocalStateUnwritable({
+      message: faker.lorem.sentence(),
+      path: faker.system.filePath(),
+    });
     const { run, events } = setup({
       settings: runSettings({ maxStepRetries: faker.number.int({ min: 1, max: 3 }) }),
       flow: linearFlow({ context: async () => Result.err(failure) }),
@@ -466,6 +472,11 @@ describe('runEngine', () => {
     expect(result).toMatchObject({ status: 'blocked', reason });
     expect(events.ofType('stepRetried')).toHaveLength(2);
     expect(events.ofType('stepFailed')).toHaveLength(3);
+  });
+
+  it('returns only fatal step failures and failures saving the run', () => {
+    expectTypeOf<FatalStepFailure>().toEqualTypeOf<LocalStateUnwritable>();
+    expectTypeOf<EngineFailure>().toEqualTypeOf<LocalStateUnwritable | RunStoreFailure>();
   });
 
   it('ends the invocation when the run cannot be saved', async () => {

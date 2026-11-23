@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 import { execaSync } from 'execa';
 import { constants } from 'node:os';
 
-import type { GitCommandFailed } from '../../domain/errors.js';
+import type { GitCommandFailed } from '../../ports/git-failures.js';
 import { deleteBranch } from './branch.js';
 import { gitCommand, openRepo } from './repository.js';
 

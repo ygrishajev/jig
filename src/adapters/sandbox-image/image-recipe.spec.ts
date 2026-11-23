@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { ConfigInvalid } from '../../domain/errors.js';
+import { SandboxPreparationInvalid } from '../../ports/agent-session.js';
 import {
   agentLayerDockerfile,
   BASE_DOCKERFILE,
@@ -45,7 +45,7 @@ describe('image recipe', () => {
       `FROM node:22\n${TOOLCHAIN_END}\n${TOOLCHAIN_START}\n`,
     ]) {
       const result = withToolchain(dockerfile, toolchain);
-      expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+      expect(result.isErr() && result.error).toBeInstanceOf(SandboxPreparationInvalid);
     }
   });
 

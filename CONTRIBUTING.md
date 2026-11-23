@@ -75,11 +75,11 @@ and run flows. Download and open it in a browser; GitHub displays HTML as source
 | `src/cli/`      | Commands and input parsing.                                       |
 | `src/app/`      | Application lifecycle, workflow assembly, and wiring.             |
 | `src/config/`   | Configuration schemas, defaults, presets, and policy.             |
-| `src/domain/`   | State, validation, and domain decisions.                          |
+| `src/domain/`   | State, validation, domain decisions, and business failures.       |
 | `src/failures/` | Failure messages, panic unwrapping, and retry of `Result`s.       |
 | `src/flow/`     | Generic flow contracts, execution, and the step retry policy.     |
 | `src/steps/`    | Individual pipeline steps.                                        |
-| `src/ports/`    | Interfaces for external operations.                               |
+| `src/ports/`    | Interfaces for external operations and their failures.            |
 | `src/adapters/` | Git, containers, storage, config files, terminals, and telemetry. |
 | `src/prompts/`  | Inputs sent to agents.                                            |
 
@@ -95,6 +95,14 @@ before config parses them. `npm run lint:dependencies` allows production config 
 `src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
 exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
 built-ins, and domain, ports, config and prompts cannot import it.
+
+Each failure class lives with the owner of what it means: business failures in
+`src/domain/errors.ts`, capability failures in the port that declares them (shared Git, run-state
+and local-state failures in `src/ports/git-failures.ts`, `src/ports/run-state-failures.ts` and
+`src/ports/local-state.ts`), configuration validation in `src/config/errors.ts`, and use-case and
+command input failures in `src/app/` and `src/cli/`. Import a class from its owner; there is no
+union of every class. `src/adapters/logging/error-serializer.ts` logs a class split out of
+`ConfigInvalid` under that old identity, so run logs stay comparable.
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,

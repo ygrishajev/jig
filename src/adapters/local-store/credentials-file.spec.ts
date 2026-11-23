@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { ConfigInvalid } from '../../domain/errors.js';
+import { LocalPreparationFailed } from '../../ports/local-state.js';
 import { CREDENTIALS_FILE, readCredentialsFile, saveCredential } from './credentials-file.js';
 
 describe('credentials file', () => {
@@ -32,7 +32,7 @@ describe('credentials file', () => {
 
     const read = readCredentialsFile(repoRoot);
 
-    expect(read.isErr() && read.error).toBeInstanceOf(ConfigInvalid);
+    expect(read.isErr() && read.error).toBeInstanceOf(LocalPreparationFailed);
     expect(read.isErr() && read.error.message).toContain(CREDENTIALS_FILE);
   });
 
@@ -69,7 +69,7 @@ describe('credentials file', () => {
 
     const saved = await saveCredential(repoRoot, 'KEY', faker.string.alphanumeric(20));
 
-    expect(saved.isErr() && saved.error).toBeInstanceOf(ConfigInvalid);
+    expect(saved.isErr() && saved.error).toBeInstanceOf(LocalPreparationFailed);
     expect((await status()).isClean()).toBe(true);
   });
 
@@ -83,8 +83,8 @@ describe('credentials file', () => {
     const read = readCredentialsFile(repoRoot);
     const saved = await saveCredential(repoRoot, 'KEY', faker.string.alphanumeric(20));
 
-    expect(read.isErr() && read.error).toBeInstanceOf(ConfigInvalid);
-    expect(saved.isErr() && saved.error).toBeInstanceOf(ConfigInvalid);
+    expect(read.isErr() && read.error).toBeInstanceOf(LocalPreparationFailed);
+    expect(saved.isErr() && saved.error).toBeInstanceOf(LocalPreparationFailed);
   });
 
   async function setup() {

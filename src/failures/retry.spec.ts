@@ -68,6 +68,21 @@ describe('retryResult', () => {
     ]);
   });
 
+  it('waits twice as long before each further attempt', async () => {
+    const delayMs = faker.number.int({ min: 20, max: 30 });
+    const startedAt: number[] = [];
+    const operation = async (): Promise<Result<string, string>> => {
+      startedAt.push(performance.now());
+      return Result.err(faker.lorem.word());
+    };
+
+    await retryResult(operation, { retries: 2, delayMs, shouldRetry: () => true });
+
+    expect(startedAt).toHaveLength(3);
+    expect(startedAt[1]! - startedAt[0]!).toBeGreaterThanOrEqual(delayMs - 1);
+    expect(startedAt[2]! - startedAt[1]!).toBeGreaterThanOrEqual(2 * delayMs - 1);
+  });
+
   it('lets a thrown bug through', async () => {
     const bug = new Error(faker.lorem.sentence());
 

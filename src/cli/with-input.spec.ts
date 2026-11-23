@@ -4,8 +4,7 @@ import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { CommandInputInvalid, type JigError } from '../domain/errors.js';
-import { withInput } from './with-input.js';
+import { CommandInputInvalid, withInput } from './with-input.js';
 
 describe('withInput', () => {
   it('hands the action its named arguments and options as one parsed object', async () => {
@@ -41,7 +40,7 @@ describe('withInput', () => {
 
   function setup<Schema extends z.ZodTypeAny>(schema: Schema) {
     let received: z.output<Schema> | undefined;
-    let outcome: Result<void, JigError> = Result.ok();
+    let outcome: Result<void, CommandInputInvalid> = Result.ok();
     const action = withInput(schema, async (input) => {
       received = input;
       return Result.ok();

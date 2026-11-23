@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { everyStepOn } from '../../tests/support/builders.js';
 import { InMemoryConfigSource } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { ConfigInvalid } from '../domain/errors.js';
 import { DEFAULT_CLAUDE_MODEL } from './agent-policy.js';
+import { ConfigInvalid } from './errors.js';
 import {
   configuredSteps,
   type JigConfig,

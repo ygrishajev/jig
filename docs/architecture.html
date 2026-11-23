@@ -134,9 +134,9 @@ svg text{font-family:var(--sans)}
   <table>
     <thead><tr><th>Module</th><th>Owns</th><th>Imports other owners</th></tr></thead>
     <tbody>
-      <tr><td>domain</td><td>State, outcomes, errors and pure rules</td><td>None</td></tr>
+      <tr><td>domain</td><td>State, outcomes, business failures and pure rules</td><td>None</td></tr>
       <tr><td>failures</td><td>Failure presentation, panic unwrapping and retry of operations that return a <code>Result</code></td><td>None</td></tr>
-      <tr><td>ports</td><td>External capability contracts</td><td>domain</td></tr>
+      <tr><td>ports</td><td>External capability contracts and their failures</td><td>domain</td></tr>
       <tr><td>config</td><td>Configuration and environment schemas and defaults, run settings, provider policy, presets and scratch naming</td><td>domain</td></tr>
       <tr><td>observers</td><td>Events, metrics, logging and tracing observers</td><td>domain, failures, ports</td></tr>
       <tr><td>adapters</td><td>Git, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, failures, observers, ports</td></tr>
@@ -144,7 +144,7 @@ svg text{font-family:var(--sans)}
       <tr><td>prompts</td><td>Agent request construction</td><td>domain</td></tr>
       <tr><td>steps</td><td>Individual workflow operations</td><td>domain, failures, flow, ports, prompts</td></tr>
       <tr><td>app</td><td>Composition, run lifecycle and concrete workflow assembly</td><td>adapters, config, domain, failures, flow, observers, ports, prompts, steps</td></tr>
-      <tr><td>cli</td><td>Core commands, input parsing and output</td><td>adapters, app, config, domain, failures, observers</td></tr>
+      <tr><td>cli</td><td>Core commands, input parsing and output</td><td>adapters, app, config, domain, failures, observers, ports</td></tr>
       <tr><td>integrations</td><td>GitHub executable composition and forge orchestration</td><td>adapters, app, cli, domain, failures, ports</td></tr>
     </tbody>
   </table>
@@ -342,19 +342,19 @@ svg text{font-family:var(--sans)}
   var cFLoop = flowCv("el", "Engine loop", "src/flow/engine.ts. The whole run is data in src/app/run-flow.ts; this loop drives it.", [
     ["Start from the saved phase", "a blocked reason is cleared; a halt moves on to its resumeAt.", "domain"],
     ["Look up the phase's node", "a step, the slice loop, a halt or a final.", "domain"],
-    ["Run the step", "it gets state, ports and settings; returns Result<Outcome, JigError> without mutating state.", "step"],
+    ["Run the step", "it gets state, ports and settings; returns Result<Outcome, StepFailure> without mutating state.", "step"],
     ["applyOutcome", "a pure reducer folds the outcome's data into the state.", "domain"],
     ["Pick the next phase", "the node's transition for the outcome; guards take the first that holds.", "domain"],
     ["Save", "RunStore.save after every transition — the checkpoint.", "infra"],
     ["Publish events", "stepStarted, stepFinished, phaseChanged and the rest, to the observers.", "infra"],
     ["Stop", "at a final (done, completed, stuck) or a halt (paused, awaitingMerge).", "step"]
   ], { h: 60, gap: 14 });
-  var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values; domain classifies them (src/domain/errors.ts), the engine retries them under the step policy that src/flow/retry-policy.ts assembles from the run settings, and decides what happens next.", [
-    ["A step returns a JigError", "its kind decides: retry, block or fatal.", "fail"],
+  var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values. Each class lives with its owner — domain business failures, port capability failures, config, app and CLI failures — and carries its kind; isTransient (src/domain/errors.ts) reads it, the engine retries under the step policy that src/flow/retry-policy.ts assembles from the run settings, and decides what happens next.", [
+    ["A step returns a StepFailure", "its agent session, workspace or business failure; its kind decides: retry, block or fatal.", "fail"],
     ["retry — AgentRunFailed, AgentOutputInvalid", "also RemoteUnavailable, SandboxUnavailable, SetupCommandFailed.", "domain"],
     ["Tried again", "retryResult (src/failures/retry.ts) under transientRetryPolicy (src/flow/retry-policy.ts), up to maxStepRetries (2) with backoff; the engine publishes a stepRetried event each time.", "step"],
     ["block — MergeFailed, RunStateConflict, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
-    ["fatal — ConfigInvalid, RunRequestInvalid, RunInProgress", "also MetricsLogCorrupt; return an Err and print its message.", "fail"],
+    ["fatal — LocalStateUnwritable from a step, or a failed save", "the engine returns an EngineFailure; around it ConfigInvalid, RunRequestInvalid, RunInProgress and the other fatal use-case failures also return an Err and print its message.", "fail"],
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]
   ]);
   var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/app/run-flow.ts; slices run in order.", [

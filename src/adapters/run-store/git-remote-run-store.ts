@@ -1,11 +1,5 @@
 import { Result } from 'better-result';
 
-import {
-  ConfigInvalid,
-  GitCommandFailed,
-  RemoteUnavailable,
-  RunStateConflict,
-} from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import {
   defersCodePublication,
@@ -14,6 +8,8 @@ import {
   runStateSchema,
 } from '../../domain/run-state.js';
 import { messageOf } from '../../failures/messages.js';
+import { GitCommandFailed, RemoteUnavailable } from '../../ports/git-failures.js';
+import { RunStateConflict, RunStateInvalid } from '../../ports/run-state-failures.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 import { RemoteRef } from '../git/remote-ref.js';
 import { isAncestor } from '../git/repository.js';
@@ -185,11 +181,11 @@ function stateRef(runId: RunId): string {
 
 const STATE_FILE = 'run.json';
 
-function parseState(shown: string, remote: string): Result<RunState, ConfigInvalid> {
+function parseState(shown: string, remote: string): Result<RunState, RunStateInvalid> {
   return Result.try({
     try: () => runStateSchema.parse(JSON.parse(shown)),
     catch: (cause) =>
-      new ConfigInvalid({
+      new RunStateInvalid({
         message: `The run's state on ${remote} is not valid: ${messageOf(cause)}`,
       }),
   });

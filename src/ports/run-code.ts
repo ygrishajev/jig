@@ -1,12 +1,8 @@
 import type { Result } from 'better-result';
 
-import type {
-  GitCommandFailed,
-  RemoteUnavailable,
-  RunCodeUnavailable,
-  RunStateConflict,
-} from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
+import type { GitCommandFailed, RemoteUnavailable } from './git-failures.js';
+import type { RunCodeUnavailable, RunStateConflict } from './run-state-failures.js';
 
 /** The run branch's code as a store sees it: what to record at a save, and what to restore on load. */
 export interface RunCode {

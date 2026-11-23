@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { ConfigInvalid, GitCommandFailed } from '../../domain/errors.js';
+import { GitCommandFailed, RepositoryInvalid } from '../../ports/git-failures.js';
 import { ensureRepositoryRoot, isAncestor, isWorkingTreeClean, openRepo } from './repository.js';
 
 describe('git repository helpers', () => {
@@ -67,7 +67,7 @@ describe('git repository helpers', () => {
 
     const refusal = await ensureRepositoryRoot(subdirectory);
 
-    expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(RepositoryInvalid);
     expect(refusal.isErr() && refusal.error.message).toMatch(wholePath(await realpath(repo)));
   });
 

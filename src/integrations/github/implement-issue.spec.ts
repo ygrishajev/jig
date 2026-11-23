@@ -36,11 +36,10 @@ import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store
 import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session.js';
 import { createAppContainer } from '../../app/container.js';
 import { parseEnvironment } from '../../config/environment.js';
-import { AgentRunFailed } from '../../domain/errors.js';
 import { runDiagnostics } from '../../domain/run-diagnostics.js';
 import { type RunId, runIdFor } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import type { ExecResult } from '../../ports/agent-session.js';
+import { AgentRunFailed, type ExecResult } from '../../ports/agent-session.js';
 import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
 import { implementIssue } from './implement-issue.js';
 import {
