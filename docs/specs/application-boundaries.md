@@ -168,10 +168,11 @@ not import `failures`.
 
 `failures` holds no error classes and no classification. Each class lives with the condition it
 describes (see below), carries its literal `kind`, and the owner of a decision says which kinds it
-retries. Any further shared technical owner must name its cohesive responsibility and specific
-consumers, explain why existing libraries/owners do not fit, and propose its allowed dependency
-edges before the corresponding issue is implemented. Do not grant every module access in
-anticipation of need.
+retries. Flow makes the step retry decision, so flow assembles the step `RetryPolicy` (see
+Configuration and defaults). Any further shared technical owner must name its cohesive
+responsibility and specific consumers, explain why existing libraries/owners do not fit, and propose
+its allowed dependency edges before the corresponding issue is implemented. Do not grant every
+module access in anticipation of need.
 
 The main dependency paths are:
 
@@ -347,12 +348,22 @@ provider/model policy, preset-name validation, precedence and selection rules. F
 directory discovery and environment capture belong at their respective external boundaries.
 Preserve schema-driven parsing once per input edge and never copy a schema into callers.
 
-Move `MAX_STEP_RETRIES = 2` and `RETRY_DELAY_MS = 5000` to config-owned defaults. Domain keeps resolved
-`RunSettings` and rules such as comparing review cycles with the resolved cap. No value changes and
-no new operator override are required by this architecture refactor. #48's proposed retry keys,
-zero semantics and documentation changes remain separate behavior work after ownership is settled.
-Agent presets currently override role configurations only; this refactor must not broaden presets
-to arbitrary run settings.
+Config owns the step retry defaults: `STEP_RETRIES = 2` and `STEP_RETRY_DELAY_MS = 5000` in
+`src/config/load-config.ts`, which `runSettingsFrom` copies into `maxStepRetries` and
+`retryDelayMs`. Domain keeps the resolved `RunSettings` type and rules such as comparing review
+cycles with the resolved cap. No value changes and no new operator override are required by this
+architecture refactor. #48's proposed retry keys, zero semantics and documentation changes remain
+separate behavior work after ownership is settled. Agent presets currently override role
+configurations only; this refactor must not broaden presets to arbitrary run settings.
+
+Step retry has three owners. Config owns the default count and delay. Each error class owns its
+literal `kind`, and domain keeps `FailureKind` and `isTransient` as a plain rule over it. Flow owns
+assembling the step `RetryPolicy` from the resolved `RunSettings` and `isTransient`, because flow
+makes the retry decision: a builder such as `src/flow/retry-policy.ts` imports `RetryPolicy` from
+`src/failures/retry.ts` and returns that type. App may import the builder from flow. Domain exports
+no retry-policy builder and no type shaped like `RetryPolicy`. The builder is an ordinary function
+imported directly, not a port or an injected dependency. Moving it changes no retry count, delay or
+retryable kind.
 
 Keep genuine safety/stopping rules in domain. Do not mechanically turn all caps into settings or
 move policy just because it contains a numeric constant.
@@ -375,8 +386,13 @@ Use the following ownership decisions to avoid recreating a global domain error 
 - Adapters translate raw third-party exceptions to the declared capability failures.
 
 Preserve error tags, important fields, messages, retry/block/fatal classifications and CLI behavior.
-Use narrow unions where decisions are exhaustive. Aggregate unions may live at the application
-boundary that actually needs them; domain and flow cannot import such an app-wide union.
+A class split out of a broader one is the exception for tags: it gets its own `_tag`, equal to its
+class name, so no two classes share a tag and the tag stays a usable discriminant for exhaustive
+matches, logs and metrics. Its message text, `kind` and exit behavior stay as they were, so users
+see no change. Where an existing surface shows or stores the old tag string, keep compatibility at
+that surface with an explicit translation; do not freeze the old tag in every new class. Use narrow
+unions where decisions are exhaustive. Aggregate unions may live at the application boundary that
+actually needs them; domain and flow cannot import such an app-wide union.
 
 Before moving error helpers or retry code, inventory their consumers and separate error meaning,
 classification policy, presentation/unwrapping and retry execution. Sharing a connection to errors
@@ -399,10 +415,11 @@ not depend on the application-wide union merely to recognize failures, or import
 Keep domain classes self-contained. Use narrow unions or an explicit structural protocol where
 appropriate, and supported library recognition or explicit validation at untrusted boundaries.
 
-The error-ownership implementation issue must enumerate the old-to-new error ownership and show
-how each existing tag/field and retry/block/fatal classification is preserved at its consumer. If
-that requires changes to a boundary contract, include them in the same planned slice. Relocating
-classes alone is not sufficient, and a new outward import is not an acceptable compatibility fix.
+The error-ownership implementation issue must enumerate the old-to-new error ownership and show how
+each existing tag/field and retry/block/fatal classification is preserved at its consumer, and which
+new tag replaces a split class's old one. If that requires changes to a boundary contract, include
+them in the same planned slice. Relocating classes alone is not sufficient, and a new outward import
+is not an acceptable compatibility fix.
 
 ## Enforcement
 
