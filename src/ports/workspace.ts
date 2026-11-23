@@ -47,10 +47,12 @@ export class MergeFailed extends TaggedError('MergeFailed')<{ message: string }>
   readonly kind = 'block' as const;
 }
 
+/** The sandbox's commits were not taken: its answers did not add up, or it rewrote approved work. */
 export class CommitImportRefused extends TaggedError('CommitImportRefused')<{ message: string }> {
   readonly kind = 'block' as const;
 }
 
+/** The target repository's commit hooks refused the commit; `output` is what they printed. */
 export class CommitRejected extends TaggedError('CommitRejected')<{
   message: string;
   output: string;

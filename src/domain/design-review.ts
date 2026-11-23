@@ -246,6 +246,10 @@ export function resolveDesignReview(
   );
 }
 
+/**
+ * The design still carries consequential findings after the planner's one revision and its
+ * re-review. Only the operator can settle them, so the run stops before any slice is written.
+ */
 export class DesignUnresolved extends TaggedError('DesignUnresolved')<{
   message: string;
   findingIds: string[];

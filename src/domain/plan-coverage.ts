@@ -147,6 +147,10 @@ function coverageProblems(steps: readonly number[], claimed: readonly number[]):
   ];
 }
 
+/**
+ * The planner's slices do not cover its plan. Distinct from AgentOutputInvalid so the slicing
+ * step can retry exactly this failure once, with the check's diagnostics as correction feedback.
+ */
 export class PlanNotCovered extends TaggedError('PlanNotCovered')<{ message: string }> {
   readonly kind = 'retry' as const;
 }

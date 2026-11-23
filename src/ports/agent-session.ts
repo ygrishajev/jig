@@ -31,6 +31,7 @@ export class AgentRunFailed extends TaggedError('AgentRunFailed')<{ message: str
   readonly kind = 'retry' as const;
 }
 
+/** The agent's own reply was malformed; a fresh attempt at the same step may well get it right. */
 export class AgentOutputInvalid extends TaggedError('AgentOutputInvalid')<{ message: string }> {
   readonly kind = 'retry' as const;
 }
