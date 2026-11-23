@@ -30,7 +30,7 @@ export type JigError =
   | CommandInputInvalid;
 
 /** A failure worth another attempt: a step, or a sandbox that did not start, gets bounded retries. */
-export function isTransient(error: JigError): boolean {
+export function isTransient(error: { kind: FailureKind }): boolean {
   return error.kind === 'retry';
 }
 

@@ -77,7 +77,7 @@ and run flows. Download and open it in a browser; GitHub displays HTML as source
 | `src/config/`   | Configuration schemas, defaults, presets, and policy.             |
 | `src/domain/`   | State, validation, and domain decisions.                          |
 | `src/failures/` | Failure messages, panic unwrapping, and retry of `Result`s.       |
-| `src/flow/`     | Generic flow contracts and execution.                             |
+| `src/flow/`     | Generic flow contracts, execution, and the step retry policy.     |
 | `src/steps/`    | Individual pipeline steps.                                        |
 | `src/ports/`    | Interfaces for external operations.                               |
 | `src/adapters/` | Git, containers, storage, config files, terminals, and telemetry. |

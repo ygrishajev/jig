@@ -5,7 +5,6 @@ import { isTransient, type JigError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { InvocationStatus } from '../domain/invocation-status.js';
 import type { Outcome } from '../domain/outcome.js';
-import { transientRetryPolicy } from '../domain/retry.js';
 import type { RunId } from '../domain/run-id.js';
 import {
   currentSlice,
@@ -31,6 +30,7 @@ import type {
   Target,
   Transitions,
 } from './define-flow.js';
+import { transientRetryPolicy } from './retry-policy.js';
 
 export interface EngineDependencies {
   ports: StepPorts;
@@ -211,7 +211,7 @@ class Engine {
     runId: RunId,
     step: () => Promise<Result<Outcome, JigError>>,
   ): Promise<Result<Attempt, JigError>> {
-    const attempted = await retryResult(() => this.timed(at, runId, step), {
+    const attempted = await retryResult<Outcome, JigError>(() => this.timed(at, runId, step), {
       ...transientRetryPolicy(this.dependencies.settings),
       onFailedAttempt: ({ error, attempt, retriesLeft }) => {
         if (!isTransient(error) || retriesLeft === 0) return;
