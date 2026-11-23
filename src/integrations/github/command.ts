@@ -11,8 +11,9 @@ import {
 } from '../../cli/config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../../cli/log-format-option.js';
 import type { Invocation } from '../../cli/with-app.js';
+import type { RepositoryIdentity } from '../../domain/repository-identity.js';
 import { GithubSetupInvalid } from './errors.js';
-import type { GithubPort, RepositoryIdentity } from './github-port.js';
+import type { GithubPort } from './github-port.js';
 import { implementIssue, type IssueOutcome } from './implement-issue.js';
 import { OctokitGithub } from './octokit-github.js';
 import { repositoryIdentity } from './repository-identity.js';

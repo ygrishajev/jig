@@ -6,6 +6,7 @@ import type { Logger } from 'pino';
 import { type ConfigDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { presetDirectoriesSource } from '../adapters/filesystem/preset-source.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
+import { RemotePublicationReceipts } from '../adapters/git/publication-receipts.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
 import { runLogFile } from '../adapters/local-store/run-paths.js';
@@ -47,6 +48,7 @@ import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
 import type { Clock } from '../ports/observability.js';
+import type { PublicationReceipts } from '../ports/publication-receipts.js';
 import type { RunStore } from '../ports/run-store.js';
 import type { SandboxGit } from '../ports/sandbox-git.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
@@ -71,6 +73,7 @@ export interface AppCradle {
   logger: Logger;
   clock: Clock;
   artefacts: RunArtefacts;
+  publicationReceipts: PublicationReceipts;
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SessionOpenFailure>>;
@@ -130,6 +133,9 @@ export function createAppContainer(input: {
     ).singleton(),
     clock: asValue({ now: () => Date.now() }),
     artefacts: asFunction(({ repoRoot }: AppCradle) => new RunArtefacts(repoRoot)).singleton(),
+    publicationReceipts: asFunction(
+      ({ repoRoot }: AppCradle) => new RemotePublicationReceipts(repoRoot),
+    ).singleton(),
     images: asFunction(
       ({ logger, environment }: AppCradle) =>
         new DockerImages({

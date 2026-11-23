@@ -1,5 +1,6 @@
 import type { Result } from 'better-result';
 
+import type { RepositoryIdentity } from '../../domain/repository-identity.js';
 import type { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
 
 export interface GithubPort {
@@ -29,10 +30,6 @@ export interface GithubPort {
     number: number,
     marker: string,
   ): Promise<Result<string | undefined, GithubFailure>>;
-}
-export interface RepositoryIdentity {
-  owner: string;
-  repo: string;
 }
 export interface Issue {
   number: number;

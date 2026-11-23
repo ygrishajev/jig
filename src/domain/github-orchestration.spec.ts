@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { runId } from '../../../tests/support/builders.js';
+import { runId } from '../../tests/support/builders.js';
 import {
   acceptedRequest,
   acceptRequest,
@@ -25,7 +25,7 @@ import {
   withPullRequest,
   withRefusal,
   withRefusalComment,
-} from './orchestration-state.js';
+} from './github-orchestration.js';
 
 describe('orchestration state', () => {
   it('finds a request only after it is accepted', () => {

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import type { InvocationStatus } from '../../domain/invocation-status.js';
-import { runIdSchema } from '../../domain/run-id.js';
-import type { RepositoryIdentity } from './github-port.js';
+import type { InvocationStatus } from './invocation-status.js';
+import type { RepositoryIdentity } from './repository-identity.js';
+import { runIdSchema } from './run-id.js';
 
 /** Which findings comment a draft PR carries: one per PR, run, outcome and exact revision. */
 export interface FindingsIdentity extends CommentIdentity {

@@ -30,25 +30,25 @@ import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { configDestination } from '../../adapters/filesystem/config-source.js';
+import { RemotePublicationReceipts } from '../../adapters/git/publication-receipts.js';
 import { GitRunCode } from '../../adapters/git/run-code.js';
 import { CompositeRunStore } from '../../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store.js';
 import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session.js';
 import { createAppContainer } from '../../app/container.js';
 import { parseEnvironment } from '../../config/environment.js';
+import {
+  claimPublication,
+  releasePublication,
+  withComment,
+  withPullRequest,
+} from '../../domain/github-orchestration.js';
 import { runDiagnostics } from '../../domain/run-diagnostics.js';
 import { type RunId, runIdFor } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { AgentRunFailed, type ExecResult } from '../../ports/agent-session.js';
 import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
 import { implementIssue } from './implement-issue.js';
-import {
-  claimPublication,
-  releasePublication,
-  withComment,
-  withPullRequest,
-} from './orchestration-state.js';
-import { OrchestrationStore } from './orchestration-store.js';
 import { requestText } from './request-snapshot.js';
 
 describe('implementIssue', () => {
@@ -823,7 +823,7 @@ describe('implementIssue', () => {
       github,
       logger,
       app,
-      store: new OrchestrationStore(dir),
+      store: new RemotePublicationReceipts(dir),
       implement: () => implementIssue(app, github, repository, issue.number),
       implementFromFreshClone: async () =>
         implementIssue(appIn(await remote.cloneOf()), github, repository, issue.number),
