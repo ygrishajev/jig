@@ -4,7 +4,7 @@ import { realpath } from 'node:fs/promises';
 import { type SimpleGit, simpleGit } from 'simple-git';
 
 import { ConfigInvalid, GitCommandFailed } from '../../domain/errors.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 
 /**
  * For a merge on the host: a hook can run what the branch just brought in, before anyone read it,

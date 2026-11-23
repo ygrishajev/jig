@@ -349,10 +349,10 @@ svg text{font-family:var(--sans)}
     ["Publish events", "stepStarted, stepFinished, phaseChanged and the rest, to the observers.", "infra"],
     ["Stop", "at a final (done, completed, stuck) or a halt (paused, awaitingMerge).", "step"]
   ], { h: 60, gap: 14 });
-  var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values (src/domain/errors.ts); the engine decides what happens next.", [
+  var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values; domain classifies them (src/domain/errors.ts), src/failures/retry.ts retries them, and the engine decides what happens next.", [
     ["A step returns a JigError", "its kind decides: retry, block or fatal.", "fail"],
     ["retry — AgentRunFailed, AgentOutputInvalid", "also RemoteUnavailable, SandboxUnavailable, SetupCommandFailed.", "domain"],
-    ["Tried again", "retryResult, up to maxStepRetries (2) with backoff; a stepRetried event each time.", "domain"],
+    ["Tried again", "retryResult (src/failures/retry.ts), up to maxStepRetries (2) with backoff; the engine publishes a stepRetried event each time.", "step"],
     ["block — MergeFailed, RunStateConflict, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
     ["fatal — ConfigInvalid, RunRequestInvalid, RunInProgress", "also MetricsLogCorrupt; return an Err and print its message.", "fail"],
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]

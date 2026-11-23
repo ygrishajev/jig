@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 import type { ZodType } from 'zod';
 
 import { AgentOutputInvalid } from '../../domain/errors.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 
 export function outputInstruction(): string {
   return [

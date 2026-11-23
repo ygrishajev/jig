@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 import { execa } from 'execa';
 
 import { GitCommandFailed } from '../../domain/errors.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 
 /** The commit `ref` names exactly, or `undefined` when there is no such ref or commit here. */
 export function exactHead(

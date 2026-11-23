@@ -3,7 +3,7 @@ import { execa } from 'execa';
 import { z } from 'zod';
 
 import { ImageBuildFailed } from '../../domain/errors.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 import type { ImageBuildSpec, SandboxImages } from '../../ports/sandbox-images.js';
 
 export interface DockerImagesOptions {

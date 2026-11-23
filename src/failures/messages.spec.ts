@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { Panic } from 'better-result';
 import { describe, expect, it } from 'vitest';
 
-import { messageOf, rootCause } from './thrown.js';
+import { messageOf, rootCause } from './messages.js';
 
 describe('messageOf', () => {
   it("reads an error's own message", () => {

@@ -7,7 +7,7 @@ import {
   MergeFailed,
   RemoteUnavailable,
 } from '../../domain/errors.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 import { getCurrentBranch } from './branch.js';
 import { gitCommand, isWorkingTreeClean, openRepoWithoutHooks } from './repository.js';
 

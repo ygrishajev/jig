@@ -25,7 +25,7 @@ import {
 } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 import type {
   AgentRole,
   AgentRunInput,

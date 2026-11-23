@@ -38,7 +38,7 @@ import {
   type LocalStateUnwritable,
   SetupCommandFailed,
 } from '../domain/errors.js';
-import { messageOf } from '../failures/thrown.js';
+import { messageOf } from '../failures/messages.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
 import { type AppCradle, type RunSession } from './container.js';
 import { ensureSandboxImage, readSandboxDockerfile } from './sandbox-image.js';

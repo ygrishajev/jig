@@ -2,7 +2,7 @@ import { isPanic, panic } from 'better-result';
 import { EventEmitter } from 'node:events';
 
 import type { RunEvent } from '../domain/events.js';
-import { messageOf } from '../failures/thrown.js';
+import { messageOf } from '../failures/messages.js';
 import type { EventSink } from '../ports/observability.js';
 
 export type RunEventMap = { event: [RunEvent] };

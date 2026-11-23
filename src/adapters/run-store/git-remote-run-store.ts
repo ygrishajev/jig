@@ -13,7 +13,7 @@ import {
   type RunState,
   runStateSchema,
 } from '../../domain/run-state.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 import { RemoteRef } from '../git/remote-ref.js';
 import { isAncestor } from '../git/repository.js';

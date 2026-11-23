@@ -14,7 +14,7 @@ import {
 } from '../../config/preset-source.js';
 import type { PresetName } from '../../config/presets.js';
 import { JIG_DIR } from '../../config/scratch-directory.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 
 /** What the preset directories are found under: the repository, the operator's home and their XDG config home. */
 export interface PresetLocations extends Pick<JigEnvironment, 'homeDirectory' | 'xdgConfigHome'> {

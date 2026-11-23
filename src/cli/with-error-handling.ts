@@ -1,6 +1,6 @@
 import type { Result } from 'better-result';
 
-import { messageOf, rootCause } from '../failures/thrown.js';
+import { messageOf, rootCause } from '../failures/messages.js';
 
 /** Where a failed command reports itself. */
 export interface FailureOutput {

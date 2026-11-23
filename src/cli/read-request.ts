@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { StandardInput } from '../adapters/terminal/standard-input.js';
 import type { StartRequest } from '../app/run-jig.js';
 import { RunRequestInvalid } from '../domain/errors.js';
-import { messageOf } from '../failures/thrown.js';
+import { messageOf } from '../failures/messages.js';
 
 /** Where a request comes from: a file, or text piped to standard input. */
 export type RequestSource = { file: string } | { stdin: true };

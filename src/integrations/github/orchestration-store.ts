@@ -10,8 +10,8 @@ import {
   type RemoteUnavailable,
   type RunStateConflict,
 } from '../../domain/errors.js';
+import { messageOf } from '../../failures/messages.js';
 import { retryResult } from '../../failures/retry.js';
-import { messageOf } from '../../failures/thrown.js';
 import { OrchestrationStateInvalid, PublicationInProgress } from './errors.js';
 import {
   claimPublication,

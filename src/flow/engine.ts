@@ -15,8 +15,8 @@ import {
   type RunStateIn,
 } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
+import { messageOf, rootCause } from '../failures/messages.js';
 import { retryResult } from '../failures/retry.js';
-import { messageOf, rootCause } from '../failures/thrown.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
 import type {

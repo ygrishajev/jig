@@ -262,25 +262,27 @@ The inventory intentionally uses the pre-move paths; only `flow/run-flow.ts` mov
 - `steps/pull-request-description.ts` → `domain/completion-reuse.ts`, `domain/final-check.ts`, `domain/run-state.ts`, `domain/settings.ts`, `domain/slice.ts`
 - `steps/slice.ts` → `domain/completion-reuse.ts`, `domain/errors.ts`, `domain/final-check.ts`, `domain/outcome.ts`, `domain/protected-paths.ts`, `domain/run-state.ts`, `domain/slice.ts`, `flow/define-flow.ts`, `prompts/slice.ts`
 
-## After configuration ownership
+## Current ownership graph
 
 The complete production graph was recomputed with the dependency-cruiser command above,
-including type imports: 127 source files. The aggregate graph is acyclic.
+including type imports: 133 source files. The aggregate graph is acyclic.
 Configuration imports only domain; adapters consume configuration policy.
 Provider construction, credential checks, authentication and filesystem operations
-remain with their existing owners. No enforcement settings changed.
+remain with their existing owners.
 
-Dependency-first topological order: `domain`, `ports`, `config`, `observers`, `adapters`, `flow`, `prompts`, `steps`, `app`, `cli`, `integrations`.
+Dependency-first topological order: `domain`, `failures`, `ports`, `config`, `observers`, `adapters`, `flow`, `prompts`, `steps`, `app`, `cli`, `integrations`.
 
 ```mermaid
 flowchart LR
   adapters --> config
   adapters --> domain
+  adapters --> failures
   adapters --> observers
   adapters --> ports
   app --> adapters
   app --> config
   app --> domain
+  app --> failures
   app --> flow
   app --> observers
   app --> ports
@@ -290,24 +292,69 @@ flowchart LR
   cli --> app
   cli --> config
   cli --> domain
+  cli --> failures
   cli --> observers
   config --> domain
   flow --> domain
+  flow --> failures
   flow --> ports
   integrations --> adapters
   integrations --> app
   integrations --> cli
   integrations --> domain
+  integrations --> failures
   integrations --> ports
   observers --> domain
+  observers --> failures
   observers --> ports
   ports --> domain
   prompts --> domain
   steps --> domain
+  steps --> failures
   steps --> flow
   steps --> ports
   steps --> prompts
 ```
+
+### Shared failure helpers
+
+`src/failures/messages.ts` owns `messageOf` and `rootCause`, and `src/failures/retry.ts` owns
+`retryResult` and `RetryPolicy`. Callers import them directly from those modules; they are not
+ports and are not injected, and no other module declares or re-exports them. Domain keeps the
+failure classes, `isTransient` and `transientRetryPolicy` in `src/domain/errors.ts` and
+`src/domain/retry.ts`; `TransientRetryPolicy` is domain's own structural type, which
+`retryResult` accepts without domain importing `failures`. The engine still decides what a
+failure's kind means for the run.
+
+The baseline inventory above is the snapshot from before the assembly move. Since then, these
+production imports of the shared helpers replace the baseline's `domain/errors.ts` and
+`domain/retry.ts` references for them:
+
+- `failures/messages.ts` ← every adapter that reports a thrown cause (`filesystem/config-source.ts`,
+  `filesystem/preset-source.ts`, `find-symlink.ts`, `git/git-workspace.ts`, `git/merge.ts`,
+  `git/repository.ts`, `git/run-history.ts`, `local-store/credentials-file.ts`,
+  `local-store/local-run-store.ts`, `local-store/local-state.ts`, `local-store/run-lock.ts`,
+  `run-store/git-remote-run-store.ts`, `sandbox-image/docker-images.ts`,
+  `sandcastle/codex-auth.ts`, `sandcastle/private-clone-docker.ts`,
+  `sandcastle/sandcastle-session.ts`, `sandcastle/structured-output.ts`, `terminal/terminal.ts`),
+  `app/init-sandbox.ts`, `app/run-stores.ts`, `app/sandbox-image.ts`, `cli/read-request.ts`,
+  `cli/with-error-handling.ts`, `flow/engine.ts`, `integrations/github/orchestration-store.ts` and
+  `observers/run-events.ts`.
+- `failures/retry.ts` ← `adapters/git/remote-ref.ts`, `app/container.ts`, `flow/engine.ts`,
+  `integrations/github/octokit-github.ts`, `integrations/github/orchestration-store.ts` and
+  `steps/planning.ts`. Only `app/container.ts` and `flow/engine.ts` still import `domain/retry.ts`,
+  for `transientRetryPolicy`.
+
+Dependency-cruiser's `failures-imports-only-better-result-and-node` rule allows production
+`failures` to import only itself, `better-result` and Node built-ins, and
+`failures-is-imported-only-by-listed-owners` lets only adapters, app, cli, flow, integrations,
+observers and steps import it; domain, ports, config and prompts cannot. `integrations` stands in
+for the planned composition owner until that slice moves executable wiring out of it.
+
+`failures` is a one-off owner, not a home for shared utilities. A new helper belongs with the rule
+it expresses: a business rule in domain, a capability contract in its port, a configuration policy
+in config. Moving the error classes to their owners, moving composition out of `app` and
+`integrations`, and separating the GitHub integration are separate slices.
 
 ## Configuration I/O and defaults
 
@@ -354,7 +401,7 @@ The step retry count (2) and first retry delay (5000 ms) are private defaults in
 configuration keys, and presets still override agent roles only. `src/domain/settings.ts` keeps
 `RunSettings`, `reviewCapReached`, `sliceNeedsVerification` and the stopping caps
 (`HOOK_FAILURE_CAP`, `VERIFICATION_FAILURE_CAP`, `EMPTY_ATTEMPT_CAP`, `RULE_FIX_CAP`).
-`retryResult` reads the resolved count and delay unchanged.
+`retryResult` in `src/failures/retry.ts` reads the resolved count and delay unchanged.
 
 Dependency-cruiser's `config-imports-only-approved-dependencies` rule allows production config to
 import only `src/config`, `src/domain`, `better-result` and `zod`. Anything else fails, including
@@ -364,64 +411,3 @@ config's contracts, and ports still depend only on domain. CLI commands still re
 `src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepares the invocation, and
 `src/app/container.ts` remains the composition root; moving preparation into application
 operations and composition out of `app` are separate slices.
-
-## After failures ownership
-
-`src/failures/thrown.ts` owns `messageOf` and `rootCause`, and `src/failures/retry.ts` owns
-`retryResult` and `RetryPolicy`. Callers import them directly; they are not ports and are not
-injected, and no other module declares or re-exports them. Domain keeps the failure classes,
-`isTransient` and `transientRetryPolicy`, whose `TransientRetryPolicy` is its own structural type
-that `retryResult` accepts without domain importing `failures`.
-
-The complete production graph was recomputed with the dependency-cruiser command above, including
-type imports: 133 source files. The aggregate graph is acyclic.
-
-```mermaid
-flowchart LR
-  adapters --> config
-  adapters --> domain
-  adapters --> failures
-  adapters --> observers
-  adapters --> ports
-  app --> adapters
-  app --> config
-  app --> domain
-  app --> failures
-  app --> flow
-  app --> observers
-  app --> ports
-  app --> prompts
-  app --> steps
-  cli --> adapters
-  cli --> app
-  cli --> config
-  cli --> domain
-  cli --> failures
-  cli --> observers
-  config --> domain
-  flow --> domain
-  flow --> failures
-  flow --> ports
-  integrations --> adapters
-  integrations --> app
-  integrations --> cli
-  integrations --> domain
-  integrations --> failures
-  integrations --> ports
-  observers --> domain
-  observers --> failures
-  observers --> ports
-  ports --> domain
-  prompts --> domain
-  steps --> domain
-  steps --> failures
-  steps --> flow
-  steps --> ports
-  steps --> prompts
-```
-
-Dependency-cruiser's `failures-imports-only-better-result-and-node` rule allows production
-`failures` to import only itself, `better-result` and Node built-ins, and
-`failures-is-imported-only-by-listed-owners` lets only adapters, app, cli, flow, integrations,
-observers and steps import it. `integrations` stands in for the planned composition owner until
-that slice moves executable wiring out of it.

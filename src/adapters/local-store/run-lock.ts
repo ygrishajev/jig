@@ -4,7 +4,7 @@ import lockfile from 'proper-lockfile';
 
 import { LocalStateUnwritable, RunInProgress } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 import { onLocalState } from './local-state.js';
 import { findLinkInRunDirectory, makeRunDirectory, runDirectory } from './run-paths.js';
 

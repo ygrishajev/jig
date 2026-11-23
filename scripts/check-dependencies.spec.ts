@@ -216,16 +216,31 @@ describe('dependency checking command', () => {
     expect(result.all).toContain('src/failures/nested/a.ts');
   });
 
-  it('accepts failures importing itself, better-result and Node built-ins', async () => {
+  it.each([
+    "import { c } from '../c.js'; export const a = c;",
+    "import type { C } from '../c.js'; export type A = C;",
+    "import { Result } from 'better-result'; export const a = Result;",
+    "import type { Result } from 'better-result'; export type A = Result<string, never>;",
+    "import { setTimeout } from 'node:timers/promises'; export const a = setTimeout;",
+    "import type { Timeout } from 'node:timers'; export type A = Timeout;",
+  ])('accepts failures importing itself, better-result or Node built-ins: %s', async (source) => {
     const { run } = await setup({
-      'failures/nested/a.ts': [
-        "import { Result } from 'better-result';",
-        "import { setTimeout } from 'node:timers/promises';",
-        "import type { C } from '../c.js';",
-        'export const a = [Result, setTimeout];',
-        'export type A = C;',
+      'failures/nested/a.ts': source,
+      'failures/c.ts': 'export const c = 1; export type C = string;',
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
+  it('accepts a failures spec importing test packages', async () => {
+    const { run } = await setup({
+      'failures/b.ts': 'export const b = 1;',
+      'failures/b.spec.ts': [
+        "import { faker } from '@faker-js/faker';",
+        "import { execa } from 'execa';",
+        "import { expect } from 'vitest';",
+        "import { b } from './b.js';",
+        'export const spec = [faker, execa, expect, b];',
       ].join('\n'),
-      'failures/c.ts': 'export type C = string;',
     });
     expect((await run()).exitCode).toBe(0);
   });
@@ -273,9 +288,14 @@ describe('dependency checking command', () => {
       path.join(cwd, 'tsconfig.json'),
       JSON.stringify({ compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext' } }),
     );
+    const testPackages = ['@faker-js/faker', 'vitest'].map((name) => [name, '*']);
     await writeFile(
       path.join(cwd, 'package.json'),
-      JSON.stringify({ type: 'module', dependencies: Object.fromEntries(declaredPackages) }),
+      JSON.stringify({
+        type: 'module',
+        dependencies: Object.fromEntries(declaredPackages),
+        devDependencies: Object.fromEntries(testPackages),
+      }),
     );
     await symlink(
       fileURLToPath(new URL('../node_modules', import.meta.url)),

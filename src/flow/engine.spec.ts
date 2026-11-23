@@ -408,6 +408,21 @@ describe('runEngine', () => {
     expect(unwrap(await store.load(state.runId))).toMatchObject({ blockedReason: undefined });
   });
 
+  it('tries a transient failure until the settings budget runs out', async () => {
+    const maxStepRetries = faker.number.int({ min: 1, max: 3 });
+    const failure = new AgentRunFailed({ message: faker.lorem.sentence() });
+    const context = vi.fn<RunStep>(async () => Result.err(failure));
+    const { settle } = setup({
+      settings: runSettings({ maxStepRetries, retryDelayMs: 0 }),
+      flow: linearFlow({ context }),
+    });
+
+    const { state } = await settle(aDescribedRun({ phase: 'context' }));
+
+    expect(state.blockedReason).toBe(failure.message);
+    expect(context).toHaveBeenCalledTimes(maxStepRetries + 1);
+  });
+
   it('blocks straight away on a failure that needs a person', async () => {
     const reason = faker.lorem.sentence();
     const merge = vi.fn<RunStep>(async () => Result.err(new MergeFailed({ message: reason })));

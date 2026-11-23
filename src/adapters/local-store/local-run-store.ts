@@ -7,7 +7,7 @@ import writeFileAtomic from 'write-file-atomic';
 import { ConfigInvalid } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { type RunState, runStateSchema } from '../../domain/run-state.js';
-import { messageOf } from '../../failures/thrown.js';
+import { messageOf } from '../../failures/messages.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
