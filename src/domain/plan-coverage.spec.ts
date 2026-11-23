@@ -64,6 +64,10 @@ describe('checkPlanCoverage', () => {
     const result = checkPlanCoverage(plan, [slice]);
 
     expect(result.isErr() && result.error).toBeInstanceOf(PlanNotCovered);
+    expect(result.isErr() && result.error).toMatchObject({
+      kind: 'retry',
+      _tag: 'PlanNotCovered',
+    });
     expect(result.isErr() && result.error.message).toContain('no step headings');
   });
 

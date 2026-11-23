@@ -522,3 +522,16 @@ verification run as directed by this slice's execution instructions. Focused ver
 
 Full build/lint/format checks, coverage and the complete unit suite remain for jig's validation;
 mutation and live E2E were not run. Prettier checking of changed files passed. No release/version, credential artifact or target-repository write is part of this migration.
+
+Colocated failure specs in `src/ports/{agent-session,git-failures,run-state-failures,
+sandbox,credentials,filesystem,metrics,workspace}.spec.ts`, `src/config/errors.spec.ts`,
+`src/app/run-request-invalid.spec.ts`, `src/app/run-store-setup-invalid.spec.ts` and
+`src/cli/command-input-invalid.spec.ts` preserve kind, tag and payload contracts. The sandbox
+spec includes setup-command output; every split class asserts the legacy `ConfigInvalid` tag
+and fatal classification. Domain caller specs assert `PlanNotCovered` and `DesignUnresolved`
+kinds and tags on their returned failures.
+
+Review follow-up verification under Node 26.13.0: 14 focused files passed (121 tests), including
+all 52 dependency-checker fixtures after removing the redundant configuration override.
+The remaining configuration failure spec passed separately. Changed-file ESLint and Prettier
+checks passed after import sorting and formatting corrections. Full validation remains for jig.
