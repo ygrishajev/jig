@@ -73,7 +73,7 @@ describe('completion reuse steps', () => {
     it('invalidates authorized evidence once the settings it ran under changed', async () => {
       const { invalidated } = await setup({
         authorized: true,
-        finishingSettings: runSettings({ verifyCommand: `npm run ${faker.word.verb()}` }),
+        finishingSettings: runSettings({ verifyCommand: `npm run verify-${faker.string.uuid()}` }),
       });
 
       expect((await invalidated()).unwrap()).toBe(true);
