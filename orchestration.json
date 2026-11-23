@@ -72,10 +72,5 @@
   "findingsComments": {
     "findings:ygrishajev/sdlc#64:refactor-config-read-settings-and-008e047e:stuck:ecc0cda2b8402e53324e61053edfb61212247a01": "https://github.com/ygrishajev/jig/pull/64#issuecomment-7086057379"
   },
-  "owners": {
-    "ygrishajev/jig#56": {
-      "token": "bc05bfaf-afe0-473a-b99b-e6b785924b47",
-      "expiresAt": 1795438148512
-    }
-  }
+  "owners": {}
 }
