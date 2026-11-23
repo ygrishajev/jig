@@ -266,6 +266,29 @@ describe('initSandbox', () => {
     expect(result.status === 'failed' && result.failure).toContain(failure);
   });
 
+  it('reports a configured setup failure without asking the planner', async () => {
+    const failure = new SetupCommandFailed({
+      message: faker.lorem.sentence(),
+      output: faker.lorem.sentence(),
+    });
+    const { init, agent, write } = await setup({
+      configured: true,
+      checkSandboxFailures: [failure],
+    });
+    const { setupCommand, verifyCommand } = toolchainProposal();
+    await write(
+      'jig.config.json',
+      JSON.stringify({ ...everyStepOn(), setupCommand, verifyCommand }),
+    );
+
+    expect(await init({ useAgent: false })).toEqual({
+      status: 'failed',
+      attempts: 1,
+      failure: failure.message,
+    });
+    expect(agent.calls).toHaveLength(0);
+  });
+
   it('hands a failing setup command back to the planner', async () => {
     const failure = new SetupCommandFailed({
       message: faker.lorem.sentence(),

@@ -165,7 +165,9 @@ async function checkConfiguredCommands(
   app: AwilixContainer<AppCradle>,
   config: JigConfig,
   steps: StepConfig[],
-): Promise<Result<InitResult, SandboxCheckFailure | LocalStateUnwritable>> {
+): Promise<
+  Result<InitResult, Exclude<SandboxCheckFailure, SetupCommandFailed> | LocalStateUnwritable>
+> {
   const { verifyCommand, setupCommand } = config;
   if (!verifyCommand) return Result.ok({ status: 'written' });
   const credentials = await ensureCredentials(app, steps);
@@ -216,7 +218,7 @@ async function checkInSandbox(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | undefined,
   verifyCommand: string,
-): Promise<Result<string | undefined, SandboxCheckFailure>> {
+): Promise<Result<string | undefined, Exclude<SandboxCheckFailure, SetupCommandFailed>>> {
   const checked = await withSandbox(app, setupCommand ?? null, async (session) => {
     const verify = await session.exec(verifyCommand);
     return verify.map(({ exitCode, output }) =>
@@ -225,8 +227,10 @@ async function checkInSandbox(
         : `verifyCommand "${verifyCommand}" exited with ${exitCode}:\n${output.slice(-3000)}`,
     );
   });
-  if (checked.isErr() && checked.error instanceof SetupCommandFailed) {
-    return Result.ok(checked.error.message);
+  if (checked.isErr()) {
+    return checked.error instanceof SetupCommandFailed
+      ? Result.ok(checked.error.message)
+      : Result.err(checked.error);
   }
   return checked;
 }
