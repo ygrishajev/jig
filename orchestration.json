@@ -79,5 +79,10 @@
     "findings:ygrishajev/sdlc#64:refactor-config-read-settings-and-008e047e:stuck:ecc0cda2b8402e53324e61053edfb61212247a01": "https://github.com/ygrishajev/jig/pull/64#issuecomment-7086057379",
     "findings:ygrishajev/jig#67:refactor-domain-assign-error-ownership-8ba14cb6:stuck:d0b3398d0e2f4b82d49a1e2e2adbb7219eabcf0b": "https://github.com/ygrishajev/jig/pull/67#issuecomment-7103011596"
   },
-  "owners": {}
+  "owners": {
+    "ygrishajev/jig#56": {
+      "token": "d2e4c525-4cf8-4f85-9c74-5070a1164968",
+      "expiresAt": 1795443684883
+    }
+  }
 }
