@@ -3,7 +3,7 @@ import { open } from 'node:fs/promises';
 import type { Readable, Writable } from 'node:stream';
 import { ReadStream } from 'node:tty';
 
-import { messageOf } from '../../domain/errors.js';
+import { messageOf } from '../../failures/thrown.js';
 
 interface PromptTerminal {
   terminal: Terminal;

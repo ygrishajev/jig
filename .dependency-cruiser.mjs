@@ -4,6 +4,7 @@ export const productionModules = [
   'cli',
   'config',
   'domain',
+  'failures',
   'flow',
   'integrations',
   'observers',
@@ -17,6 +18,16 @@ const configAllowlist = [
   '^src/(config|domain)/',
   '(^|/)node_modules/better-result/',
   '(^|/)node_modules/zod/',
+];
+const failuresImporters = [
+  'adapters',
+  'app',
+  'cli',
+  'failures',
+  'flow',
+  'integrations',
+  'observers',
+  'steps',
 ];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
@@ -51,6 +62,27 @@ export default {
       severity: 'error',
       from: { path: '^src/config/', pathNot: testFilePattern },
       to: { pathNot: configAllowlist },
+    },
+    {
+      name: 'failures-imports-only-better-result-and-node',
+      comment:
+        'Failures sits beneath every owner that presents, unwraps or retries a failure, so it ' +
+        'imports no project source outside itself and no package but better-result.',
+      severity: 'error',
+      from: { path: '^src/failures/', pathNot: testFilePattern },
+      to: {
+        pathNot: ['^src/failures/', '(^|/)node_modules/better-result/'],
+        dependencyTypesNot: ['core'],
+      },
+    },
+    {
+      name: 'failures-is-imported-only-by-listed-owners',
+      comment:
+        'Domain, ports, config and prompts do not present, unwrap or retry failures; only the ' +
+        'owners whose application-boundaries row lists failures import it.',
+      severity: 'error',
+      from: { path: '^src/', pathNot: `^src/(${failuresImporters.join('|')})/` },
+      to: { path: '^src/failures/' },
     },
     {
       name: 'adapters-do-not-import-flow',

@@ -1,7 +1,8 @@
 import { Result } from 'better-result';
 import { lstatSync } from 'node:fs';
 
-import { ConfigInvalid, messageOf } from '../domain/errors.js';
+import { ConfigInvalid } from '../domain/errors.js';
+import { messageOf } from '../failures/thrown.js';
 
 export function refuseSymlinks(paths: string[]): Result<void, ConfigInvalid> {
   const link = Result.try({

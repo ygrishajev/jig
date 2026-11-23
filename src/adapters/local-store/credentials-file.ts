@@ -8,7 +8,8 @@ import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
 import { JIG_DIR } from '../../config/scratch-directory.js';
-import { ConfigInvalid, type LocalStateUnwritable, messageOf } from '../../domain/errors.js';
+import { ConfigInvalid, type LocalStateUnwritable } from '../../domain/errors.js';
+import { messageOf } from '../../failures/thrown.js';
 import { refuseSymlinks } from '../find-symlink.js';
 import { onLocalState } from './local-state.js';
 import { ignoreJigDirectory } from './run-paths.js';

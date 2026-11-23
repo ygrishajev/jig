@@ -6,6 +6,20 @@ import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../tests/support/temp-directory.js';
 
+const productionOwnersOutsideFailures = [
+  'adapters',
+  'app',
+  'cli',
+  'config',
+  'domain',
+  'flow',
+  'integrations',
+  'observers',
+  'ports',
+  'prompts',
+  'steps',
+];
+
 describe('dependency checking command', () => {
   it('rejects a disconnected two-module cycle containing an erased edge', async () => {
     const { run } = await setup({
@@ -149,6 +163,73 @@ describe('dependency checking command', () => {
     expect((await run()).exitCode).toBe(0);
   });
 
+  it.each(
+    ['domain', 'ports', 'config', 'prompts'].flatMap((from) => [
+      [from, "import { b } from '../../failures/b.js'; export const a = b;"],
+      [from, "import type { B } from '../../failures/b.js'; export type A = B;"],
+      [from, "export { b } from '../../failures/b.js';"],
+    ]),
+  )('rejects %s importing failures: %s', async (from, source) => {
+    const { run } = await setup({
+      [`${from}/nested/a.ts`]: source,
+      'failures/b.ts': 'export const b = 1; export type B = string;',
+    });
+    const result = await run();
+    expect(result.exitCode).toBe(1);
+    expect(result.all).toContain('failures-is-imported-only-by-listed-owners');
+    expect(result.all).toContain(`src/${from}/nested/a.ts`);
+  });
+
+  it.each(
+    ['adapters', 'app', 'cli', 'flow', 'integrations', 'observers', 'steps'].flatMap((from) => [
+      [from, "import { b } from '../../failures/b.js'; export const a = b;"],
+      [from, "import type { B } from '../../failures/b.js'; export type A = B;"],
+    ]),
+  )('accepts %s importing failures: %s', async (from, source) => {
+    const { run } = await setup({
+      [`${from}/nested/a.ts`]: source,
+      'failures/b.ts': 'export const b = 1; export type B = string;',
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
+  it.each([
+    ...productionOwnersOutsideFailures.flatMap((to) => [
+      `import { b } from '../../${to}/b.js'; export const a = b;`,
+      `import type { B } from '../../${to}/b.js'; export type A = B;`,
+    ]),
+    "import { execa } from 'execa'; export const a = execa;",
+    "import type { z } from 'zod'; export type A = typeof z;",
+  ])('rejects failures importing outside better-result and Node: %s', async (source) => {
+    const { run } = await setup({
+      'failures/nested/a.ts': source,
+      ...Object.fromEntries(
+        productionOwnersOutsideFailures.map((owner) => [
+          `${owner}/b.ts`,
+          'export const b = 1; export type B = string;',
+        ]),
+      ),
+    });
+    const result = await run();
+    expect(result.exitCode).toBe(1);
+    expect(result.all).toContain('failures-imports-only-better-result-and-node');
+    expect(result.all).toContain('src/failures/nested/a.ts');
+  });
+
+  it('accepts failures importing itself, better-result and Node built-ins', async () => {
+    const { run } = await setup({
+      'failures/nested/a.ts': [
+        "import { Result } from 'better-result';",
+        "import { setTimeout } from 'node:timers/promises';",
+        "import type { C } from '../c.js';",
+        'export const a = [Result, setTimeout];',
+        'export type A = C;',
+      ].join('\n'),
+      'failures/c.ts': 'export type C = string;',
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
   it.each(['unknown/a.ts', 'stray.ts', 'app-other/a.ts'])(
     'rejects unowned production file %s',
     async (file) => {
@@ -171,20 +252,8 @@ describe('dependency checking command', () => {
     expect(result.all).not.toContain('unowned-production-file: src/unknown/ignored.spec.ts');
   });
 
-  it('scans all eleven owners including disconnected files', async () => {
-    const owners = [
-      'adapters',
-      'app',
-      'cli',
-      'config',
-      'domain',
-      'flow',
-      'integrations',
-      'observers',
-      'ports',
-      'prompts',
-      'steps',
-    ];
+  it('scans all twelve owners including disconnected files', async () => {
+    const owners = [...productionOwnersOutsideFailures, 'failures'];
     const { run } = await setup(
       Object.fromEntries(owners.map((owner) => [`${owner}/a.ts`, "import './missing.js';"])),
     );

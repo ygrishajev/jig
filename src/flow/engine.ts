@@ -1,11 +1,11 @@
 import { panic, Result } from 'better-result';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { isTransient, type JigError, messageOf, rootCause } from '../domain/errors.js';
+import { isTransient, type JigError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { InvocationStatus } from '../domain/invocation-status.js';
 import type { Outcome } from '../domain/outcome.js';
-import { retryResult, transientRetryPolicy } from '../domain/retry.js';
+import { transientRetryPolicy } from '../domain/retry.js';
 import type { RunId } from '../domain/run-id.js';
 import {
   currentSlice,
@@ -15,6 +15,8 @@ import {
   type RunStateIn,
 } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
+import { retryResult } from '../failures/retry.js';
+import { messageOf, rootCause } from '../failures/thrown.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
 import type {

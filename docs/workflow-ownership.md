@@ -364,3 +364,64 @@ config's contracts, and ports still depend only on domain. CLI commands still re
 `src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepares the invocation, and
 `src/app/container.ts` remains the composition root; moving preparation into application
 operations and composition out of `app` are separate slices.
+
+## After failures ownership
+
+`src/failures/thrown.ts` owns `messageOf` and `rootCause`, and `src/failures/retry.ts` owns
+`retryResult` and `RetryPolicy`. Callers import them directly; they are not ports and are not
+injected, and no other module declares or re-exports them. Domain keeps the failure classes,
+`isTransient` and `transientRetryPolicy`, whose `TransientRetryPolicy` is its own structural type
+that `retryResult` accepts without domain importing `failures`.
+
+The complete production graph was recomputed with the dependency-cruiser command above, including
+type imports: 133 source files. The aggregate graph is acyclic.
+
+```mermaid
+flowchart LR
+  adapters --> config
+  adapters --> domain
+  adapters --> failures
+  adapters --> observers
+  adapters --> ports
+  app --> adapters
+  app --> config
+  app --> domain
+  app --> failures
+  app --> flow
+  app --> observers
+  app --> ports
+  app --> prompts
+  app --> steps
+  cli --> adapters
+  cli --> app
+  cli --> config
+  cli --> domain
+  cli --> failures
+  cli --> observers
+  config --> domain
+  flow --> domain
+  flow --> failures
+  flow --> ports
+  integrations --> adapters
+  integrations --> app
+  integrations --> cli
+  integrations --> domain
+  integrations --> failures
+  integrations --> ports
+  observers --> domain
+  observers --> failures
+  observers --> ports
+  ports --> domain
+  prompts --> domain
+  steps --> domain
+  steps --> failures
+  steps --> flow
+  steps --> ports
+  steps --> prompts
+```
+
+Dependency-cruiser's `failures-imports-only-better-result-and-node` rule allows production
+`failures` to import only itself, `better-result` and Node built-ins, and
+`failures-is-imported-only-by-listed-owners` lets only adapters, app, cli, flow, integrations,
+observers and steps import it. `integrations` stands in for the planned composition owner until
+that slice moves executable wiring out of it.

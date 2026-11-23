@@ -76,6 +76,7 @@ and run flows. Download and open it in a browser; GitHub displays HTML as source
 | `src/app/`      | Application lifecycle, workflow assembly, and wiring.             |
 | `src/config/`   | Configuration schemas, defaults, presets, and policy.             |
 | `src/domain/`   | State, validation, and domain decisions.                          |
+| `src/failures/` | Failure messages, panic unwrapping, and retry of `Result`s.       |
 | `src/flow/`     | Generic flow contracts and execution.                             |
 | `src/steps/`    | Individual pipeline steps.                                        |
 | `src/ports/`    | Interfaces for external operations.                               |
@@ -92,7 +93,8 @@ lazily, while config skips invalid names, lets the first candidate of a name win
 merges whole roles. The CLI captures the process environment, working directory and home directory
 before config parses them. `npm run lint:dependencies` allows production config to import only
 `src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
-exempt.
+exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
+built-ins, and domain, ports, config and prompts cannot import it.
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,

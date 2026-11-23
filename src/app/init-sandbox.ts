@@ -36,9 +36,9 @@ import {
   type GitCommandFailed,
   type ImageBuildFailed,
   type LocalStateUnwritable,
-  messageOf,
   SetupCommandFailed,
 } from '../domain/errors.js';
+import { messageOf } from '../failures/thrown.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
 import { type AppCradle, type RunSession } from './container.js';
 import { ensureSandboxImage, readSandboxDockerfile } from './sandbox-image.js';

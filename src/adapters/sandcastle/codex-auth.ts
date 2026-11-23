@@ -7,7 +7,8 @@ import lockfile from 'proper-lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
-import { CodexLoginNotSaved, ConfigInvalid, messageOf } from '../../domain/errors.js';
+import { CodexLoginNotSaved, ConfigInvalid } from '../../domain/errors.js';
+import { messageOf } from '../../failures/thrown.js';
 
 export interface CodexAuthCache {
   directory: string;

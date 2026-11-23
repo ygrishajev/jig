@@ -17,7 +17,8 @@ import {
 } from '../adapters/sandbox-image/image-recipe.js';
 import { AGENTS } from '../adapters/sandcastle/agents.js';
 import { configuredSteps, type JigConfig, type StepConfig } from '../config/load-config.js';
-import { ConfigInvalid, type ImageBuildFailed, messageOf } from '../domain/errors.js';
+import { ConfigInvalid, type ImageBuildFailed } from '../domain/errors.js';
+import { messageOf } from '../failures/thrown.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 
 export interface EnsureImageDependencies {

@@ -7,11 +7,11 @@ import { RemoteRef } from '../../adapters/git/remote-ref.js';
 import { reportCleanup } from '../../app/report-cleanup.js';
 import {
   type GitCommandFailed,
-  messageOf,
   type RemoteUnavailable,
   type RunStateConflict,
 } from '../../domain/errors.js';
-import { retryResult } from '../../domain/retry.js';
+import { retryResult } from '../../failures/retry.js';
+import { messageOf } from '../../failures/thrown.js';
 import { OrchestrationStateInvalid, PublicationInProgress } from './errors.js';
 import {
   claimPublication,

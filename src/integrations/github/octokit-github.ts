@@ -2,7 +2,7 @@ import { Octokit } from '@octokit/rest';
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { retryResult } from '../../domain/retry.js';
+import { retryResult } from '../../failures/retry.js';
 import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
 import type {
   GithubFailure,
