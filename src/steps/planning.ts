@@ -5,7 +5,6 @@ import { designDocsSchema } from '../domain/design-docs.js';
 import { AgentOutputInvalid, type AgentRunFailed, PlanNotCovered } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import { checkPlanCoverage } from '../domain/plan-coverage.js';
-import { retryResult } from '../domain/retry.js';
 import { featurePlanSchema, runContextSchema } from '../domain/run-state.js';
 import { type PlannedSlice, plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
@@ -52,7 +51,7 @@ export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
 export const sliceThePlan: RunStep<'slicing'> = async ({ state, ports }) => {
   const plan = state.docs.plan;
   let correction: string | undefined;
-  const sliced = await retryResult(() => slicePlanAttempt(plan, ports, correction), {
+  const sliced = await ports.retryResult(() => slicePlanAttempt(plan, ports, correction), {
     retries: 1,
     delayMs: 0,
     shouldRetry: (error) => error instanceof PlanNotCovered,

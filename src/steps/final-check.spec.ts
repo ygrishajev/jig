@@ -11,6 +11,7 @@ import {
 import type { AgentScript } from '../../tests/support/fakes.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { retryResult } from '../adapters/retry.js';
 import { AgentOutputInvalid, AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { ExecResult } from '../ports/agent-session.js';
@@ -140,7 +141,7 @@ describe('checkWholeRun', () => {
     const attempt = () =>
       checkWholeRun({
         state,
-        ports: { agent, workspace: created.workspace },
+        ports: { agent, workspace: created.workspace, retryResult },
         settings: input.settings ?? runSettings(),
       });
     return {

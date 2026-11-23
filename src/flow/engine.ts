@@ -1,11 +1,11 @@
 import { panic, Result } from 'better-result';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { isTransient, type JigError, messageOf, rootCause } from '../domain/errors.js';
+import { isTransient, type JigError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
 import type { InvocationStatus } from '../domain/invocation-status.js';
 import type { Outcome } from '../domain/outcome.js';
-import { retryResult, transientRetryPolicy } from '../domain/retry.js';
+import { transientRetryPolicy } from '../domain/retry.js';
 import type { RunId } from '../domain/run-id.js';
 import {
   currentSlice,
@@ -15,6 +15,7 @@ import {
   type RunStateIn,
 } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
 import type { Clock, EventSink } from '../ports/observability.js';
 import type { RunStore } from '../ports/run-store.js';
 import type {
@@ -36,6 +37,7 @@ export interface EngineDependencies {
   events: EventSink;
   clock: Clock;
   settings: RunSettings;
+  exceptionDetails: ExceptionDetails;
 }
 
 type Attempt = { outcome: Outcome } | { blockedReason: string };
@@ -80,9 +82,9 @@ class Engine {
     try {
       settled = await this.settle(initial, (state) => (saved = state));
     } catch (error) {
-      const bug = rootCause(error);
-      this.publishRunFailed(saved, messageOf(bug));
-      panic(messageOf(bug), bug);
+      const { bug, message } = this.describeBug(error);
+      this.publishRunFailed(saved, message);
+      panic(message, bug);
     }
     if (settled.isErr()) this.publishRunFailed(saved, settled.error.message);
     return settled;
@@ -209,7 +211,7 @@ class Engine {
     runId: RunId,
     step: () => Promise<Result<Outcome, JigError>>,
   ): Promise<Result<Attempt, JigError>> {
-    const attempted = await retryResult(() => this.timed(at, runId, step), {
+    const attempted = await this.dependencies.ports.retryResult(() => this.timed(at, runId, step), {
       ...transientRetryPolicy(this.dependencies.settings),
       onFailedAttempt: ({ error, attempt, retriesLeft }) => {
         if (!isTransient(error) || retriesLeft === 0) return;
@@ -248,9 +250,9 @@ class Engine {
     try {
       stepped = await step();
     } catch (error) {
-      const bug = rootCause(error);
-      publishFailed(messageOf(bug));
-      panic(messageOf(bug), bug);
+      const { bug, message } = this.describeBug(error);
+      publishFailed(message);
+      panic(message, bug);
     }
     if (stepped.isErr()) {
       publishFailed(stepped.error.message);
@@ -265,6 +267,13 @@ class Engine {
       durationMs: elapsed(),
     });
     return stepped;
+  }
+
+  /** What was first thrown under the panics `Result.gen` may have wrapped around it. */
+  private describeBug(error: unknown): { bug: unknown; message: string } {
+    const { rootCause, messageOf } = this.dependencies.exceptionDetails;
+    const bug = rootCause(error);
+    return { bug, message: messageOf(bug) };
   }
 
   private resolve<S extends string>(

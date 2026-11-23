@@ -19,7 +19,7 @@ import { repositoryIdentity } from './repository-identity.js';
 
 export function registerGithubCommands(
   program: Command,
-  io?: CommandIo,
+  io: CommandIo,
   githubFor: (token: string) => GithubPort = OctokitGithub.authenticated,
 ): void {
   program

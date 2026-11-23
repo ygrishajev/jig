@@ -10,7 +10,7 @@ import {
   ConfigUnreadable,
   ConfigUnwritable,
 } from '../../config/config-source.js';
-import { messageOf } from '../../domain/errors.js';
+import { messageOf } from '../exception-details.js';
 
 /** The file a command's settings live in, as the operator named it and where it resolves. */
 export interface ConfigDestination {

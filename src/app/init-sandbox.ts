@@ -5,6 +5,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 
+import { messageOf } from '../adapters/exception-details.js';
 import type { ConfigDestination } from '../adapters/filesystem/config-source.js';
 import { refuseSymlinks } from '../adapters/find-symlink.js';
 import { saveCredential } from '../adapters/local-store/credentials-file.js';
@@ -36,7 +37,6 @@ import {
   type GitCommandFailed,
   type ImageBuildFailed,
   type LocalStateUnwritable,
-  messageOf,
   SetupCommandFailed,
 } from '../domain/errors.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';

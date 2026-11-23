@@ -20,7 +20,6 @@ import {
   type CodexLoginNotSaved,
   ConfigInvalid,
   type GitCommandFailed,
-  messageOf,
   SandboxUnavailable,
   SetupCommandFailed,
 } from '../../domain/errors.js';
@@ -34,6 +33,7 @@ import type {
 } from '../../ports/agent-session.js';
 import type { EventSink } from '../../ports/observability.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
+import { messageOf } from '../exception-details.js';
 import { refuseSymlinks } from '../find-symlink.js';
 import { type CodexAuthCache, openCodexAuthCache } from './codex-auth.js';
 import { hookManagerOf } from './git-hooks.js';

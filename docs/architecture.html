@@ -143,7 +143,7 @@ svg text{font-family:var(--sans)}
       <tr><td>prompts</td><td>Agent request construction</td><td>domain</td></tr>
       <tr><td>steps</td><td>Individual workflow operations</td><td>domain, flow, ports, prompts</td></tr>
       <tr><td>app</td><td>Composition, run lifecycle and concrete workflow assembly</td><td>adapters, config, domain, flow, observers, ports, prompts, steps</td></tr>
-      <tr><td>cli</td><td>Core commands, input parsing and output</td><td>adapters, app, config, domain, observers</td></tr>
+      <tr><td>cli</td><td>Core commands, input parsing and output</td><td>adapters, app, config, domain, observers, ports</td></tr>
       <tr><td>integrations</td><td>GitHub executable composition and forge orchestration</td><td>adapters, app, cli, domain, ports</td></tr>
     </tbody>
   </table>
@@ -171,6 +171,17 @@ svg text{font-family:var(--sans)}
     and hands them to <code>parseEnvironment</code>. That handler still prepares the invocation and
     receives the container from <code>src/app/container.ts</code>, today's composition root;
     moving preparation into application operations and composition out of <code>app</code> is later work.</p>
+  <p>Retry execution and exception details are supplied capabilities. <code>src/ports/retry.ts</code>
+    declares <code>RetryResult</code> and <code>RetryPolicy</code>; <code>src/ports/exception-details.ts</code>
+    declares <code>ExceptionDetails</code> (<code>messageOf</code>, <code>rootCause</code>). Their
+    implementations are <code>src/adapters/retry.ts</code> and <code>src/adapters/exception-details.ts</code>.
+    The container registers both: the engine receives <code>exceptionDetails</code> and the steps'
+    <code>retryResult</code> through <code>EngineDependencies</code>, and the sandbox start retries through
+    the same registration. The executable hands <code>exceptionDetails</code> to <code>buildCli</code> and the
+    GitHub command. Adapters, the GitHub API and orchestration-store boundaries and app modules that wrap
+    third-party calls import the implementations directly. Domain keeps the failure classes,
+    <code>isTransient</code> and <code>transientRetryPolicy</code>, whose policy matches
+    <code>RetryPolicy</code> structurally without importing it.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
     of these owners. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
@@ -183,6 +194,8 @@ svg text{font-family:var(--sans)}
       <code>node:fs</code>, <code>node:path</code> or <code>node:child_process</code>, or other package
       such as <code>execa</code>. Config specs are exempt; adapters may import config.</li>
     <li>Adapters cannot import flow; flow cannot import app or steps.</li>
+    <li>Flow, steps, CLI and observers cannot import <code>src/adapters/retry.ts</code> or
+      <code>src/adapters/exception-details.ts</code>; they receive them through their ports.</li>
     <li>Sources outside <code>integrations/github/</code> cannot import that integration.
       ESLint and <code>src/boundary.spec.ts</code> also preserve isolation for specs.</li>
     <li>Layer restrictions include type imports. Resolution, package dependency and production-to-spec checks remain enabled.</li>
@@ -348,7 +361,7 @@ svg text{font-family:var(--sans)}
   var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values (src/domain/errors.ts); the engine decides what happens next.", [
     ["A step returns a JigError", "its kind decides: retry, block or fatal.", "fail"],
     ["retry — AgentRunFailed, AgentOutputInvalid", "also RemoteUnavailable, SandboxUnavailable, SetupCommandFailed.", "domain"],
-    ["Tried again", "retryResult, up to maxStepRetries (2) with backoff; a stepRetried event each time.", "domain"],
+    ["Tried again", "the supplied retryResult (src/adapters/retry.ts) under transientRetryPolicy: up to maxStepRetries (2) with backoff; a stepRetried event each time.", "infra"],
     ["block — MergeFailed, RunStateConflict, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
     ["fatal — ConfigInvalid, RunRequestInvalid, RunInProgress", "also MetricsLogCorrupt; return an Err and print its message.", "fail"],
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]

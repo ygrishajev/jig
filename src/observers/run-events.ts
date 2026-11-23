@@ -1,7 +1,6 @@
 import { isPanic, panic } from 'better-result';
 import { EventEmitter } from 'node:events';
 
-import { messageOf } from '../domain/errors.js';
 import type { RunEvent } from '../domain/events.js';
 import type { EventSink } from '../ports/observability.js';
 
@@ -27,7 +26,7 @@ export function observe(
     try {
       handle(event);
     } catch (error) {
-      if (isPanic(error)) panic(messageOf(error), error);
+      if (isPanic(error)) panic(error.message, error);
       onObserverError(error);
     }
   });

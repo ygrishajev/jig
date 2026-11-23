@@ -9,6 +9,7 @@ import { presetName } from '../../../tests/support/builders.js';
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
+import { exceptionDetails } from '../../adapters/exception-details.js';
 import { configFileSource } from '../../adapters/filesystem/config-source.js';
 import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
 import { createAppContainer } from '../../app/container.js';
@@ -105,6 +106,7 @@ describe('build --preset', () => {
     const failureOutput = mock<FailureOutput>();
     const program = new Command();
     registerSandboxCommands(program, {
+      exceptionDetails,
       invocation: {
         cwd: repo.dir,
         environment: { HOME: home },

@@ -17,6 +17,7 @@ import {
   runSettings,
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
+import { retryResult } from '../adapters/retry.js';
 import { AgentOutputInvalid, AgentRunFailed, DesignUnresolved } from '../domain/errors.js';
 import type { RunPhase, RunStateIn } from '../domain/run-state.js';
 import type { RunStep } from '../flow/define-flow.js';
@@ -136,7 +137,7 @@ describe('design review steps', () => {
     const agent = new FakeAgentSession(faker.system.directoryPath());
     if (input.reviewer) agent.script('reviewer', ...input.reviewer);
     if (input.planner) agent.script('planner', ...input.planner);
-    const ports = { agent, workspace: mock<Workspace>() };
+    const ports = { agent, workspace: mock<Workspace>(), retryResult };
     const run = <P extends RunPhase>(step: RunStep<P>, state: RunStateIn<P>) =>
       step({ state, ports, settings: runSettings() });
     return { run, agent };

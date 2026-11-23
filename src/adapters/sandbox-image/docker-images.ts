@@ -2,8 +2,9 @@ import { Result } from 'better-result';
 import { execa } from 'execa';
 import { z } from 'zod';
 
-import { ImageBuildFailed, messageOf } from '../../domain/errors.js';
+import { ImageBuildFailed } from '../../domain/errors.js';
 import type { ImageBuildSpec, SandboxImages } from '../../ports/sandbox-images.js';
+import { messageOf } from '../exception-details.js';
 
 export interface DockerImagesOptions {
   cache?: BuildCache;

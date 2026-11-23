@@ -9,7 +9,6 @@ import {
   GitCommandFailed,
   LocalStateUnwritable,
   MergeFailed,
-  messageOf,
   type RemoteUnavailable,
   type SandboxUnavailable,
 } from '../../domain/errors.js';
@@ -20,6 +19,7 @@ import type { CommitSummary } from '../../domain/usage.js';
 import type { GitFacts, WorkFacts } from '../../domain/work-facts.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import type { SaveWorkFailure, Workspace } from '../../ports/workspace.js';
+import { messageOf } from '../exception-details.js';
 import { isBranchMergedInto, mergeBranchInto } from './merge.js';
 import {
   gitCommand,

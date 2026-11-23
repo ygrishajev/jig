@@ -3,7 +3,6 @@ import { Result } from 'better-result';
 import {
   ConfigInvalid,
   GitCommandFailed,
-  messageOf,
   RemoteUnavailable,
   RunStateConflict,
 } from '../../domain/errors.js';
@@ -15,6 +14,7 @@ import {
   runStateSchema,
 } from '../../domain/run-state.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
+import { messageOf } from '../exception-details.js';
 import { RemoteRef } from '../git/remote-ref.js';
 import { isAncestor } from '../git/repository.js';
 

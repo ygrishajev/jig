@@ -3,6 +3,7 @@ import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMo
 import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
+import { exceptionDetails } from '../adapters/exception-details.js';
 import { type ConfigDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { presetDirectoriesSource } from '../adapters/filesystem/preset-source.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
@@ -14,6 +15,7 @@ import {
   createRunLogger,
   type LogFormat,
 } from '../adapters/logging/create-logger.js';
+import { retryResult } from '../adapters/retry.js';
 import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
 import type { MissingCredential } from '../adapters/sandcastle/agents.js';
@@ -36,7 +38,7 @@ import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import type { PresetSource } from '../config/preset-source.js';
 import type { AgentRole } from '../domain/agent-role.js';
-import { retryResult, transientRetryPolicy } from '../domain/retry.js';
+import { transientRetryPolicy } from '../domain/retry.js';
 import { type RunIdentity } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { EngineDependencies } from '../flow/engine.js';
@@ -45,7 +47,9 @@ import { MetricsObserver } from '../observers/metrics.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
 import type { Clock } from '../ports/observability.js';
+import type { RetryResult } from '../ports/retry.js';
 import type { RunStore } from '../ports/run-store.js';
 import type { SandboxGit } from '../ports/sandbox-git.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
@@ -69,6 +73,8 @@ export interface AppCradle {
   settings: RunSettings;
   logger: Logger;
   clock: Clock;
+  retryResult: RetryResult;
+  exceptionDetails: ExceptionDetails;
   artefacts: RunArtefacts;
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
@@ -128,6 +134,8 @@ export function createAppContainer(input: {
       createConsoleLogger(logFormat, logLevel),
     ).singleton(),
     clock: asValue({ now: () => Date.now() }),
+    retryResult: asValue(retryResult),
+    exceptionDetails: asValue(exceptionDetails),
     artefacts: asFunction(({ repoRoot }: AppCradle) => new RunArtefacts(repoRoot)).singleton(),
     images: asFunction(
       ({ logger, environment }: AppCradle) =>
@@ -225,12 +233,21 @@ async function openRunScope(
         }),
     ).scoped(),
     engineDependencies: asFunction(
-      ({ workspace, runStore: store, events, clock, settings }: RunCradle): EngineDependencies => ({
-        ports: { agent: session, workspace },
+      ({
+        workspace,
+        runStore: store,
+        events,
+        clock,
+        settings,
+        retryResult,
+        exceptionDetails,
+      }: RunCradle): EngineDependencies => ({
+        ports: { agent: session, workspace, retryResult },
         store,
         events,
         clock,
         settings,
+        exceptionDetails,
       }),
     ).scoped(),
   });
@@ -247,6 +264,7 @@ function openSessionRetrying({
   events,
   settings,
   runLogger,
+  retryResult,
 }: RunCradle): Promise<Result<RunSession, SessionOpenFailure>> {
   return retryResult<RunSession, SessionOpenFailure>(() => openSession({ run, events }), {
     ...transientRetryPolicy(settings),

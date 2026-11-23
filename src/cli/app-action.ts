@@ -4,12 +4,17 @@ import type { z } from 'zod';
 
 import type { AppCradle } from '../app/container.js';
 import type { JigError } from '../domain/errors.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
 import { type AppOptions, type Invocation, processInvocation, withApp } from './with-app.js';
 import { type FailureOutput, withErrorHandling } from './with-error-handling.js';
 import { withInput } from './with-input.js';
 
-/** What a command reads from and reports to; a spec passes its own, the CLI leaves both to the process. */
+/**
+ * What a command reads from and reports to. Without `invocation` or `failureOutput` the command
+ * uses the process; `exceptionDetails` always comes from whoever builds the CLI.
+ */
 export interface CommandIo {
+  exceptionDetails: ExceptionDetails;
   invocation?: Invocation;
   failureOutput?: FailureOutput;
 }
@@ -31,7 +36,7 @@ export function appAction<
     app: AwilixContainer<AppCradle>,
     prepared: Prepared,
   ) => Promise<Result<void, E>>,
-  { invocation, failureOutput }: CommandIo = {},
+  { invocation, failureOutput, exceptionDetails }: CommandIo,
   prepare?: (
     input: z.output<Schema>,
     invocation: Invocation,
@@ -48,6 +53,7 @@ export function appAction<
         commandInvocation,
       );
     }),
+    exceptionDetails,
     failureOutput,
   );
 }

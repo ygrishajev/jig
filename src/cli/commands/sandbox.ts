@@ -13,7 +13,7 @@ import {
 } from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
 
-export function registerSandboxCommands(program: Command, io?: CommandIo): void {
+export function registerSandboxCommands(program: Command, io: CommandIo): void {
   program
     .command('init')
     .description("Set up this repository's sandbox and check its setup and verify commands in it")

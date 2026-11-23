@@ -65,6 +65,16 @@ export default {
       to: { path: '^src/(app|steps)/' },
     },
     {
+      name: 'retry-and-exception-details-are-supplied',
+      comment:
+        'Flow, steps, the CLI and observers receive retry execution and exception details ' +
+        'through the ports in src/ports/retry.ts and src/ports/exception-details.ts. Only ' +
+        'construction code and adapter boundaries import the adapter implementations.',
+      severity: 'error',
+      from: { path: '^src/(flow|steps|cli|observers)/', pathNot: testFilePattern },
+      to: { path: '^src/adapters/(retry|exception-details)[.][^/]+$' },
+    },
+    {
       name: 'github-is-isolated',
       severity: 'error',
       from: { pathNot: '^src/integrations/github/' },

@@ -2,18 +2,19 @@ import { Command } from 'commander';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
+import type { ExceptionDetails } from '../ports/exception-details.js';
 import { registerPresetsCommand } from './commands/presets.js';
 import { registerRunCommand } from './commands/run.js';
 import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';
 
-export function buildCli(): Command {
+export function buildCli(exceptionDetails: ExceptionDetails): Command {
   const program = new Command();
   program.name('jig').description('Agentic SDLC pipeline orchestrator').version(packageVersion());
-  registerSandboxCommands(program);
-  registerRunCommand(program);
-  registerStatusCommand(program);
-  registerPresetsCommand(program);
+  registerSandboxCommands(program, { exceptionDetails });
+  registerRunCommand(program, { exceptionDetails });
+  registerStatusCommand(program, exceptionDetails);
+  registerPresetsCommand(program, exceptionDetails);
   return program;
 }
 

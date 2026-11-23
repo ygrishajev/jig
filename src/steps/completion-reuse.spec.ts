@@ -11,6 +11,7 @@ import {
   runSettings,
 } from '../../tests/support/builders.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { retryResult } from '../adapters/retry.js';
 import { completionEvidenceOf } from '../domain/completion-reuse.js';
 import { SandboxUnavailable } from '../domain/errors.js';
 import type { FulfillmentVerdict } from '../domain/final-check.js';
@@ -118,7 +119,7 @@ describe('completion reuse steps', () => {
       }),
       completionReuseAuthorized: input.authorized ? (true as const) : undefined,
     };
-    const ports = { agent, workspace };
+    const ports = { agent, workspace, retryResult };
     const finishingSettings = input.finishingSettings ?? settings;
     const decide = () =>
       decideCompletionReuse({

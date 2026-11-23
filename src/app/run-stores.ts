@@ -3,11 +3,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 
+import { messageOf } from '../adapters/exception-details.js';
 import { GitRunCode } from '../adapters/git/run-code.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { CompositeRunStore } from '../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
-import { ConfigInvalid, messageOf } from '../domain/errors.js';
+import { ConfigInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { type RunState, runStateSchema } from '../domain/run-state.js';
 import type { RunStore } from '../ports/run-store.js';

@@ -354,7 +354,7 @@ The step retry count (2) and first retry delay (5000 ms) are private defaults in
 configuration keys, and presets still override agent roles only. `src/domain/settings.ts` keeps
 `RunSettings`, `reviewCapReached`, `sliceNeedsVerification` and the stopping caps
 (`HOOK_FAILURE_CAP`, `VERIFICATION_FAILURE_CAP`, `EMPTY_ATTEMPT_CAP`, `RULE_FIX_CAP`).
-`retryResult` reads the resolved count and delay unchanged.
+`transientRetryPolicy` reads the resolved count and delay unchanged.
 
 Dependency-cruiser's `config-imports-only-approved-dependencies` rule allows production config to
 import only `src/config`, `src/domain`, `better-result` and `zod`. Anything else fails, including
@@ -364,3 +364,97 @@ config's contracts, and ports still depend only on domain. CLI commands still re
 `src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepares the invocation, and
 `src/app/container.ts` remains the composition root; moving preparation into application
 operations and composition out of `app` are separate slices.
+
+## Retry execution and exception details
+
+Retry execution and the reading of thrown values are supplied capabilities. Their contracts are
+declaration-only ports; their implementations are adapters:
+
+| Contract                                               | Implementation                                                                      |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `RetryResult`, `RetryPolicy` in `src/ports/retry.ts`   | `retryResult` in `src/adapters/retry.ts`                                            |
+| `ExceptionDetails` in `src/ports/exception-details.ts` | `exceptionDetails`, `messageOf`, `rootCause` in `src/adapters/exception-details.ts` |
+
+better-result 3.0.1 retries only a `Result.tryPromise` whose `try` throws, so it cannot retry an
+operation that already returns its failure as an `Err` without turning that `Err` back into a
+rejection. `retryResult` keeps that behaviour thin: it calls the operation, reports each failed
+attempt with the retries left, stops on success, exhaustion or a failure the policy refuses, waits
+`delayMs × 2^(attempt − 1)` with `node:timers/promises`, and lets a throw through. better-result
+supplies `Panic`, `isPanic` and `panic`, but nothing that unwraps a chain of panics; `rootCause`
+follows `Panic.cause` until it reaches a non-`Panic` or a `Panic` without a cause, and never
+follows an ordinary `Error`'s cause. `messageOf` reads an `Error`'s message and turns anything
+else into text with `String`. A broad catch that already knows it holds a `Panic` uses its
+`message` directly.
+
+Each consumer receives the capability through its existing construction path:
+
+| Consumer                                             | How it receives the capability                                              |
+| ---------------------------------------------------- | --------------------------------------------------------------------------- |
+| `src/flow/engine.ts` step retries                    | `EngineDependencies.ports.retryResult`, under `transientRetryPolicy`        |
+| `src/flow/engine.ts` bug reports                     | `EngineDependencies.exceptionDetails`                                       |
+| `src/steps/planning.ts` slicing correction           | `StepPorts.retryResult`                                                     |
+| `src/app/container.ts` sandbox start                 | the `retryResult` the container registers, under `transientRetryPolicy`     |
+| `src/cli/with-error-handling.ts`                     | an `ExceptionDetails` argument from the command that registers it           |
+| `src/cli/read-request.ts`                            | `RequestReads.messageOf`, from `CommandIo.exceptionDetails`                 |
+| `src/cli/main.ts` and every CLI command              | `buildCli(exceptionDetails)` and `CommandIo.exceptionDetails`               |
+| `src/observers/run-events.ts`                        | none: a `Panic` is rethrown with its own `message`                          |
+| `src/integrations/github/cli.ts`                     | imports the adapter implementation and supplies it to `buildCli` and GitHub |
+| GitHub API and orchestration store                   | import the adapter implementations at their third-party boundary            |
+| adapters and app modules wrapping a third-party call | import `messageOf` from the adapter                                         |
+
+`src/app/container.ts` registers `retryResult` and `exceptionDetails` as values and builds the
+engine's dependencies from them. Domain keeps the failure classes, `isTransient` and
+`transientRetryPolicy`; `TransientRetryPolicy` matches `RetryPolicy<JigError>` by shape without
+importing the port. The `retry-and-exception-details-are-supplied` dependency rule rejects
+production imports of either implementation from flow, steps, CLI and observers, including type
+imports, re-exports, literal dynamic imports and nested paths.
+
+## Failure class inventory
+
+Every class lives in `src/domain/errors.ts`, extends better-result's `TaggedError` with the class
+name as `_tag`, carries `message`, and declares a constant `kind`. All are members of `JigError`.
+`isJigError` recognises the 21 classes and is exercised only by specs. `isTransient` is
+`kind === 'retry'`. The CLI prints any `Err` it receives as its `message` and exits 1.
+
+| Class                  | Kind  | Fields beyond `message` | Constructed in                                                           | Recognised or handled by                                                          |
+| ---------------------- | ----- | ----------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `AgentRunFailed`       | retry | —                       | sandcastle session                                                       | engine retry policy                                                               |
+| `AgentOutputInvalid`   | retry | —                       | structured output, planning                                              | engine retry policy                                                               |
+| `PlanNotCovered`       | retry | —                       | domain plan coverage                                                     | planning: `instanceof`, one correction, then `AgentOutputInvalid`                 |
+| `DesignUnresolved`     | block | `findingIds`            | domain design review                                                     | engine blocks                                                                     |
+| `RemoteUnavailable`    | retry | —                       | Git merge, remote ref                                                    | remote ref `_tag` retry; engine retry policy                                      |
+| `SandboxUnavailable`   | retry | —                       | sandcastle session start                                                 | container sandbox-start retry; engine retry policy                                |
+| `SetupCommandFailed`   | retry | `output`                | sandcastle session setup                                                 | init: `instanceof` hands the output to the planner; engine retry policy           |
+| `RunStateConflict`     | block | —                       | remote ref, run code, composite and Git remote stores                    | orchestration store `_tag` retry, then `OrchestrationStateInvalid`; engine blocks |
+| `RunCodeUnavailable`   | block | —                       | run code, composite store                                                | engine blocks                                                                     |
+| `MergeFailed`          | block | —                       | Git workspace, merge                                                     | engine blocks                                                                     |
+| `GitCommandFailed`     | block | `command`, `output`     | Git merge, workspace, remote ref, run history, repository, private clone | engine blocks                                                                     |
+| `CommitImportRefused`  | block | —                       | Git workspace                                                            | engine blocks                                                                     |
+| `CommitRejected`       | block | `output`                | Git workspace                                                            | engine blocks                                                                     |
+| `ConfigInvalid`        | fatal | —                       | see below                                                                | engine returns the `Err`; CLI prints it                                           |
+| `RunRequestInvalid`    | fatal | —                       | CLI request reading, run start, run status                               | CLI prints it                                                                     |
+| `RunInProgress`        | fatal | —                       | run lock                                                                 | CLI prints it                                                                     |
+| `MetricsLogCorrupt`    | fatal | —                       | metrics log                                                              | CLI prints it                                                                     |
+| `LocalStateUnwritable` | fatal | `path`                  | local state, run lock, Git workspace                                     | CLI prints it                                                                     |
+| `CodexLoginNotSaved`   | fatal | —                       | Codex login cache                                                        | session close: `reportCleanup` logs or returns it                                 |
+| `ImageBuildFailed`     | fatal | `output`                | Docker images                                                            | CLI prints it                                                                     |
+| `CommandInputInvalid`  | fatal | —                       | CLI `withInput`                                                          | CLI prints it                                                                     |
+
+`ConfigInvalid` carries only `message` and `kind: 'fatal'`, and no caller tells its meanings
+apart; each is printed as its message. Its constructions mean:
+
+| Meaning                                  | Constructed in                                                                                                               |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Settings unreadable, not JSON or invalid | `config/load-config.ts`, `config/update-config.ts`; agents missing for steps in `load-config.ts`                             |
+| Environment invalid                      | `config/environment.ts`                                                                                                      |
+| Preset missing, unreadable or invalid    | `config/presets.ts`; no preset picked in `cli/with-app.ts`                                                                   |
+| Agent provider or model unusable         | `adapters/sandcastle/agents.ts` (codex or opencode model, missing credentials, credential problem)                           |
+| Credentials file unreadable or unsafe    | `adapters/local-store/credentials-file.ts` (read, dotenv parse, refusing an unignored file)                                  |
+| Codex login unusable                     | `adapters/sandcastle/codex-auth.ts` (invalid bundle, not found, locked, unreadable, uncopyable)                              |
+| Custom run store unusable                | `app/run-stores.ts` (no factory, wrong shape, threw, malformed run)                                                          |
+| Saved run state invalid                  | `adapters/local-store/local-run-store.ts`, `adapters/run-store/git-remote-run-store.ts`                                      |
+| Sandbox configuration refused            | `adapters/sandcastle/sandcastle-session.ts` (repository path, `.sandcastle/.gitignore`, configuration-caused start failures) |
+| Sandbox Dockerfile missing or unusable   | `app/sandbox-image.ts`, `adapters/sandbox-image/image-recipe.ts`                                                             |
+| Git prerequisite unmet                   | `adapters/git/repository.ts` (not the repository root), `adapters/git/branch.ts` (no branch checked out)                     |
+| Symbolic link refused or uncheckable     | `adapters/find-symlink.ts`                                                                                                   |
+| Init could not write a starter file      | `app/init-sandbox.ts`                                                                                                        |

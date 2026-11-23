@@ -3,6 +3,7 @@ import { Argument, Command, Option } from 'commander';
 import { execa, type Result as ExecResult } from 'execa';
 import { z } from 'zod';
 
+import { exceptionDetails } from '../src/adapters/exception-details.js';
 import { withErrorHandling } from '../src/cli/with-error-handling.js';
 import { withInput } from '../src/cli/with-input.js';
 
@@ -50,6 +51,7 @@ await new Command()
         process.exitCode = results.some((result) => result.failed) ? 1 : 0;
         return Result.ok();
       }),
+      exceptionDetails,
     ),
   )
   .parseAsync()

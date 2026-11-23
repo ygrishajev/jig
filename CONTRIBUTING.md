@@ -94,6 +94,13 @@ before config parses them. `npm run lint:dependencies` allows production config 
 `src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
 exempt.
 
+Retry execution and exception details are supplied capabilities: `src/ports/retry.ts` declares
+`RetryResult` and `RetryPolicy`, `src/ports/exception-details.ts` declares `ExceptionDetails`, and
+`src/adapters/retry.ts` and `src/adapters/exception-details.ts` implement them. Flow and steps get
+them through `EngineDependencies` and `StepPorts`, the CLI through `buildCli` and `CommandIo`.
+`npm run lint:dependencies` rejects direct imports of the implementations from flow, steps, CLI and
+observers. Domain keeps the failure classes, `isTransient` and `transientRetryPolicy`.
+
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,
 commits, and pull requests, follow [commit-pr](.claude/skills/commit-pr/SKILL.md).

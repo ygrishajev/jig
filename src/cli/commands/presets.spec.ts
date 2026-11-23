@@ -40,10 +40,13 @@ describe('presets command', () => {
     const repo = await createTempRepo();
     const home = await tempDirectory('jig-presets-home-');
     const coreBuilder = new URL('../main.ts', import.meta.url).href;
+    const exceptionDetailsModule = new URL('../../adapters/exception-details.ts', import.meta.url)
+      .href;
     const script = [
       `process.chdir(${JSON.stringify(repo.dir)});`,
       `import { buildCli } from ${JSON.stringify(coreBuilder)};`,
-      `await buildCli().parseAsync(['presets'], { from: 'user' });`,
+      `import { exceptionDetails } from ${JSON.stringify(exceptionDetailsModule)};`,
+      `await buildCli(exceptionDetails).parseAsync(['presets'], { from: 'user' });`,
     ].join('\n');
     const listPresets = () =>
       execa(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {

@@ -3,10 +3,11 @@ import { Command } from 'commander';
 
 import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
 import { discoverPresets, type Preset } from '../../config/presets.js';
+import type { ExceptionDetails } from '../../ports/exception-details.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 
-export function registerPresetsCommand(program: Command): void {
+export function registerPresetsCommand(program: Command, exceptionDetails: ExceptionDetails): void {
   program
     .command('presets')
     .description('List the presets --preset can name, and where each is read from')
@@ -18,7 +19,7 @@ export function registerPresetsCommand(program: Command): void {
           console.log(describePresets(presets.value));
           return Result.ok();
         });
-      }),
+      }, exceptionDetails),
     );
 }
 

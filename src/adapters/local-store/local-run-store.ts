@@ -4,10 +4,11 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
-import { ConfigInvalid, messageOf } from '../../domain/errors.js';
+import { ConfigInvalid } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { type RunState, runStateSchema } from '../../domain/run-state.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
+import { messageOf } from '../exception-details.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 

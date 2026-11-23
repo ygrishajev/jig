@@ -48,7 +48,9 @@ import {
 } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
+import { exceptionDetails } from '../adapters/exception-details.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { retryResult } from '../adapters/retry.js';
 import { AgentRunFailed, RunStateConflict, SandboxUnavailable } from '../domain/errors.js';
 import { runDiagnostics } from '../domain/run-diagnostics.js';
 import { enterPhase, type RunState, startRun } from '../domain/run-state.js';
@@ -2004,11 +2006,12 @@ describe('runFlow', () => {
     const store = input.store ?? new InMemoryRunStore();
     const events = new RecordingEventSink();
     const dependencies = {
-      ports: { agent, workspace },
+      ports: { agent, workspace, retryResult },
       store,
       events,
       clock: new SteppingClock(),
       settings: input.settings,
+      exceptionDetails,
     };
     const start = startRun({ runId: id, baseBranch: 'main', request: faker.lorem.paragraph() });
     const invoke = (state: RunState) => runEngine(runFlow, state, dependencies);

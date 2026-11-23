@@ -6,6 +6,7 @@ import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
 import type { RunRequestInvalid } from '../../domain/errors.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, runStopReason } from '../../domain/run-state.js';
+import type { ExceptionDetails } from '../../ports/exception-details.js';
 import { appAction, type CommandIo } from '../app-action.js';
 import {
   configInputSchema,
@@ -19,7 +20,7 @@ import type { Invocation } from '../with-app.js';
 
 type RunToDo = { start: RequestSource; runId?: RunId; merge: boolean } | { resume: RunId };
 
-export function registerRunCommand(program: Command, io?: CommandIo): void {
+export function registerRunCommand(program: Command, io: CommandIo): void {
   program
     .command('run')
     .description(
@@ -50,7 +51,7 @@ export function registerRunCommand(program: Command, io?: CommandIo): void {
           return Result.ok();
         },
         io,
-        prepareRun,
+        prepareRun(io.exceptionDetails),
       ),
     );
 }
@@ -126,14 +127,16 @@ function stuckMessage(state: RunState): string {
   );
 }
 
-async function prepareRun(
-  { run }: z.output<typeof runInputSchema>,
-  { cwd, standardInput }: Invocation,
-): Promise<Result<RunJigInput, RunRequestInvalid>> {
-  if ('resume' in run) return Result.ok(run);
-  const start = await readRequest(run.start, { cwd, standardInput });
-  return start.map((request) => {
-    const started = { ...request, merge: run.merge };
-    return run.runId ? { start: started, runId: run.runId } : { start: started };
-  });
+function prepareRun({ messageOf }: Pick<ExceptionDetails, 'messageOf'>) {
+  return async (
+    { run }: z.output<typeof runInputSchema>,
+    { cwd, standardInput }: Invocation,
+  ): Promise<Result<RunJigInput, RunRequestInvalid>> => {
+    if ('resume' in run) return Result.ok(run);
+    const start = await readRequest(run.start, { cwd, standardInput, messageOf });
+    return start.map((request) => {
+      const started = { ...request, merge: run.merge };
+      return run.runId ? { start: started, runId: run.runId } : { start: started };
+    });
+  };
 }

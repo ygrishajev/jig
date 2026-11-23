@@ -5,9 +5,9 @@ import {
   type ConfigInvalid,
   GitCommandFailed,
   MergeFailed,
-  messageOf,
   RemoteUnavailable,
 } from '../../domain/errors.js';
+import { messageOf } from '../exception-details.js';
 import { getCurrentBranch } from './branch.js';
 import { gitCommand, isWorkingTreeClean, openRepoWithoutHooks } from './repository.js';
 

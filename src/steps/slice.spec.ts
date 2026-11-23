@@ -18,6 +18,7 @@ import {
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
+import { retryResult } from '../adapters/retry.js';
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
 import { completionStillReusable, settingsIdentityOf } from '../domain/completion-reuse.js';
 import { AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
@@ -860,7 +861,7 @@ describe('slice steps', () => {
       step({
         state: { ...state, slices: [...earlierSlices, slice] },
         slice,
-        ports: { agent, workspace },
+        ports: { agent, workspace, retryResult },
         settings,
       });
     const run = async (step: SliceStep, slice: Slice, earlierSlices: Slice[] = []) =>

@@ -9,6 +9,7 @@ import { aRunState, aSlice, presetName, runId } from '../../../tests/support/bui
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
+import { exceptionDetails } from '../../adapters/exception-details.js';
 import { configFileSource } from '../../adapters/filesystem/config-source.js';
 import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
 import type { StandardInput } from '../../adapters/terminal/standard-input.js';
@@ -187,6 +188,7 @@ describe('run -', () => {
     const failureOutput = mock<FailureOutput>();
     const program = new Command();
     registerRunCommand(program, {
+      exceptionDetails,
       invocation: {
         cwd: repo.dir,
         environment: { HOME: home },
@@ -246,6 +248,7 @@ describe('run --preset', () => {
     const failureOutput = mock<FailureOutput>();
     const program = new Command();
     registerRunCommand(program, {
+      exceptionDetails,
       invocation: {
         cwd: repo.dir,
         environment: { HOME: home },

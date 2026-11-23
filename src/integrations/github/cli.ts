@@ -3,15 +3,19 @@ import type { Command } from 'commander';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { exceptionDetails } from '../../adapters/exception-details.js';
 import type { CommandIo } from '../../cli/app-action.js';
 import { exitWhenDone } from '../../cli/exit-when-done.js';
 import { buildCli } from '../../cli/main.js';
 import { registerGithubCommands } from './command.js';
 import type { GithubPort } from './github-port.js';
 
-export function buildJigCli(io?: CommandIo, githubFor?: (token: string) => GithubPort): Command {
-  const program = buildCli();
-  registerGithubCommands(program, io, githubFor);
+export function buildJigCli(
+  io: Omit<CommandIo, 'exceptionDetails'> = {},
+  githubFor?: (token: string) => GithubPort,
+): Command {
+  const program = buildCli(exceptionDetails);
+  registerGithubCommands(program, { ...io, exceptionDetails }, githubFor);
   return program;
 }
 

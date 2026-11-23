@@ -15,12 +15,14 @@ import {
   runSettings,
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
+import { retryResult } from '../adapters/retry.js';
 import { AgentOutputInvalid, AgentRunFailed } from '../domain/errors.js';
 import { checkPlanCoverage } from '../domain/plan-coverage.js';
 import type { RunPhase, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import { type PlannedSlice, SLICE_ID_MESSAGE } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
+import type { RetryPolicy, RetryResult } from '../ports/retry.js';
 import type { Workspace } from '../ports/workspace.js';
 import {
   applyDesignGate,
@@ -112,6 +114,21 @@ describe('planning steps', () => {
     expect(agent.calls).toHaveLength(2);
     expect(result.isErr() && result.error).toBeInstanceOf(AgentOutputInvalid);
     expect(result.isErr() && result.error.message).toBe(coverageProblems(docs.plan, overreaching));
+  });
+
+  it('slices through the supplied retry capability with one immediate correction', async () => {
+    const policies: RetryPolicy<unknown>[] = [];
+    const recordingRetry: RetryResult = (operation, policy) => {
+      policies.push(policy);
+      return retryResult(operation, policy);
+    };
+    const slices = [aPlannedSlice({ description: implementingPlanSteps(1) })];
+    const { run } = setup({ turns: [{ output: slices }], retryResult: recordingRetry });
+
+    await run(sliceThePlan, aRunStateIn('slicing', { docs: designDocs() }));
+
+    expect(policies).toHaveLength(1);
+    expect(policies[0]).toMatchObject({ retries: 1, delayMs: 0 });
   });
 
   it('rejects a slice plan that repeats an id', async () => {
@@ -229,10 +246,18 @@ describe('planning steps', () => {
     });
   });
 
-  function setup(input: { turns?: AgentScript[]; settings?: RunSettings }) {
+  function setup(input: {
+    turns?: AgentScript[];
+    settings?: RunSettings;
+    retryResult?: RetryResult;
+  }) {
     const agent = new FakeAgentSession(faker.system.directoryPath());
     if (input.turns) agent.script('planner', ...input.turns);
-    const ports = { agent, workspace: mock<Workspace>() };
+    const ports = {
+      agent,
+      workspace: mock<Workspace>(),
+      retryResult: input.retryResult ?? retryResult,
+    };
     const run = <P extends RunPhase>(step: RunStep<P>, state: RunStateIn<P>) =>
       step({ state, ports, settings: input.settings ?? runSettings() });
     return { run, agent };

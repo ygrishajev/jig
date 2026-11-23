@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { exceptionDetails } from '../../adapters/exception-details.js';
 import { buildCli, packageVersion } from '../../cli/main.js';
 import { buildJigCli } from './cli.js';
 
 describe('buildJigCli', () => {
   it('includes every core command alongside the GitHub command', () => {
-    const coreCommandNames = buildCli().commands.map((command) => command.name());
+    const coreCommandNames = buildCli(exceptionDetails).commands.map((command) => command.name());
 
     const composedCommandNames = buildJigCli().commands.map((command) => command.name());
 

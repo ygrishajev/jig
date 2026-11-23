@@ -149,6 +149,69 @@ describe('dependency checking command', () => {
     expect((await run()).exitCode).toBe(0);
   });
 
+  it.each([
+    ['flow', 'retry', "import type { I } from 'ADAPTER'; export type A = I;"],
+    ['steps', 'retry', "import { i } from 'ADAPTER'; export const a = i;"],
+    ['steps/nested', 'retry', "export { i } from 'ADAPTER';"],
+    ['observers', 'retry', "export const a = () => import('ADAPTER');"],
+    ['cli', 'exception-details', "import type { I } from 'ADAPTER'; export type A = I;"],
+    ['cli/commands', 'exception-details', "import { i } from 'ADAPTER'; export const a = i;"],
+    ['flow/nested', 'exception-details', "export { i } from 'ADAPTER';"],
+    ['observers', 'exception-details', "export const a = () => import('ADAPTER');"],
+  ])(
+    'rejects %s importing the %s implementation directly: %s',
+    async (from, implementation, source) => {
+      const specifier = path.posix.relative(from, `adapters/${implementation}.js`);
+      const { run } = await setup({
+        [`${from}/a.ts`]: source.replace('ADAPTER', specifier),
+        [`adapters/${implementation}.ts`]: 'export const i = 1; export type I = number;',
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      expect(result.all).toContain('retry-and-exception-details-are-supplied');
+      expect(result.all).toContain(`src/${from}/a.ts`);
+    },
+  );
+
+  it('accepts supplied capability ports in flow, steps, the CLI and observers', async () => {
+    const { run } = await setup({
+      'ports/retry.ts': 'export type RetryResult = () => void;',
+      'ports/exception-details.ts': 'export type ExceptionDetails = { messageOf(): string };',
+      ...Object.fromEntries(
+        ['flow', 'steps', 'cli', 'observers'].map((owner) => [
+          `${owner}/a.ts`,
+          [
+            "import type { RetryResult } from '../ports/retry.js';",
+            "import type { ExceptionDetails } from '../ports/exception-details.js';",
+            'export type A = [RetryResult, ExceptionDetails];',
+          ].join('\n'),
+        ]),
+      ),
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
+  it('accepts construction, adapters, GitHub boundaries and specs importing the implementations', async () => {
+    const { run } = await setup({
+      'adapters/retry.ts': 'export const retryResult = 1;',
+      'adapters/exception-details.ts': 'export const exceptionDetails = 1;',
+      'adapters/git/a.ts':
+        "import { retryResult } from '../retry.js'; export const a = retryResult;",
+      'app/a.ts': [
+        "import { retryResult } from '../adapters/retry.js';",
+        "import { exceptionDetails } from '../adapters/exception-details.js';",
+        'export const a = [retryResult, exceptionDetails];',
+      ].join('\n'),
+      'integrations/github/a.ts':
+        "import { retryResult } from '../../adapters/retry.js'; export const a = retryResult;",
+      'flow/a.spec.ts':
+        "import { retryResult } from '../adapters/retry.js'; export const a = retryResult;",
+      'cli/a.spec.ts':
+        "import { exceptionDetails } from '../adapters/exception-details.js'; export const a = exceptionDetails;",
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
   it.each(['unknown/a.ts', 'stray.ts', 'app-other/a.ts'])(
     'rejects unowned production file %s',
     async (file) => {

@@ -1,6 +1,6 @@
 import type { Result } from 'better-result';
 
-import { messageOf, rootCause } from '../domain/errors.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
 
 /** Where a failed command reports itself. */
 export interface FailureOutput {
@@ -14,6 +14,7 @@ export interface FailureOutput {
  */
 export function withErrorHandling<Args extends unknown[], E extends { message: string }>(
   fn: (...args: Args) => Promise<Result<void, E>>,
+  exceptionDetails: ExceptionDetails,
   output: FailureOutput = processFailureOutput,
 ): (...args: Args) => Promise<void> {
   return async (...args: Args): Promise<void> => {
@@ -21,7 +22,7 @@ export function withErrorHandling<Args extends unknown[], E extends { message: s
       const result = await fn(...args);
       if (result.isErr()) fail(output, result.error.message);
     } catch (error) {
-      fail(output, stackOf(rootCause(error)));
+      fail(output, stackOf(exceptionDetails.rootCause(error), exceptionDetails));
     }
   };
 }
@@ -39,6 +40,6 @@ function fail(output: FailureOutput, message: string): void {
   output.setExitCode(1);
 }
 
-function stackOf(error: unknown): string {
+function stackOf(error: unknown, { messageOf }: ExceptionDetails): string {
   return error instanceof Error && error.stack ? error.stack : messageOf(error);
 }

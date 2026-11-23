@@ -14,7 +14,8 @@ import path from 'node:path';
 import { type Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { GitCommandFailed, messageOf } from '../../domain/errors.js';
+import { GitCommandFailed } from '../../domain/errors.js';
+import { messageOf } from '../exception-details.js';
 import { openRepo } from '../git/repository.js';
 
 export interface PrivateCloneOptions {

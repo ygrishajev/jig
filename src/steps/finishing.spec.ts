@@ -13,6 +13,7 @@ import {
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { retryResult } from '../adapters/retry.js';
 import { AgentRunFailed, MergeFailed } from '../domain/errors.js';
 import type { RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -252,7 +253,7 @@ describe('finishing steps', () => {
         state: approvedCommit
           ? { ...state, slices: [aSlice({ status: 'approved', commit: approvedCommit })] }
           : state,
-        ports: { agent, workspace },
+        ports: { agent, workspace, retryResult },
         settings: input.settings ?? runSettings(),
       });
 

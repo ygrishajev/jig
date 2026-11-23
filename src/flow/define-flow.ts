@@ -6,6 +6,7 @@ import type { RunPhase, RunState, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice, SliceStatus } from '../domain/slice.js';
 import type { AgentSession } from '../ports/agent-session.js';
+import type { RetryResult } from '../ports/retry.js';
 import type { Workspace } from '../ports/workspace.js';
 
 /** Each phase's node; a phase's step is typed by what that phase guarantees. */
@@ -46,6 +47,7 @@ export interface RunStepContext<P extends RunPhase = RunPhase> {
 export interface StepPorts {
   agent: AgentSession;
   workspace: Workspace;
+  retryResult: RetryResult;
 }
 
 /** The run ends here with `final`. */

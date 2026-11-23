@@ -7,12 +7,13 @@ import { runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { slicesInOrder } from '../../domain/slice.js';
 import { formatSummary } from '../../observers/metrics.js';
+import type { ExceptionDetails } from '../../ports/exception-details.js';
 import { configInputSchema, configOption } from '../config-option.js';
 import { withApp } from '../with-app.js';
 import { withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
 
-export function registerStatusCommand(program: Command): void {
+export function registerStatusCommand(program: Command, exceptionDetails: ExceptionDetails): void {
   program
     .command('status')
     .description('Show where a run is, without changing anything')
@@ -28,6 +29,7 @@ export function registerStatusCommand(program: Command): void {
             return Result.ok();
           });
         }),
+        exceptionDetails,
       ),
     );
 }

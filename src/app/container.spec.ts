@@ -2,15 +2,20 @@ import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
 import { runId } from '../../tests/support/builders.js';
 import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js';
 import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { exceptionDetails } from '../adapters/exception-details.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
+import { retryResult } from '../adapters/retry.js';
 import { parseEnvironment } from '../config/environment.js';
 import { MergeFailed, SandboxUnavailable } from '../domain/errors.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
+import type { RetryPolicy, RetryResult } from '../ports/retry.js';
 import { createAppContainer, withRunScope } from './container.js';
 
 describe('withRunScope', () => {
@@ -61,7 +66,46 @@ describe('withRunScope', () => {
     expect(session.closed).toBe(true);
   });
 
-  async function setup(input: { failWith?: SandboxUnavailable } = {}) {
+  it('hands the engine and its steps the retry and exception capabilities the app holds', async () => {
+    const suppliedRetry: RetryResult = (operation, policy) => retryResult(operation, policy);
+    const suppliedDetails = mock<ExceptionDetails>();
+    const { app, run } = await setup({
+      retryResult: suppliedRetry,
+      exceptionDetails: suppliedDetails,
+    });
+
+    const used = await withRunScope(app, run, new InMemoryRunStore(), {}, async (dependencies) =>
+      Result.ok(dependencies),
+    );
+
+    expect(unwrap(used).ports.retryResult).toBe(suppliedRetry);
+    expect(unwrap(used).exceptionDetails).toBe(suppliedDetails);
+  });
+
+  it("opens the sandbox through the app's retry capability under the run's settings", async () => {
+    const policies: RetryPolicy<unknown>[] = [];
+    const recordingRetry: RetryResult = (operation, policy) => {
+      policies.push(policy);
+      return retryResult(operation, policy);
+    };
+    const { app, run } = await setup({ retryResult: recordingRetry });
+
+    await withRunScope(app, run, new InMemoryRunStore(), {}, async () => Result.ok());
+
+    expect(policies).toHaveLength(1);
+    expect(policies[0]).toMatchObject({
+      retries: app.cradle.settings.maxStepRetries,
+      delayMs: app.cradle.settings.retryDelayMs,
+    });
+  });
+
+  async function setup(
+    input: {
+      failWith?: SandboxUnavailable;
+      retryResult?: RetryResult;
+      exceptionDetails?: ExceptionDetails;
+    } = {},
+  ) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
     const config = repositoryConfig(repoRoot);
@@ -81,6 +125,10 @@ describe('withRunScope', () => {
         return input.failWith ? Result.err(input.failWith) : Result.ok(session);
       }),
     });
+    if (input.retryResult) app.register({ retryResult: asValue(input.retryResult) });
+    if (input.exceptionDetails) {
+      app.register({ exceptionDetails: asValue(input.exceptionDetails) });
+    }
     onTestFinished(() => app.dispose());
     return {
       app,
@@ -88,6 +136,29 @@ describe('withRunScope', () => {
       run: { runId: runId(), baseBranch: faker.git.branch() },
       openAttempts: () => attempts,
     };
+  }
+});
+
+describe('createAppContainer', () => {
+  it('holds the adapter retry and exception implementations', async () => {
+    const { app } = await setup();
+
+    expect(app.cradle.retryResult).toBe(retryResult);
+    expect(app.cradle.exceptionDetails).toBe(exceptionDetails);
+  });
+
+  async function setup() {
+    const repoRoot = await tempDirectory('jig-app-');
+    const app = createAppContainer({
+      repoRoot,
+      configDestination: configDestination(repoRoot),
+      logFormat: 'json',
+      logLevel: 'silent',
+      environment: unwrap(parseEnvironment({}, faker.system.directoryPath())),
+      config: repositoryConfig(repoRoot),
+    });
+    onTestFinished(() => app.dispose());
+    return { app };
   }
 });
 

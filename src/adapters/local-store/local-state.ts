@@ -1,6 +1,7 @@
 import { Result } from 'better-result';
 
-import { LocalStateUnwritable, messageOf } from '../../domain/errors.js';
+import { LocalStateUnwritable } from '../../domain/errors.js';
+import { messageOf } from '../exception-details.js';
 
 /** Runs a read or write under `.jig/`, naming the path and the cause when the disk refuses. */
 export function onLocalState<T>(

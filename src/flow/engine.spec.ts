@@ -19,6 +19,8 @@ import {
 } from '../../tests/support/builders.js';
 import { InMemoryRunStore, RecordingEventSink, SteppingClock } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { exceptionDetails } from '../adapters/exception-details.js';
+import { retryResult } from '../adapters/retry.js';
 import {
   AgentOutputInvalid,
   AgentRunFailed,
@@ -32,7 +34,9 @@ import type { RunSettings } from '../domain/settings.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
 import type { AgentSession } from '../ports/agent-session.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
 import type { EventSink } from '../ports/observability.js';
+import type { RetryPolicy, RetryResult } from '../ports/retry.js';
 import type { RunStore } from '../ports/run-store.js';
 import type { Workspace } from '../ports/workspace.js';
 import {
@@ -336,6 +340,53 @@ describe('runEngine', () => {
     expect(events.ofType('runFailed')).toMatchObject([{ reason: bug.message }]);
   });
 
+  it('reports a bug as the supplied exception details describe its root cause', async () => {
+    const thrown = new Error(faker.lorem.sentence());
+    const root = new Error(faker.lorem.sentence());
+    const description = faker.lorem.sentence();
+    const { run, events } = setup({
+      flow: linearFlow({
+        context: async () => {
+          throw thrown;
+        },
+      }),
+      exceptionDetails: { rootCause: () => root, messageOf: () => description },
+    });
+
+    const running = run(aDescribedRun({ phase: 'context' }));
+
+    await expect(running).rejects.toMatchObject({ message: description, cause: root });
+    expect(events.ofType('stepFailed')).toMatchObject([{ reason: description }]);
+    expect(events.ofType('runFailed')).toMatchObject([{ reason: description }]);
+  });
+
+  it("retries a step through the steps' retry capability under the run's settings", async () => {
+    const policies: RetryPolicy<unknown>[] = [];
+    const recordingRetry: RetryResult = (operation, policy) => {
+      policies.push(policy);
+      return retryResult(operation, policy);
+    };
+    const settings = runSettings({
+      maxStepRetries: faker.number.int({ min: 0, max: 3 }),
+      retryDelayMs: 0,
+    });
+    const { settle } = setup({
+      flow: linearFlow({
+        context: async () => Result.ok({ type: 'contextBuilt', context: aContext() }),
+      }),
+      settings,
+      retryResult: recordingRetry,
+    });
+
+    await settle(aDescribedRun({ phase: 'context' }));
+
+    expect(policies).toHaveLength(1);
+    expect(policies[0]).toMatchObject({
+      retries: settings.maxStepRetries,
+      delayMs: settings.retryDelayMs,
+    });
+  });
+
   it('reports a fatal failure as the run failing at the phase it was in', async () => {
     const reason = faker.lorem.sentence();
     const { run, events } = setup({
@@ -598,15 +649,22 @@ describe('runEngine', () => {
     events?: EventSink;
     store?: RunStore;
     clockStepMs?: number;
+    retryResult?: RetryResult;
+    exceptionDetails?: ExceptionDetails;
   }) {
     const store = new InMemoryRunStore();
     const events = new RecordingEventSink();
     const dependencies = {
-      ports: { agent: mock<AgentSession>(), workspace: mock<Workspace>() },
+      ports: {
+        agent: mock<AgentSession>(),
+        workspace: mock<Workspace>(),
+        retryResult: input.retryResult ?? retryResult,
+      },
       store: input.store ?? store,
       events: input.events ?? events,
       clock: new SteppingClock(input.clockStepMs ?? faker.number.int({ min: 1, max: 1000 })),
       settings: input.settings ?? runSettings(),
+      exceptionDetails: input.exceptionDetails ?? exceptionDetails,
     };
     const run = (state: RunState) => runEngine(input.flow, state, dependencies);
     const settle = async (state: RunState) => (await run(state)).unwrap();
