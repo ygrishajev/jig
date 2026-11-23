@@ -408,7 +408,15 @@ Publication ownership is therefore not wired through composition, and the old co
 registration for it. `implementIssue` constructs `RemotePublicationReceipts` from
 `app.cradle.repoRoot` at the point that constructed `OrchestrationStore`, and passes it to
 `withPublicationOwnership` with `app.cradle.clock` (`Date.now`, as the store's default) and
-`app.cradle.logger`. Installing the receipts from composition waits for that predecessor.
+`app.cradle.logger`.
+
+The publication ownership slice is blocked, not complete, until that predecessor lands. Its
+remaining work stays with it and does not pass to the application-API issue:
+
+- Bind `PublicationReceipts`, the clock and the logger through the composition owner's recorded
+  construction mechanism, and remove the `RemotePublicationReceipts` construction from
+  `implementIssue`.
+- Exercise that binding through the existing execution path, `implementIssue` calling `runJig`.
 
 ### Consumers
 
@@ -496,13 +504,12 @@ The failures each contract returns are in the [failure signatures](#failure-sign
 
 - A container-free GitHub operation replacing `implementIssue(app, …)`, bound to a container-free
   `runJig`, with the token and repository preparation moved out of the CLI's `prepare`.
-- Receiving `PublicationReceipts`, the clock and the logger from composition instead of
-  constructing `RemotePublicationReceipts` in `implementIssue`.
 - The remaining rows of the GitHub redistribution table in `docs/specs/application-boundaries.md`:
   startup to composition, registration to cli, coordination to app, Octokit to `adapters/github`.
 
 The lease lifetime, the receipts contract and its failures, their persistence and the pure
-transitions are done and need no change there.
+transitions need no change there, and their composition binding belongs to the blocked publication
+ownership slice.
 
 ### Request and spec sequencing
 
@@ -510,7 +517,8 @@ The request for this work asks for the lifetime to be wired through composition,
 GitHub work build on that wiring, while also requiring the composition predecessor first. The spec
 says to complete spike #49 before planning container-specific details or rewriting container
 management, and that spike is unresolved. The two orders cannot both hold on this branch, so the
-composition wiring is left to land after the predecessor.
+publication ownership slice is reported blocked on the predecessor rather than wired against the
+old container.
 
 ## Failure ownership audit
 
