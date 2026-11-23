@@ -350,13 +350,15 @@ svg text{font-family:var(--sans)}
     ["Stop", "at a final (done, completed, stuck) or a halt (paused, awaitingMerge).", "step"]
   ], { h: 60, gap: 14 });
   var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values. Each class lives with its owner — domain business failures, port capability failures, config, app and CLI failures — and carries its kind; isTransient (src/domain/errors.ts) reads it, the engine retries under the step policy that src/flow/retry-policy.ts assembles from the run settings, and decides what happens next.", [
-    ["A step returns a StepFailure", "its agent session, workspace or business failure; its kind decides: retry, block or fatal.", "fail"],
-    ["retry — AgentRunFailed, AgentOutputInvalid", "also RemoteUnavailable, SandboxUnavailable, SetupCommandFailed.", "domain"],
+    ["A step returns a StepFailure", "an agent session, workspace or business failure (src/flow/define-flow.ts); its kind decides: retry, block or fatal.", "fail"],
+    ["retry — AgentRunFailed, AgentOutputInvalid", "also SandboxUnavailable, RemoteUnavailable and PlanNotCovered.", "domain"],
     ["Tried again", "retryResult (src/failures/retry.ts) under transientRetryPolicy (src/flow/retry-policy.ts), up to maxStepRetries (2) with backoff; the engine publishes a stepRetried event each time.", "step"],
-    ["block — MergeFailed, RunStateConflict, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
-    ["fatal — LocalStateUnwritable from a step, or a failed save", "the engine returns an EngineFailure; around it ConfigInvalid, RunRequestInvalid, RunInProgress and the other fatal use-case failures also return an Err and print its message.", "fail"],
+    ["block — MergeFailed, DesignUnresolved, retries used up", "also GitCommandFailed, CommitImportRefused, CommitRejected: the reason is saved and the run stops; resume runs the step again.", "fail"],
+    ["fatal — LocalStateUnwritable from a step", "the engine returns it as an EngineFailure Err; no blocked reason is saved.", "fail"],
+    ["A save fails", "RunStore.save's RunStoreFailure — RunStateConflict, RemoteUnavailable, RunStateInvalid and the rest — is returned as an EngineFailure Err whatever its kind; it is never retried as a step or saved as a blocked reason.", "fail"],
+    ["Around the engine", "opening the sandbox retries SandboxUnavailable and SetupCommandFailed under transientRetryPolicy (src/app/container.ts); ConfigInvalid, SandboxCredentialsInvalid, RunRequestInvalid, RunInProgress and the other fatal use-case failures return an Err and print its message.", "fail"],
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]
-  ]);
+  ], { h: 60, gap: 14 });
   var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/app/run-flow.ts; slices run in order.", [
     ["pending → implement", "implemented → verifying; hookRejected has its own cap of 3; nothingChanged allows 2 empty attempts.", "step"],
     ["verifying → verify", "verified → in_review; verificationFailed returns to pending with its own cap of 3.", "step"],
