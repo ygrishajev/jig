@@ -19,7 +19,7 @@ import {
   workObservations,
 } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import { ConfigInvalid } from '../../domain/errors.js';
+import { RunStateInvalid } from '../../ports/run-state-failures.js';
 import { LocalRunStore } from './local-run-store.js';
 import { stateDirectory } from './run-paths.js';
 
@@ -137,7 +137,11 @@ describe('LocalRunStore', () => {
 
     const loaded = await store.load(state.runId);
 
-    expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(RunStateInvalid);
+    expect(loaded.isErr() && loaded.error.kind).toBe('fatal');
+    expect(loaded.isErr() && loaded.error.message).toMatch(
+      `The saved run in ${path.join(stateDirectory(repoRoot, state.runId), 'run.json')} is not valid: `,
+    );
   });
 
   it.each([
@@ -167,7 +171,7 @@ describe('LocalRunStore', () => {
 
     const loaded = await store.load(state.runId);
 
-    expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(RunStateInvalid);
     expect(loaded.isErr() && loaded.error.message).toContain(file);
   });
 

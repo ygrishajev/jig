@@ -19,6 +19,7 @@ import { processStandardInput, type StandardInput } from '../adapters/terminal/s
 import { type AppCradle, createAppContainer } from '../app/container.js';
 import type { ConfigSource } from '../config/config-source.js';
 import { parseEnvironment, withCredentials } from '../config/environment.js';
+import { ConfigInvalid } from '../config/errors.js';
 import { loadConfig } from '../config/load-config.js';
 import type { PresetSource } from '../config/preset-source.js';
 import {
@@ -27,7 +28,8 @@ import {
   type Preset,
   type PresetName,
 } from '../config/presets.js';
-import { ConfigInvalid, type JigError } from '../domain/errors.js';
+import type { RepositoryInvalid } from '../ports/git-failures.js';
+import type { LocalPreparationFailed } from '../ports/local-state.js';
 import type { PresetSelection } from './config-option.js';
 
 /** Where the CLI was started, what it was started with, and who answers its questions; the only reads of `process`. */
@@ -50,12 +52,15 @@ export interface AppOptions {
   preset?: PresetSelection;
 }
 
+/** Why the app could not open: the repository, the environment, the credentials file or the config. */
+export type AppOpenFailure = RepositoryInvalid | ConfigInvalid | LocalPreparationFailed;
+
 /** Runs a command against the repository in the working directory, then releases what it opened. */
 export async function withApp<T, E extends { message: string }>(
   options: AppOptions,
   command: (app: AwilixContainer<AppCradle>) => Promise<Result<T, E>>,
   invocation: Invocation = processInvocation(),
-): Promise<Result<T, E | JigError>> {
+): Promise<Result<T, E | AppOpenFailure>> {
   const app = await openApp(options, invocation);
   if (app.isErr()) return Result.err(app.error);
   try {
@@ -89,7 +94,7 @@ function openApp(
     configSourceAt,
     presetSourceAt,
   }: Invocation,
-): Promise<Result<AwilixContainer<AppCradle>, JigError>> {
+): Promise<Result<AwilixContainer<AppCradle>, AppOpenFailure>> {
   return Result.gen(async function* () {
     yield* Result.await(ensureRepositoryRoot(cwd));
     const parsedEnvironment = yield* parseEnvironment(environment, fallbackHomeDirectory);

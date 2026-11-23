@@ -3,8 +3,8 @@ import { execa } from 'execa';
 import { realpath } from 'node:fs/promises';
 import { type SimpleGit, simpleGit } from 'simple-git';
 
-import { ConfigInvalid, GitCommandFailed } from '../../domain/errors.js';
 import { messageOf } from '../../failures/messages.js';
+import { GitCommandFailed, RepositoryInvalid } from '../../ports/git-failures.js';
 
 /**
  * For a merge on the host: a hook can run what the branch just brought in, before anyone read it,
@@ -48,13 +48,13 @@ export function openRepo(cwd: string): SimpleGit {
  * miss the config and hand the sandbox no git directory, so that is refused; a directory that is
  * not a repository yet is left for `init` and git itself to judge.
  */
-export async function ensureRepositoryRoot(cwd: string): Promise<Result<void, ConfigInvalid>> {
+export async function ensureRepositoryRoot(cwd: string): Promise<Result<void, RepositoryInvalid>> {
   const root = await openRepo(cwd)
     .revparse(['--show-toplevel'])
     .catch(() => undefined);
   if (root === undefined || root === (await realpath(cwd))) return Result.ok();
   return Result.err(
-    new ConfigInvalid({
+    new RepositoryInvalid({
       message: `Run jig from the repository's root, ${root} — not from ${cwd}.`,
     }),
   );

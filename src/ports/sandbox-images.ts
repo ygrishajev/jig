@@ -1,6 +1,4 @@
-import type { Result } from 'better-result';
-
-import type { ImageBuildFailed } from '../domain/errors.js';
+import { type Result, TaggedError } from 'better-result';
 
 /** The images on this machine, as the sandbox image decision needs them. */
 export interface SandboxImages {
@@ -16,4 +14,12 @@ export interface ImageBuildSpec {
   dockerfile?: string;
   buildArgs: Record<string, string | number>;
   labels?: Record<string, string>;
+}
+
+/** A sandbox image could not be built, or docker could not be asked about one; `output` is what docker said. */
+export class ImageBuildFailed extends TaggedError('ImageBuildFailed')<{
+  message: string;
+  output: string;
+}> {
+  readonly kind = 'fatal' as const;
 }

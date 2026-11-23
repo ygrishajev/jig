@@ -1,90 +1,33 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import {
-  AgentOutputInvalid,
-  AgentRunFailed,
-  CodexLoginNotSaved,
-  ConfigInvalid,
-  DesignUnresolved,
-  isJigError,
-  isTransient,
-  type JigError,
-  MergeFailed,
-  MetricsLogCorrupt,
-  PlanNotCovered,
-  RemoteUnavailable,
-  RunInProgress,
-  RunRequestInvalid,
-  RunStateConflict,
-  SandboxUnavailable,
-  SetupCommandFailed,
-} from './errors.js';
+import { DesignUnresolved, type FailureKind, isTransient, PlanNotCovered } from './errors.js';
 
 describe('isTransient', () => {
-  const message = faker.lorem.sentence();
-
-  it('marks a sandbox that did not start as worth another attempt', () => {
-    expect(isTransient(new SandboxUnavailable({ message }))).toBe(true);
-  });
-
-  it('does not retry a failure that needs a person', () => {
-    expect(isTransient(new MergeFailed({ message }))).toBe(false);
-    expect(isTransient(new ConfigInvalid({ message }))).toBe(false);
+  it.each<[FailureKind, boolean]>([
+    ['retry', true],
+    ['block', false],
+    ['fatal', false],
+  ])('treats a %s failure as worth another attempt: %s', (kind, transient) => {
+    expect(isTransient({ kind })).toBe(transient);
   });
 });
 
-describe('isJigError', () => {
-  it('recognises jig’s own errors and nothing else', () => {
-    const message = faker.lorem.sentence();
+describe('business failures', () => {
+  it('retries slices that do not cover the plan', () => {
+    const failure = new PlanNotCovered({ message: faker.lorem.sentence() });
 
-    expect(isJigError(new RunInProgress({ message }))).toBe(true);
-    expect(isJigError(new Error(message))).toBe(false);
+    expect(failure.kind).toBe('retry');
+    expect(failure._tag).toBe('PlanNotCovered');
   });
-});
 
-describe('SetupCommandFailed', () => {
-  it('keeps the setup command output on the error', () => {
-    const output = faker.lorem.paragraph();
+  it('blocks on a design left unresolved and keeps its finding ids', () => {
+    const findingIds = [faker.lorem.slug(), faker.lorem.slug()];
 
-    expect(new SetupCommandFailed({ message: faker.lorem.sentence(), output }).output).toBe(output);
-  });
-});
+    const failure = new DesignUnresolved({ message: faker.lorem.sentence(), findingIds });
 
-describe('failure kinds', () => {
-  const message = () => faker.lorem.sentence();
-
-  it.each<[string, () => JigError, JigError['kind']]>([
-    ['an agent run that failed', () => new AgentRunFailed({ message: message() }), 'retry'],
-    ['malformed agent output', () => new AgentOutputInvalid({ message: message() }), 'retry'],
-    [
-      'slices that do not cover the plan',
-      () => new PlanNotCovered({ message: message() }),
-      'retry',
-    ],
-    ['an unreachable remote', () => new RemoteUnavailable({ message: message() }), 'retry'],
-    ['a sandbox that did not start', () => new SandboxUnavailable({ message: message() }), 'retry'],
-    [
-      'a failed setup command',
-      () => new SetupCommandFailed({ message: message(), output: message() }),
-      'retry',
-    ],
-    ['a conflicting remote run', () => new RunStateConflict({ message: message() }), 'block'],
-    ['a failed merge', () => new MergeFailed({ message: message() }), 'block'],
-    [
-      'a design left unresolved',
-      () => new DesignUnresolved({ message: message(), findingIds: [faker.lorem.slug()] }),
-      'block',
-    ],
-    ['an invalid config', () => new ConfigInvalid({ message: message() }), 'fatal'],
-    ['an invalid request', () => new RunRequestInvalid({ message: message() }), 'fatal'],
-    ['a run already in progress', () => new RunInProgress({ message: message() }), 'fatal'],
-    ['a corrupt metrics log', () => new MetricsLogCorrupt({ message: message() }), 'fatal'],
-    ['a Codex login not saved', () => new CodexLoginNotSaved({ message: message() }), 'fatal'],
-  ])('treats %s as %s', (_case, create, kind) => {
-    const error = create();
-
-    expect(error.kind).toBe(kind);
-    expect(error._tag).toBe(error.constructor.name);
+    expect(failure.kind).toBe('block');
+    expect(failure._tag).toBe('DesignUnresolved');
+    expect(failure.findingIds).toEqual(findingIds);
   });
 });

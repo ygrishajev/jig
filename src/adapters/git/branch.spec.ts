@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { ConfigInvalid, GitCommandFailed } from '../../domain/errors.js';
+import { GitCommandFailed, RepositoryInvalid } from '../../ports/git-failures.js';
 import { deleteBranch, getCurrentBranch } from './branch.js';
 
 describe('getCurrentBranch', () => {
@@ -36,7 +36,7 @@ describe('getCurrentBranch', () => {
     const result = await getCurrentBranch(repo);
 
     expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(RepositoryInvalid);
     expect(result.isErr() && result.error.message).toBe(
       `${repo} has no branch checked out — check out the branch the run should start from.`,
     );

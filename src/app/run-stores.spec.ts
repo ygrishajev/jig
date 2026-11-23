@@ -10,9 +10,10 @@ import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
-import { ConfigInvalid } from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
-import { openRunStore } from './run-stores.js';
+import { RunStateInvalid } from '../ports/run-state-failures.js';
+import { RunStoreOperationFailed } from '../ports/run-store.js';
+import { openRunStore, RunStoreSetupInvalid } from './run-stores.js';
 
 describe('openRunStore', () => {
   it('adds required stores once while keeping configured stores', async () => {
@@ -137,7 +138,7 @@ describe('openRunStore', () => {
 
     const loaded = await store.load(aRunState().runId);
 
-    expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(RunStateInvalid);
   });
 
   it("reports a store module that throws as the operator's config", async () => {
@@ -154,8 +155,50 @@ describe('openRunStore', () => {
 
     const loaded = await store.load(aRunState().runId);
 
-    expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
-    expect(loaded.isErr() && loaded.error.message).toContain('throwing-store.mjs');
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(RunStoreOperationFailed);
+    expect(loaded.isErr() && loaded.error.message).toBe(
+      'Run store "throwing-store.mjs" failed: disk on fire',
+    );
+  });
+
+  it('reports a store module whose save throws as a failed store operation', async () => {
+    const repoRoot = await tempDirectory('jig-stores-');
+    const reason = faker.lorem.words(3);
+    await writeFile(
+      path.join(repoRoot, 'unsaving-store.mjs'),
+      `export default () => ({
+         load: async () => undefined,
+         save: async () => { throw new Error(${JSON.stringify(reason)}); },
+       });`,
+    );
+    const config = aJigConfig({ runStores: ['unsaving-store.mjs'] });
+    const store = (await openRunStore({ repoRoot, config })).unwrap();
+
+    const saved = await store.save(aRunState());
+
+    expect(saved.isErr() && saved.error).toBeInstanceOf(RunStoreOperationFailed);
+    expect(saved.isErr() && saved.error.kind).toBe('fatal');
+    expect(saved.isErr() && saved.error.message).toBe(
+      `Run store "unsaving-store.mjs" failed: ${reason}`,
+    );
+  });
+
+  it('refuses a store module whose factory throws, as a store it cannot set up', async () => {
+    const repoRoot = await tempDirectory('jig-stores-');
+    const reason = faker.lorem.words(3);
+    await writeFile(
+      path.join(repoRoot, 'exploding-store.mjs'),
+      `export default () => { throw new Error(${JSON.stringify(reason)}); };`,
+    );
+    const config = aJigConfig({ runStores: ['exploding-store.mjs'] });
+
+    const opened = await openRunStore({ repoRoot, config });
+
+    expect(opened.isErr() && opened.error).toBeInstanceOf(RunStoreSetupInvalid);
+    expect(opened.isErr() && opened.error.kind).toBe('fatal');
+    expect(opened.isErr() && opened.error.message).toBe(
+      `Run store "exploding-store.mjs" failed: ${reason}`,
+    );
   });
 
   it('refuses a module whose factory does not return a store with load and save', async () => {
@@ -168,7 +211,10 @@ describe('openRunStore', () => {
 
     const opened = await openRunStore({ repoRoot, config });
 
-    expect(opened.isErr() && opened.error).toBeInstanceOf(ConfigInvalid);
+    expect(opened.isErr() && opened.error).toBeInstanceOf(RunStoreSetupInvalid);
+    expect(opened.isErr() && opened.error.message).toBe(
+      'Run store "half-a-store.mjs" must return an object with load and save methods.',
+    );
   });
 
   it('refuses a module that does not export a store factory', async () => {
@@ -178,7 +224,7 @@ describe('openRunStore', () => {
 
     const opened = await openRunStore({ repoRoot, config });
 
-    expect(opened.isErr() && opened.error).toBeInstanceOf(ConfigInvalid);
+    expect(opened.isErr() && opened.error).toBeInstanceOf(RunStoreSetupInvalid);
   });
 
   it('resumes an interrupted deferred run from the code checkpoint this clone kept', async () => {

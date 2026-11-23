@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { commitAll } from '../../../tests/support/commit-all.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createRemote, createTempRepo } from '../../../tests/support/temp-repo.js';
-import { GitCommandFailed, MergeFailed, RemoteUnavailable } from '../../domain/errors.js';
+import { GitCommandFailed, RemoteUnavailable } from '../../ports/git-failures.js';
+import { MergeFailed } from '../../ports/workspace.js';
 import { isBranchMergedInto, mergeBranchInto } from './merge.js';
 
 describe('mergeBranchInto', () => {

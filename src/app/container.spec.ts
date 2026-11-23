@@ -9,7 +9,8 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
 import { parseEnvironment } from '../config/environment.js';
-import { MergeFailed, SandboxUnavailable } from '../domain/errors.js';
+import { SandboxUnavailable } from '../ports/agent-session.js';
+import { MergeFailed } from '../ports/workspace.js';
 import { createAppContainer, withRunScope } from './container.js';
 
 describe('withRunScope', () => {

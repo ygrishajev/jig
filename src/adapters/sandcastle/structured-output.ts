@@ -1,8 +1,8 @@
 import { Result } from 'better-result';
 import type { ZodType } from 'zod';
 
-import { AgentOutputInvalid } from '../../domain/errors.js';
 import { messageOf } from '../../failures/messages.js';
+import { AgentOutputInvalid } from '../../ports/agent-session.js';
 
 export function outputInstruction(): string {
   return [

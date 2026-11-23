@@ -3,8 +3,13 @@ import { Result } from 'better-result';
 import type { z } from 'zod';
 
 import type { AppCradle } from '../app/container.js';
-import type { JigError } from '../domain/errors.js';
-import { type AppOptions, type Invocation, processInvocation, withApp } from './with-app.js';
+import {
+  type AppOpenFailure,
+  type AppOptions,
+  type Invocation,
+  processInvocation,
+  withApp,
+} from './with-app.js';
 import { type FailureOutput, withErrorHandling } from './with-error-handling.js';
 import { withInput } from './with-input.js';
 
@@ -21,8 +26,8 @@ export interface CommandIo {
  */
 export function appAction<
   Schema extends z.ZodType<AppOptions, z.ZodTypeDef, unknown>,
+  E extends { message: string },
   Prepared = undefined,
-  E extends { message: string } = JigError,
   PreparationError extends { message: string } = E,
 >(
   schema: Schema,
@@ -39,15 +44,18 @@ export function appAction<
 ): (...actionArguments: unknown[]) => Promise<void> {
   const commandInvocation = invocation ?? processInvocation();
   return withErrorHandling(
-    withInput(schema, async (input): Promise<Result<void, E | PreparationError | JigError>> => {
-      const prepared = prepare ? await prepare(input, commandInvocation) : Result.ok(undefined);
-      if (prepared.isErr()) return Result.err(prepared.error);
-      return withApp(
-        input,
-        (app) => run(input, app, prepared.value as Prepared),
-        commandInvocation,
-      );
-    }),
+    withInput(
+      schema,
+      async (input): Promise<Result<void, E | PreparationError | AppOpenFailure>> => {
+        const prepared = prepare ? await prepare(input, commandInvocation) : Result.ok(undefined);
+        if (prepared.isErr()) return Result.err(prepared.error);
+        return withApp(
+          input,
+          (app) => run(input, app, prepared.value as Prepared),
+          commandInvocation,
+        );
+      },
+    ),
     failureOutput,
   );
 }

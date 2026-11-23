@@ -5,9 +5,10 @@ import {
   completionReuseWasAuthorized,
   completionStillReusable,
 } from '../domain/completion-reuse.js';
-import type { GitCommandFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunStep, RunStepContext } from '../flow/define-flow.js';
+import type { SandboxUnavailable } from '../ports/agent-session.js';
+import type { GitCommandFailed } from '../ports/git-failures.js';
 
 type ObservationFailure = GitCommandFailed | SandboxUnavailable;
 

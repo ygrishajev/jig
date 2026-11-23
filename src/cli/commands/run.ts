@@ -2,8 +2,8 @@ import { Result } from 'better-result';
 import { Command } from 'commander';
 import { z } from 'zod';
 
+import type { RunRequestInvalid } from '../../app/errors.js';
 import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
-import type { RunRequestInvalid } from '../../domain/errors.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, runStopReason } from '../../domain/run-state.js';
 import { appAction, type CommandIo } from '../app-action.js';

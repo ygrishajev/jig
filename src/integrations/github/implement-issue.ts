@@ -3,12 +3,12 @@ import { panic, Result } from 'better-result';
 import { getCurrentBranch } from '../../adapters/git/branch.js';
 import { exactHead } from '../../adapters/git/run-history.js';
 import type { App } from '../../app/container.js';
-import { runJig, type RunReport } from '../../app/run-jig.js';
-import { openRunStore } from '../../app/run-stores.js';
-import type { GitCommandFailed, JigError } from '../../domain/errors.js';
+import { runJig, type RunJigFailure, type RunReport } from '../../app/run-jig.js';
+import { openRunStore, type RunStoreSetupInvalid } from '../../app/run-stores.js';
 import { outcomeIsComplete } from '../../domain/invocation-status.js';
 import { runIdFor } from '../../domain/run-id.js';
 import { runBranchFor, type RunState } from '../../domain/run-state.js';
+import type { GitCommandFailed } from '../../ports/git-failures.js';
 import type { RunStoreFailure } from '../../ports/run-store.js';
 import {
   BaseBranchMismatch,
@@ -60,7 +60,7 @@ export type IssueOutcome =
   | { kind: 'commented'; outcome: RunReport['status']; url: string }
   | { kind: 'refused'; paths: string[]; url: string };
 
-type IssueFailure = JigError | Exclude<GithubError, GithubSetupInvalid>;
+type IssueFailure = RunJigFailure | Exclude<GithubError, GithubSetupInvalid>;
 
 /**
  * Where the accepted request is published: the issue, its key in the receipts, its default branch,
@@ -219,7 +219,7 @@ function publishOutcome(
 function codeCheckpointOf(
   app: App,
   report: RunReport,
-): Promise<Result<CodeCheckpoint, RunStoreFailure>> {
+): Promise<Result<CodeCheckpoint, RunStoreSetupInvalid | RunStoreFailure>> {
   return Result.gen(async function* () {
     const { runId } = report.state;
     const store = yield* Result.await(openRunStore(app.cradle, REQUIRED_STORES));

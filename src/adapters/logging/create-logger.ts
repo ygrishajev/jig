@@ -1,8 +1,10 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { type DestinationStream, type Logger, pino } from 'pino';
+import { type DestinationStream, type Logger, type LoggerOptions, pino } from 'pino';
 import pretty from 'pino-pretty';
 import { z } from 'zod';
+
+import { serializeError } from './error-serializer.js';
 
 export const logFormatSchema = z.enum(['pretty', 'json']);
 
@@ -13,8 +15,12 @@ export function defaultLogFormat(stream: { isTTY?: boolean } = process.stdout): 
   return stream.isTTY ? 'pretty' : 'json';
 }
 
-export function createConsoleLogger(format: LogFormat, level = 'info'): Logger {
-  return pino({ level }, consoleStream(format));
+export function createConsoleLogger(
+  format: LogFormat,
+  level = 'info',
+  consoleDestination: DestinationStream = consoleStream(format),
+): Logger {
+  return pino(loggerOptions(level), consoleDestination);
 }
 
 function consoleStream(format: LogFormat): DestinationStream {
@@ -22,16 +28,25 @@ function consoleStream(format: LogFormat): DestinationStream {
   return pretty({ sync: true, ignore: 'pid,hostname,event,runId,at', translateTime: 'HH:MM:ss' });
 }
 
+function loggerOptions(level: string): LoggerOptions {
+  return { level, serializers: { err: serializeError } };
+}
+
 /**
  * The console logger plus a JSON log file for the run, so a run can be inspected afterwards
  * whatever the console showed.
  */
-export function createRunLogger(format: LogFormat, logFile: string, level = 'info'): Logger {
+export function createRunLogger(
+  format: LogFormat,
+  logFile: string,
+  level = 'info',
+  consoleDestination: DestinationStream = consoleStream(format),
+): Logger {
   mkdirSync(path.dirname(logFile), { recursive: true });
   return pino(
-    { level },
+    loggerOptions(level),
     pino.multistream([
-      { level, stream: consoleStream(format) },
+      { level, stream: consoleDestination },
       { level, stream: pino.destination({ dest: logFile, sync: true }) },
     ]),
   );

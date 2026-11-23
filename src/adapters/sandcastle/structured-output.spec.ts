@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { AgentOutputInvalid } from '../../domain/errors.js';
+import { AgentOutputInvalid } from '../../ports/agent-session.js';
 import { extractOutput, OUTPUT_TAG } from './structured-output.js';
 
 const verdictSchema = z.object({ approved: z.boolean(), feedback: z.string() });

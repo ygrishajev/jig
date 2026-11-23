@@ -7,9 +7,9 @@ import { describe, expect, it } from 'vitest';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import { ConfigNotJson, ConfigUnreadable, ConfigUnwritable } from '../../config/config-source.js';
+import { ConfigInvalid } from '../../config/errors.js';
 import { loadConfig, stepsWithoutAgent } from '../../config/load-config.js';
 import { updateConfig } from '../../config/update-config.js';
-import { ConfigInvalid } from '../../domain/errors.js';
 import { configDestination, configFileSource } from './config-source.js';
 
 describe('config file source', () => {

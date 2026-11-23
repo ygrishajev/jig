@@ -19,12 +19,13 @@ import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
 import {
   AgentOutputInvalid,
+  type AgentRole,
   AgentRunFailed,
-  ConfigInvalid,
+  SandboxPreparationInvalid,
   SandboxUnavailable,
   SetupCommandFailed,
-} from '../../domain/errors.js';
-import type { AgentRole } from '../../ports/agent-session.js';
+} from '../../ports/agent-session.js';
+import { LocalPreparationFailed } from '../../ports/local-state.js';
 import { AGENTS } from './agents.js';
 import { openCodexAuthCache } from './codex-auth.js';
 import { type SandboxFactory, SandcastleSession } from './sandcastle-session.js';
@@ -193,7 +194,7 @@ describe('SandcastleSession', () => {
     await mkdir(path.join(repoRoot, '.sandcastle'));
     await symlink(outside, path.join(repoRoot, '.sandcastle', '.gitignore'));
 
-    expect(await failure()).toBeInstanceOf(ConfigInvalid);
+    expect(await failure()).toBeInstanceOf(LocalPreparationFailed);
     expect(start).not.toHaveBeenCalled();
     expect(await readFile(outside, 'utf-8')).toBe(original);
   });
@@ -201,7 +202,7 @@ describe('SandcastleSession', () => {
   it('treats a repository path sandcastle cannot use as a configuration problem', async () => {
     const { failure } = await setup({ start: rejectingWith(sandcastleFailure('CwdError')) });
 
-    expect(await failure()).toBeInstanceOf(ConfigInvalid);
+    expect(await failure()).toBeInstanceOf(SandboxPreparationInvalid);
   });
 
   it.each(['WorktreeError', 'ContainerStartTimeoutError', 'DockerError', 'ExecError'])(

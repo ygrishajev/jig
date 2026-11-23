@@ -5,13 +5,10 @@ import type { Logger } from 'pino';
 
 import { RemoteRef } from '../../adapters/git/remote-ref.js';
 import { reportCleanup } from '../../app/report-cleanup.js';
-import {
-  type GitCommandFailed,
-  type RemoteUnavailable,
-  type RunStateConflict,
-} from '../../domain/errors.js';
 import { messageOf } from '../../failures/messages.js';
 import { retryResult } from '../../failures/retry.js';
+import type { GitCommandFailed, RemoteUnavailable } from '../../ports/git-failures.js';
+import type { RunStateConflict } from '../../ports/run-state-failures.js';
 import { OrchestrationStateInvalid, PublicationInProgress } from './errors.js';
 import {
   claimPublication,

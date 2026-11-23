@@ -1,19 +1,21 @@
 import { Result } from 'better-result';
 import { lstatSync } from 'node:fs';
 
-import { ConfigInvalid } from '../domain/errors.js';
 import { messageOf } from '../failures/messages.js';
+import { LocalPreparationFailed } from '../ports/local-state.js';
 
-export function refuseSymlinks(paths: string[]): Result<void, ConfigInvalid> {
+export function refuseSymlinks(paths: string[]): Result<void, LocalPreparationFailed> {
   const link = Result.try({
     try: () => findSymlink(paths),
     catch: (cause) =>
-      new ConfigInvalid({ message: `Cannot check ${paths.join(', ')}: ${messageOf(cause)}` }),
+      new LocalPreparationFailed({
+        message: `Cannot check ${paths.join(', ')}: ${messageOf(cause)}`,
+      }),
   });
   if (link.isErr()) return Result.err(link.error);
   return link.value
     ? Result.err(
-        new ConfigInvalid({
+        new LocalPreparationFailed({
           message: `Refusing to write through the symbolic link ${link.value}.`,
         }),
       )

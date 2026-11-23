@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { GitCommandFailed } from '../../domain/errors.js';
+import { GitCommandFailed } from '../../ports/git-failures.js';
 import { type DockerCli, privateCloneDocker, shellQuote } from './private-clone-docker.js';
 
 describe('privateCloneDocker', () => {

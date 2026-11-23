@@ -6,20 +6,19 @@ import {
   type WholeRequest,
   wholeRequestOf,
 } from '../domain/completion-reuse.js';
-import {
-  AgentOutputInvalid,
-  type AgentRunFailed,
-  CommitRejected,
-  type GitCommandFailed,
-  type SandboxUnavailable,
-} from '../domain/errors.js';
 import { fulfillmentVerdictSchema } from '../domain/final-check.js';
 import type { Outcome } from '../domain/outcome.js';
-import type { ChangedFile } from '../domain/protected-paths.js';
-import { protectedChanges } from '../domain/protected-paths.js';
+import { type ChangedFile, protectedChanges } from '../domain/protected-paths.js';
 import type { RunState } from '../domain/run-state.js';
 import { type Slice, slicesInOrder } from '../domain/slice.js';
 import type { SliceStep, SliceStepContext, StepPorts } from '../flow/define-flow.js';
+import {
+  AgentOutputInvalid,
+  type AgentRunFailed,
+  type SandboxUnavailable,
+} from '../ports/agent-session.js';
+import type { GitCommandFailed } from '../ports/git-failures.js';
+import { CommitRejected } from '../ports/workspace.js';
 import {
   combinedReviewPrompt,
   commitRejectedFeedback,

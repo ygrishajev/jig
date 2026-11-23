@@ -3,10 +3,11 @@ import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
 import type { JigEnvironment } from '../../config/environment.js';
+import type { ConfigInvalid } from '../../config/errors.js';
 import { configuredSteps, type JigConfig, type StepConfig } from '../../config/load-config.js';
 import type { AgentRole } from '../../domain/agent-role.js';
-import type { ConfigInvalid } from '../../domain/errors.js';
 import type { RunIdentity } from '../../domain/run-state.js';
+import type { SandboxCredentialsInvalid } from '../../ports/agent-session.js';
 import type { EventSink } from '../../ports/observability.js';
 import { agentLogFile } from '../local-store/run-paths.js';
 import { sandboxTelemetryEnvironment } from '../telemetry/open-telemetry.js';
@@ -60,7 +61,7 @@ export async function warnWhenSandcastleEnvAddsVariables(
 export function sandcastleSessionOptions(
   { repoRoot, config, environment, imageName, logger }: SandcastleContext & { logger: Logger },
   { run, events, setupCommand }: OpenSessionInput,
-): Result<SandcastleSessionOptions, ConfigInvalid> {
+): Result<SandcastleSessionOptions, ConfigInvalid | SandboxCredentialsInvalid> {
   const configured = configuredSteps(config);
   if (configured.isErr()) return Result.err(configured.error);
   const steps = configured.value;
@@ -93,7 +94,7 @@ export function sandcastleSessionOptions(
 export function stepCredentials(
   config: JigConfig,
   environment: JigEnvironment,
-): Result<Record<string, string>, ConfigInvalid> {
+): Result<Record<string, string>, ConfigInvalid | SandboxCredentialsInvalid> {
   return configuredSteps(config).andThen((steps) =>
     collectCredentials(Object.values(steps), environment.credential),
   );

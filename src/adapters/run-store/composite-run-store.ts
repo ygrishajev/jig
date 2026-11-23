@@ -1,17 +1,14 @@
 import { Result } from 'better-result';
 
-import {
-  type GitCommandFailed,
-  RunCodeUnavailable,
-  RunStateConflict,
-} from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import {
   canRecoverInitialCheckpoint,
   defersCodePublication,
   type RunState,
 } from '../../domain/run-state.js';
+import type { GitCommandFailed } from '../../ports/git-failures.js';
 import type { RunCode, RunCodeRestoreFailure } from '../../ports/run-code.js';
+import { RunCodeUnavailable, RunStateConflict } from '../../ports/run-state-failures.js';
 import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
 
 /**

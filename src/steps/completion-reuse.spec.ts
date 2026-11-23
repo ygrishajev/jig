@@ -12,9 +12,9 @@ import {
 } from '../../tests/support/builders.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { completionEvidenceOf } from '../domain/completion-reuse.js';
-import { SandboxUnavailable } from '../domain/errors.js';
 import type { FulfillmentVerdict } from '../domain/final-check.js';
 import type { RunSettings } from '../domain/settings.js';
+import { SandboxUnavailable } from '../ports/agent-session.js';
 import { completionInvalidated, decideCompletionReuse } from './completion-reuse.js';
 
 describe('completion reuse steps', () => {

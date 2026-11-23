@@ -13,9 +13,10 @@ import {
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { GitCommandFailed, RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
+import { GitCommandFailed, RemoteUnavailable } from '../../ports/git-failures.js';
+import { RunStateConflict } from '../../ports/run-state-failures.js';
 import { GitRemoteRunStore } from './git-remote-run-store.js';
 
 describe('GitRemoteRunStore', () => {

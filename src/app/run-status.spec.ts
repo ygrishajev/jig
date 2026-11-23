@@ -19,10 +19,10 @@ import { configDestination } from '../adapters/filesystem/config-source.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { parseEnvironment } from '../config/environment.js';
-import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { createAppContainer } from './container.js';
+import { RunRequestInvalid } from './errors.js';
 import { readRunStatus } from './run-status.js';
 
 describe('readRunStatus', () => {

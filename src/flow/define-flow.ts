@@ -1,12 +1,19 @@
 import type { Result } from 'better-result';
 
-import type { JigError } from '../domain/errors.js';
+import type { DesignUnresolved, PlanNotCovered } from '../domain/errors.js';
 import type { Outcome, OutcomeType } from '../domain/outcome.js';
 import type { RunPhase, RunState, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { Slice, SliceStatus } from '../domain/slice.js';
-import type { AgentSession } from '../ports/agent-session.js';
-import type { Workspace } from '../ports/workspace.js';
+import type { AgentSession, AgentSessionFailure } from '../ports/agent-session.js';
+import type { Workspace, WorkspaceFailure } from '../ports/workspace.js';
+
+/** A step failure the engine returns to its caller; every other kind it retries or blocks on. */
+export type FatalStepFailure = Extract<StepFailure, { kind: 'fatal' }>;
+
+/** Every failure a step can return: its ports' failures and the business conditions it checks. */
+export type StepFailure =
+  AgentSessionFailure | WorkspaceFailure | PlanNotCovered | DesignUnresolved;
 
 /** Each phase's node; a phase's step is typed by what that phase guarantees. */
 export type RunFlow = { [P in RunPhase]: RunFlowNode<P> };
@@ -34,7 +41,7 @@ export interface GuardContext {
 
 export type RunStep<P extends RunPhase = RunPhase> = (
   context: RunStepContext<P>,
-) => Promise<Result<Outcome, JigError>>;
+) => Promise<Result<Outcome, StepFailure>>;
 
 /** What a step in phase `P` sees: the run with everything `P` guarantees. */
 export interface RunStepContext<P extends RunPhase = RunPhase> {
@@ -71,7 +78,7 @@ export type SliceFlow = Record<SliceStatus, SliceFlowNode>;
 
 export type SliceFlowNode = StepNode<SliceStatus, SliceStep> | SliceFinalNode;
 
-export type SliceStep = (context: SliceStepContext) => Promise<Result<Outcome, JigError>>;
+export type SliceStep = (context: SliceStepContext) => Promise<Result<Outcome, StepFailure>>;
 
 export interface SliceStepContext extends RunStepContext {
   slice: Slice;

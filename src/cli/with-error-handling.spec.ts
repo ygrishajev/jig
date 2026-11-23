@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { Panic, Result } from 'better-result';
 import { describe, expect, it } from 'vitest';
 
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid } from '../config/errors.js';
 import { type FailureOutput, withErrorHandling } from './with-error-handling.js';
 
 describe('withErrorHandling', () => {

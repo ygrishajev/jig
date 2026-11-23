@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { codexLogin } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { CodexLoginNotSaved, ConfigInvalid } from '../../domain/errors.js';
+import { CodexLoginNotSaved, SandboxCredentialsInvalid } from '../../ports/agent-session.js';
 import { codexLoginProblem, openCodexAuthCache } from './codex-auth.js';
 
 describe('Codex auth cache', () => {
@@ -32,7 +32,7 @@ describe('Codex auth cache', () => {
     try {
       const second = await openCodexAuthCache(source);
 
-      expect(second.isErr() && second.error).toBeInstanceOf(ConfigInvalid);
+      expect(second.isErr() && second.error).toBeInstanceOf(SandboxCredentialsInvalid);
       expect(second.isErr() && second.error.message).toContain('in use');
     } finally {
       await cache.close();
@@ -97,7 +97,7 @@ describe('Codex auth cache', () => {
 
     const opened = await openCodexAuthCache(source);
 
-    expect(opened.isErr() && opened.error).toBeInstanceOf(ConfigInvalid);
+    expect(opened.isErr() && opened.error).toBeInstanceOf(SandboxCredentialsInvalid);
     expect(opened.isErr() && opened.error.message).toContain('Invalid Codex subscription login');
     expect(opened.isErr() && opened.error.message).not.toContain(secret);
   });

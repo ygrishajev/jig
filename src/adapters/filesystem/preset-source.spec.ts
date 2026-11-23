@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { presetName } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
+import { ConfigInvalid } from '../../config/errors.js';
 import {
   PresetNotFindable,
   PresetNotJson,
@@ -22,7 +23,6 @@ import {
   type PresetName,
   presetNameSchema,
 } from '../../config/presets.js';
-import { ConfigInvalid } from '../../domain/errors.js';
 import {
   packagedPresetsDirectory,
   presetDirectoriesSource,

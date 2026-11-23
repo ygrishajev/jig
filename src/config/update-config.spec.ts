@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { InMemoryConfigSource } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid } from './errors.js';
 import { updateConfig } from './update-config.js';
 
 describe('updateConfig', () => {
