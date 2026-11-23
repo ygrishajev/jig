@@ -58,7 +58,8 @@
   "comments": {
     "publish-partial-work-as-a-draft-pr-and-2d6a3b10:blocked:41f5af8969bbb8d5a359faa28abed7df45b9edf1": "https://github.com/ygrishajev/jig/issues/14#issuecomment-6973863269",
     "publish-partial-work-as-a-draft-pr-and-2d6a3b10:stuck:9ea35ae29050b4fda5818b2a373ebc3a575d590e": "https://github.com/ygrishajev/jig/issues/14#issuecomment-6975980935",
-    "add-jig-github-setup-and-a-manual-89ca2c32:blocked:27a525b3c23f922c272306573d78e9600169b332": "https://github.com/ygrishajev/jig/issues/15#issuecomment-7040239045"
+    "add-jig-github-setup-and-a-manual-89ca2c32:blocked:27a525b3c23f922c272306573d78e9600169b332": "https://github.com/ygrishajev/jig/issues/15#issuecomment-7040239045",
+    "refactor-domain-assign-error-ownership-8ba14cb6:blocked:73c61527a67afa9837e5dd9a3f954c33f654d556": "https://github.com/ygrishajev/jig/issues/56#issuecomment-7095661896"
   },
   "refusals": {},
   "refusalComments": {},
