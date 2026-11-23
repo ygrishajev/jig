@@ -1,17 +1,11 @@
-import type { Result } from 'better-result';
+import { type Result, TaggedError } from 'better-result';
 
-import type {
-  CommitImportRefused,
-  CommitRejected,
-  GitCommandFailed,
-  LocalStateUnwritable,
-  MergeFailed,
-  RemoteUnavailable,
-  SandboxUnavailable,
-} from '../domain/errors.js';
 import type { ChangedFile } from '../domain/protected-paths.js';
 import type { CommitSummary } from '../domain/usage.js';
 import type { WorkFacts } from '../domain/work-facts.js';
+import type { LocalStateUnwritable } from './filesystem.js';
+import type { GitCommandFailed, RemoteUnavailable } from './git-failures.js';
+import type { SandboxUnavailable } from './sandbox.js';
 
 /** The run's branch, seen from the host, and how the sandbox's work reaches it. */
 export interface Workspace {
@@ -48,3 +42,18 @@ export type SaveWorkFailure =
   | CommitRejected
   | SandboxUnavailable
   | LocalStateUnwritable;
+
+export class MergeFailed extends TaggedError('MergeFailed')<{ message: string }> {
+  readonly kind = 'block' as const;
+}
+
+export class CommitImportRefused extends TaggedError('CommitImportRefused')<{ message: string }> {
+  readonly kind = 'block' as const;
+}
+
+export class CommitRejected extends TaggedError('CommitRejected')<{
+  message: string;
+  output: string;
+}> {
+  readonly kind = 'block' as const;
+}

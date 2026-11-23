@@ -1,8 +1,7 @@
-import { panic, Result } from 'better-result';
+import { panic, Result, TaggedError } from 'better-result';
 import { z } from 'zod';
 
 import { type DesignDocs, designDocsSchema } from './design-docs.js';
-import { DesignUnresolved } from './errors.js';
 import type { RunState } from './run-state.js';
 
 export type DesignReviewStage =
@@ -245,6 +244,13 @@ export function resolveDesignReview(
       findingIds: outstanding.map((finding) => finding.id),
     }),
   );
+}
+
+export class DesignUnresolved extends TaggedError('DesignUnresolved')<{
+  message: string;
+  findingIds: string[];
+}> {
+  readonly kind = 'block' as const;
 }
 
 function unresolvedFindingLine(finding: DesignFinding): string {

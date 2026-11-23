@@ -1,8 +1,8 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { ConfigInvalid } from '../domain/errors.js';
 import { describeIssues } from './describe-issues.js';
+import { ConfigInvalid } from './errors.js';
 
 /**
  * The process environment as jig reads it, parsed once by the CLI. Nothing else reads a variable

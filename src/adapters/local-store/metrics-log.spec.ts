@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest';
 
 import { aCommit, runId, sliceId, tokenUsage } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import { MetricsLogCorrupt } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import type { MetricRecord } from '../../observers/metrics.js';
+import { MetricsLogCorrupt } from '../../ports/metrics.js';
 import { MetricsLog } from './metrics-log.js';
 import { stateDirectory } from './run-paths.js';
 

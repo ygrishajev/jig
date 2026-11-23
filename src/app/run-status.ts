@@ -3,12 +3,18 @@ import { Result } from 'better-result';
 
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import type { RunDocumentFile } from '../adapters/local-store/run-artefacts.js';
-import { type JigError, RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import type { RunState } from '../domain/run-state.js';
 import type { MetricsSummary } from '../observers/metrics.js';
+import type { MetricsLogCorrupt } from '../ports/metrics.js';
+import type { RunStorePeekFailure } from '../ports/run-store.js';
 import type { AppCradle } from './container.js';
+import { RunRequestInvalid } from './run-request-invalid.js';
+import type { RunStoreSetupInvalid } from './run-store-setup-invalid.js';
 import { openRunStore } from './run-stores.js';
+
+export type RunStatusFailure =
+  RunStorePeekFailure | RunStoreSetupInvalid | RunRequestInvalid | MetricsLogCorrupt;
 
 export interface RunStatus {
   state: RunState;
@@ -23,7 +29,7 @@ export interface RunStatus {
 export async function readRunStatus(
   app: AwilixContainer<AppCradle>,
   runId: RunId,
-): Promise<Result<RunStatus, JigError>> {
+): Promise<Result<RunStatus, RunStatusFailure>> {
   return Result.gen(async function* () {
     const store = yield* Result.await(openRunStore(app.cradle));
     const state = yield* Result.await(store.peek(runId));

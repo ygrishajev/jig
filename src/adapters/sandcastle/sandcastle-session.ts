@@ -14,24 +14,27 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { Logger } from 'pino';
 import { z, type ZodType } from 'zod';
 
-import {
-  AgentOutputInvalid,
-  AgentRunFailed,
-  type CodexLoginNotSaved,
-  ConfigInvalid,
-  type GitCommandFailed,
-  SandboxUnavailable,
-  SetupCommandFailed,
-} from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import type {
-  AgentRole,
-  AgentRunInput,
-  AgentSession,
-  ExecResult,
+import {
+  AgentOutputInvalid,
+  type AgentRole,
+  AgentRunFailed,
+  type AgentRunInput,
+  type AgentSession,
+  type ExecResult,
 } from '../../ports/agent-session.js';
+import type { CredentialsInvalid } from '../../ports/credentials.js';
+import { FilesystemPreparationFailed } from '../../ports/filesystem.js';
+import { type GitCommandFailed } from '../../ports/git-failures.js';
 import type { EventSink } from '../../ports/observability.js';
+import {
+  SandboxPreparationFailed,
+  SandboxUnavailable,
+  type SessionCloseFailure,
+  type SessionOpenFailure,
+  SetupCommandFailed,
+} from '../../ports/sandbox.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { messageOf } from '../exception-details.js';
 import { refuseSymlinks } from '../find-symlink.js';
@@ -40,12 +43,6 @@ import { hookManagerOf } from './git-hooks.js';
 import { type PrivateClone, privateCloneDocker, shellQuote } from './private-clone-docker.js';
 import { extractOutput, OUTPUT_TAG, outputInstruction } from './structured-output.js';
 import { usageFromStreamLine } from './usage.js';
-
-/** Why a sandbox did not open; `ConfigInvalid` is the operator's to fix, the others may pass. */
-export type SessionOpenFailure = ConfigInvalid | SandboxUnavailable | SetupCommandFailed;
-
-/** Why a sandbox did not close cleanly: the container would not stop, or the login was not handed back. */
-export type SessionCloseFailure = SandboxUnavailable | CodexLoginNotSaved;
 
 export type SandboxFactory = (options: CreateSandboxOptions) => Promise<Sandbox>;
 
@@ -95,7 +92,7 @@ export class SandcastleSession implements AgentSession, SandboxGit {
     const repoRoot = await Result.tryPromise({
       try: () => realpath(options.repoRoot),
       catch: (cause) =>
-        new ConfigInvalid({
+        new SandboxPreparationFailed({
           message: `Cannot resolve the repository path ${options.repoRoot}: ${messageOf(cause)}`,
         }),
     });
@@ -262,7 +259,7 @@ export class SandcastleSession implements AgentSession, SandboxGit {
 /** Also replaces a catch-all `*`, which would hide the Dockerfile from the repository. */
 export async function ignoreSandcastleDirectory(
   repoRoot: string,
-): Promise<Result<void, ConfigInvalid>> {
+): Promise<Result<void, FilesystemPreparationFailed>> {
   const directory = path.join(repoRoot, '.sandcastle');
   const gitignore = path.join(directory, '.gitignore');
   const refused = refuseSymlinks([directory, gitignore]);
@@ -274,7 +271,9 @@ export async function ignoreSandcastleDirectory(
       await writeFile(gitignore, SANDCASTLE_GITIGNORE);
     },
     catch: (cause) =>
-      new ConfigInvalid({ message: `Could not write ${gitignore}: ${messageOf(cause)}` }),
+      new FilesystemPreparationFailed({
+        message: `Could not write ${gitignore}: ${messageOf(cause)}`,
+      }),
   });
 }
 
@@ -290,7 +289,7 @@ export const SANDCASTLE_GITIGNORE = 'worktrees/\nlogs/\n.env\n';
 
 async function openCodexAuth(
   options: SandcastleSessionOptions,
-): Promise<Result<CodexAuthCache | undefined, ConfigInvalid>> {
+): Promise<Result<CodexAuthCache | undefined, CredentialsInvalid>> {
   return options.codexAuthDirectory
     ? openCodexAuthCache(options.codexAuthDirectory)
     : Result.ok(undefined);
@@ -300,11 +299,11 @@ async function openCodexAuth(
  * Sandcastle's own `onSandboxReady` hooks ignore a command's exit code and timeout in
  * `createSandbox`, so the setup command is run here, where both are checked.
  */
-function sandboxStartFailure(error: unknown): ConfigInvalid | SandboxUnavailable {
+function sandboxStartFailure(error: unknown): SandboxPreparationFailed | SandboxUnavailable {
   const message = `Could not start the sandbox: ${messageOf(error)}`;
   const tag = sandcastleFailureTag(error);
   return tag && CONFIGURATION_FAILURES.has(tag)
-    ? new ConfigInvalid({ message: message })
+    ? new SandboxPreparationFailed({ message: message })
     : new SandboxUnavailable({ message: message });
 }
 

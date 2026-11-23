@@ -6,20 +6,16 @@ import {
   type WholeRequest,
   wholeRequestOf,
 } from '../domain/completion-reuse.js';
-import {
-  AgentOutputInvalid,
-  type AgentRunFailed,
-  CommitRejected,
-  type GitCommandFailed,
-  type SandboxUnavailable,
-} from '../domain/errors.js';
 import { fulfillmentVerdictSchema } from '../domain/final-check.js';
 import type { Outcome } from '../domain/outcome.js';
-import type { ChangedFile } from '../domain/protected-paths.js';
-import { protectedChanges } from '../domain/protected-paths.js';
+import { type ChangedFile, protectedChanges } from '../domain/protected-paths.js';
 import type { RunState } from '../domain/run-state.js';
 import { type Slice, slicesInOrder } from '../domain/slice.js';
 import type { SliceStep, SliceStepContext, StepPorts } from '../flow/define-flow.js';
+import { AgentOutputInvalid, type AgentRunFailed } from '../ports/agent-session.js';
+import { type GitCommandFailed } from '../ports/git-failures.js';
+import { type SandboxUnavailable } from '../ports/sandbox.js';
+import { CommitRejected, type SaveWorkFailure } from '../ports/workspace.js';
 import {
   combinedReviewPrompt,
   commitRejectedFeedback,
@@ -39,7 +35,9 @@ type ReviewOutcome = Extract<
   { type: 'approved' | 'changesRequested' | 'rulesFixRequested' }
 >;
 
-export const implementSlice: SliceStep = ({ state, slice, settings, ports }) =>
+export const implementSlice: SliceStep<
+  AgentRunFailed | GitCommandFailed | Exclude<SaveWorkFailure, CommitRejected>
+> = ({ state, slice, settings, ports }) =>
   Result.gen(async function* () {
     const { workspace } = ports;
     const attemptStart = yield* Result.await(workspace.headCommit());
@@ -51,13 +49,15 @@ export const implementSlice: SliceStep = ({ state, slice, settings, ports }) =>
     const message = yield* commitMessageOf(reply, slice);
     const approved = yield* Result.await(sliceStart(state, slice, ports));
     const saved = await workspace.saveWork(message, { approved });
-    if (saved.isErr() && CommitRejected.is(saved.error)) {
-      return Result.ok<Outcome>({
-        type: 'hookRejected',
-        feedback: commitRejectedFeedback(saved.error.output),
-      });
+    if (saved.isErr()) {
+      if (CommitRejected.is(saved.error)) {
+        return Result.ok<Outcome>({
+          type: 'hookRejected',
+          feedback: commitRejectedFeedback(saved.error.output),
+        });
+      }
+      return Result.err(saved.error);
     }
-    yield* saved;
     const head = yield* Result.await(workspace.headCommit());
     if (head === approved) {
       return Result.ok<Outcome>({
@@ -99,7 +99,9 @@ async function sliceStart(
   return previousEnd ? Result.ok(previousEnd) : ports.workspace.forkPoint();
 }
 
-export const reviewSlice: SliceStep = (context) =>
+export const reviewSlice: SliceStep<
+  AgentRunFailed | AgentOutputInvalid | GitCommandFailed | SandboxUnavailable
+> = (context) =>
   Result.gen(async function* () {
     const { slice, ports, state } = context;
     const start = yield* Result.await(sliceStart(state, slice, ports));
@@ -188,7 +190,10 @@ async function reviewTheSlice(
   return verdict.map(outcomeOfReview);
 }
 
-export const verifySlice: SliceStep = ({ settings, ports }) => {
+export const verifySlice: SliceStep<GitCommandFailed | SandboxUnavailable> = ({
+  settings,
+  ports,
+}) => {
   const command = settings.verifyCommand;
   if (!command) return Promise.resolve(Result.ok<Outcome>({ type: 'verified' }));
   return Result.gen(async function* () {

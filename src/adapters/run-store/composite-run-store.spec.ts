@@ -16,11 +16,11 @@ import { InMemoryRunStore } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { RunCodeUnavailable } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor, type RunState } from '../../domain/run-state.js';
-import type { RunCode } from '../../ports/run-code.js';
-import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
+import type { RunCode, RunCodeRestoreFailure } from '../../ports/run-code.js';
+import { RunCodeUnavailable } from '../../ports/run-state-failures.js';
+import type { RunStore } from '../../ports/run-store.js';
 import { GitRunCode } from '../git/run-code.js';
 import { LocalRunStore } from '../local-store/local-run-store.js';
 import { CompositeRunStore } from './composite-run-store.js';
@@ -357,7 +357,7 @@ describe('CompositeRunStore', () => {
     copies: (RunState | undefined)[];
     serialized?: boolean;
     checkpoint?: string;
-    restored?: Result<void, RunStoreFailure>;
+    restored?: Result<void, RunCodeRestoreFailure>;
   }) {
     const stores = await Promise.all(
       input.copies.map(async (copy) => {

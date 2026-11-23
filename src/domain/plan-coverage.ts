@@ -1,6 +1,5 @@
-import { Result } from 'better-result';
+import { Result, TaggedError } from 'better-result';
 
-import { PlanNotCovered } from './errors.js';
 import type { PlannedSlice } from './slice.js';
 
 type Claim = { steps: number[]; problems: string[] };
@@ -146,4 +145,8 @@ function coverageProblems(steps: readonly number[], claimed: readonly number[]):
   return [
     `No slice implements plan step${unimplemented.length > 1 ? 's' : ''} ${joinNumbers(unimplemented)}.`,
   ];
+}
+
+export class PlanNotCovered extends TaggedError('PlanNotCovered')<{ message: string }> {
+  readonly kind = 'retry' as const;
 }

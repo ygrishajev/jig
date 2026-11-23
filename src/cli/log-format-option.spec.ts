@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 
 import type { LogFormat } from '../adapters/logging/create-logger.js';
-import { CommandInputInvalid, type JigError } from '../domain/errors.js';
+import { CommandInputInvalid } from './command-input-invalid.js';
 import { logFormatInputSchema, logFormatOption } from './log-format-option.js';
 import { withInput } from './with-input.js';
 
@@ -29,7 +29,7 @@ describe('logFormatOption', () => {
 
   function setup() {
     let received: LogFormat | undefined;
-    let outcome: Result<void, JigError> = Result.ok();
+    let outcome: Result<void, CommandInputInvalid> = Result.ok();
     const action = withInput(logFormatInputSchema, async ({ logFormat }) => {
       received = logFormat;
       return Result.ok();

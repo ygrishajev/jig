@@ -1,16 +1,16 @@
 import { Result } from 'better-result';
 
-import { ConfigInvalid, type GitCommandFailed } from '../../domain/errors.js';
+import { type GitCommandFailed, RepositoryInvalid } from '../../ports/git-failures.js';
 import { gitCommand, openRepo } from './repository.js';
 
 export async function getCurrentBranch(
   cwd: string,
-): Promise<Result<string, ConfigInvalid | GitCommandFailed>> {
+): Promise<Result<string, RepositoryInvalid | GitCommandFailed>> {
   const status = await gitCommand('status', () => openRepo(cwd).status());
   if (status.isErr()) return status;
   if (!status.value.current || status.value.detached) {
     return Result.err(
-      new ConfigInvalid({
+      new RepositoryInvalid({
         message: `${cwd} has no branch checked out — check out the branch the run should start from.`,
       }),
     );

@@ -15,15 +15,21 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
-import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import type { EnteredCredential } from '../adapters/terminal/ask-for-credential.js';
 import type { AgentChoice } from '../config/agent-policy.js';
 import { ConfigUnwritable } from '../config/config-source.js';
 import { parseEnvironment } from '../config/environment.js';
+import { ConfigInvalid } from '../config/errors.js';
 import { loadConfig } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
-import { ConfigInvalid, SandboxUnavailable, SetupCommandFailed } from '../domain/errors.js';
 import type { ExecResult } from '../ports/agent-session.js';
+import { CredentialsInvalid } from '../ports/credentials.js';
+import { FilesystemPreparationFailed } from '../ports/filesystem.js';
+import {
+  SandboxUnavailable,
+  type SessionOpenFailure,
+  SetupCommandFailed,
+} from '../ports/sandbox.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import { createAppContainer } from './container.js';
 import { initSandbox } from './init-sandbox.js';
@@ -116,7 +122,7 @@ describe('initSandbox', () => {
 
     const result = await initResult({ useAgent: true });
 
-    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(CredentialsInvalid);
     expect(images.build).not.toHaveBeenCalled();
     expect(agent.calls).toHaveLength(0);
   });
@@ -183,7 +189,7 @@ describe('initSandbox', () => {
       const refusal = await initResult({ useAgent: false });
 
       expect(await readFile(outside, 'utf-8')).toBe(original);
-      expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+      expect(refusal.isErr() && refusal.error).toBeInstanceOf(FilesystemPreparationFailed);
     },
   );
 
@@ -198,7 +204,7 @@ describe('initSandbox', () => {
       const refusal = await initResult({ useAgent: false });
 
       expect(existsSync(outside)).toBe(false);
-      expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+      expect(refusal.isErr() && refusal.error).toBeInstanceOf(FilesystemPreparationFailed);
     },
   );
 
@@ -209,7 +215,7 @@ describe('initSandbox', () => {
 
     const refusal = await initResult({ useAgent: false });
 
-    expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(FilesystemPreparationFailed);
     expect(await readdir(outside)).toEqual([]);
   });
 
@@ -281,7 +287,7 @@ describe('initSandbox', () => {
       'a sandbox that would not start',
       () => new SandboxUnavailable({ message: faker.lorem.sentence() }),
     ],
-    ['missing credentials', () => new ConfigInvalid({ message: faker.lorem.sentence() })],
+    ['missing credentials', () => new CredentialsInvalid({ message: faker.lorem.sentence() })],
   ])('stops on %s instead of spending the planner on it', async (_case, failure) => {
     const error = failure();
     const { initResult, agent } = await setup({
@@ -346,7 +352,7 @@ describe('initSandbox', () => {
 
     const refusal = await initResult({ useAgent: false });
 
-    expect(refusal.isErr() && refusal.error).toBeInstanceOf(ConfigInvalid);
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(FilesystemPreparationFailed);
     expect(exists('.sandcastle/Dockerfile')).toBe(false);
   });
 

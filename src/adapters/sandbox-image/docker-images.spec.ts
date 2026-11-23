@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { ImageBuildFailed } from '../../domain/errors.js';
+import { ImageBuildFailed } from '../../ports/sandbox.js';
 import type { ImageBuildSpec } from '../../ports/sandbox-images.js';
 import { classifyInspect, dockerBuildArguments } from './docker-images.js';
 

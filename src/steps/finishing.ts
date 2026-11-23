@@ -3,9 +3,12 @@ import { z } from 'zod';
 
 import { reusedCompletion } from '../domain/completion-reuse.js';
 import type { Outcome } from '../domain/outcome.js';
-import type { RunStateIn } from '../domain/run-state.js';
+import { type RunPhase, type RunStateIn } from '../domain/run-state.js';
 import { slicesInOrder } from '../domain/slice.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
+import type { GitCommandFailed, RemoteUnavailable } from '../ports/git-failures.js';
+import type { SandboxUnavailable } from '../ports/sandbox.js';
+import type { MergeFailed } from '../ports/workspace.js';
 import { pullRequestPrompt } from '../prompts/pull-request.js';
 import { completionInvalidated } from './completion-reuse.js';
 import { DEFAULT_PR_TEMPLATE, renderPullRequest } from './pull-request-description.js';
@@ -15,7 +18,9 @@ import { DEFAULT_PR_TEMPLATE, renderPullRequest } from './pull-request-descripti
  * A run finishing on reused evidence first checks that evidence still holds, and describes nothing
  * when it does not.
  */
-export const describePullRequest: RunStep<'describing'> = (context) =>
+export const describePullRequest: RunStep<'describing', GitCommandFailed | SandboxUnavailable> = (
+  context,
+) =>
   Result.gen(async function* () {
     if (yield* Result.await(completionInvalidated(context))) {
       return Result.ok<Outcome>({ type: 'completionInvalidated' });
@@ -76,7 +81,10 @@ const descriptionSchema = z.object({ body: z.string().min(1) });
  * A branch the operator already merged is done. Otherwise a run finishing on reused evidence
  * checks it still holds before it merges or waits for a person to, resumed waits included.
  */
-export const mergeRunBranch: RunStep = (context) =>
+export const mergeRunBranch: RunStep<
+  RunPhase,
+  GitCommandFailed | RemoteUnavailable | SandboxUnavailable | MergeFailed
+> = (context) =>
   Result.gen(async function* () {
     const { state, ports, settings } = context;
     if (yield* Result.await(ports.workspace.isRunBranchMerged())) {

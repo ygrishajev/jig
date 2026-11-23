@@ -3,7 +3,13 @@ import { Result } from 'better-result';
 import { fulfillmentVerdictSchema } from '../domain/final-check.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunStep } from '../flow/define-flow.js';
-import type { ExecResult } from '../ports/agent-session.js';
+import {
+  type AgentOutputInvalid,
+  type AgentRunFailed,
+  type ExecResult,
+} from '../ports/agent-session.js';
+import type { GitCommandFailed } from '../ports/git-failures.js';
+import type { SandboxUnavailable } from '../ports/sandbox.js';
 import { finalCheckPrompt, type FinalCheckVerification } from '../prompts/final-check.js';
 
 /**
@@ -11,7 +17,10 @@ import { finalCheckPrompt, type FinalCheckVerification } from '../prompts/final-
  * reviewer judge the entire run against its request even when verification failed. It commits
  * nothing and imports nothing — any repair goes back through the slices.
  */
-export const checkWholeRun: RunStep<'finalCheck'> = ({ state, ports, settings }) =>
+export const checkWholeRun: RunStep<
+  'finalCheck',
+  AgentRunFailed | AgentOutputInvalid | GitCommandFailed | SandboxUnavailable
+> = ({ state, ports, settings }) =>
   Result.gen(async function* () {
     const command = settings.verifyCommand;
     const ran = command ? yield* Result.await(ports.agent.exec(command)) : undefined;

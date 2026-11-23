@@ -2,8 +2,8 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { type AgentRole, byRole } from '../domain/agent-role.js';
-import { ConfigInvalid } from '../domain/errors.js';
 import { describeIssues } from './describe-issues.js';
+import { ConfigInvalid } from './errors.js';
 import { type JigConfig, type StepConfig, stepConfigSchema } from './load-config.js';
 import type {
   PresetCandidate,

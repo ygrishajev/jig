@@ -2,7 +2,8 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { runSettings } from '../../tests/support/builders.js';
-import { AgentRunFailed, MergeFailed } from './errors.js';
+import { AgentRunFailed } from '../ports/agent-session.js';
+import { MergeFailed } from '../ports/workspace.js';
 import { transientRetryPolicy } from './retry.js';
 
 describe('transientRetryPolicy', () => {

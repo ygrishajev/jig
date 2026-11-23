@@ -2,8 +2,8 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { unwrap } from '../../tests/support/unwrap.js';
-import { ConfigInvalid } from '../domain/errors.js';
 import { parseEnvironment, withCredentials } from './environment.js';
+import { ConfigInvalid } from './errors.js';
 
 describe('parseEnvironment', () => {
   it('reads the image cache and the Codex auth directory', () => {

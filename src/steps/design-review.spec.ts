@@ -18,9 +18,10 @@ import {
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { retryResult } from '../adapters/retry.js';
-import { AgentOutputInvalid, AgentRunFailed, DesignUnresolved } from '../domain/errors.js';
+import { DesignUnresolved } from '../domain/design-review.js';
 import type { RunPhase, RunStateIn } from '../domain/run-state.js';
 import type { RunStep } from '../flow/define-flow.js';
+import { AgentOutputInvalid, AgentRunFailed } from '../ports/agent-session.js';
 import type { Workspace } from '../ports/workspace.js';
 import { resolveDesign, reviewDesign, reviseDesign } from './design-review.js';
 

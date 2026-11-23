@@ -1,7 +1,8 @@
 import type { Result } from 'better-result';
 
-import type { GitCommandFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { ExecResult } from './agent-session.js';
+import type { GitCommandFailed } from './git-failures.js';
+import type { SandboxUnavailable } from './sandbox.js';
 
 /** Git in the run's sandbox, and the one way bytes leave it. Everything it answers is untrusted. */
 export interface SandboxGit {

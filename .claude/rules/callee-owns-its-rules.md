@@ -30,7 +30,7 @@ The ownership above is the target in [`docs/specs/application-boundaries.md`](..
 - A caller checking a condition before a call.
 - A caller restating a list, name or file layout the callee owns.
 - A caller reaching into another module's internals (`scope.cradle.engineDependencies`).
-- The same predicate or expression in two modules (`error instanceof JigError && error.kind === 'retry'`).
+- The same predicate or expression in two modules (`error.kind === 'retry'`).
 - A CLI handler or use case that takes a container, or reads `cradle`.
 - Wiring code that branches on run state, error kind or operator choice.
 - A default value declared in domain, or a domain rule copied into config.

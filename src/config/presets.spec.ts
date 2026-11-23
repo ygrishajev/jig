@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { presetName } from '../../tests/support/builders.js';
 import { InMemoryConfigSource, InMemoryPresetSource } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid } from './errors.js';
 import { loadConfig, runSettingsFrom } from './load-config.js';
 import { configWithPreset, discoverPresets, loadPreset, presetNameSchema } from './presets.js';
 

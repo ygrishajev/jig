@@ -3,20 +3,20 @@ import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
 import type { JigEnvironment } from '../../config/environment.js';
+import type { ConfigInvalid } from '../../config/errors.js';
 import { configuredSteps, type JigConfig, type StepConfig } from '../../config/load-config.js';
 import type { AgentRole } from '../../domain/agent-role.js';
-import type { ConfigInvalid } from '../../domain/errors.js';
 import type { RunIdentity } from '../../domain/run-state.js';
+import type { CredentialsInvalid } from '../../ports/credentials.js';
 import type { EventSink } from '../../ports/observability.js';
+import type { SessionOpenFailure } from '../../ports/sandbox.js';
 import { agentLogFile } from '../local-store/run-paths.js';
 import { sandboxTelemetryEnvironment } from '../telemetry/open-telemetry.js';
 import { AGENTS, collectCredentials } from './agents.js';
 import { sandcastleEnvKeys } from './sandcastle-env.js';
-import {
-  SandcastleSession,
-  type SandcastleSessionOptions,
-  type SessionOpenFailure,
-} from './sandcastle-session.js';
+import { SandcastleSession, type SandcastleSessionOptions } from './sandcastle-session.js';
+
+export type OpenSessionFailure = ConfigInvalid | SessionOpenFailure;
 
 export interface OpenSessionInput {
   run: RunIdentity;
@@ -37,7 +37,7 @@ export interface SandcastleContext {
 export async function openSandcastleSession(
   context: SandcastleContext & { logger: Logger },
   input: OpenSessionInput,
-): Promise<Result<SandcastleSession, SessionOpenFailure>> {
+): Promise<Result<SandcastleSession, OpenSessionFailure>> {
   await warnWhenSandcastleEnvAddsVariables(context.repoRoot, context.logger);
   const options = sandcastleSessionOptions(context, input);
   if (options.isErr()) return Result.err(options.error);
@@ -60,7 +60,7 @@ export async function warnWhenSandcastleEnvAddsVariables(
 export function sandcastleSessionOptions(
   { repoRoot, config, environment, imageName, logger }: SandcastleContext & { logger: Logger },
   { run, events, setupCommand }: OpenSessionInput,
-): Result<SandcastleSessionOptions, ConfigInvalid> {
+): Result<SandcastleSessionOptions, ConfigInvalid | CredentialsInvalid> {
   const configured = configuredSteps(config);
   if (configured.isErr()) return Result.err(configured.error);
   const steps = configured.value;
@@ -93,7 +93,7 @@ export function sandcastleSessionOptions(
 export function stepCredentials(
   config: JigConfig,
   environment: JigEnvironment,
-): Result<Record<string, string>, ConfigInvalid> {
+): Result<Record<string, string>, ConfigInvalid | CredentialsInvalid> {
   return configuredSteps(config).andThen((steps) =>
     collectCredentials(Object.values(steps), environment.credential),
   );

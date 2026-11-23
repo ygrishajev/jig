@@ -3,20 +3,15 @@ import { panic, Result } from 'better-result';
 import { getCurrentBranch } from '../../adapters/git/branch.js';
 import { exactHead } from '../../adapters/git/run-history.js';
 import type { App } from '../../app/container.js';
-import { runJig, type RunReport } from '../../app/run-jig.js';
+import { runJig, type RunJigFailure, type RunReport } from '../../app/run-jig.js';
+import type { RunStoreSetupInvalid } from '../../app/run-store-setup-invalid.js';
 import { openRunStore } from '../../app/run-stores.js';
-import type { GitCommandFailed, JigError } from '../../domain/errors.js';
 import { outcomeIsComplete } from '../../domain/invocation-status.js';
 import { runIdFor } from '../../domain/run-id.js';
 import { runBranchFor, type RunState } from '../../domain/run-state.js';
-import type { RunStoreFailure } from '../../ports/run-store.js';
-import {
-  BaseBranchMismatch,
-  type GithubError,
-  GithubRefused,
-  type GithubSetupInvalid,
-  type PublicationInProgress,
-} from './errors.js';
+import { type GitCommandFailed, type RepositoryInvalid } from '../../ports/git-failures.js';
+import type { RunStorePeekFailure } from '../../ports/run-store.js';
+import { BaseBranchMismatch, GithubRefused, type PublicationInProgress } from './errors.js';
 import { findingsCommentBody, stuckReason } from './findings-comment.js';
 import type {
   GithubFailure,
@@ -60,7 +55,11 @@ export type IssueOutcome =
   | { kind: 'commented'; outcome: RunReport['status']; url: string }
   | { kind: 'refused'; paths: string[]; url: string };
 
-type IssueFailure = JigError | Exclude<GithubError, GithubSetupInvalid>;
+type IssueFailure = RunJigFailure | RepositoryInvalid | BaseBranchMismatch | PublishOutcomeFailure;
+type PublishOutcomeFailure =
+  RunStorePeekFailure | RunStoreSetupInvalid | BranchPublicationFailure | PublicationFailure;
+
+type PublicationFailure = GithubFailure | StoreFailure | PublicationInProgress;
 
 /**
  * Where the accepted request is published: the issue, its key in the receipts, its default branch,
@@ -80,8 +79,6 @@ type CodeCheckpoint = Pick<RunState, 'startingCommit' | 'codeRevision'>;
 
 type Publication =
   { kind: 'comment'; revision?: string } | { kind: 'ready' | 'draft'; revision: string };
-
-type PublicationFailure = GithubFailure | StoreFailure | PublicationInProgress;
 
 export function implementIssue(
   app: App,
@@ -179,7 +176,7 @@ function publishOutcome(
   store: OrchestrationStore,
   target: IssueTarget,
   report: RunReport,
-): Promise<Result<IssueOutcome, IssueFailure>> {
+): Promise<Result<IssueOutcome, PublishOutcomeFailure>> {
   return Result.gen(async function* () {
     const { repoRoot } = app.cradle;
     const checkpoint = yield* Result.await(codeCheckpointOf(app, report));
@@ -219,7 +216,7 @@ function publishOutcome(
 function codeCheckpointOf(
   app: App,
   report: RunReport,
-): Promise<Result<CodeCheckpoint, RunStoreFailure>> {
+): Promise<Result<CodeCheckpoint, RunStorePeekFailure | RunStoreSetupInvalid>> {
   return Result.gen(async function* () {
     const { runId } = report.state;
     const store = yield* Result.await(openRunStore(app.cradle, REQUIRED_STORES));

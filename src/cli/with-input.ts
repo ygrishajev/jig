@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import type { z } from 'zod';
 
 import { describeIssues } from '../config/describe-issues.js';
-import { CommandInputInvalid } from '../domain/errors.js';
+import { CommandInputInvalid } from './command-input-invalid.js';
 
 /**
  * A commander action that receives the command's arguments and options as one object, parsed

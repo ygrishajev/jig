@@ -3,7 +3,7 @@ import { Panic, panic, Result } from 'better-result';
 import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import {
@@ -51,16 +51,26 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { exceptionDetails } from '../adapters/exception-details.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { retryResult } from '../adapters/retry.js';
-import { AgentRunFailed, RunStateConflict, SandboxUnavailable } from '../domain/errors.js';
+import type { CommandInputInvalid } from '../cli/command-input-invalid.js';
 import { runDiagnostics } from '../domain/run-diagnostics.js';
 import { enterPhase, type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { PlannedSlice } from '../domain/slice.js';
-import { finalStatus } from '../flow/define-flow.js';
+import { finalStatus, type StepFailure } from '../flow/define-flow.js';
 import { runEngine } from '../flow/engine.js';
-import type { ExecResult } from '../ports/agent-session.js';
+import { AgentRunFailed, type ExecResult } from '../ports/agent-session.js';
+import { RunStateConflict } from '../ports/run-state-failures.js';
 import type { RunStore } from '../ports/run-store.js';
+import { SandboxUnavailable } from '../ports/sandbox.js';
 import { runFlow } from './run-flow.js';
+import type { RunRequestInvalid } from './run-request-invalid.js';
+
+describe('workflow failure contracts', () => {
+  it('excludes command input and application request failures from supplied steps', () => {
+    expectTypeOf<CommandInputInvalid>().not.toExtend<StepFailure>();
+    expectTypeOf<RunRequestInvalid>().not.toExtend<StepFailure>();
+  });
+});
 
 describe('runFlow', () => {
   it('takes a request from planning through two slices to a merged run branch', async () => {

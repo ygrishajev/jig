@@ -14,7 +14,7 @@ import path from 'node:path';
 import { type Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { GitCommandFailed } from '../../domain/errors.js';
+import { GitCommandFailed } from '../../ports/git-failures.js';
 import { messageOf } from '../exception-details.js';
 import { openRepo } from '../git/repository.js';
 

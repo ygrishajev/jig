@@ -1,7 +1,8 @@
 import { Result } from 'better-result';
 import { execa, type Result as ExecaResult, type ResultPromise } from 'execa';
 
-import { GitCommandFailed, RemoteUnavailable, RunStateConflict } from '../../domain/errors.js';
+import { GitCommandFailed, RemoteUnavailable } from '../../ports/git-failures.js';
+import { RunStateConflict } from '../../ports/run-state-failures.js';
 import { retryResult } from '../retry.js';
 
 type GitResult = ExecaResult<{ reject: false }>;

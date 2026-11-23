@@ -16,12 +16,12 @@ import {
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { retryResult } from '../adapters/retry.js';
-import { AgentOutputInvalid, AgentRunFailed } from '../domain/errors.js';
 import { checkPlanCoverage } from '../domain/plan-coverage.js';
 import type { RunPhase, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import { type PlannedSlice, SLICE_ID_MESSAGE } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
+import { AgentOutputInvalid, AgentRunFailed } from '../ports/agent-session.js';
 import type { RetryPolicy, RetryResult } from '../ports/retry.js';
 import type { Workspace } from '../ports/workspace.js';
 import {

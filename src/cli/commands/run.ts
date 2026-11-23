@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { z } from 'zod';
 
 import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
-import type { RunRequestInvalid } from '../../domain/errors.js';
+import type { RunRequestInvalid } from '../../app/run-request-invalid.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, runStopReason } from '../../domain/run-state.js';
 import type { ExceptionDetails } from '../../ports/exception-details.js';

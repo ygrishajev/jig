@@ -1,6 +1,6 @@
-import type { Result } from 'better-result';
+import type { InferErr, Result } from 'better-result';
 
-import type { JigError } from '../domain/errors.js';
+import type { DesignUnresolved } from '../domain/design-review.js';
 import type { Outcome, OutcomeType } from '../domain/outcome.js';
 import type { RunPhase, RunState, RunStateIn } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -33,9 +33,28 @@ export interface GuardContext {
   settings: RunSettings;
 }
 
-export type RunStep<P extends RunPhase = RunPhase> = (
+export type RunStep<P extends RunPhase = RunPhase, E extends StepFailure = StepFailure> = (
   context: RunStepContext<P>,
-) => Promise<Result<Outcome, JigError>>;
+) => Promise<Result<Outcome, E>>;
+
+export type StepFailure =
+  | DesignUnresolved
+  | InferErr<
+      Awaited<
+        ReturnType<
+          | AgentSession['runForOutput' | 'exec']
+          | Workspace[
+              | 'saveWork'
+              | 'headCommit'
+              | 'forkPoint'
+              | 'summariseCommitsSince'
+              | 'changedFilesSince'
+              | 'collectFacts'
+              | 'mergeRunBranch'
+              | 'isRunBranchMerged']
+        >
+      >
+    >;
 
 /** What a step in phase `P` sees: the run with everything `P` guarantees. */
 export interface RunStepContext<P extends RunPhase = RunPhase> {
@@ -73,7 +92,9 @@ export type SliceFlow = Record<SliceStatus, SliceFlowNode>;
 
 export type SliceFlowNode = StepNode<SliceStatus, SliceStep> | SliceFinalNode;
 
-export type SliceStep = (context: SliceStepContext) => Promise<Result<Outcome, JigError>>;
+export type SliceStep<E extends StepFailure = StepFailure> = (
+  context: SliceStepContext,
+) => Promise<Result<Outcome, E>>;
 
 export interface SliceStepContext extends RunStepContext {
   slice: Slice;

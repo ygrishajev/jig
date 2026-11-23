@@ -1,6 +1,6 @@
 import type { Result } from 'better-result';
 
-import type { ImageBuildFailed } from '../domain/errors.js';
+import type { ImageBuildFailed } from './sandbox.js';
 
 /** The images on this machine, as the sandbox image decision needs them. */
 export interface SandboxImages {

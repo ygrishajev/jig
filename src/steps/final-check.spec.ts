@@ -8,13 +8,12 @@ import {
   runId,
   runSettings,
 } from '../../tests/support/builders.js';
-import type { AgentScript } from '../../tests/support/fakes.js';
-import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { retryResult } from '../adapters/retry.js';
-import { AgentOutputInvalid, AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
-import type { ExecResult } from '../ports/agent-session.js';
+import { AgentOutputInvalid, AgentRunFailed, type ExecResult } from '../ports/agent-session.js';
+import { SandboxUnavailable } from '../ports/sandbox.js';
 import { checkWholeRun } from './final-check.js';
 
 describe('checkWholeRun', () => {

@@ -2,12 +2,12 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { designDocsSchema } from '../domain/design-docs.js';
-import { AgentOutputInvalid, type AgentRunFailed, PlanNotCovered } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
-import { checkPlanCoverage } from '../domain/plan-coverage.js';
-import { featurePlanSchema, runContextSchema } from '../domain/run-state.js';
+import { checkPlanCoverage, PlanNotCovered } from '../domain/plan-coverage.js';
+import { featurePlanSchema, runContextSchema, type RunPhase } from '../domain/run-state.js';
 import { type PlannedSlice, plannedSliceSchema } from '../domain/slice.js';
 import type { RunStep, StepPorts } from '../flow/define-flow.js';
+import { AgentOutputInvalid, type AgentRunFailed } from '../ports/agent-session.js';
 import {
   contextPrompt,
   designPrompt,
@@ -17,7 +17,10 @@ import {
 
 type SlicePlanFailure = AgentRunFailed | AgentOutputInvalid | PlanNotCovered;
 
-export const buildContext: RunStep = async ({ state, ports }) => {
+export const buildContext: RunStep<RunPhase, AgentRunFailed | AgentOutputInvalid> = async ({
+  state,
+  ports,
+}) => {
   const context = await ports.agent.runForOutput({
     role: 'planner',
     prompt: contextPrompt(state.request),
@@ -26,7 +29,10 @@ export const buildContext: RunStep = async ({ state, ports }) => {
   return context.map((built) => ({ type: 'contextBuilt', context: built }));
 };
 
-export const planFeature: RunStep<'planning'> = async ({ state, ports }) => {
+export const planFeature: RunStep<'planning', AgentRunFailed | AgentOutputInvalid> = async ({
+  state,
+  ports,
+}) => {
   const plan = await ports.agent.runForOutput({
     role: 'planner',
     prompt: featurePlanPrompt(state.request, state.context.repoSummary),
@@ -35,7 +41,10 @@ export const planFeature: RunStep<'planning'> = async ({ state, ports }) => {
   return plan.map((planned) => ({ type: 'featurePlanned', plan: planned }));
 };
 
-export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
+export const writeDesign: RunStep<'designing', AgentRunFailed | AgentOutputInvalid> = async ({
+  state,
+  ports,
+}) => {
   const docs = await ports.agent.runForOutput({
     role: 'planner',
     prompt: designPrompt(state.request, state.context.repoSummary, state.plan),
@@ -48,7 +57,10 @@ export const writeDesign: RunStep<'designing'> = async ({ state, ports }) => {
  * One correction attempt for a plan its slices do not cover; whatever survives it is the planner's
  * invalid output, so the check's PlanNotCovered surfaces as AgentOutputInvalid.
  */
-export const sliceThePlan: RunStep<'slicing'> = async ({ state, ports }) => {
+export const sliceThePlan: RunStep<'slicing', AgentRunFailed | AgentOutputInvalid> = async ({
+  state,
+  ports,
+}) => {
   const plan = state.docs.plan;
   let correction: string | undefined;
   const sliced = await ports.retryResult(() => slicePlanAttempt(plan, ports, correction), {
@@ -99,5 +111,5 @@ function requireUniqueIds(slices: PlannedSlice[]): Result<void, AgentOutputInval
   );
 }
 
-export const applyDesignGate: RunStep = async ({ settings }) =>
+export const applyDesignGate: RunStep<RunPhase, never> = async ({ settings }) =>
   Result.ok(settings.designGate === 'checkpoint' ? { type: 'pause' } : { type: 'continue' });

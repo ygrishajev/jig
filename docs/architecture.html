@@ -134,8 +134,8 @@ svg text{font-family:var(--sans)}
   <table>
     <thead><tr><th>Module</th><th>Owns</th><th>Imports other owners</th></tr></thead>
     <tbody>
-      <tr><td>domain</td><td>State, outcomes, errors and pure rules</td><td>None</td></tr>
-      <tr><td>ports</td><td>External capability contracts</td><td>domain</td></tr>
+      <tr><td>domain</td><td>State, outcomes, business failures and pure rules</td><td>None</td></tr>
+      <tr><td>ports</td><td>External capability contracts and portable failures</td><td>domain</td></tr>
       <tr><td>config</td><td>Configuration and environment schemas and defaults, run settings, provider policy, presets and scratch naming</td><td>domain</td></tr>
       <tr><td>observers</td><td>Events, metrics, logging and tracing observers</td><td>domain, ports</td></tr>
       <tr><td>adapters</td><td>Git, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, observers, ports</td></tr>
@@ -179,21 +179,29 @@ svg text{font-family:var(--sans)}
     <code>retryResult</code> through <code>EngineDependencies</code>, and the sandbox start retries through
     the same registration. The executable hands <code>exceptionDetails</code> to <code>buildCli</code> and the
     GitHub command. Adapters, the GitHub API and orchestration-store boundaries and app modules that wrap
-    third-party calls import the implementations directly. Domain keeps the failure classes,
+    third-party calls import the implementations directly. Domain keeps business failure classes,
     <code>isTransient</code> and <code>transientRetryPolicy</code>, whose policy matches
     <code>RetryPolicy</code> structurally without importing it.</p>
+  <p>Business failures live with domain rules. Capability failures live in ports, including leaf
+    <code>git-failures.ts</code> and <code>run-state-failures.ts</code>; configuration validation stays in
+    config, custom store setup in app, and command input in CLI. There is no global registry.
+    <code>StepFailure</code> derives errors from named agent/workspace contracts and business conditions;
+    concrete steps narrow it. Engine methods add persistence failures only where needed and return
+    only fatal step errors after retry/block classification. Split historical <code>ConfigInvalid</code>
+    meanings preserve their tag, message and fatal classification. The
+    <a href="workflow-ownership.md#failure-ownership-and-preservation">preservation table</a> records owners and behavior.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
     of these owners. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
     including erased type imports and nested paths. A separate graph after type erasure rejects
     runtime file cycles; intra-module type cycles and mixed cycles broken by erasure pass.</p>
   <ul>
-    <li>Domain imports no other source owner; ports import only domain or ports.</li>
+    <li>Domain imports no other source owner; ports import only domain or ports. Both reject infrastructure packages and I/O built-ins; existing pure domain dependencies remain supported.</li>
     <li>Production config imports only <code>src/config</code>, <code>src/domain</code>,
       <code>better-result</code> and <code>zod</code>: no adapter, port, Node built-in such as
       <code>node:fs</code>, <code>node:path</code> or <code>node:child_process</code>, or other package
       such as <code>execa</code>. Config specs are exempt; adapters may import config.</li>
-    <li>Adapters cannot import flow; flow cannot import app or steps.</li>
+    <li>Adapters cannot import flow; flow imports only domain and ports across owners. Steps and observers use capability contracts rather than importing adapters, CLI, app or config.</li>
     <li>Flow, steps, CLI and observers cannot import <code>src/adapters/retry.ts</code> or
       <code>src/adapters/exception-details.ts</code>; they receive them through their ports.</li>
     <li>Sources outside <code>integrations/github/</code> cannot import that integration.
@@ -351,19 +359,20 @@ svg text{font-family:var(--sans)}
   var cFLoop = flowCv("el", "Engine loop", "src/flow/engine.ts. The whole run is data in src/app/run-flow.ts; this loop drives it.", [
     ["Start from the saved phase", "a blocked reason is cleared; a halt moves on to its resumeAt.", "domain"],
     ["Look up the phase's node", "a step, the slice loop, a halt or a final.", "domain"],
-    ["Run the step", "it gets state, ports and settings; returns Result<Outcome, JigError> without mutating state.", "step"],
+    ["Run the step", "it gets state, ports and settings; returns Result<Outcome, StepFailure> without mutating state.", "step"],
     ["applyOutcome", "a pure reducer folds the outcome's data into the state.", "domain"],
     ["Pick the next phase", "the node's transition for the outcome; guards take the first that holds.", "domain"],
     ["Save", "RunStore.save after every transition — the checkpoint.", "infra"],
     ["Publish events", "stepStarted, stepFinished, phaseChanged and the rest, to the observers.", "infra"],
     ["Stop", "at a final (done, completed, stuck) or a halt (paused, awaitingMerge).", "step"]
   ], { h: 60, gap: 14 });
-  var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values (src/domain/errors.ts); the engine decides what happens next.", [
-    ["A step returns a JigError", "its kind decides: retry, block or fatal.", "fail"],
-    ["retry — AgentRunFailed, AgentOutputInvalid", "also RemoteUnavailable, SandboxUnavailable, SetupCommandFailed.", "domain"],
+  var cFFail = flowCv("ef", "Failure policy", "Steps return business and capability errors as values (src/flow/define-flow.ts); the engine decides what happens next.", [
+    ["A step returns its declared failure", "its kind decides: retry, block or fatal.", "fail"],
+    ["retry — AgentRunFailed, AgentOutputInvalid", "also RemoteUnavailable and SandboxUnavailable; setup-command retries belong to session opening.", "domain"],
     ["Tried again", "the supplied retryResult (src/adapters/retry.ts) under transientRetryPolicy: up to maxStepRetries (2) with backoff; a stepRetried event each time.", "infra"],
-    ["block — MergeFailed, RunStateConflict, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
-    ["fatal — ConfigInvalid, RunRequestInvalid, RunInProgress", "also MetricsLogCorrupt; return an Err and print its message.", "fail"],
+    ["block — DesignUnresolved, MergeFailed, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
+    ["fatal step failure — LocalStateUnwritable", "Return an Err; configuration, request, lock and metrics failures belong to their calling operations.", "fail"],
+    ["Persistence failure", "Return it unchanged outside step retries, including RunStateConflict and RemoteUnavailable.", "infra"],
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]
   ]);
   var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/app/run-flow.ts; slices run in order.", [

@@ -1,19 +1,21 @@
 import { Result } from 'better-result';
 import { lstatSync } from 'node:fs';
 
-import { ConfigInvalid } from '../domain/errors.js';
+import { FilesystemPreparationFailed } from '../ports/filesystem.js';
 import { messageOf } from './exception-details.js';
 
-export function refuseSymlinks(paths: string[]): Result<void, ConfigInvalid> {
+export function refuseSymlinks(paths: string[]): Result<void, FilesystemPreparationFailed> {
   const link = Result.try({
     try: () => findSymlink(paths),
     catch: (cause) =>
-      new ConfigInvalid({ message: `Cannot check ${paths.join(', ')}: ${messageOf(cause)}` }),
+      new FilesystemPreparationFailed({
+        message: `Cannot check ${paths.join(', ')}: ${messageOf(cause)}`,
+      }),
   });
   if (link.isErr()) return Result.err(link.error);
   return link.value
     ? Result.err(
-        new ConfigInvalid({
+        new FilesystemPreparationFailed({
           message: `Refusing to write through the symbolic link ${link.value}.`,
         }),
       )

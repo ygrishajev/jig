@@ -1,11 +1,5 @@
 import { Result } from 'better-result';
 
-import {
-  ConfigInvalid,
-  GitCommandFailed,
-  RemoteUnavailable,
-  RunStateConflict,
-} from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import {
   defersCodePublication,
@@ -13,7 +7,9 @@ import {
   type RunState,
   runStateSchema,
 } from '../../domain/run-state.js';
-import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
+import { GitCommandFailed, RemoteUnavailable } from '../../ports/git-failures.js';
+import { RunStateConflict, RunStateInvalid } from '../../ports/run-state-failures.js';
+import type { RunStore } from '../../ports/run-store.js';
 import { messageOf } from '../exception-details.js';
 import { RemoteRef } from '../git/remote-ref.js';
 import { isAncestor } from '../git/repository.js';
@@ -43,7 +39,14 @@ export class GitRemoteRunStore implements RunStore {
     this.refs = new RemoteRef(repoRoot, remote);
   }
 
-  load(runId: RunId): Promise<Result<RunState | undefined, RunStoreFailure>> {
+  load(
+    runId: RunId,
+  ): Promise<
+    Result<
+      RunState | undefined,
+      GitCommandFailed | RemoteUnavailable | RunStateConflict | RunStateInvalid
+    >
+  > {
     return Result.gen(async function* (this: GitRemoteRunStore) {
       const remoteRun = yield* Result.await(this.fetchRun(runId));
       this.seenOnRemote.set(runId, remoteRun);
@@ -136,7 +139,14 @@ export class GitRemoteRunStore implements RunStore {
   }
 
   /** Reads the remote's copy without creating or moving a ref here, not even FETCH_HEAD. */
-  peek(runId: RunId): Promise<Result<RunState | undefined, RunStoreFailure>> {
+  peek(
+    runId: RunId,
+  ): Promise<
+    Result<
+      RunState | undefined,
+      GitCommandFailed | RemoteUnavailable | RunStateConflict | RunStateInvalid
+    >
+  > {
     return Result.gen(async function* (this: GitRemoteRunStore) {
       const files = yield* Result.await(this.refs.peek(stateRef(runId)));
       if (!files) return Result.ok(undefined);
@@ -145,7 +155,9 @@ export class GitRemoteRunStore implements RunStore {
     }, this);
   }
 
-  save(state: RunState): Promise<Result<void, RunStoreFailure>> {
+  save(
+    state: RunState,
+  ): Promise<Result<void, GitCommandFailed | RemoteUnavailable | RunStateConflict>> {
     return Result.gen(async function* (this: GitRemoteRunStore) {
       const commit = yield* Result.await(
         this.refs.commitFile(
@@ -185,11 +197,11 @@ function stateRef(runId: RunId): string {
 
 const STATE_FILE = 'run.json';
 
-function parseState(shown: string, remote: string): Result<RunState, ConfigInvalid> {
+function parseState(shown: string, remote: string): Result<RunState, RunStateInvalid> {
   return Result.try({
     try: () => runStateSchema.parse(JSON.parse(shown)),
     catch: (cause) =>
-      new ConfigInvalid({
+      new RunStateInvalid({
         message: `The run's state on ${remote} is not valid: ${messageOf(cause)}`,
       }),
   });

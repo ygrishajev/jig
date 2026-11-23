@@ -3,7 +3,7 @@ import { Panic, Result } from 'better-result';
 import { describe, expect, it, vi } from 'vitest';
 
 import { exceptionDetails } from '../adapters/exception-details.js';
-import { ConfigInvalid } from '../domain/errors.js';
+import { ConfigInvalid } from '../config/errors.js';
 import type { ExceptionDetails } from '../ports/exception-details.js';
 import { type FailureOutput, withErrorHandling } from './with-error-handling.js';
 

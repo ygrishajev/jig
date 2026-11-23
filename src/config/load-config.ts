@@ -2,7 +2,6 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { type AgentRole, agentRoleSchema, byRole } from '../domain/agent-role.js';
-import { ConfigInvalid } from '../domain/errors.js';
 import type { RunSettings } from '../domain/settings.js';
 import { AGENT_NAMES, agentNameSchema, resolvedModel } from './agent-policy.js';
 import {
@@ -12,6 +11,7 @@ import {
   type ConfigUnreadable,
 } from './config-source.js';
 import { describeIssues } from './describe-issues.js';
+import { ConfigInvalid } from './errors.js';
 
 /** The settings at the source over every default; only the repository's own may be absent. */
 export function loadConfig(source: ConfigSource): Result<JigConfig, ConfigInvalid> {

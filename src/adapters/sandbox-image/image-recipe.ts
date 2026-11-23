@@ -1,7 +1,7 @@
 import { Result } from 'better-result';
 import { createHash } from 'node:crypto';
 
-import { ConfigInvalid } from '../../domain/errors.js';
+import { ImageRecipeInvalid } from '../../ports/sandbox.js';
 
 export interface AgentInstall {
   name: string;
@@ -59,12 +59,12 @@ export function agentLayerDockerfile(baseImage: string, agents: AgentInstall[]):
 export function withToolchain(
   dockerfile: string,
   toolchain: string,
-): Result<string, ConfigInvalid> {
+): Result<string, ImageRecipeInvalid> {
   const start = dockerfile.indexOf(TOOLCHAIN_START);
   const end = dockerfile.indexOf(TOOLCHAIN_END);
   if (start === -1 || end === -1 || end < start) {
     return Result.err(
-      new ConfigInvalid({
+      new ImageRecipeInvalid({
         message: `The Dockerfile has no "${TOOLCHAIN_START}" section to fill in.`,
       }),
     );

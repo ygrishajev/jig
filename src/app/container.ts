@@ -21,12 +21,9 @@ import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-vers
 import type { MissingCredential } from '../adapters/sandcastle/agents.js';
 import {
   openSandcastleSession,
+  type OpenSessionFailure,
   type OpenSessionInput,
 } from '../adapters/sandcastle/open-session.js';
-import type {
-  SessionCloseFailure,
-  SessionOpenFailure,
-} from '../adapters/sandcastle/sandcastle-session.js';
 import { askForAgents } from '../adapters/terminal/ask-for-agents.js';
 import {
   askForCredential,
@@ -51,6 +48,7 @@ import type { ExceptionDetails } from '../ports/exception-details.js';
 import type { Clock } from '../ports/observability.js';
 import type { RetryResult } from '../ports/retry.js';
 import type { RunStore } from '../ports/run-store.js';
+import type { SessionCloseFailure } from '../ports/sandbox.js';
 import type { SandboxGit } from '../ports/sandbox-git.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
@@ -78,7 +76,7 @@ export interface AppCradle {
   artefacts: RunArtefacts;
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
-  openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SessionOpenFailure>>;
+  openSession: (input: OpenSessionInput) => Promise<Result<RunSession, OpenSessionFailure>>;
   askForAgents: (
     roles: AgentRole[],
   ) => Promise<Partial<Record<AgentRole, AgentChoice>> | undefined>;
@@ -175,7 +173,7 @@ export async function withRunScope<T, E>(
   runStore: RunStore,
   options: { tracer?: Tracer },
   use: (dependencies: EngineDependencies) => Promise<Result<T, E>>,
-): Promise<Result<T, SessionOpenFailure | SessionCloseFailure | E>> {
+): Promise<Result<T, OpenSessionFailure | SessionCloseFailure | E>> {
   const scope = await openRunScope(app, { runId, baseBranch }, runStore, options);
   if (scope.isErr()) return Result.err(scope.error);
   let used: Result<T, E>;
@@ -193,7 +191,7 @@ async function openRunScope(
   run: RunIdentity,
   runStore: RunStore,
   options: { tracer?: Tracer },
-): Promise<Result<AwilixContainer<RunCradle>, SessionOpenFailure>> {
+): Promise<Result<AwilixContainer<RunCradle>, OpenSessionFailure>> {
   const { repoRoot } = app.cradle;
   const scope = app.createScope<RunCradle>();
   scope.register({
@@ -265,8 +263,8 @@ function openSessionRetrying({
   settings,
   runLogger,
   retryResult,
-}: RunCradle): Promise<Result<RunSession, SessionOpenFailure>> {
-  return retryResult<RunSession, SessionOpenFailure>(() => openSession({ run, events }), {
+}: RunCradle): Promise<Result<RunSession, OpenSessionFailure>> {
+  return retryResult<RunSession, OpenSessionFailure>(() => openSession({ run, events }), {
     ...transientRetryPolicy(settings),
     onFailedAttempt: ({ error, attempt }) =>
       runLogger.warn({ err: error, attempt }, 'the sandbox did not start'),

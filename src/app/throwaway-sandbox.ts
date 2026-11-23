@@ -4,14 +4,12 @@ import { randomBytes } from 'node:crypto';
 
 import { getCurrentBranch } from '../adapters/git/branch.js';
 import { discardBranch, discardBranchOnExit } from '../adapters/git/throwaway-branch.js';
-import type {
-  SessionCloseFailure,
-  SessionOpenFailure,
-} from '../adapters/sandcastle/sandcastle-session.js';
-import type { GitCommandFailed } from '../domain/errors.js';
+import type { OpenSessionFailure } from '../adapters/sandcastle/open-session.js';
 import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import { LoggingObserver } from '../observers/logging-observer.js';
+import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
+import type { SessionCloseFailure } from '../ports/sandbox.js';
 import type { AppCradle, RunSession } from './container.js';
 import { observedEvents } from './observed-events.js';
 import { reportCleanup } from './report-cleanup.js';
@@ -25,7 +23,9 @@ export async function withThrowawaySandbox<T, E>(
   app: AwilixContainer<AppCradle>,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<Result<T, E>>,
-): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
+): Promise<
+  Result<T, E | OpenSessionFailure | SessionCloseFailure | GitCommandFailed | RepositoryInvalid>
+> {
   const { repoRoot } = app.cradle;
   const baseBranch = await getCurrentBranch(repoRoot);
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
@@ -43,7 +43,7 @@ async function useThrowawaySandbox<T, E>(
   run: RunIdentity,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<Result<T, E>>,
-): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
+): Promise<Result<T, E | OpenSessionFailure | SessionCloseFailure | GitCommandFailed>> {
   const { repoRoot, logger, openSession } = app.cradle;
   const events = observedEvents(logger, [new LoggingObserver(logger)]);
   const session = await openSession({ run, events, setupCommand });

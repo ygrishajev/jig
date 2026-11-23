@@ -7,22 +7,48 @@ import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stepCredentials } from '../adapters/sandcastle/open-session.js';
 import { startTelemetry } from '../adapters/telemetry/open-telemetry.js';
+import type { ConfigInvalid } from '../config/errors.js';
 import { validationWarnings } from '../config/load-config.js';
-import {
-  type JigError,
-  type LocalStateUnwritable,
-  type MetricsLogCorrupt,
-  RunRequestInvalid,
-} from '../domain/errors.js';
 import { newRunId, type RunId } from '../domain/run-id.js';
 import { type CodePublication, type RunState, startRun } from '../domain/run-state.js';
 import { finalStatus } from '../flow/define-flow.js';
-import { type EngineResult, runEngine } from '../flow/engine.js';
-import type { RunStore, RunStoreFailure } from '../ports/run-store.js';
+import { type EngineFailure, type EngineResult, runEngine } from '../flow/engine.js';
+import type { CredentialsInvalid } from '../ports/credentials.js';
+import { type LocalStateUnwritable } from '../ports/filesystem.js';
+import type { RepositoryInvalid } from '../ports/git-failures.js';
+import { type MetricsLogCorrupt } from '../ports/metrics.js';
+import type { RunInProgress } from '../ports/run-state-failures.js';
+import type { RunStore, RunStoreLoadFailure, RunStoreSaveFailure } from '../ports/run-store.js';
+import type {
+  ImageBuildFailed,
+  ImageRecipeInvalid,
+  SessionCloseFailure,
+  SessionOpenFailure,
+} from '../ports/sandbox.js';
 import { type AppCradle, withRunScope } from './container.js';
 import { runFlow } from './run-flow.js';
+import { RunRequestInvalid } from './run-request-invalid.js';
+import type { RunStoreSetupInvalid } from './run-store-setup-invalid.js';
 import { openRunStore } from './run-stores.js';
 import { ensureSandboxImage } from './sandbox-image.js';
+
+export type RunJigFailure =
+  | AdvanceFailure
+  | RunStoreLoadFailure
+  | RunStoreSetupInvalid
+  | RunRequestInvalid
+  | RunInProgress
+  | MetricsLogCorrupt
+  | LocalStateUnwritable
+  | RepositoryInvalid;
+export type AdvanceFailure =
+  | ConfigInvalid
+  | CredentialsInvalid
+  | ImageRecipeInvalid
+  | ImageBuildFailed
+  | SessionOpenFailure
+  | SessionCloseFailure
+  | EngineFailure;
 
 /**
  * Start a run from a request — named `runId`, or a fresh id — or resume the run `resume`.
@@ -59,7 +85,7 @@ type RunTarget = {
 export async function runJig(
   app: AwilixContainer<AppCradle>,
   input: RunJigInput,
-): Promise<Result<RunReport, JigError>> {
+): Promise<Result<RunReport, RunJigFailure>> {
   const target = targetOf(input);
   const releaseLock = await lockRun(app.cradle.repoRoot, target.runId);
   if (releaseLock.isErr()) return Result.err(releaseLock.error);
@@ -85,7 +111,7 @@ function targetOf(input: RunJigInput): RunTarget {
 function runLocked(
   app: AwilixContainer<AppCradle>,
   target: RunTarget,
-): Promise<Result<RunReport, JigError>> {
+): Promise<Result<RunReport, Exclude<RunJigFailure, RunInProgress>>> {
   return Result.gen(async function* () {
     const store = yield* Result.await(openRunStore(app.cradle, target.requiredStores));
     const state = yield* Result.await(startOrResume(app.cradle, store, target));
@@ -103,7 +129,7 @@ async function startOrResume(
   cradle: AppCradle,
   store: RunStore,
   { runId, request, merge, codePublication }: RunTarget,
-): Promise<Result<RunState, RunStoreFailure | RunRequestInvalid>> {
+): Promise<Result<RunState, RunStoreLoadFailure | RepositoryInvalid | RunRequestInvalid>> {
   const existing = await store.load(runId);
   if (existing.isErr()) return Result.err(existing.error);
   if (request === undefined) {
@@ -127,7 +153,7 @@ async function startNewRun(
   cradle: AppCradle,
   store: RunStore,
   input: Omit<RunTarget, 'requiredStores'> & { request: string },
-): Promise<Result<RunState, RunStoreFailure>> {
+): Promise<Result<RunState, RunStoreSaveFailure | RepositoryInvalid>> {
   const baseBranch = await getCurrentBranch(cradle.repoRoot);
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
   const startingCommit = await exactHead(cradle.repoRoot, 'HEAD');
@@ -153,7 +179,7 @@ async function advance(
   app: AwilixContainer<AppCradle>,
   store: RunStore,
   state: RunState,
-): Promise<Result<EngineResult, JigError>> {
+): Promise<Result<EngineResult, AdvanceFailure>> {
   const credentials = stepCredentials(app.cradle.config, app.cradle.environment);
   if (credentials.isErr()) return Result.err(credentials.error);
   const image = await ensureSandboxImage(app.cradle);

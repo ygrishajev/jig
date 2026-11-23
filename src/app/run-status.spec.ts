@@ -17,12 +17,14 @@ import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { parseEnvironment } from '../config/environment.js';
-import { RunRequestInvalid } from '../domain/errors.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
+import { RunStateInvalid, RunStoreFailed } from '../ports/run-state-failures.js';
 import { createAppContainer } from './container.js';
+import { RunRequestInvalid } from './run-request-invalid.js';
 import { readRunStatus } from './run-status.js';
 
 describe('readRunStatus', () => {
@@ -83,6 +85,36 @@ describe('readRunStatus', () => {
     const result = await statusIn(await cloneOf(), ['local', 'git-remote'], runId());
 
     expect(result.isErr() && result.error).toBeInstanceOf(RunRequestInvalid);
+  });
+
+  it('reports malformed saved state as a fatal storage failure', async () => {
+    const { cloneOf, statusIn } = await setup();
+    const repoRoot = await cloneOf();
+    const state = aRunState();
+    unwrap(await new LocalRunStore(repoRoot).save(state));
+    const file = path.join(stateDirectory(repoRoot, state.runId), 'run.json');
+    await writeFile(file, '{');
+    const result = await statusIn(repoRoot, ['local'], state.runId);
+    expect(result.isErr() && result.error).toBeInstanceOf(RunStateInvalid);
+    expect(result.isErr() && result.error).toMatchObject({ _tag: 'ConfigInvalid', kind: 'fatal' });
+    expect(result.isErr() && result.error.message).toContain(file);
+  });
+
+  it('reports custom store peek failures without treating them as missing runs', async () => {
+    const { cloneOf, statusIn } = await setup();
+    const repoRoot = await cloneOf();
+    const cause = faker.lorem.sentence();
+    await writeFile(
+      path.join(repoRoot, 'failing-store.mjs'),
+      `export default () => ({
+      load: async () => undefined,
+      peek: async () => { throw new Error(${JSON.stringify(cause)}); },
+      save: async () => {},
+    });`,
+    );
+    const result = await statusIn(repoRoot, ['failing-store.mjs'], runId());
+    expect(result.isErr() && result.error).toBeInstanceOf(RunStoreFailed);
+    expect(result.isErr() && result.error.message).toContain(cause);
   });
 
   async function setup() {

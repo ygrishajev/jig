@@ -119,6 +119,58 @@ describe('dependency checking command', () => {
     expect(result.all).toContain('src/config/nested/a.ts');
   });
 
+  it.each([
+    ['domain/nested', 'ports', 'domain-is-independent'],
+    ['ports/nested', 'config', 'ports-depend-only-on-domain'],
+    ['ports/nested', 'app', 'ports-depend-only-on-domain'],
+    ['ports/nested', 'adapters', 'ports-depend-only-on-domain'],
+    ['flow/nested', 'cli', 'flow-imports-only-contracts-and-domain'],
+    ['flow/nested', 'config', 'flow-imports-only-contracts-and-domain'],
+    ['steps/nested', 'adapters', 'steps-and-observers-use-capability-contracts'],
+    ['observers/nested', 'adapters', 'steps-and-observers-use-capability-contracts'],
+  ])('rejects erased outward dependencies from %s to %s', async (from, to, rule) => {
+    const specifier = path.posix.relative(from, `${to}/b.js`);
+    const { run } = await setup({
+      [`${from}/a.ts`]: `export type { B } from '${specifier}';`,
+      [`${to}/b.ts`]: 'export type B = string;',
+    });
+    const result = await run();
+    expect(result.exitCode).toBe(1);
+    expect(result.all).toContain(rule);
+  });
+
+  it.each(['domain', 'ports'])(
+    'rejects infrastructure packages and built-ins in %s',
+    async (owner) => {
+      const { run } = await setup({
+        [`${owner}/nested/a.ts`]:
+          "import type { execa } from 'execa'; export type A = typeof execa;",
+        [`${owner}/b.ts`]: "export const read = () => import('node:fs/promises');",
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      expect(result.all).toContain(
+        owner === 'domain'
+          ? 'domain-has-no-infrastructure-dependencies'
+          : 'ports-have-only-contract-dependencies',
+      );
+    },
+  );
+
+  it('accepts portable failure contracts and self-contained business failures', async () => {
+    const { run } = await setup({
+      'domain/business.ts':
+        "import { TaggedError } from 'better-result'; export class B extends TaggedError('B')<{ message: string }> {}",
+      'ports/failures.ts':
+        "import { TaggedError } from 'better-result'; export class F extends TaggedError('F')<{ message: string }> {}",
+      'ports/nested/store.ts':
+        "import type { F } from '../failures.js'; import type { B } from '../../domain/business.js'; export type StoreFailure = F | B;",
+      'flow/a.ts':
+        "import type { StoreFailure } from '../ports/nested/store.js'; export type Failure = StoreFailure;",
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
   it('accepts production config importing config, domain and the approved packages', async () => {
     const { run } = await setup({
       'config/nested/a.ts': [

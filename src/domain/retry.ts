@@ -1,4 +1,4 @@
-import { isTransient, type JigError } from './errors.js';
+import { type FailureKind, isTransient } from './failure-policy.js';
 import type { RunSettings } from './settings.js';
 
 /**
@@ -8,7 +8,7 @@ import type { RunSettings } from './settings.js';
 export interface TransientRetryPolicy {
   retries: number;
   delayMs: number;
-  shouldRetry(error: JigError): boolean;
+  shouldRetry(error: { readonly kind: FailureKind }): boolean;
 }
 
 export function transientRetryPolicy(settings: RunSettings): TransientRetryPolicy {

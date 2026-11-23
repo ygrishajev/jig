@@ -25,24 +25,22 @@ import {
   PresetUnreadable,
 } from '../../src/config/preset-source.js';
 import type { PresetName } from '../../src/config/presets.js';
-import {
-  AgentOutputInvalid,
-  type AgentRunFailed,
-  type GitCommandFailed,
-  SandboxUnavailable,
-} from '../../src/domain/errors.js';
 import type { RunEvent } from '../../src/domain/events.js';
 import type { RunId } from '../../src/domain/run-id.js';
 import type { RunState } from '../../src/domain/run-state.js';
 import type { TokenUsage } from '../../src/domain/usage.js';
-import type {
-  AgentRole,
-  AgentRunInput,
-  AgentSession,
-  ExecResult,
+import {
+  AgentOutputInvalid,
+  type AgentRole,
+  type AgentRunFailed,
+  type AgentRunInput,
+  type AgentSession,
+  type ExecResult,
 } from '../../src/ports/agent-session.js';
+import type { GitCommandFailed } from '../../src/ports/git-failures.js';
 import type { Clock, EventSink } from '../../src/ports/observability.js';
 import type { RunStore } from '../../src/ports/run-store.js';
+import { SandboxUnavailable } from '../../src/ports/sandbox.js';
 import { aPresetLabel, tokenUsage } from './builders.js';
 
 /**

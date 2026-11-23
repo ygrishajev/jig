@@ -14,10 +14,11 @@ import {
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { createRunWorktree } from '../../tests/support/run-worktree.js';
 import { retryResult } from '../adapters/retry.js';
-import { AgentRunFailed, MergeFailed } from '../domain/errors.js';
 import type { RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { RunStep } from '../flow/define-flow.js';
+import { AgentRunFailed } from '../ports/agent-session.js';
+import { MergeFailed } from '../ports/workspace.js';
 import { describePullRequest, mergeRunBranch } from './finishing.js';
 
 describe('finishing steps', () => {

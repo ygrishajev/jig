@@ -17,8 +17,9 @@ import {
   SANDBOX_DIRECTORY,
 } from '../adapters/sandbox-image/image-recipe.js';
 import { AGENTS } from '../adapters/sandcastle/agents.js';
+import type { ConfigInvalid } from '../config/errors.js';
 import { configuredSteps, type JigConfig, type StepConfig } from '../config/load-config.js';
-import { ConfigInvalid, type ImageBuildFailed } from '../domain/errors.js';
+import { type ImageBuildFailed, ImageRecipeInvalid } from '../ports/sandbox.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 
 export interface EnsureImageDependencies {
@@ -60,7 +61,7 @@ export interface ImageBuildPlan {
 export async function ensureSandboxImage(
   d: EnsureImageDependencies,
   options: { pullAgents?: boolean } = {},
-): Promise<Result<string, ConfigInvalid | ImageBuildFailed>> {
+): Promise<Result<string, ConfigInvalid | ImageRecipeInvalid | ImageBuildFailed>> {
   const image = sandboxImageName(d.repoRoot, d.config);
   if (d.config.sandboxImage) return Result.ok(image);
 
@@ -87,7 +88,7 @@ export function sandboxImageName(repoRoot: string, config: JigConfig): string {
 }
 
 /** The image is built for the host user, so files the agent writes in the worktree stay the operator's. */
-async function readRecipe(repoRoot: string): Promise<Result<ImageRecipe, ConfigInvalid>> {
+async function readRecipe(repoRoot: string): Promise<Result<ImageRecipe, ImageRecipeInvalid>> {
   const dockerfile = await readSandboxDockerfile(repoRoot);
   if (dockerfile.isErr()) return Result.err(dockerfile.error);
   const uid = process.getuid?.() ?? 1000;
@@ -100,18 +101,20 @@ async function readRecipe(repoRoot: string): Promise<Result<ImageRecipe, ConfigI
 
 export async function readSandboxDockerfile(
   repoRoot: string,
-): Promise<Result<string, ConfigInvalid>> {
+): Promise<Result<string, ImageRecipeInvalid>> {
   const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
   const shown = path.join(SANDBOX_DIRECTORY, DOCKERFILE);
   if (!existsSync(file)) {
     return Result.err(
-      new ConfigInvalid({ message: `No sandbox Dockerfile at ${shown} — run jig init first.` }),
+      new ImageRecipeInvalid({
+        message: `No sandbox Dockerfile at ${shown} — run jig init first.`,
+      }),
     );
   }
   return Result.tryPromise({
     try: () => readFile(file, 'utf-8'),
     catch: (cause) =>
-      new ConfigInvalid({
+      new ImageRecipeInvalid({
         message: `Could not read the sandbox Dockerfile at ${shown}: ${messageOf(cause)}`,
       }),
   });

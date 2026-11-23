@@ -1,7 +1,7 @@
 import { Result } from 'better-result';
 import { execa } from 'execa';
 
-import { GitCommandFailed } from '../../domain/errors.js';
+import { GitCommandFailed } from '../../ports/git-failures.js';
 import { messageOf } from '../exception-details.js';
 
 /** The commit `ref` names exactly, or `undefined` when there is no such ref or commit here. */

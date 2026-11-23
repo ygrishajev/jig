@@ -4,9 +4,10 @@ import { performance } from 'node:perf_hooks';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runSettings } from '../../tests/support/builders.js';
-import { AgentRunFailed, type JigError, MergeFailed } from '../domain/errors.js';
 import { transientRetryPolicy } from '../domain/retry.js';
+import { AgentRunFailed } from '../ports/agent-session.js';
 import type { RetryPolicy } from '../ports/retry.js';
+import { MergeFailed } from '../ports/workspace.js';
 import { retryResult } from './retry.js';
 
 describe('retryResult', () => {
@@ -137,7 +138,9 @@ describe('retryResult', () => {
   it('applies the transient policy until the settings budget runs out', async () => {
     const maxStepRetries = faker.number.int({ min: 1, max: 3 });
     const failure = new AgentRunFailed({ message: faker.lorem.sentence() });
-    const operation = vi.fn(async (): Promise<Result<string, JigError>> => Result.err(failure));
+    const operation = vi.fn(async (): Promise<Result<string, typeof failure>> =>
+      Result.err(failure),
+    );
 
     const result = await retryResult(
       operation,
@@ -150,7 +153,9 @@ describe('retryResult', () => {
 
   it('returns a failure the transient policy refuses after one attempt', async () => {
     const failure = new MergeFailed({ message: faker.lorem.sentence() });
-    const operation = vi.fn(async (): Promise<Result<string, JigError>> => Result.err(failure));
+    const operation = vi.fn(async (): Promise<Result<string, typeof failure>> =>
+      Result.err(failure),
+    );
 
     const result = await retryResult(
       operation,

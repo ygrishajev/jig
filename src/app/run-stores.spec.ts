@@ -11,8 +11,9 @@ import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
-import { ConfigInvalid } from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
+import { RunStateInvalid, RunStoreFailed } from '../ports/run-state-failures.js';
+import { RunStoreSetupInvalid } from './run-store-setup-invalid.js';
 import { openRunStore } from './run-stores.js';
 
 describe('openRunStore', () => {
@@ -150,7 +151,7 @@ describe('openRunStore', () => {
 
     const loaded = await store.load(aRunState().runId);
 
-    expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(RunStateInvalid);
   });
 
   it("reports a store module that throws as the operator's config", async () => {
@@ -170,7 +171,7 @@ describe('openRunStore', () => {
 
     const loaded = await store.load(aRunState().runId);
 
-    expect(loaded.isErr() && loaded.error).toBeInstanceOf(ConfigInvalid);
+    expect(loaded.isErr() && loaded.error).toBeInstanceOf(RunStoreFailed);
     expect(loaded.isErr() && loaded.error.message).toContain('throwing-store.mjs');
   });
 
@@ -187,7 +188,7 @@ describe('openRunStore', () => {
 
     const opened = await openRunStore({ repoRoot, config });
 
-    expect(opened.isErr() && opened.error).toBeInstanceOf(ConfigInvalid);
+    expect(opened.isErr() && opened.error).toBeInstanceOf(RunStoreSetupInvalid);
   });
 
   it('refuses a module that does not export a store factory', async () => {
@@ -200,7 +201,7 @@ describe('openRunStore', () => {
 
     const opened = await openRunStore({ repoRoot, config });
 
-    expect(opened.isErr() && opened.error).toBeInstanceOf(ConfigInvalid);
+    expect(opened.isErr() && opened.error).toBeInstanceOf(RunStoreSetupInvalid);
   });
 
   it('resumes an interrupted deferred run from the code checkpoint this clone kept', async () => {
@@ -249,6 +250,55 @@ describe('openRunStore', () => {
     expect(resumed?.codeRevision).toBe(checkpoint);
     expect(await simpleGit(elsewhere).revparse([branch])).toBe(checkpoint);
   });
+
+  it.each(['load', 'peek', 'save'] as const)(
+    'reports a custom store %s failure through its operational contract',
+    async (operation) => {
+      const { repoRoot, config, state } = await setup();
+      const cause = faker.lorem.sentence();
+      const module = 'failed-operation.mjs';
+      await writeFile(
+        path.join(repoRoot, module),
+        `export default () => ({
+        load: async () => { throw new Error(${JSON.stringify(cause)}); },
+        peek: async () => { throw new Error(${JSON.stringify(cause)}); },
+        save: async () => { throw new Error(${JSON.stringify(cause)}); },
+      });`,
+      );
+      const store = unwrap(
+        await openRunStore({ repoRoot, config: { ...config, runStores: [module] } }),
+      );
+      const result =
+        operation === 'save' ? await store.save(state) : await store[operation](state.runId);
+      expect(result.isErr() && result.error).toBeInstanceOf(RunStoreFailed);
+      expect(result.isErr() && result.error).toMatchObject({
+        _tag: 'ConfigInvalid',
+        kind: 'fatal',
+        message: `Run store "${module}" failed: ${cause}`,
+      });
+    },
+  );
+
+  it.each(['import', 'factory'] as const)(
+    'reports a custom store %s failure during setup',
+    async (stage) => {
+      const { repoRoot, config } = await setup();
+      const cause = faker.lorem.sentence();
+      const source =
+        stage === 'import'
+          ? `throw new Error(${JSON.stringify(cause)});`
+          : `export default () => { throw new Error(${JSON.stringify(cause)}); };`;
+      const module = 'failed-setup.mjs';
+      await writeFile(path.join(repoRoot, module), source);
+      const result = await openRunStore({ repoRoot, config: { ...config, runStores: [module] } });
+      expect(result.isErr() && result.error).toBeInstanceOf(RunStoreSetupInvalid);
+      expect(result.isErr() && result.error).toMatchObject({
+        _tag: 'ConfigInvalid',
+        kind: 'fatal',
+        message: `Run store "${module}" failed: ${cause}`,
+      });
+    },
+  );
 
   async function commitOn(repo: string, branch: string) {
     const git = simpleGit(repo);

@@ -25,7 +25,10 @@ if (entries.isErr()) {
         !new RegExp(testFilePattern).test(entry.name),
     )
     .map((entry) => `${entry.parentPath}/${entry.name}`);
-  const architecture = await inspect(files, configuration);
+  const architecture = await inspect(files, {
+    ...configuration,
+    options: { ...configuration.options, tsPreCompilationDeps: 'specify' },
+  });
   const runtime = await inspect(files, {
     ...configuration,
     forbidden: [

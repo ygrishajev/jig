@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { ConfigInvalid } from '../../domain/errors.js';
+import { CredentialsInvalid } from '../../ports/credentials.js';
+import { FilesystemPreparationFailed } from '../../ports/filesystem.js';
 import { CREDENTIALS_FILE, readCredentialsFile, saveCredential } from './credentials-file.js';
 
 describe('credentials file', () => {
@@ -32,7 +33,7 @@ describe('credentials file', () => {
 
     const read = readCredentialsFile(repoRoot);
 
-    expect(read.isErr() && read.error).toBeInstanceOf(ConfigInvalid);
+    expect(read.isErr() && read.error).toBeInstanceOf(CredentialsInvalid);
     expect(read.isErr() && read.error.message).toContain(CREDENTIALS_FILE);
   });
 
@@ -69,7 +70,7 @@ describe('credentials file', () => {
 
     const saved = await saveCredential(repoRoot, 'KEY', faker.string.alphanumeric(20));
 
-    expect(saved.isErr() && saved.error).toBeInstanceOf(ConfigInvalid);
+    expect(saved.isErr() && saved.error).toBeInstanceOf(CredentialsInvalid);
     expect((await status()).isClean()).toBe(true);
   });
 
@@ -83,8 +84,8 @@ describe('credentials file', () => {
     const read = readCredentialsFile(repoRoot);
     const saved = await saveCredential(repoRoot, 'KEY', faker.string.alphanumeric(20));
 
-    expect(read.isErr() && read.error).toBeInstanceOf(ConfigInvalid);
-    expect(saved.isErr() && saved.error).toBeInstanceOf(ConfigInvalid);
+    expect(read.isErr() && read.error).toBeInstanceOf(FilesystemPreparationFailed);
+    expect(saved.isErr() && saved.error).toBeInstanceOf(FilesystemPreparationFailed);
   });
 
   async function setup() {

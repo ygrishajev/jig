@@ -2,8 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { aPlannedSlice, implementingPlanSteps } from '../../tests/support/builders.js';
-import { PlanNotCovered } from './errors.js';
-import { checkPlanCoverage } from './plan-coverage.js';
+import { checkPlanCoverage, PlanNotCovered } from './plan-coverage.js';
 
 describe('checkPlanCoverage', () => {
   it('accepts slices whose references together cover every plan step', () => {

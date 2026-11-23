@@ -16,12 +16,9 @@ import {
   withToolchain,
 } from '../adapters/sandbox-image/image-recipe.js';
 import { collectCredentials, missingCredentials } from '../adapters/sandcastle/agents.js';
-import {
-  ignoreSandcastleDirectory,
-  type SessionCloseFailure,
-  type SessionOpenFailure,
-} from '../adapters/sandcastle/sandcastle-session.js';
+import { ignoreSandcastleDirectory } from '../adapters/sandcastle/sandcastle-session.js';
 import { withCredentials } from '../config/environment.js';
+import { ConfigInvalid } from '../config/errors.js';
 import {
   configuredSteps,
   type JigConfig,
@@ -30,15 +27,17 @@ import {
   stepsWithoutAgent,
 } from '../config/load-config.js';
 import { updateConfig } from '../config/update-config.js';
+import { type AgentOutputInvalid, type AgentRunFailed } from '../ports/agent-session.js';
+import type { CredentialsInvalid } from '../ports/credentials.js';
+import { FilesystemPreparationFailed, type LocalStateUnwritable } from '../ports/filesystem.js';
+import { type GitCommandFailed, type RepositoryInvalid } from '../ports/git-failures.js';
 import {
-  type AgentOutputInvalid,
-  type AgentRunFailed,
-  ConfigInvalid,
-  type GitCommandFailed,
   type ImageBuildFailed,
-  type LocalStateUnwritable,
+  type ImageRecipeInvalid,
+  type SessionCloseFailure,
+  type SessionOpenFailure,
   SetupCommandFailed,
-} from '../domain/errors.js';
+} from '../ports/sandbox.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
 import { type AppCradle, type RunSession } from './container.js';
 import { ensureSandboxImage, readSandboxDockerfile } from './sandbox-image.js';
@@ -55,7 +54,15 @@ export type InitFailure =
 
 /** Why a throwaway sandbox gave no answer: the image, Docker, git, or the sandbox's own cleanup. */
 export type SandboxCheckFailure =
-  ConfigInvalid | ImageBuildFailed | SessionOpenFailure | SessionCloseFailure | GitCommandFailed;
+  | ConfigInvalid
+  | ImageRecipeInvalid
+  | FilesystemPreparationFailed
+  | CredentialsInvalid
+  | ImageBuildFailed
+  | SessionOpenFailure
+  | SessionCloseFailure
+  | GitCommandFailed
+  | RepositoryInvalid;
 
 /**
  * Writes the sandbox Dockerfile and a starter config if the repository has none, and asks which
@@ -112,7 +119,7 @@ export function initSandbox(
 async function writeStarterFiles(
   repoRoot: string,
   configDestination: ConfigDestination,
-): Promise<Result<void, ConfigInvalid>> {
+): Promise<Result<void, FilesystemPreparationFailed>> {
   const ignored = await ignoreSandcastleDirectory(repoRoot);
   if (ignored.isErr()) return ignored;
   const dockerfile = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
@@ -124,15 +131,21 @@ async function writeStarterFiles(
   return writeIfMissing(config, '{}\n');
 }
 
-function writeIfMissing(file: string, contents: string): Promise<Result<void, ConfigInvalid>> {
+function writeIfMissing(
+  file: string,
+  contents: string,
+): Promise<Result<void, FilesystemPreparationFailed>> {
   return existsSync(file) ? Promise.resolve(Result.ok()) : writeRepoFile(file, contents);
 }
 
-function writeRepoFile(file: string, contents: string): Promise<Result<void, ConfigInvalid>> {
+function writeRepoFile(
+  file: string,
+  contents: string,
+): Promise<Result<void, FilesystemPreparationFailed>> {
   return Result.tryPromise({
     try: () => writeFile(file, contents),
     catch: (cause) =>
-      new ConfigInvalid({ message: `Could not write ${file}: ${messageOf(cause)}` }),
+      new FilesystemPreparationFailed({ message: `Could not write ${file}: ${messageOf(cause)}` }),
   });
 }
 
@@ -152,7 +165,7 @@ async function checkConfiguredCommands(
   app: AwilixContainer<AppCradle>,
   config: JigConfig,
   steps: StepConfig[],
-): Promise<Result<InitResult, InitFailure>> {
+): Promise<Result<InitResult, SandboxCheckFailure | LocalStateUnwritable>> {
   const { verifyCommand, setupCommand } = config;
   if (!verifyCommand) return Result.ok({ status: 'written' });
   const credentials = await ensureCredentials(app, steps);
@@ -170,7 +183,12 @@ async function checkConfiguredCommands(
 async function ensureCredentials(
   app: AwilixContainer<AppCradle>,
   steps: StepConfig[],
-): Promise<Result<void, ConfigInvalid | LocalStateUnwritable>> {
+): Promise<
+  Result<
+    void,
+    ConfigInvalid | CredentialsInvalid | FilesystemPreparationFailed | LocalStateUnwritable
+  >
+> {
   return Result.gen(async function* () {
     const { repoRoot, environment, askForCredential } = app.cradle;
     const entered: Record<string, string> = {};
@@ -229,7 +247,9 @@ const TOOLCHAIN_ATTEMPTS = 3;
 async function proposeToolchain(
   app: AwilixContainer<AppCradle>,
   previousFailure?: string,
-): Promise<Result<z.infer<typeof toolchainSchema>, InitFailure>> {
+): Promise<
+  Result<z.infer<typeof toolchainSchema>, SandboxCheckFailure | AgentRunFailed | AgentOutputInvalid>
+> {
   return Result.gen(async function* () {
     const { repoRoot, configSource } = app.cradle;
     const config = yield* loadConfig(configSource);
@@ -261,7 +281,7 @@ const toolchainSchema = z.object({
 async function writeToolchain(
   repoRoot: string,
   toolchain: string,
-): Promise<Result<void, ConfigInvalid>> {
+): Promise<Result<void, ImageRecipeInvalid | FilesystemPreparationFailed>> {
   const dockerfile = await readSandboxDockerfile(repoRoot);
   const filled = dockerfile.andThen((contents) => withToolchain(contents, toolchain));
   if (filled.isErr()) return Result.err(filled.error);

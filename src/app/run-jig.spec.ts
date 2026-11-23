@@ -43,26 +43,26 @@ import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { DOCKERFILE, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
-import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { type JigConfig, validationWarnings } from '../config/load-config.js';
 import { designReviewStage } from '../domain/design-review.js';
 import { designReviewReport } from '../domain/design-review-report.js';
-import {
-  ConfigInvalid,
-  GitCommandFailed,
-  ImageBuildFailed,
-  LocalStateUnwritable,
-  RunInProgress,
-  RunRequestInvalid,
-  SandboxUnavailable,
-  SetupCommandFailed,
-} from '../domain/errors.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunPhase } from '../domain/run-state.js';
+import { LocalStateUnwritable } from '../ports/filesystem.js';
+import { GitCommandFailed } from '../ports/git-failures.js';
+import { RunInProgress } from '../ports/run-state-failures.js';
+import {
+  ImageBuildFailed,
+  SandboxPreparationFailed,
+  SandboxUnavailable,
+  type SessionOpenFailure,
+  SetupCommandFailed,
+} from '../ports/sandbox.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import { createAppContainer } from './container.js';
 import { runJig } from './run-jig.js';
+import { RunRequestInvalid } from './run-request-invalid.js';
 import { readRunStatus } from './run-status.js';
 
 /** TEST-NET-1: routable nowhere, so an exporter aimed at it waits out its timeout. */
@@ -238,11 +238,13 @@ describe('runJig', () => {
     const { app, aRequest, agentFor, failNextSessions } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    const opened = failNextSessions(new ConfigInvalid({ message: faker.lorem.sentence() }));
+    const opened = failNextSessions(
+      new SandboxPreparationFailed({ message: faker.lorem.sentence() }),
+    );
 
     const result = await runJig(app, { start: { text: aRequest() }, runId: id });
 
-    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(SandboxPreparationFailed);
     expect(opened()).toBe(1);
   });
 
@@ -278,7 +280,7 @@ describe('runJig', () => {
 
   it('starts a run named after the heading of a request text that has no file', async () => {
     const { app, repo, failNextSessions } = await setup();
-    failNextSessions(new ConfigInvalid({ message: faker.lorem.sentence() }));
+    failNextSessions(new SandboxPreparationFailed({ message: faker.lorem.sentence() }));
     const heading = faker.string.alpha({ length: 8, casing: 'lower' });
 
     await runJig(app, { start: { text: `# ${heading}\n\n${faker.lorem.paragraph()}` } });

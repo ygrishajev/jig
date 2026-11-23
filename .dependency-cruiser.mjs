@@ -42,6 +42,36 @@ export default {
       to: { path: '^src/', pathNot: '^src/(ports|domain)/' },
     },
     {
+      name: 'domain-has-no-infrastructure-dependencies',
+      severity: 'error',
+      from: { path: '^src/domain/', pathNot: testFilePattern },
+      to: {
+        pathNot: [
+          '^src/domain/',
+          '^(node:)?(crypto|path)$',
+          '(^|/)node_modules/(better-result|zod|picomatch|safe-stable-stringify)/',
+        ],
+      },
+    },
+    {
+      name: 'ports-have-only-contract-dependencies',
+      severity: 'error',
+      from: { path: '^src/ports/', pathNot: testFilePattern },
+      to: { pathNot: ['^src/(ports|domain)/', '(^|/)node_modules/(better-result|zod)/'] },
+    },
+    {
+      name: 'flow-imports-only-contracts-and-domain',
+      severity: 'error',
+      from: { path: '^src/flow/', pathNot: testFilePattern },
+      to: { path: '^src/', pathNot: '^src/(flow|ports|domain)/' },
+    },
+    {
+      name: 'steps-and-observers-use-capability-contracts',
+      severity: 'error',
+      from: { path: '^src/(steps|observers)/', pathNot: testFilePattern },
+      to: { path: '^src/(adapters|app|cli|config|integrations)/' },
+    },
+    {
       name: 'config-imports-only-approved-dependencies',
       comment:
         'Production config owns schemas, defaults and selection policy over domain types. It may ' +

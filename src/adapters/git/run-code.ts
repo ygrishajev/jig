@@ -1,13 +1,10 @@
 import { Result } from 'better-result';
 
-import {
-  type GitCommandFailed,
-  RunCodeUnavailable,
-  RunStateConflict,
-} from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
+import { type GitCommandFailed } from '../../ports/git-failures.js';
 import type { RunCode, RunCodeRestoreFailure } from '../../ports/run-code.js';
+import { RunCodeUnavailable, RunStateConflict } from '../../ports/run-state-failures.js';
 import { RemoteRef } from './remote-ref.js';
 import { isAncestor } from './repository.js';
 import { exactHead, fastForwardWorktree, hasCommit, worktreeHolding } from './run-history.js';

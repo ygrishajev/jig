@@ -1,8 +1,8 @@
-import type { Result } from 'better-result';
+import { type Result, TaggedError } from 'better-result';
 import type { ZodType } from 'zod';
 
 import type { AgentRole } from '../domain/agent-role.js';
-import type { AgentOutputInvalid, AgentRunFailed, SandboxUnavailable } from '../domain/errors.js';
+import type { SandboxUnavailable } from './sandbox.js';
 
 /**
  * One run's sandbox: agents work in the run's worktree and commands execute there.
@@ -25,6 +25,14 @@ export interface AgentRunInput {
 export interface ExecResult {
   exitCode: number;
   output: string;
+}
+
+export class AgentRunFailed extends TaggedError('AgentRunFailed')<{ message: string }> {
+  readonly kind = 'retry' as const;
+}
+
+export class AgentOutputInvalid extends TaggedError('AgentOutputInvalid')<{ message: string }> {
+  readonly kind = 'retry' as const;
 }
 
 export type { AgentRole };

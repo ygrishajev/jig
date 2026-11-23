@@ -2,11 +2,13 @@ import {
   designReReview,
   designReviewSchema,
   designRevisionSchemaFor,
+  type DesignUnresolved,
   findingsToRevise,
   resolveDesignReview,
 } from '../domain/design-review.js';
 import type { RunStateIn } from '../domain/run-state.js';
 import type { RunStep } from '../flow/define-flow.js';
+import type { AgentOutputInvalid, AgentRunFailed } from '../ports/agent-session.js';
 import {
   type DesignInputs,
   designReReviewPrompt,
@@ -18,7 +20,10 @@ import {
  * Has a fresh reviewer check the design and plan before slicing: the documents as written, or —
  * once the planner has revised them — the revision against the findings and dispositions.
  */
-export const reviewDesign: RunStep<'reviewingDesign'> = async ({ state, ports }) => {
+export const reviewDesign: RunStep<
+  'reviewingDesign',
+  AgentRunFailed | AgentOutputInvalid
+> = async ({ state, ports }) => {
   const inputs = designInputs(state);
   const reReview = designReReview(state);
   const review = await ports.agent.runForOutput({
@@ -41,7 +46,10 @@ function designInputs(state: RunStateIn<'reviewingDesign' | 'revisingDesign'>): 
 }
 
 /** The planner's one revision: revised documents and a disposition for every finding. */
-export const reviseDesign: RunStep<'revisingDesign'> = async ({ state, ports }) => {
+export const reviseDesign: RunStep<'revisingDesign', AgentRunFailed | AgentOutputInvalid> = async ({
+  state,
+  ports,
+}) => {
   const findings = findingsToRevise(state.designReview);
   const revision = await ports.agent.runForOutput({
     role: 'planner',
@@ -52,5 +60,5 @@ export const reviseDesign: RunStep<'revisingDesign'> = async ({ state, ports }) 
 };
 
 /** Lets a reviewed design on to slicing, or blocks the run on the findings still standing. */
-export const resolveDesign: RunStep<'resolvingDesign'> = async ({ state }) =>
+export const resolveDesign: RunStep<'resolvingDesign', DesignUnresolved> = async ({ state }) =>
   resolveDesignReview(state.designReview).map(() => ({ type: 'continue' }));

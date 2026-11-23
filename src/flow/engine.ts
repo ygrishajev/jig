@@ -1,8 +1,8 @@
 import { panic, Result } from 'better-result';
 
 import { applyOutcome, updateCurrentSlice } from '../domain/apply-outcome.js';
-import { isTransient, type JigError } from '../domain/errors.js';
 import type { StepLocation } from '../domain/events.js';
+import { isTransient } from '../domain/failure-policy.js';
 import type { InvocationStatus } from '../domain/invocation-status.js';
 import type { Outcome } from '../domain/outcome.js';
 import { transientRetryPolicy } from '../domain/retry.js';
@@ -17,7 +17,7 @@ import {
 import type { RunSettings } from '../domain/settings.js';
 import type { ExceptionDetails } from '../ports/exception-details.js';
 import type { Clock, EventSink } from '../ports/observability.js';
-import type { RunStore } from '../ports/run-store.js';
+import type { RunStore, RunStoreSaveFailure } from '../ports/run-store.js';
 import type {
   FinalOutcome,
   ForEachSliceNode,
@@ -25,11 +25,15 @@ import type {
   RunFlow,
   RunFlowNode,
   RunStep,
+  StepFailure,
   StepNode,
   StepPorts,
   Target,
   Transitions,
 } from './define-flow.js';
+
+export type EngineFailure = FatalStepFailure | RunStoreSaveFailure;
+type FatalStepFailure = Extract<StepFailure, { kind: 'fatal' }>;
 
 export interface EngineDependencies {
   ports: StepPorts;
@@ -59,7 +63,7 @@ export async function runEngine(
   flow: RunFlow,
   initial: RunState,
   dependencies: EngineDependencies,
-): Promise<Result<EngineResult, JigError>> {
+): Promise<Result<EngineResult, EngineFailure>> {
   const engine = new Engine(flow, dependencies);
   return engine.run(initial);
 }
@@ -71,14 +75,14 @@ class Engine {
   ) {}
 
   /** Every invocation that resumes a run ends it with one run-level event, a failure or a bug included. */
-  async run(initial: RunState): Promise<Result<EngineResult, JigError>> {
+  async run(initial: RunState): Promise<Result<EngineResult, EngineFailure>> {
     this.dependencies.events.publish({
       type: 'runResumed',
       runId: initial.runId,
       phase: initial.phase,
     });
     let saved = initial;
-    let settled: Result<EngineResult, JigError>;
+    let settled: Result<EngineResult, EngineFailure>;
     try {
       settled = await this.settle(initial, (state) => (saved = state));
     } catch (error) {
@@ -93,7 +97,7 @@ class Engine {
   private async settle(
     initial: RunState,
     onSaved: (state: RunState) => void,
-  ): Promise<Result<EngineResult, JigError>> {
+  ): Promise<Result<EngineResult, EngineFailure>> {
     const resumed = await this.leaveHaltOrBlock(initial);
     if (resumed.isErr()) return resumed;
     let state = resumed.value;
@@ -111,7 +115,7 @@ class Engine {
     panic(`Run ${state.runId} did not settle after ${MAX_PASSES} passes — the flow has a cycle.`);
   }
 
-  private async leaveHaltOrBlock(state: RunState): Promise<Result<RunState, JigError>> {
+  private async leaveHaltOrBlock(state: RunState): Promise<Result<RunState, RunStoreSaveFailure>> {
     const node = this.flow[state.phase];
     const resumed: RunState = { ...state, blockedReason: undefined };
     if (!('halt' in node)) return Result.ok(resumed);
@@ -131,7 +135,7 @@ class Engine {
   private async pass<P extends RunPhase>(
     phase: P,
     state: RunStateIn<P>,
-  ): Promise<Result<Pass, JigError>> {
+  ): Promise<Result<Pass, EngineFailure>> {
     const node: RunFlowNode<P> = this.flow[phase];
     if ('final' in node) return Result.ok({ result: this.finish(state, node.final) });
     if ('halt' in node) return Result.ok({ result: this.halt(state) });
@@ -162,7 +166,7 @@ class Engine {
   private async advanceSlices(
     node: ForEachSliceNode<RunPhase>,
     state: RunState,
-  ): Promise<Result<Advance, JigError>> {
+  ): Promise<Result<Advance, FatalStepFailure>> {
     const slice = currentSlice(state);
     if (!slice) return Result.ok({ state: this.changePhase(state, node.on.allApproved) });
 
@@ -209,21 +213,24 @@ class Engine {
   private async attempt(
     at: StepLocation,
     runId: RunId,
-    step: () => Promise<Result<Outcome, JigError>>,
-  ): Promise<Result<Attempt, JigError>> {
-    const attempted = await this.dependencies.ports.retryResult(() => this.timed(at, runId, step), {
-      ...transientRetryPolicy(this.dependencies.settings),
-      onFailedAttempt: ({ error, attempt, retriesLeft }) => {
-        if (!isTransient(error) || retriesLeft === 0) return;
-        this.dependencies.events.publish({
-          type: 'stepRetried',
-          runId,
-          at,
-          attempt,
-          reason: error.message,
-        });
+    step: () => Promise<Result<Outcome, StepFailure>>,
+  ): Promise<Result<Attempt, FatalStepFailure>> {
+    const attempted = await this.dependencies.ports.retryResult<Outcome, StepFailure>(
+      () => this.timed(at, runId, step),
+      {
+        ...transientRetryPolicy(this.dependencies.settings),
+        onFailedAttempt: ({ error, attempt, retriesLeft }) => {
+          if (!isTransient(error) || retriesLeft === 0) return;
+          this.dependencies.events.publish({
+            type: 'stepRetried',
+            runId,
+            at,
+            attempt,
+            reason: error.message,
+          });
+        },
       },
-    });
+    );
     if (attempted.isOk()) return Result.ok({ outcome: attempted.value });
     if (attempted.error.kind === 'fatal') return Result.err(attempted.error);
     return Result.ok({ blockedReason: attempted.error.message });
@@ -233,8 +240,8 @@ class Engine {
   private async timed(
     at: StepLocation,
     runId: RunId,
-    step: () => Promise<Result<Outcome, JigError>>,
-  ): Promise<Result<Outcome, JigError>> {
+    step: () => Promise<Result<Outcome, StepFailure>>,
+  ): Promise<Result<Outcome, StepFailure>> {
     const startedAt = this.dependencies.clock.now();
     const elapsed = (): number => this.dependencies.clock.now() - startedAt;
     const publishFailed = (reason: string): void =>
@@ -246,7 +253,7 @@ class Engine {
         durationMs: elapsed(),
       });
     this.dependencies.events.publish({ type: 'stepStarted', runId, at });
-    let stepped: Result<Outcome, JigError>;
+    let stepped: Result<Outcome, StepFailure>;
     try {
       stepped = await step();
     } catch (error) {
@@ -292,7 +299,7 @@ class Engine {
   private async advancePhase<P extends RunPhase>(
     node: StepNode<RunPhase, RunStep<P>>,
     state: RunStateIn<P>,
-  ): Promise<Result<Advance, JigError>> {
+  ): Promise<Result<Advance, FatalStepFailure>> {
     return Result.gen(async function* (this: Engine) {
       const at: StepLocation = { phase: state.phase };
       const attempted = yield* Result.await(
@@ -316,7 +323,10 @@ class Engine {
     }, this);
   }
 
-  private async block(state: RunState, reason: string): Promise<Result<EngineResult, JigError>> {
+  private async block(
+    state: RunState,
+    reason: string,
+  ): Promise<Result<EngineResult, RunStoreSaveFailure>> {
     const blocked = { ...state, blockedReason: reason };
     const saved = await this.dependencies.store.save(blocked);
     if (saved.isErr()) return saved;

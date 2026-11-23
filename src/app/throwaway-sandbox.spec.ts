@@ -15,13 +15,10 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import {
-  GitCommandFailed,
-  MergeFailed,
-  SandboxUnavailable,
-  SetupCommandFailed,
-} from '../domain/errors.js';
 import { runBranchFor } from '../domain/run-state.js';
+import { GitCommandFailed } from '../ports/git-failures.js';
+import { SandboxUnavailable, SetupCommandFailed } from '../ports/sandbox.js';
+import { MergeFailed } from '../ports/workspace.js';
 import { createAppContainer } from './container.js';
 import { withThrowawaySandbox } from './throwaway-sandbox.js';
 

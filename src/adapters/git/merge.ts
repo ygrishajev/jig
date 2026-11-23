@@ -2,11 +2,11 @@ import { Result } from 'better-result';
 import { execa, type ResultPromise } from 'execa';
 
 import {
-  type ConfigInvalid,
   GitCommandFailed,
-  MergeFailed,
   RemoteUnavailable,
-} from '../../domain/errors.js';
+  type RepositoryInvalid,
+} from '../../ports/git-failures.js';
+import { MergeFailed } from '../../ports/workspace.js';
 import { messageOf } from '../exception-details.js';
 import { getCurrentBranch } from './branch.js';
 import { gitCommand, isWorkingTreeClean, openRepoWithoutHooks } from './repository.js';
@@ -130,6 +130,8 @@ export async function mergeBranchInto(
   });
 }
 
-function asMergeFailed(error: ConfigInvalid | GitCommandFailed): MergeFailed | GitCommandFailed {
+function asMergeFailed(
+  error: RepositoryInvalid | GitCommandFailed,
+): MergeFailed | GitCommandFailed {
   return GitCommandFailed.is(error) ? error : new MergeFailed({ message: error.message });
 }

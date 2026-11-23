@@ -5,9 +5,10 @@ import {
   completionReuseWasAuthorized,
   completionStillReusable,
 } from '../domain/completion-reuse.js';
-import type { GitCommandFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import type { RunStep, RunStepContext } from '../flow/define-flow.js';
+import type { GitCommandFailed } from '../ports/git-failures.js';
+import type { SandboxUnavailable } from '../ports/sandbox.js';
 
 type ObservationFailure = GitCommandFailed | SandboxUnavailable;
 
@@ -15,7 +16,7 @@ type ObservationFailure = GitCommandFailed | SandboxUnavailable;
  * Decides, once every slice is approved, whether the run finishes on the evidence its combined
  * review recorded or goes through an ordinary final check. It runs no command and asks no agent.
  */
-export const decideCompletionReuse: RunStep<'checkingReuse'> = (context) =>
+export const decideCompletionReuse: RunStep<'checkingReuse', ObservationFailure> = (context) =>
   Result.gen(async function* () {
     const reusable = yield* Result.await(evidenceStillHolds(context));
     return Result.ok<Outcome>({ type: reusable ? 'completionReused' : 'completionDeclined' });

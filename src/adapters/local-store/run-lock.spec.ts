@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import { runId } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import { LocalStateUnwritable, RunInProgress } from '../../domain/errors.js';
+import { LocalStateUnwritable } from '../../ports/filesystem.js';
+import { RunInProgress } from '../../ports/run-state-failures.js';
 import { lockRun } from './run-lock.js';
 
 describe('lockRun', () => {

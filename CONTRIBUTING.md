@@ -99,7 +99,13 @@ Retry execution and exception details are supplied capabilities: `src/ports/retr
 `src/adapters/retry.ts` and `src/adapters/exception-details.ts` implement them. Flow and steps get
 them through `EngineDependencies` and `StepPorts`, the CLI through `buildCli` and `CommandIo`.
 `npm run lint:dependencies` rejects direct imports of the implementations from flow, steps, CLI and
-observers. Domain keeps the failure classes, `isTransient` and `transientRetryPolicy`.
+observers. Domain keeps business failures, `isTransient` in `src/domain/failure-policy.ts`,
+and `transientRetryPolicy`. Ports own capability failures; configuration validation belongs to
+config, request failures to app and command input failures to CLI. Flow derives failures from the
+operations its steps can call; engine methods add their persistence failures. There is no global
+error registry or compatibility barrel. See the [ownership and preservation table](docs/workflow-ownership.md#failure-ownership-and-preservation).
+Dependency checks also reject outward domain/port dependencies and flow/step/observer imports
+of capability implementations. The config allowlist and composition boundaries remain enforced.
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,

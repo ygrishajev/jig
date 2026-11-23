@@ -21,24 +21,20 @@ import { InMemoryRunStore, RecordingEventSink, SteppingClock } from '../../tests
 import { unwrap } from '../../tests/support/unwrap.js';
 import { exceptionDetails } from '../adapters/exception-details.js';
 import { retryResult } from '../adapters/retry.js';
-import {
-  AgentOutputInvalid,
-  AgentRunFailed,
-  ConfigInvalid,
-  MergeFailed,
-  RunStateConflict,
-} from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import { type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
-import type { AgentSession } from '../ports/agent-session.js';
+import { AgentOutputInvalid, AgentRunFailed, type AgentSession } from '../ports/agent-session.js';
 import type { ExceptionDetails } from '../ports/exception-details.js';
+import { LocalStateUnwritable } from '../ports/filesystem.js';
+import { RemoteUnavailable } from '../ports/git-failures.js';
 import type { EventSink } from '../ports/observability.js';
 import type { RetryPolicy, RetryResult } from '../ports/retry.js';
+import { RunStateConflict, RunStoreFailed } from '../ports/run-state-failures.js';
 import type { RunStore } from '../ports/run-store.js';
-import type { Workspace } from '../ports/workspace.js';
+import { MergeFailed, type Workspace } from '../ports/workspace.js';
 import {
   defineRunFlow,
   defineSliceFlow,
@@ -392,14 +388,15 @@ describe('runEngine', () => {
     const { run, events } = setup({
       flow: linearFlow({
         context: async () => Result.ok({ type: 'contextBuilt', context: aContext() }),
-        planning: async () => Result.err(new ConfigInvalid({ message: reason })),
+        planning: async () =>
+          Result.err(new LocalStateUnwritable({ path: faker.system.filePath(), message: reason })),
       }),
     });
     const initial = aDescribedRun({ phase: 'context' });
 
     const result = await run(initial);
 
-    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(LocalStateUnwritable);
     expect(events.ofType('runFailed')).toEqual([
       { type: 'runFailed', runId: initial.runId, phase: 'planning', reason },
     ]);
@@ -416,7 +413,13 @@ describe('runEngine', () => {
     const { run } = setup({
       events,
       flow: linearFlow({
-        context: async () => Result.err(new ConfigInvalid({ message: faker.lorem.sentence() })),
+        context: async () =>
+          Result.err(
+            new LocalStateUnwritable({
+              path: faker.system.filePath(),
+              message: faker.lorem.sentence(),
+            }),
+          ),
       }),
     });
 
@@ -475,7 +478,10 @@ describe('runEngine', () => {
   });
 
   it('ends the invocation on a fatal failure and says so', async () => {
-    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
+    const failure = new LocalStateUnwritable({
+      path: faker.system.filePath(),
+      message: faker.lorem.sentence(),
+    });
     const { run, events } = setup({
       settings: runSettings({ maxStepRetries: faker.number.int({ min: 1, max: 3 }) }),
       flow: linearFlow({ context: async () => Result.err(failure) }),
@@ -518,6 +524,28 @@ describe('runEngine', () => {
     expect(result.isErr() && result.error).toBe(failure);
     expect(events.ofType('runFailed')).toMatchObject([{ reason: failure.message }]);
     expect(events.ofType('runBlocked')).toEqual([]);
+  });
+
+  it.each([
+    new RemoteUnavailable({ message: faker.lorem.sentence() }),
+    new RunStoreFailed({ message: faker.lorem.sentence() }),
+  ])('propagates $kind persistence failures outside the step retry policy', async (failure) => {
+    const save = vi.fn(async () => Result.err(failure));
+    const step = vi.fn<RunStep>(async () =>
+      Result.ok({ type: 'contextBuilt', context: aContext() }),
+    );
+    const { run, events } = setup({
+      store: mock<RunStore>({ save }),
+      flow: linearFlow({ context: step }),
+      settings: runSettings({ maxStepRetries: 3, retryDelayMs: 0 }),
+    });
+    const result = await run(aDescribedRun({ phase: 'context' }));
+    expect(result.isErr() && result.error).toBe(failure);
+    expect(save).toHaveBeenCalledOnce();
+    expect(step).toHaveBeenCalledOnce();
+    expect(events.ofType('stepRetried')).toEqual([]);
+    expect(events.ofType('runBlocked')).toEqual([]);
+    expect(events.ofType('runFailed')).toMatchObject([{ reason: failure.message }]);
   });
 
   it('retries invalid agent output and then blocks, even where the flow accepts a change request', async () => {

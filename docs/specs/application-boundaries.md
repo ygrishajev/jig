@@ -61,20 +61,21 @@ adapters behind a barrel of re-exports, does not satisfy this design.
 
 ## Current implementation
 
-The baseline inspected for this design is commit `27a525b`.
+The original design baseline is commit `27a525b`. The table tracks current ownership and
+remaining application-boundary work.
 
-| Area                                                                      | Current responsibility that crosses the proposed boundary                                               |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `src/integrations/github/cli.ts`                                          | Composes commands and starts the executable                                                             |
-| `src/integrations/github/command.ts`                                      | Parses inputs, creates the GitHub adapter, invokes orchestration, and prints results                    |
-| `src/integrations/github/implement-issue.ts`                              | Coordinates accepted requests, runs, and publication using concrete Git/store helpers                   |
-| `src/integrations/github/orchestration-store.ts`                          | Persists publication receipts but imports `app/report-cleanup.ts`                                       |
-| `src/cli/with-app.ts`                                                     | Repository checks, credentials, configuration/preset resolution, container creation, and disposal       |
-| `src/cli/app-action.ts` and command handlers                              | Expose `AwilixContainer<AppCradle>` and cradle access to CLI code                                       |
-| `src/app/container.ts`                                                    | Mixes adapter construction, scopes, lifecycle policy, and execution preparation                         |
-| `src/app/run-jig.ts`, `init-sandbox.ts`, `run-status.ts`, `run-stores.ts` | Mix use cases with concrete adapter calls, I/O, and container access                                    |
-| `src/config`                                                              | Mixes schemas/defaults/preset resolution with file reads, writes, and directory discovery               |
-| `src/domain/errors.ts`, `retry.ts`                                        | Combine business failures with infrastructure failures, recognition, panic helpers, and retry execution |
+| Area                                                                            | Current responsibility that crosses the proposed boundary                                         |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `src/integrations/github/cli.ts`                                                | Composes commands and starts the executable                                                       |
+| `src/integrations/github/command.ts`                                            | Parses inputs, creates the GitHub adapter, invokes orchestration, and prints results              |
+| `src/integrations/github/implement-issue.ts`                                    | Coordinates accepted requests, runs, and publication using concrete Git/store helpers             |
+| `src/integrations/github/orchestration-store.ts`                                | Persists publication receipts but imports `app/report-cleanup.ts`                                 |
+| `src/cli/with-app.ts`                                                           | Repository checks, credentials, configuration/preset resolution, container creation, and disposal |
+| `src/cli/app-action.ts` and command handlers                                    | Expose `AwilixContainer<AppCradle>` and cradle access to CLI code                                 |
+| `src/app/container.ts`                                                          | Mixes adapter construction, scopes, lifecycle policy, and execution preparation                   |
+| `src/app/run-jig.ts`, `init-sandbox.ts`, `run-status.ts`, `run-stores.ts`       | Mix use cases with concrete adapter calls, I/O, and container access                              |
+| `src/config`                                                                    | Pure schemas/defaults/preset resolution over sources; adapters own I/O                            |
+| `src/domain/failure-policy.ts`, `retry.ts`; capability failures in `src/ports/` | Structural classification and resolved retry policy; business failures stay with domain rules     |
 
 `flow` currently depends on jig state, settings, slices, events, and ports. It is a specialized
 executor, despite current documentation calling it generic. This design does not require removing
@@ -353,11 +354,13 @@ Use the following ownership decisions to avoid recreating a global domain error 
   failures. Keep raw library details out of those contracts. Define each class once.
 - Config owns failures specific to configuration validation. A failure shared as a portable
   capability contract may belong with that contract instead; decide from what it means to callers.
-  Inspect `ConfigInvalid` carefully: it currently appears in `RunStoreFailure`, so moving it into
-  config without changing the contract would make ports depend on config. Inventory its actual
-  meanings before assigning ownership. If the same failure genuinely spans capability contracts,
-  define its portable contract once below its consumers. Do not use a historically broad error
-  name as evidence that unrelated failure conditions belong together.
+  Configuration validation remains `ConfigInvalid` in config; its former capability meanings
+  use portable credential, filesystem, sandbox, Git prerequisite and run-state failures in ports.
+  Custom module setup belongs to app, while custom store operations return port failures.
+  Keep these meanings separate without making ports depend on config. For any shared failure,
+  define its portable contract once below its consumers; a historically broad name is no evidence
+  that unrelated conditions belong together. The current preservation table is in
+  [workflow ownership](../workflow-ownership.md#failure-ownership-and-preservation).
 - CLI owns transport-specific input failures. App owns failures specific to application use cases.
 - Adapters translate raw third-party exceptions to the declared capability failures.
 

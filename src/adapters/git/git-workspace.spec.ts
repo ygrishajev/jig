@@ -9,14 +9,10 @@ import { mock } from 'vitest-mock-extended';
 
 import { runId } from '../../../tests/support/builders.js';
 import { createRunWorktree } from '../../../tests/support/run-worktree.js';
-import {
-  CommitImportRefused,
-  CommitRejected,
-  GitCommandFailed,
-  MergeFailed,
-  SandboxUnavailable,
-} from '../../domain/errors.js';
+import { GitCommandFailed } from '../../ports/git-failures.js';
+import { SandboxUnavailable } from '../../ports/sandbox.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
+import { CommitImportRefused, CommitRejected, MergeFailed } from '../../ports/workspace.js';
 import { type CommitSigning, GitWorkspace } from './git-workspace.js';
 import { isWorkingTreeClean, openRepo } from './repository.js';
 

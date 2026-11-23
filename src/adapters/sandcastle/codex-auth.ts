@@ -7,7 +7,7 @@ import lockfile from 'proper-lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
-import { CodexLoginNotSaved, ConfigInvalid } from '../../domain/errors.js';
+import { CodexLoginNotSaved, CredentialsInvalid } from '../../ports/credentials.js';
 import { messageOf } from '../exception-details.js';
 
 export interface CodexAuthCache {
@@ -32,15 +32,17 @@ function codexLoginFile(location: string): string {
 
 const LOGIN_FILE = 'auth.json';
 
-function validateSubscription(text: string): Result<void, ConfigInvalid> {
+function validateSubscription(text: string): Result<void, CredentialsInvalid> {
   const value = Result.try(() => JSON.parse(text) as unknown);
   if (value.isErr()) {
-    return Result.err(new ConfigInvalid({ message: 'Invalid Codex subscription login JSON.' }));
+    return Result.err(
+      new CredentialsInvalid({ message: 'Invalid Codex subscription login JSON.' }),
+    );
   }
   return subscriptionSchema.safeParse(value.value).success
     ? Result.ok()
     : Result.err(
-        new ConfigInvalid({
+        new CredentialsInvalid({
           message: 'Invalid Codex subscription login: expected the full ChatGPT token bundle.',
         }),
       );
@@ -59,11 +61,11 @@ const subscriptionSchema = z.object({
 /** Mounts only a private login copy; Codex can atomically refresh it without exposing host config. */
 export async function openCodexAuthCache(
   location: string,
-): Promise<Result<CodexAuthCache, ConfigInvalid>> {
+): Promise<Result<CodexAuthCache, CredentialsInvalid>> {
   const source = await Result.tryPromise({
     try: () => realpath(codexLoginFile(location)),
     catch: (cause) =>
-      new ConfigInvalid({
+      new CredentialsInvalid({
         message: `Could not find the Codex login in ${location}: ${messageOf(cause)}`,
       }),
   });
@@ -72,7 +74,7 @@ export async function openCodexAuthCache(
     try: () =>
       lockfile.lock(source.value, { retries: 0, lockfilePath: `${source.value}${LOCK_SUFFIX}` }),
     catch: (cause) =>
-      new ConfigInvalid({
+      new CredentialsInvalid({
         message: isHeldElsewhere(cause)
           ? 'The Codex login is in use by another jig run. Serialize runs using this login.'
           : `Could not lock the Codex login: ${messageOf(cause)}`,
@@ -97,11 +99,11 @@ function isHeldElsewhere(cause: unknown): boolean {
 async function copyLogin(
   source: string,
   release: () => Promise<void>,
-): Promise<Result<CodexAuthCache, ConfigInvalid>> {
+): Promise<Result<CodexAuthCache, CredentialsInvalid>> {
   const original = await Result.tryPromise({
     try: () => readFile(source, 'utf8'),
     catch: (cause) =>
-      new ConfigInvalid({ message: `Could not read the Codex login: ${messageOf(cause)}` }),
+      new CredentialsInvalid({ message: `Could not read the Codex login: ${messageOf(cause)}` }),
   });
   if (original.isErr()) return original;
   const valid = validateSubscription(original.value);
@@ -119,7 +121,7 @@ async function copyLogin(
       return created;
     },
     catch: (cause) =>
-      new ConfigInvalid({ message: `Could not copy the Codex login: ${messageOf(cause)}` }),
+      new CredentialsInvalid({ message: `Could not copy the Codex login: ${messageOf(cause)}` }),
   });
   return directory.map((copy) => ({
     directory: copy,

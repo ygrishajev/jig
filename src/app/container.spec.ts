@@ -13,9 +13,10 @@ import { exceptionDetails } from '../adapters/exception-details.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
 import { retryResult } from '../adapters/retry.js';
 import { parseEnvironment } from '../config/environment.js';
-import { MergeFailed, SandboxUnavailable } from '../domain/errors.js';
 import type { ExceptionDetails } from '../ports/exception-details.js';
 import type { RetryPolicy, RetryResult } from '../ports/retry.js';
+import { SandboxUnavailable } from '../ports/sandbox.js';
+import { MergeFailed } from '../ports/workspace.js';
 import { createAppContainer, withRunScope } from './container.js';
 
 describe('withRunScope', () => {

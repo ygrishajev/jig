@@ -2,8 +2,9 @@ import { Result } from 'better-result';
 import path from 'node:path';
 import lockfile from 'proper-lockfile';
 
-import { LocalStateUnwritable, RunInProgress } from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
+import { LocalStateUnwritable } from '../../ports/filesystem.js';
+import { RunInProgress } from '../../ports/run-state-failures.js';
 import { messageOf } from '../exception-details.js';
 import { onLocalState } from './local-state.js';
 import { findLinkInRunDirectory, makeRunDirectory, runDirectory } from './run-paths.js';

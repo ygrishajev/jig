@@ -1,18 +1,20 @@
 import { Result } from 'better-result';
 
-import {
-  type GitCommandFailed,
-  RunCodeUnavailable,
-  RunStateConflict,
-} from '../../domain/errors.js';
 import type { RunId } from '../../domain/run-id.js';
 import {
   canRecoverInitialCheckpoint,
   defersCodePublication,
   type RunState,
 } from '../../domain/run-state.js';
+import { type GitCommandFailed } from '../../ports/git-failures.js';
 import type { RunCode, RunCodeRestoreFailure } from '../../ports/run-code.js';
-import type { RunStore, RunStoreFailure } from '../../ports/run-store.js';
+import { RunCodeUnavailable, RunStateConflict } from '../../ports/run-state-failures.js';
+import type {
+  RunStore,
+  RunStoreLoadFailure,
+  RunStorePeekFailure,
+  RunStoreSaveFailure,
+} from '../../ports/run-store.js';
 
 /**
  * Keeps a copy of each run in every store. A load or a peek asks every store and returns the
@@ -31,7 +33,7 @@ export class CompositeRunStore implements RunStore {
     private readonly code: RunCode,
   ) {}
 
-  load(runId: RunId): Promise<Result<RunState | undefined, RunStoreFailure>> {
+  load(runId: RunId): Promise<Result<RunState | undefined, RunStoreLoadFailure>> {
     return Result.gen(async function* (this: CompositeRunStore) {
       const copies = yield* Result.await(this.readEach((store) => store.load(runId)));
       const freshest = yield* consistentFreshestOf(copies);
@@ -41,9 +43,9 @@ export class CompositeRunStore implements RunStore {
     }, this);
   }
 
-  private async readEach(
-    read: (store: RunStore) => Promise<Result<RunState | undefined, RunStoreFailure>>,
-  ): Promise<Result<(RunState | undefined)[], RunStoreFailure>> {
+  private async readEach<E>(
+    read: (store: RunStore) => Promise<Result<RunState | undefined, E>>,
+  ): Promise<Result<(RunState | undefined)[], E>> {
     const copies: (RunState | undefined)[] = [];
     for (const store of this.stores) {
       const copy = await read(store);
@@ -62,12 +64,12 @@ export class CompositeRunStore implements RunStore {
     }, this);
   }
 
-  async peek(runId: RunId): Promise<Result<RunState | undefined, RunStoreFailure>> {
+  async peek(runId: RunId): Promise<Result<RunState | undefined, RunStorePeekFailure>> {
     const copies = await this.readEach((store) => store.peek(runId));
     return copies.andThen(consistentFreshestOf);
   }
 
-  async save(state: RunState): Promise<Result<void, RunStoreFailure>> {
+  async save(state: RunState): Promise<Result<void, RunStoreSaveFailure>> {
     const checkpointed = await this.withCodeCheckpoint(state);
     if (checkpointed.isErr()) return Result.err(checkpointed.error);
     const revision = Math.max(state.revision, this.latestRevisions.get(state.runId) ?? 0) + 1;

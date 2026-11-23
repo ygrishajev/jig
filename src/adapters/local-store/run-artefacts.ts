@@ -5,11 +5,11 @@ import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
 import { designReviewReport } from '../../domain/design-review-report.js';
-import type { LocalStateUnwritable } from '../../domain/errors.js';
 import { type InvocationStatus, outcomeIsComplete } from '../../domain/invocation-status.js';
 import type { RunId } from '../../domain/run-id.js';
 import { type RunPhase, type RunState, runStopReason } from '../../domain/run-state.js';
 import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
+import type { LocalStateUnwritable } from '../../ports/filesystem.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 

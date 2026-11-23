@@ -21,11 +21,11 @@ import {
   designReviewSchema,
   designReviewStage,
   designRevisionSchemaFor,
+  DesignUnresolved,
   recordDesignReview,
   recordDesignRevision,
   resolveDesignReview,
 } from './design-review.js';
-import { DesignUnresolved } from './errors.js';
 import type { RunPhase } from './run-state.js';
 
 describe('designReviewSchema', () => {

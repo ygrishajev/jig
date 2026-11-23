@@ -8,7 +8,11 @@ import writeFileAtomic from 'write-file-atomic';
 import { z } from 'zod';
 
 import { JIG_DIR } from '../../config/scratch-directory.js';
-import { ConfigInvalid, type LocalStateUnwritable } from '../../domain/errors.js';
+import { CredentialsInvalid } from '../../ports/credentials.js';
+import {
+  type FilesystemPreparationFailed,
+  type LocalStateUnwritable,
+} from '../../ports/filesystem.js';
 import { messageOf } from '../exception-details.js';
 import { refuseSymlinks } from '../find-symlink.js';
 import { onLocalState } from './local-state.js';
@@ -16,7 +20,7 @@ import { ignoreJigDirectory } from './run-paths.js';
 
 export function readCredentialsFile(
   repoRoot: string,
-): Result<Record<string, string>, ConfigInvalid> {
+): Result<Record<string, string>, CredentialsInvalid | FilesystemPreparationFailed> {
   const file = path.join(repoRoot, CREDENTIALS_FILE);
   const refused = refuseSymlinks([path.join(repoRoot, JIG_DIR), file]);
   if (refused.isErr()) return Result.err(refused.error);
@@ -24,7 +28,7 @@ export function readCredentialsFile(
   return Result.try({
     try: () => readFileSync(file, 'utf-8'),
     catch: (cause) =>
-      new ConfigInvalid({ message: `Cannot read ${CREDENTIALS_FILE}: ${messageOf(cause)}` }),
+      new CredentialsInvalid({ message: `Cannot read ${CREDENTIALS_FILE}: ${messageOf(cause)}` }),
   }).andThen(parseCredentials);
 }
 
@@ -32,9 +36,9 @@ export function readCredentialsFile(
 export const CREDENTIALS_FILE = `${JIG_DIR}/.env`;
 
 /** Parser and schema diagnostics can quote the file, so the error names only the file. */
-function parseCredentials(text: string): Result<Record<string, string>, ConfigInvalid> {
-  const unreadableCredentials = (): ConfigInvalid =>
-    new ConfigInvalid({ message: `Cannot parse ${CREDENTIALS_FILE} as a dotenv file.` });
+function parseCredentials(text: string): Result<Record<string, string>, CredentialsInvalid> {
+  const unreadableCredentials = (): CredentialsInvalid =>
+    new CredentialsInvalid({ message: `Cannot parse ${CREDENTIALS_FILE} as a dotenv file.` });
   return Result.try({ try: (): unknown => parseEnv(text), catch: unreadableCredentials }).andThen(
     (parsed) => {
       const credentials = credentialsSchema.safeParse(parsed);
@@ -52,7 +56,7 @@ export async function saveCredential(
   repoRoot: string,
   name: string,
   value: string,
-): Promise<Result<void, ConfigInvalid | LocalStateUnwritable>> {
+): Promise<Result<void, CredentialsInvalid | FilesystemPreparationFailed | LocalStateUnwritable>> {
   const directory = path.join(repoRoot, JIG_DIR);
   const file = path.join(repoRoot, CREDENTIALS_FILE);
   const gitignore = path.join(directory, '.gitignore');
@@ -65,7 +69,7 @@ export async function saveCredential(
   if (ignored.isErr()) return Result.err(ignored.error);
   if (ignored.value.length === 0) {
     return Result.err(
-      new ConfigInvalid({
+      new CredentialsInvalid({
         message: `Not saving a credential to ${CREDENTIALS_FILE}: git tracks that file or does not ignore it.`,
       }),
     );

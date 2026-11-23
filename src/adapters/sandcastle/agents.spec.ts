@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { codexLogin } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { ConfigInvalid } from '../../domain/errors.js';
+import { ConfigInvalid } from '../../config/errors.js';
+import { CredentialsInvalid } from '../../ports/credentials.js';
 import { AGENTS, collectCredentials } from './agents.js';
 
 describe('collectCredentials', () => {
@@ -28,7 +29,7 @@ describe('collectCredentials', () => {
       lookup({ JIG_CODEX_AUTH_DIR: directory }),
     );
 
-    expect(credentials.isErr() && credentials.error).toBeInstanceOf(ConfigInvalid);
+    expect(credentials.isErr() && credentials.error).toBeInstanceOf(CredentialsInvalid);
     expect(credentials.isErr() && credentials.error.message).toContain('JIG_CODEX_AUTH_DIR');
     expect(credentials.isErr() && credentials.error.message).toContain(directory);
   });
@@ -83,7 +84,7 @@ describe('collectCredentials', () => {
   it('names the variables to set when an agent has no credential', () => {
     const collected = collectCredentials([{ provider: 'claude' }], lookup({}));
 
-    expect(collected.isErr() && collected.error).toBeInstanceOf(ConfigInvalid);
+    expect(collected.isErr() && collected.error).toBeInstanceOf(CredentialsInvalid);
     for (const key of unwrap(AGENTS.claude.credentialKeys())) {
       expect(collected.isErr() && collected.error.message).toContain(key);
     }

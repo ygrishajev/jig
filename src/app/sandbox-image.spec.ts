@@ -9,7 +9,8 @@ import { everyStepOn } from '../../tests/support/builders.js';
 import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
-import { ConfigInvalid, ImageBuildFailed } from '../domain/errors.js';
+import { ConfigInvalid } from '../config/errors.js';
+import { ImageBuildFailed, ImageRecipeInvalid } from '../ports/sandbox.js';
 import type { ImageBuildSpec, SandboxImages } from '../ports/sandbox-images.js';
 import {
   type AgentNeeded,
@@ -137,7 +138,7 @@ describe('ensureSandboxImage', () => {
 
     const result = await ensure();
 
-    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(result.isErr() && result.error).toBeInstanceOf(ImageRecipeInvalid);
     expect(images.built).toEqual([]);
   });
 

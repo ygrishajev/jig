@@ -3,22 +3,22 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import {
-  CommitImportRefused,
-  CommitRejected,
-  GitCommandFailed,
-  LocalStateUnwritable,
-  MergeFailed,
-  type RemoteUnavailable,
-  type SandboxUnavailable,
-} from '../../domain/errors.js';
 import type { ChangedFile, ChangeKind } from '../../domain/protected-paths.js';
 import type { RunId } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import type { CommitSummary } from '../../domain/usage.js';
 import type { GitFacts, WorkFacts } from '../../domain/work-facts.js';
+import { LocalStateUnwritable } from '../../ports/filesystem.js';
+import { GitCommandFailed, type RemoteUnavailable } from '../../ports/git-failures.js';
+import { type SandboxUnavailable } from '../../ports/sandbox.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
-import type { SaveWorkFailure, Workspace } from '../../ports/workspace.js';
+import {
+  CommitImportRefused,
+  CommitRejected,
+  MergeFailed,
+  type SaveWorkFailure,
+  type Workspace,
+} from '../../ports/workspace.js';
 import { messageOf } from '../exception-details.js';
 import { isBranchMergedInto, mergeBranchInto } from './merge.js';
 import {

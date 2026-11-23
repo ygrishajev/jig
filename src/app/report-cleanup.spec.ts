@@ -4,7 +4,7 @@ import type { Logger } from 'pino';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
-import { GitCommandFailed } from '../domain/errors.js';
+import { GitCommandFailed } from '../ports/git-failures.js';
 import { reportCleanup } from './report-cleanup.js';
 
 describe('reportCleanup', () => {
