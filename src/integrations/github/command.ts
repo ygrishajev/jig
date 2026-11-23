@@ -14,13 +14,12 @@ import type { Invocation } from '../../cli/with-app.js';
 import { GithubSetupInvalid } from './errors.js';
 import type { GithubPort, RepositoryIdentity } from './github-port.js';
 import { implementIssue, type IssueOutcome } from './implement-issue.js';
-import { OctokitGithub } from './octokit-github.js';
 import { repositoryIdentity } from './repository-identity.js';
 
 export function registerGithubCommands(
   program: Command,
   io: CommandIo,
-  githubFor: (token: string) => GithubPort = OctokitGithub.authenticated,
+  githubFor: (token: string) => GithubPort,
 ): void {
   program
     .command('github')

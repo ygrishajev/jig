@@ -99,7 +99,11 @@ export function implementIssue(
           message: `Check out the default branch "${base}" before implementing an issue (currently "${current}").`,
         }),
       );
-    const store = new OrchestrationStore(app.cradle.repoRoot);
+    const store = new OrchestrationStore(
+      app.cradle.repoRoot,
+      app.cradle.retryResult,
+      app.cradle.exceptionDetails,
+    );
     const key = `${repository.owner}/${repository.repo}#${issueNumber}`;
     app.cradle.logger.info(
       { event: 'githubIssueRequestStarted', issueNumber },

@@ -135,6 +135,27 @@ describe('retryResult', () => {
     expect(operation).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['shouldRetry', 'onFailedAttempt'] as const)(
+    'lets a bug in %s through without another attempt',
+    async (callback) => {
+      const bug = new Error(faker.lorem.sentence());
+      const { run, operation, shouldRetry, onFailedAttempt } = setup({
+        results: [Result.err(faker.lorem.word()), Result.ok(faker.lorem.word())],
+        retries: 2,
+      });
+      const fail = () => {
+        throw bug;
+      };
+      if (callback === 'shouldRetry') shouldRetry.mockImplementation(fail);
+      else onFailedAttempt.mockImplementation(fail);
+
+      await expect(run()).rejects.toBe(bug);
+      expect(operation).toHaveBeenCalledTimes(1);
+      expect(onFailedAttempt).toHaveBeenCalledTimes(1);
+      expect(shouldRetry).toHaveBeenCalledTimes(callback === 'shouldRetry' ? 1 : 0);
+    },
+  );
+
   it('applies the transient policy until the settings budget runs out', async () => {
     const maxStepRetries = faker.number.int({ min: 1, max: 3 });
     const failure = new AgentRunFailed({ message: faker.lorem.sentence() });

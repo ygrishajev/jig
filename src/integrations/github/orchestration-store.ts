@@ -3,11 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { Logger } from 'pino';
 
-import { messageOf } from '../../adapters/exception-details.js';
 import { RemoteRef } from '../../adapters/git/remote-ref.js';
-import { retryResult } from '../../adapters/retry.js';
 import { reportCleanup } from '../../app/report-cleanup.js';
+import type { ExceptionDetails } from '../../ports/exception-details.js';
 import { type GitCommandFailed, type RemoteUnavailable } from '../../ports/git-failures.js';
+import type { RetryResult } from '../../ports/retry.js';
 import { type RunStateConflict } from '../../ports/run-state-failures.js';
 import { OrchestrationStateInvalid, PublicationInProgress } from './errors.js';
 import {
@@ -37,6 +37,8 @@ export class OrchestrationStore {
 
   constructor(
     repoRoot: string,
+    private readonly retryResult: RetryResult,
+    private readonly exceptionDetails: ExceptionDetails,
     private readonly now: () => number = Date.now,
   ) {
     this.refs = new RemoteRef(repoRoot);
@@ -118,7 +120,7 @@ export class OrchestrationStore {
         try: () => orchestrationSchema.parse(JSON.parse(contents)),
         catch: (cause) =>
           new OrchestrationStateInvalid({
-            message: `Invalid GitHub orchestration state: ${messageOf(cause)}`,
+            message: `Invalid GitHub orchestration state: ${this.exceptionDetails.messageOf(cause)}`,
           }),
       });
       return Result.ok({ state, expected });
@@ -128,7 +130,7 @@ export class OrchestrationStore {
   async update(
     decide: (state: Orchestration) => Orchestration,
   ): Promise<Result<Orchestration, StoreFailure>> {
-    const result = await retryResult(() => this.updateOnce(decide), {
+    const result = await this.retryResult(() => this.updateOnce(decide), {
       retries: ORCHESTRATION_ATTEMPTS - 1,
       delayMs: 0,
       shouldRetry: (error) => error._tag === 'RunStateConflict',

@@ -3,13 +3,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 
-import { messageOf } from '../adapters/exception-details.js';
 import { GitRunCode } from '../adapters/git/run-code.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { CompositeRunStore } from '../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import type { RunId } from '../domain/run-id.js';
 import { type RunState, runStateSchema } from '../domain/run-state.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
 import { RunStateInvalid, RunStoreFailed } from '../ports/run-state-failures.js';
 import type { RunStore } from '../ports/run-store.js';
 import type { AppCradle } from './container.js';
@@ -36,12 +36,16 @@ interface ModuleStore {
  * this machine's record of the invocations it ran, not part of the run, and stays local.
  */
 export async function openRunStore(
-  { repoRoot, config }: Pick<AppCradle, 'repoRoot' | 'config'>,
+  {
+    repoRoot,
+    config,
+    exceptionDetails,
+  }: Pick<AppCradle, 'repoRoot' | 'config' | 'exceptionDetails'>,
   requiredStores: string[] = [],
 ): Promise<Result<RunStore, RunStoreSetupInvalid>> {
   const stores: RunStore[] = [];
   for (const name of new Set([...config.runStores, ...requiredStores])) {
-    const store = await storeNamed(name, repoRoot);
+    const store = await storeNamed(name, repoRoot, exceptionDetails);
     if (store.isErr()) return Result.err(store.error);
     stores.push(store.value);
   }
@@ -51,13 +55,14 @@ export async function openRunStore(
 async function storeNamed(
   name: string,
   repoRoot: string,
+  exceptionDetails: ExceptionDetails,
 ): Promise<Result<RunStore, RunStoreSetupInvalid>> {
   if (name === 'local') return Result.ok(new LocalRunStore(repoRoot));
   if (name === 'git-remote') return Result.ok(new GitRemoteRunStore(repoRoot));
   const imported = await Result.tryPromise({
     try: (): Promise<{ default?: unknown }> =>
       import(pathToFileURL(path.resolve(repoRoot, name)).href),
-    catch: (cause) => moduleFailure(name, cause),
+    catch: (cause) => moduleFailure(name, cause, exceptionDetails),
   });
   if (imported.isErr()) return Result.err(imported.error);
   const factory = imported.value.default;
@@ -70,7 +75,7 @@ async function storeNamed(
   }
   const store = await Result.tryPromise({
     try: async (): Promise<unknown> => factory({ repoRoot }),
-    catch: (cause) => moduleFailure(name, cause),
+    catch: (cause) => moduleFailure(name, cause, exceptionDetails),
   });
   if (store.isErr()) return Result.err(store.error);
   if (!isModuleStore(store.value)) {
@@ -80,12 +85,18 @@ async function storeNamed(
       }),
     );
   }
-  return Result.ok(new ModuleRunStore(name, store.value));
+  return Result.ok(new ModuleRunStore(name, store.value, exceptionDetails));
 }
 
 /** A custom store is the operator's code: when it throws, the operator's config is what to fix. */
-function moduleFailure(name: string, cause: unknown): RunStoreSetupInvalid {
-  return new RunStoreSetupInvalid({ message: `Run store "${name}" failed: ${messageOf(cause)}` });
+function moduleFailure(
+  name: string,
+  cause: unknown,
+  exceptionDetails: ExceptionDetails,
+): RunStoreSetupInvalid {
+  return new RunStoreSetupInvalid({
+    message: `Run store "${name}" failed: ${exceptionDetails.messageOf(cause)}`,
+  });
 }
 
 /** Checks the shape only; the store itself is kept, so its methods still see their own `this`. */
@@ -104,6 +115,7 @@ class ModuleRunStore implements RunStore {
   constructor(
     private readonly name: string,
     private readonly store: ModuleStore,
+    private readonly exceptionDetails: ExceptionDetails,
   ) {}
 
   async load(
@@ -130,7 +142,9 @@ class ModuleRunStore implements RunStore {
     return Result.tryPromise({
       try: async () => operation(),
       catch: (cause) =>
-        new RunStoreFailed({ message: `Run store "${this.name}" failed: ${messageOf(cause)}` }),
+        new RunStoreFailed({
+          message: `Run store "${this.name}" failed: ${this.exceptionDetails.messageOf(cause)}`,
+        }),
     });
   }
 

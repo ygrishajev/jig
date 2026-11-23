@@ -5,7 +5,6 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 
-import { messageOf } from '../adapters/exception-details.js';
 import type { ConfigDestination } from '../adapters/filesystem/config-source.js';
 import { refuseSymlinks } from '../adapters/find-symlink.js';
 import { saveCredential } from '../adapters/local-store/credentials-file.js';
@@ -29,6 +28,7 @@ import {
 import { updateConfig } from '../config/update-config.js';
 import { type AgentOutputInvalid, type AgentRunFailed } from '../ports/agent-session.js';
 import type { CredentialsInvalid } from '../ports/credentials.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
 import { FilesystemPreparationFailed, type LocalStateUnwritable } from '../ports/filesystem.js';
 import { type GitCommandFailed, type RepositoryInvalid } from '../ports/git-failures.js';
 import {
@@ -77,7 +77,9 @@ export function initSandbox(
 ): Promise<Result<InitResult, InitFailure>> {
   return Result.gen(async function* () {
     const { repoRoot, configDestination, configSource } = app.cradle;
-    yield* Result.await(writeStarterFiles(repoRoot, configDestination));
+    yield* Result.await(
+      writeStarterFiles(repoRoot, configDestination, app.cradle.exceptionDetails),
+    );
     if (options.useAgent) yield* Result.await(chooseMissingAgents(app));
     const config = yield* loadConfig(configSource);
     app.register({ config: asValue(config) });
@@ -94,7 +96,9 @@ export function initSandbox(
     let previousFailure: string | undefined;
     for (let attempt = 1; attempt <= TOOLCHAIN_ATTEMPTS; attempt++) {
       const proposal = yield* Result.await(proposeToolchain(app, previousFailure));
-      yield* Result.await(writeToolchain(repoRoot, proposal.toolchain));
+      yield* Result.await(
+        writeToolchain(repoRoot, proposal.toolchain, app.cradle.exceptionDetails),
+      );
       yield* Result.await(
         updateConfig(configSource, {
           setupCommand: proposal.setupCommand,
@@ -119,6 +123,7 @@ export function initSandbox(
 async function writeStarterFiles(
   repoRoot: string,
   configDestination: ConfigDestination,
+  exceptionDetails: ExceptionDetails,
 ): Promise<Result<void, FilesystemPreparationFailed>> {
   const ignored = await ignoreSandcastleDirectory(repoRoot);
   if (ignored.isErr()) return ignored;
@@ -126,26 +131,32 @@ async function writeStarterFiles(
   const config = configDestination.path;
   const refused = refuseSymlinks([dockerfile, config]);
   if (refused.isErr()) return refused;
-  const written = await writeIfMissing(dockerfile, BASE_DOCKERFILE);
+  const written = await writeIfMissing(dockerfile, BASE_DOCKERFILE, exceptionDetails);
   if (written.isErr()) return written;
-  return writeIfMissing(config, '{}\n');
+  return writeIfMissing(config, '{}\n', exceptionDetails);
 }
 
 function writeIfMissing(
   file: string,
   contents: string,
+  exceptionDetails: ExceptionDetails,
 ): Promise<Result<void, FilesystemPreparationFailed>> {
-  return existsSync(file) ? Promise.resolve(Result.ok()) : writeRepoFile(file, contents);
+  return existsSync(file)
+    ? Promise.resolve(Result.ok())
+    : writeRepoFile(file, contents, exceptionDetails);
 }
 
 function writeRepoFile(
   file: string,
   contents: string,
+  exceptionDetails: ExceptionDetails,
 ): Promise<Result<void, FilesystemPreparationFailed>> {
   return Result.tryPromise({
     try: () => writeFile(file, contents),
     catch: (cause) =>
-      new FilesystemPreparationFailed({ message: `Could not write ${file}: ${messageOf(cause)}` }),
+      new FilesystemPreparationFailed({
+        message: `Could not write ${file}: ${exceptionDetails.messageOf(cause)}`,
+      }),
   });
 }
 
@@ -257,7 +268,9 @@ async function proposeToolchain(
   return Result.gen(async function* () {
     const { repoRoot, configSource } = app.cradle;
     const config = yield* loadConfig(configSource);
-    const dockerfile = yield* Result.await(readSandboxDockerfile(repoRoot));
+    const dockerfile = yield* Result.await(
+      readSandboxDockerfile(repoRoot, app.cradle.exceptionDetails),
+    );
     const proposed = yield* Result.await(
       withSandbox(app, null, (session) =>
         session.runForOutput({
@@ -285,9 +298,14 @@ const toolchainSchema = z.object({
 async function writeToolchain(
   repoRoot: string,
   toolchain: string,
+  exceptionDetails: ExceptionDetails,
 ): Promise<Result<void, ImageRecipeInvalid | FilesystemPreparationFailed>> {
-  const dockerfile = await readSandboxDockerfile(repoRoot);
+  const dockerfile = await readSandboxDockerfile(repoRoot, exceptionDetails);
   const filled = dockerfile.andThen((contents) => withToolchain(contents, toolchain));
   if (filled.isErr()) return Result.err(filled.error);
-  return writeRepoFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), filled.value);
+  return writeRepoFile(
+    path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE),
+    filled.value,
+    exceptionDetails,
+  );
 }

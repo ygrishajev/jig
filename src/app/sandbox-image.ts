@@ -5,7 +5,6 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from 'pino';
 
-import { messageOf } from '../adapters/exception-details.js';
 import {
   type AgentInstall,
   agentLayerDockerfile,
@@ -19,6 +18,7 @@ import {
 import { AGENTS } from '../adapters/sandcastle/agents.js';
 import type { ConfigInvalid } from '../config/errors.js';
 import { configuredSteps, type JigConfig, type StepConfig } from '../config/load-config.js';
+import type { ExceptionDetails } from '../ports/exception-details.js';
 import { type ImageBuildFailed, ImageRecipeInvalid } from '../ports/sandbox.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 
@@ -26,6 +26,7 @@ export interface EnsureImageDependencies {
   repoRoot: string;
   config: JigConfig;
   images: SandboxImages;
+  exceptionDetails: ExceptionDetails;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   logger: Logger;
 }
@@ -67,7 +68,7 @@ export async function ensureSandboxImage(
 
   return Result.gen(async function* () {
     const steps = yield* configuredSteps(d.config);
-    const recipe = yield* Result.await(readRecipe(d.repoRoot));
+    const recipe = yield* Result.await(readRecipe(d.repoRoot, d.exceptionDetails));
     const policy = options.pullAgents ? 'auto' : d.config.agentUpdates;
     const plan = planImageBuild({
       labels: yield* Result.await(d.images.labels(image)),
@@ -88,8 +89,11 @@ export function sandboxImageName(repoRoot: string, config: JigConfig): string {
 }
 
 /** The image is built for the host user, so files the agent writes in the worktree stay the operator's. */
-async function readRecipe(repoRoot: string): Promise<Result<ImageRecipe, ImageRecipeInvalid>> {
-  const dockerfile = await readSandboxDockerfile(repoRoot);
+async function readRecipe(
+  repoRoot: string,
+  exceptionDetails: ExceptionDetails,
+): Promise<Result<ImageRecipe, ImageRecipeInvalid>> {
+  const dockerfile = await readSandboxDockerfile(repoRoot, exceptionDetails);
   if (dockerfile.isErr()) return Result.err(dockerfile.error);
   const uid = process.getuid?.() ?? 1000;
   const gid = process.getgid?.() ?? 1000;
@@ -101,6 +105,7 @@ async function readRecipe(repoRoot: string): Promise<Result<ImageRecipe, ImageRe
 
 export async function readSandboxDockerfile(
   repoRoot: string,
+  exceptionDetails: ExceptionDetails,
 ): Promise<Result<string, ImageRecipeInvalid>> {
   const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
   const shown = path.join(SANDBOX_DIRECTORY, DOCKERFILE);
@@ -115,7 +120,7 @@ export async function readSandboxDockerfile(
     try: () => readFile(file, 'utf-8'),
     catch: (cause) =>
       new ImageRecipeInvalid({
-        message: `Could not read the sandbox Dockerfile at ${shown}: ${messageOf(cause)}`,
+        message: `Could not read the sandbox Dockerfile at ${shown}: ${exceptionDetails.messageOf(cause)}`,
       }),
   });
 }

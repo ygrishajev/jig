@@ -9,6 +9,7 @@ import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { exceptionDetails } from '../adapters/exception-details.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { runBranchFor } from '../domain/run-state.js';
@@ -20,7 +21,11 @@ describe('openRunStore', () => {
   it('adds required stores once while keeping configured stores', async () => {
     const { repoRoot, config, state } = await setup();
     const store = unwrap(
-      await openRunStore({ repoRoot, config }, ['git-remote', 'local', 'git-remote']),
+      await openRunStore({ exceptionDetails, repoRoot, config }, [
+        'git-remote',
+        'local',
+        'git-remote',
+      ]),
     );
     unwrap(await store.save(state));
     const local = unwrap(await new LocalRunStore(repoRoot).load(state.runId));
@@ -31,7 +36,9 @@ describe('openRunStore', () => {
 
   it('saves to the local store by default', async () => {
     const repoRoot = await tempDirectory('jig-stores-');
-    const store = (await openRunStore({ repoRoot, config: repositoryConfig(repoRoot) })).unwrap();
+    const store = (
+      await openRunStore({ exceptionDetails, repoRoot, config: repositoryConfig(repoRoot) })
+    ).unwrap();
     const state = aRunState();
 
     await store.save(state);
@@ -55,6 +62,7 @@ describe('openRunStore', () => {
     const runStores = ['memory-store.mjs', 'local'];
     const store = (
       await openRunStore({
+        exceptionDetails,
         repoRoot,
         config: { ...repositoryConfig(repoRoot), runStores },
       })
@@ -67,6 +75,7 @@ describe('openRunStore', () => {
     expect((await new LocalRunStore(repoRoot).load(state.runId)).unwrap()).toEqual(saved);
     const reopened = (
       await openRunStore({
+        exceptionDetails,
         repoRoot,
         config: { ...repositoryConfig(repoRoot), runStores },
       })
@@ -89,7 +98,7 @@ describe('openRunStore', () => {
       runStores: ['load-only-store.mjs'],
     };
 
-    const store = (await openRunStore({ repoRoot, config })).unwrap();
+    const store = (await openRunStore({ exceptionDetails, repoRoot, config })).unwrap();
 
     expect((await store.peek(state.runId)).unwrap()).toEqual(state);
   });
@@ -111,7 +120,7 @@ describe('openRunStore', () => {
     };
     const state = aRunState();
 
-    await (await openRunStore({ repoRoot, config })).unwrap().save(state);
+    await (await openRunStore({ exceptionDetails, repoRoot, config })).unwrap().save(state);
 
     expect(JSON.parse(await readFile(path.join(repoRoot, 'saved.json'), 'utf-8'))).toMatchObject({
       runId: state.runId,
@@ -131,7 +140,7 @@ describe('openRunStore', () => {
         runStores: ['empty-store.mjs'],
       };
 
-      const store = (await openRunStore({ repoRoot, config })).unwrap();
+      const store = (await openRunStore({ exceptionDetails, repoRoot, config })).unwrap();
 
       expect((await store.load(aRunState().runId)).unwrap()).toBeUndefined();
     },
@@ -147,7 +156,7 @@ describe('openRunStore', () => {
       ...repositoryConfig(repoRoot),
       runStores: ['broken-store.mjs'],
     };
-    const store = (await openRunStore({ repoRoot, config })).unwrap();
+    const store = (await openRunStore({ exceptionDetails, repoRoot, config })).unwrap();
 
     const loaded = await store.load(aRunState().runId);
 
@@ -167,7 +176,7 @@ describe('openRunStore', () => {
       ...repositoryConfig(repoRoot),
       runStores: ['throwing-store.mjs'],
     };
-    const store = (await openRunStore({ repoRoot, config })).unwrap();
+    const store = (await openRunStore({ exceptionDetails, repoRoot, config })).unwrap();
 
     const loaded = await store.load(aRunState().runId);
 
@@ -186,7 +195,7 @@ describe('openRunStore', () => {
       runStores: ['half-a-store.mjs'],
     };
 
-    const opened = await openRunStore({ repoRoot, config });
+    const opened = await openRunStore({ exceptionDetails, repoRoot, config });
 
     expect(opened.isErr() && opened.error).toBeInstanceOf(RunStoreSetupInvalid);
   });
@@ -199,7 +208,7 @@ describe('openRunStore', () => {
       runStores: ['not-a-store.mjs'],
     };
 
-    const opened = await openRunStore({ repoRoot, config });
+    const opened = await openRunStore({ exceptionDetails, repoRoot, config });
 
     expect(opened.isErr() && opened.error).toBeInstanceOf(RunStoreSetupInvalid);
   });
@@ -208,11 +217,17 @@ describe('openRunStore', () => {
     const { repoRoot, config, deferred } = await setup();
     const branch = runBranchFor(deferred.runId);
     const checkpoint = await commitOn(repoRoot, branch);
-    unwrap(await unwrap(await openRunStore({ repoRoot, config }, ['git-remote'])).save(deferred));
+    unwrap(
+      await unwrap(await openRunStore({ exceptionDetails, repoRoot, config }, ['git-remote'])).save(
+        deferred,
+      ),
+    );
     await simpleGit(repoRoot).branch(['-D', branch]);
 
     const resumed = unwrap(
-      await unwrap(await openRunStore({ repoRoot, config }, ['git-remote'])).load(deferred.runId),
+      await unwrap(await openRunStore({ exceptionDetails, repoRoot, config }, ['git-remote'])).load(
+        deferred.runId,
+      ),
     );
 
     expect(resumed?.codeRevision).toBe(checkpoint);
@@ -223,11 +238,15 @@ describe('openRunStore', () => {
   it('refuses to resume a deferred run on a clone without its unpublished code', async () => {
     const { repoRoot, config, deferred, cloneOf } = await setup();
     await commitOn(repoRoot, runBranchFor(deferred.runId));
-    unwrap(await unwrap(await openRunStore({ repoRoot, config }, ['git-remote'])).save(deferred));
+    unwrap(
+      await unwrap(await openRunStore({ exceptionDetails, repoRoot, config }, ['git-remote'])).save(
+        deferred,
+      ),
+    );
     const elsewhere = await cloneOf();
 
     const loaded = await unwrap(
-      await openRunStore({ repoRoot: elsewhere, config }, ['git-remote']),
+      await openRunStore({ exceptionDetails, repoRoot: elsewhere, config }, ['git-remote']),
     ).load(deferred.runId);
 
     expect(loaded.isErr() && loaded.error._tag).toBe('RunCodeUnavailable');
@@ -237,14 +256,18 @@ describe('openRunStore', () => {
     const { repoRoot, config, deferred, cloneOf } = await setup();
     const branch = runBranchFor(deferred.runId);
     const checkpoint = await commitOn(repoRoot, branch);
-    unwrap(await unwrap(await openRunStore({ repoRoot, config }, ['git-remote'])).save(deferred));
+    unwrap(
+      await unwrap(await openRunStore({ exceptionDetails, repoRoot, config }, ['git-remote'])).save(
+        deferred,
+      ),
+    );
     await simpleGit(repoRoot).push(['origin', `${checkpoint}:refs/heads/${branch}`]);
     const elsewhere = await cloneOf();
 
     const resumed = unwrap(
-      await unwrap(await openRunStore({ repoRoot: elsewhere, config }, ['git-remote'])).load(
-        deferred.runId,
-      ),
+      await unwrap(
+        await openRunStore({ exceptionDetails, repoRoot: elsewhere, config }, ['git-remote']),
+      ).load(deferred.runId),
     );
 
     expect(resumed?.codeRevision).toBe(checkpoint);
@@ -266,7 +289,11 @@ describe('openRunStore', () => {
       });`,
       );
       const store = unwrap(
-        await openRunStore({ repoRoot, config: { ...config, runStores: [module] } }),
+        await openRunStore({
+          exceptionDetails,
+          repoRoot,
+          config: { ...config, runStores: [module] },
+        }),
       );
       const result =
         operation === 'save' ? await store.save(state) : await store[operation](state.runId);
@@ -290,7 +317,11 @@ describe('openRunStore', () => {
           : `export default () => { throw new Error(${JSON.stringify(cause)}); };`;
       const module = 'failed-setup.mjs';
       await writeFile(path.join(repoRoot, module), source);
-      const result = await openRunStore({ repoRoot, config: { ...config, runStores: [module] } });
+      const result = await openRunStore({
+        exceptionDetails,
+        repoRoot,
+        config: { ...config, runStores: [module] },
+      });
       expect(result.isErr() && result.error).toBeInstanceOf(RunStoreSetupInvalid);
       expect(result.isErr() && result.error).toMatchObject({
         _tag: 'ConfigInvalid',

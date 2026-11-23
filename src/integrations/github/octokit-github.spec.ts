@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { unwrap } from '../../../tests/support/unwrap.js';
+import { retryResult } from '../../adapters/retry.js';
 import { type GithubClient, OctokitGithub } from './octokit-github.js';
 
 describe('OctokitGithub', () => {
@@ -162,7 +163,7 @@ describe('OctokitGithub', () => {
     };
     return {
       client,
-      github: new OctokitGithub(client),
+      github: new OctokitGithub(client, retryResult),
       repository: { owner: faker.string.alpha(10), repo: faker.string.alpha(10) },
     };
   }

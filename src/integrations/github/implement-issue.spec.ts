@@ -29,8 +29,10 @@ import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run
 import { repositoryConfig } from '../../../tests/support/repository-config.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
+import { exceptionDetails } from '../../adapters/exception-details.js';
 import { configDestination } from '../../adapters/filesystem/config-source.js';
 import { GitRunCode } from '../../adapters/git/run-code.js';
+import { retryResult } from '../../adapters/retry.js';
 import { CompositeRunStore } from '../../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store.js';
 import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session.js';
@@ -823,7 +825,7 @@ describe('implementIssue', () => {
       github,
       logger,
       app,
-      store: new OrchestrationStore(dir),
+      store: new OrchestrationStore(dir, retryResult, exceptionDetails),
       implement: () => implementIssue(app, github, repository, issue.number),
       implementFromFreshClone: async () =>
         implementIssue(appIn(await remote.cloneOf()), github, repository, issue.number),

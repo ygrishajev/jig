@@ -2,7 +2,7 @@ import { Octokit } from '@octokit/rest';
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { retryResult } from '../../adapters/retry.js';
+import type { RetryResult } from '../../ports/retry.js';
 import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
 import type {
   GithubFailure,
@@ -42,10 +42,13 @@ export interface GithubClient {
 }
 
 export class OctokitGithub implements GithubPort {
-  constructor(private readonly client: GithubClient) {}
+  constructor(
+    private readonly client: GithubClient,
+    private readonly retryResult: RetryResult,
+  ) {}
 
-  static authenticated(token: string): OctokitGithub {
-    return new OctokitGithub(new Octokit({ auth: token }).rest);
+  static authenticated(token: string, retryResult: RetryResult): OctokitGithub {
+    return new OctokitGithub(new Octokit({ auth: token }).rest, retryResult);
   }
 
   getIssue(repository: RepositoryIdentity, number: number): Promise<Result<Issue, GithubFailure>> {
@@ -56,7 +59,7 @@ export class OctokitGithub implements GithubPort {
   }
 
   private call<T>(subject: string, operation: () => Promise<T>): Promise<Result<T, GithubFailure>> {
-    return retryResult(() => this.attempt(subject, operation), {
+    return this.retryResult(() => this.attempt(subject, operation), {
       retries: GITHUB_RETRIES,
       delayMs: GITHUB_RETRY_DELAY_MS,
       shouldRetry: (error) => error._tag === 'GithubUnavailable',

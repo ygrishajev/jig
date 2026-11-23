@@ -126,7 +126,7 @@ and run-state failures are inward leaf port dependencies. No new source owner is
 ### app (12 files)
 
 - `app/container.ts` → `adapters/exception-details.ts`, `adapters/filesystem/config-source.ts`, `adapters/filesystem/preset-source.ts`, `adapters/git/git-workspace.ts`, `adapters/local-store/metrics-log.ts`, `adapters/local-store/run-artefacts.ts`, `adapters/local-store/run-paths.ts`, `adapters/logging/create-logger.ts`, `adapters/retry.ts`, `adapters/sandbox-image/docker-images.ts`, `adapters/sandbox-image/latest-agent-versions.ts`, `adapters/sandcastle/agents.ts`, `adapters/sandcastle/open-session.ts`, `adapters/terminal/ask-for-agents.ts`, `adapters/terminal/ask-for-credential.ts`, `app/observed-events.ts`, `app/report-cleanup.ts`, `app/sandbox-image.ts`, `config/agent-policy.ts`, `config/config-source.ts`, `config/environment.ts`, `config/load-config.ts`, `config/preset-source.ts`, `domain/agent-role.ts`, `domain/retry.ts`, `domain/run-state.ts`, `domain/settings.ts`, `flow/engine.ts`, `observers/logging-observer.ts`, `observers/metrics.ts`, `observers/run-events.ts`, `observers/tracing-observer.ts`, `ports/agent-session.ts`, `ports/exception-details.ts`, `ports/observability.ts`, `ports/retry.ts`, `ports/run-store.ts`, `ports/sandbox-git.ts`, `ports/sandbox-images.ts`, `ports/sandbox.ts`, `ports/workspace.ts`
-- `app/init-sandbox.ts` → `adapters/exception-details.ts`, `adapters/filesystem/config-source.ts`, `adapters/find-symlink.ts`, `adapters/local-store/credentials-file.ts`, `adapters/sandbox-image/image-recipe.ts`, `adapters/sandcastle/agents.ts`, `adapters/sandcastle/sandcastle-session.ts`, `app/container.ts`, `app/sandbox-image.ts`, `app/throwaway-sandbox.ts`, `config/environment.ts`, `config/errors.ts`, `config/load-config.ts`, `config/update-config.ts`, `ports/agent-session.ts`, `ports/credentials.ts`, `ports/filesystem.ts`, `ports/git-failures.ts`, `ports/sandbox.ts`, `prompts/toolchain.ts`
+- `app/init-sandbox.ts` → `adapters/filesystem/config-source.ts`, `adapters/find-symlink.ts`, `adapters/local-store/credentials-file.ts`, `adapters/sandbox-image/image-recipe.ts`, `adapters/sandcastle/agents.ts`, `adapters/sandcastle/sandcastle-session.ts`, `app/container.ts`, `app/sandbox-image.ts`, `app/throwaway-sandbox.ts`, `config/environment.ts`, `config/errors.ts`, `config/load-config.ts`, `config/update-config.ts`, `ports/agent-session.ts`, `ports/credentials.ts`, `ports/exception-details.ts`, `ports/filesystem.ts`, `ports/git-failures.ts`, `ports/sandbox.ts`, `prompts/toolchain.ts`
 - `app/observed-events.ts` → `domain/events.ts`, `observers/run-events.ts`
 - `app/report-cleanup.ts` → none
 - `app/run-flow.ts` → `domain/design-review.ts`, `domain/final-check.ts`, `domain/run-state.ts`, `domain/settings.ts`, `flow/define-flow.ts`, `steps/completion-reuse.ts`, `steps/design-review.ts`, `steps/final-check.ts`, `steps/finishing.ts`, `steps/planning.ts`, `steps/slice.ts`
@@ -134,8 +134,8 @@ and run-state failures are inward leaf port dependencies. No new source owner is
 - `app/run-request-invalid.ts` → none
 - `app/run-status.ts` → `adapters/local-store/metrics-log.ts`, `adapters/local-store/run-artefacts.ts`, `app/container.ts`, `app/run-request-invalid.ts`, `app/run-store-setup-invalid.ts`, `app/run-stores.ts`, `domain/run-id.ts`, `domain/run-state.ts`, `observers/metrics.ts`, `ports/metrics.ts`, `ports/run-store.ts`
 - `app/run-store-setup-invalid.ts` → none
-- `app/run-stores.ts` → `adapters/exception-details.ts`, `adapters/git/run-code.ts`, `adapters/local-store/local-run-store.ts`, `adapters/run-store/composite-run-store.ts`, `adapters/run-store/git-remote-run-store.ts`, `app/container.ts`, `app/run-store-setup-invalid.ts`, `domain/run-id.ts`, `domain/run-state.ts`, `ports/run-state-failures.ts`, `ports/run-store.ts`
-- `app/sandbox-image.ts` → `adapters/exception-details.ts`, `adapters/sandbox-image/image-recipe.ts`, `adapters/sandcastle/agents.ts`, `config/errors.ts`, `config/load-config.ts`, `ports/sandbox-images.ts`, `ports/sandbox.ts`
+- `app/run-stores.ts` → `adapters/git/run-code.ts`, `adapters/local-store/local-run-store.ts`, `adapters/run-store/composite-run-store.ts`, `adapters/run-store/git-remote-run-store.ts`, `app/container.ts`, `app/run-store-setup-invalid.ts`, `domain/run-id.ts`, `domain/run-state.ts`, `ports/exception-details.ts`, `ports/run-state-failures.ts`, `ports/run-store.ts`
+- `app/sandbox-image.ts` → `adapters/sandbox-image/image-recipe.ts`, `adapters/sandcastle/agents.ts`, `config/errors.ts`, `config/load-config.ts`, `ports/exception-details.ts`, `ports/sandbox-images.ts`, `ports/sandbox.ts`
 - `app/throwaway-sandbox.ts` → `adapters/git/branch.ts`, `adapters/git/throwaway-branch.ts`, `adapters/sandcastle/open-session.ts`, `app/container.ts`, `app/observed-events.ts`, `app/report-cleanup.ts`, `domain/run-id.ts`, `domain/run-state.ts`, `observers/logging-observer.ts`, `ports/git-failures.ts`, `ports/sandbox.ts`
 
 ### cli (14 files)
@@ -200,15 +200,15 @@ and run-state failures are inward leaf port dependencies. No new source owner is
 
 ### integrations (12 files)
 
-- `integrations/github/cli.ts` → `adapters/exception-details.ts`, `cli/app-action.ts`, `cli/exit-when-done.ts`, `cli/main.ts`, `integrations/github/command.ts`, `integrations/github/github-port.ts`
-- `integrations/github/command.ts` → `cli/app-action.ts`, `cli/config-option.ts`, `cli/log-format-option.ts`, `cli/with-app.ts`, `integrations/github/errors.ts`, `integrations/github/github-port.ts`, `integrations/github/implement-issue.ts`, `integrations/github/octokit-github.ts`, `integrations/github/repository-identity.ts`
+- `integrations/github/cli.ts` → `adapters/exception-details.ts`, `adapters/retry.ts`, `cli/app-action.ts`, `cli/exit-when-done.ts`, `cli/main.ts`, `integrations/github/command.ts`, `integrations/github/github-port.ts`, `integrations/github/octokit-github.ts`
+- `integrations/github/command.ts` → `cli/app-action.ts`, `cli/config-option.ts`, `cli/log-format-option.ts`, `cli/with-app.ts`, `integrations/github/errors.ts`, `integrations/github/github-port.ts`, `integrations/github/implement-issue.ts`, `integrations/github/repository-identity.ts`
 - `integrations/github/errors.ts` → none
 - `integrations/github/findings-comment.ts` → `domain/diagnostics.ts`, `domain/run-diagnostics.ts`, `domain/run-state.ts`
 - `integrations/github/github-port.ts` → `integrations/github/errors.ts`
 - `integrations/github/implement-issue.ts` → `adapters/git/branch.ts`, `adapters/git/run-history.ts`, `app/container.ts`, `app/run-jig.ts`, `app/run-store-setup-invalid.ts`, `app/run-stores.ts`, `domain/invocation-status.ts`, `domain/run-id.ts`, `domain/run-state.ts`, `integrations/github/errors.ts`, `integrations/github/findings-comment.ts`, `integrations/github/github-port.ts`, `integrations/github/orchestration-state.ts`, `integrations/github/orchestration-store.ts`, `integrations/github/request-snapshot.ts`, `integrations/github/run-branch-publication.ts`, `ports/git-failures.ts`, `ports/run-store.ts`
-- `integrations/github/octokit-github.ts` → `adapters/retry.ts`, `integrations/github/errors.ts`, `integrations/github/github-port.ts`
+- `integrations/github/octokit-github.ts` → `integrations/github/errors.ts`, `integrations/github/github-port.ts`, `ports/retry.ts`
 - `integrations/github/orchestration-state.ts` → `domain/invocation-status.ts`, `domain/run-id.ts`, `integrations/github/github-port.ts`
-- `integrations/github/orchestration-store.ts` → `adapters/exception-details.ts`, `adapters/git/remote-ref.ts`, `adapters/retry.ts`, `app/report-cleanup.ts`, `integrations/github/errors.ts`, `integrations/github/orchestration-state.ts`, `ports/git-failures.ts`, `ports/run-state-failures.ts`
+- `integrations/github/orchestration-store.ts` → `adapters/git/remote-ref.ts`, `app/report-cleanup.ts`, `integrations/github/errors.ts`, `integrations/github/orchestration-state.ts`, `ports/exception-details.ts`, `ports/git-failures.ts`, `ports/retry.ts`, `ports/run-state-failures.ts`
 - `integrations/github/repository-identity.ts` → `adapters/git/repository.ts`, `integrations/github/errors.ts`, `integrations/github/github-port.ts`
 - `integrations/github/request-snapshot.ts` → `integrations/github/github-port.ts`
 - `integrations/github/run-branch-publication.ts` → `adapters/git/remote-ref.ts`, `adapters/git/repository.ts`, `adapters/git/run-history.ts`, `domain/run-id.ts`, `domain/run-state.ts`, `integrations/github/errors.ts`, `ports/git-failures.ts`, `ports/run-state-failures.ts`
@@ -336,19 +336,21 @@ else into text with `String`. A broad catch that already knows it holds a `Panic
 
 Each consumer receives the capability through its existing construction path:
 
-| Consumer                                             | How it receives the capability                                              |
-| ---------------------------------------------------- | --------------------------------------------------------------------------- |
-| `src/flow/engine.ts` step retries                    | `EngineDependencies.ports.retryResult`, under `transientRetryPolicy`        |
-| `src/flow/engine.ts` bug reports                     | `EngineDependencies.exceptionDetails`                                       |
-| `src/steps/planning.ts` slicing correction           | `StepPorts.retryResult`                                                     |
-| `src/app/container.ts` sandbox start                 | the `retryResult` the container registers, under `transientRetryPolicy`     |
-| `src/cli/with-error-handling.ts`                     | an `ExceptionDetails` argument from the command that registers it           |
-| `src/cli/read-request.ts`                            | `RequestReads.messageOf`, from `CommandIo.exceptionDetails`                 |
-| `src/cli/main.ts` and every CLI command              | `buildCli(exceptionDetails)` and `CommandIo.exceptionDetails`               |
-| `src/observers/run-events.ts`                        | none: a `Panic` is rethrown with its own `message`                          |
-| `src/integrations/github/cli.ts`                     | imports the adapter implementation and supplies it to `buildCli` and GitHub |
-| GitHub API and orchestration store                   | import the adapter implementations at their third-party boundary            |
-| adapters and app modules wrapping a third-party call | import `messageOf` from the adapter                                         |
+| Consumer                                   | How it receives the capability                                                      |
+| ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `src/flow/engine.ts` step retries          | `EngineDependencies.ports.retryResult`, under `transientRetryPolicy`                |
+| `src/flow/engine.ts` bug reports           | `EngineDependencies.exceptionDetails`                                               |
+| `src/steps/planning.ts` slicing correction | `StepPorts.retryResult`                                                             |
+| `src/app/container.ts` sandbox start       | the `retryResult` the container registers, under `transientRetryPolicy`             |
+| `src/cli/with-error-handling.ts`           | an `ExceptionDetails` argument from the command that registers it                   |
+| `src/cli/read-request.ts`                  | `RequestReads.messageOf`, from `CommandIo.exceptionDetails`                         |
+| `src/cli/main.ts` and every CLI command    | `buildCli(exceptionDetails)` and `CommandIo.exceptionDetails`                       |
+| `src/observers/run-events.ts`              | none: a `Panic` is rethrown with its own `message`                                  |
+| `src/integrations/github/cli.ts`           | imports the adapter implementation and supplies it to `buildCli` and GitHub         |
+| GitHub API                                 | `RetryResult` from the GitHub CLI through its constructor and authenticated factory |
+| GitHub orchestration store                 | `RetryResult` and `ExceptionDetails` from the app cradle through its constructor    |
+| App init, run stores and sandbox image     | `ExceptionDetails` from the app cradle through their dependencies and helpers       |
+| adapters wrapping a third-party call       | import `messageOf` from the adapter                                                 |
 
 `src/app/container.ts` registers `retryResult` and `exceptionDetails` as values and builds the
 engine's dependencies from them. Domain keeps business failures, `isTransient` and

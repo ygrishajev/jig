@@ -4,18 +4,24 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { exceptionDetails } from '../../adapters/exception-details.js';
+import { retryResult } from '../../adapters/retry.js';
 import type { CommandIo } from '../../cli/app-action.js';
 import { exitWhenDone } from '../../cli/exit-when-done.js';
 import { buildCli } from '../../cli/main.js';
 import { registerGithubCommands } from './command.js';
 import type { GithubPort } from './github-port.js';
+import { OctokitGithub } from './octokit-github.js';
 
 export function buildJigCli(
   io: Omit<CommandIo, 'exceptionDetails'> = {},
   githubFor?: (token: string) => GithubPort,
 ): Command {
   const program = buildCli(exceptionDetails);
-  registerGithubCommands(program, { ...io, exceptionDetails }, githubFor);
+  registerGithubCommands(
+    program,
+    { ...io, exceptionDetails },
+    githubFor ?? ((token) => OctokitGithub.authenticated(token, retryResult)),
+  );
   return program;
 }
 

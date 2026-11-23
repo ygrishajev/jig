@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest';
 import { runId } from '../../../tests/support/builders.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
+import { exceptionDetails } from '../../adapters/exception-details.js';
 import { RemoteRef } from '../../adapters/git/remote-ref.js';
+import { retryResult } from '../../adapters/retry.js';
 import { GithubRefused } from './errors.js';
 import { acceptRequest, claimPublication, emptyOrchestration } from './orchestration-state.js';
 import { OrchestrationStore, OWNERSHIP_LEASE_MS } from './orchestration-store.js';
@@ -23,7 +25,7 @@ describe('OrchestrationStore', () => {
 
   it('retains concurrent updates from another clone and coexists with run refs', async () => {
     const { dir, cloneOf, store, request } = await setup();
-    const second = new OrchestrationStore(await cloneOf());
+    const second = new OrchestrationStore(await cloneOf(), retryResult, exceptionDetails);
     const id = runId();
     const refs = new RemoteRef(dir);
     const runRef = `refs/jig/${id}`;
@@ -96,7 +98,7 @@ describe('OrchestrationStore', () => {
 
   it('refuses a second owner while the first publishes, and releases however the work ends', async () => {
     const { store, cloneOf } = await setup();
-    const other = new OrchestrationStore(await cloneOf());
+    const other = new OrchestrationStore(await cloneOf(), retryResult, exceptionDetails);
     const key = faker.string.uuid();
     const value = faker.lorem.word();
     const failure = new GithubRefused({ message: faker.lorem.sentence() });
@@ -124,20 +126,23 @@ describe('OrchestrationStore', () => {
     const now = faker.number.int({ min: 1, max: 1_000_000 });
     const crashed = { token: faker.string.uuid(), expiresAt: now + 1 };
     unwrap(
-      await new OrchestrationStore(dir).update((state) =>
+      await new OrchestrationStore(dir, retryResult, exceptionDetails).update((state) =>
         claimPublication(state, key, crashed, now),
       ),
     );
     const logger = pino({ level: 'silent' });
     const value = faker.lorem.word();
 
-    const early = await new OrchestrationStore(await cloneOf(), () => now).withPublicationOwnership(
-      key,
-      logger,
-      async () => Result.ok(value),
-    );
+    const early = await new OrchestrationStore(
+      await cloneOf(),
+      retryResult,
+      exceptionDetails,
+      () => now,
+    ).withPublicationOwnership(key, logger, async () => Result.ok(value));
     const late = await new OrchestrationStore(
       await cloneOf(),
+      retryResult,
+      exceptionDetails,
       () => crashed.expiresAt,
     ).withPublicationOwnership(key, logger, async () => Result.ok(value));
 
@@ -148,8 +153,18 @@ describe('OrchestrationStore', () => {
   it('stops a publisher whose lease another job took over before its next effect', async () => {
     const { cloneOf } = await setup();
     const clock = { now: faker.number.int({ min: 1, max: 1_000_000 }) };
-    const slow = new OrchestrationStore(await cloneOf(), () => clock.now);
-    const other = new OrchestrationStore(await cloneOf(), () => clock.now);
+    const slow = new OrchestrationStore(
+      await cloneOf(),
+      retryResult,
+      exceptionDetails,
+      () => clock.now,
+    );
+    const other = new OrchestrationStore(
+      await cloneOf(),
+      retryResult,
+      exceptionDetails,
+      () => clock.now,
+    );
     const key = faker.string.uuid();
     const logger = pino({ level: 'silent' });
     const effects: string[] = [];
@@ -170,8 +185,18 @@ describe('OrchestrationStore', () => {
   it('keeps a renewed lease past its first expiry, so no other job can take over', async () => {
     const { cloneOf } = await setup();
     const clock = { now: faker.number.int({ min: 1, max: 1_000_000 }) };
-    const slow = new OrchestrationStore(await cloneOf(), () => clock.now);
-    const other = new OrchestrationStore(await cloneOf(), () => clock.now);
+    const slow = new OrchestrationStore(
+      await cloneOf(),
+      retryResult,
+      exceptionDetails,
+      () => clock.now,
+    );
+    const other = new OrchestrationStore(
+      await cloneOf(),
+      retryResult,
+      exceptionDetails,
+      () => clock.now,
+    );
     const key = faker.string.uuid();
     const logger = pino({ level: 'silent' });
     const value = faker.lorem.word();
@@ -190,7 +215,7 @@ describe('OrchestrationStore', () => {
 
   it('releases ownership when the publisher panics and rethrows the panic', async () => {
     const { store, cloneOf } = await setup();
-    const other = new OrchestrationStore(await cloneOf());
+    const other = new OrchestrationStore(await cloneOf(), retryResult, exceptionDetails);
     const key = faker.string.uuid();
     const message = faker.lorem.sentence();
     const value = faker.lorem.word();
@@ -212,7 +237,7 @@ describe('OrchestrationStore', () => {
       dir,
       origin,
       cloneOf,
-      store: new OrchestrationStore(dir),
+      store: new OrchestrationStore(dir, retryResult, exceptionDetails),
       request: { runId: runId(), text: faker.lorem.paragraph(), title: faker.lorem.sentence() },
     };
   }

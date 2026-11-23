@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { everyStepOn } from '../../tests/support/builders.js';
 import { repositoryConfig } from '../../tests/support/repository-config.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
+import { exceptionDetails } from '../adapters/exception-details.js';
 import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import { ConfigInvalid } from '../config/errors.js';
 import { ImageBuildFailed, ImageRecipeInvalid } from '../ports/sandbox.js';
@@ -193,6 +194,7 @@ describe('ensureSandboxImage', () => {
           repoRoot,
           config,
           images,
+          exceptionDetails,
           latestVersions: async (packages) => {
             lookups++;
             return Object.fromEntries(packages.map((npmPackage) => [npmPackage, latestVersion()]));
