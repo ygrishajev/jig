@@ -134,19 +134,20 @@ a reduction in caller complexity. Simplicity and correct boundaries are both acc
 
 ## Target responsibilities
 
-| Owner         | Purpose                                                                                                | Allowed other production source owners               |
-| ------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `domain`      | Run/slice concepts, business rules and transitions, genuine business failures                          | None                                                 |
-| `ports`       | External capability contracts, their portable data, and capability failures                            | domain                                               |
-| `config`      | Configuration/environment schemas, provider/default policy, presets and pure resolution                | domain, ports                                        |
-| `flow`        | Existing jig execution mechanics and its step contracts                                                | domain, ports                                        |
-| `prompts`     | Agent request construction                                                                             | domain                                               |
-| `steps`       | Individual workflow operations through ports                                                           | domain, ports, flow, prompts                         |
-| `observers`   | Event subscriptions, derived metrics, and reporting behavior                                           | domain, ports                                        |
-| `adapters`    | Git, GitHub, files, containers, terminal, logging and telemetry implementations                        | domain, ports, config, observers                     |
-| `app`         | Application API, prerequisites, use cases, resource-lifetime policy and concrete jig workflow assembly | domain, ports, config, flow, steps, prompts          |
-| `cli`         | Command declarations, transport validation, input translation, presentation and exit-code decisions    | app public API, domain, ports                        |
-| `composition` | Executable startup, construction, dependency registration and concrete observer/adapter wiring         | app, cli, adapters, config, observers, ports, domain |
+| Owner         | Purpose                                                                                                | Allowed other production source owners                         |
+| ------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `domain`      | Run/slice concepts, business rules and transitions, genuine business failures                          | None                                                           |
+| `failures`    | Failure presentation, unwrapping and retry execution                                                   | None                                                           |
+| `ports`       | External capability contracts, their portable data, and capability failures                            | domain                                                         |
+| `config`      | Configuration/environment schemas, provider/default policy, presets and pure resolution                | domain, ports                                                  |
+| `flow`        | Existing jig execution mechanics and its step contracts                                                | domain, ports, failures                                        |
+| `prompts`     | Agent request construction                                                                             | domain                                                         |
+| `steps`       | Individual workflow operations through ports                                                           | domain, ports, flow, prompts, failures                         |
+| `observers`   | Event subscriptions, derived metrics, and reporting behavior                                           | domain, ports, failures                                        |
+| `adapters`    | Git, GitHub, files, containers, terminal, logging and telemetry implementations                        | domain, ports, config, observers, failures                     |
+| `app`         | Application API, prerequisites, use cases, resource-lifetime policy and concrete jig workflow assembly | domain, ports, config, flow, steps, prompts, failures          |
+| `cli`         | Command declarations, transport validation, input translation, presentation and exit-code decisions    | app public API, domain, ports, failures                        |
+| `composition` | Executable startup, construction, dependency registration and concrete observer/adapter wiring         | app, cli, adapters, config, observers, ports, domain, failures |
 
 Same-owner imports are allowed, subject to cycle rules and the application API boundary below.
 This table is the initial project-source allowlist, not permission to import arbitrary third-party
@@ -155,10 +156,22 @@ ownership is possible, but must update the spec, rules, fixtures and diagrams to
 exceptions. The core prohibitions against infrastructure/transport/container dependencies in
 application behavior remain in force.
 
-No new shared technical owner is prescribed. If the error/helper inventory demonstrates the need
-for one, the implementation plan must name its cohesive responsibility and specific consumers,
-explain why existing libraries/owners do not fit, and propose its allowed dependency edges before
-the corresponding issue is implemented. Do not grant every module access in anticipation of need.
+`failures` is the one shared technical owner. It holds how jig presents a failure (`messageOf`),
+unwraps a panic to its original cause (`rootCause`) and retries an operation that returns a
+`Result` (`retryResult` and its `RetryPolicy`). These helpers are pure or need only a timer, and
+their consumers span flow, steps, observers, adapters, app, CLI and composition. No existing owner
+is importable by all of them: flow cannot import adapters, adapters cannot import flow, and domain
+is reserved for business rules. So `failures` sits beneath every consumer, imports no project
+source, and depends only on better-result and Node. Callers import its functions directly; they are
+not ports, have no adapter implementation, and are not injected. Domain stays independent and does
+not import `failures`.
+
+`failures` holds no error classes and no classification. Each class lives with the condition it
+describes (see below), carries its literal `kind`, and the owner of a decision says which kinds it
+retries. Any further shared technical owner must name its cohesive responsibility and specific
+consumers, explain why existing libraries/owners do not fit, and propose its allowed dependency
+edges before the corresponding issue is implemented. Do not grant every module access in
+anticipation of need.
 
 The main dependency paths are:
 
@@ -371,10 +384,14 @@ does not by itself make those responsibilities cohesive. Prefer better-result fa
 rebuilding them. Keep a thin wrapper only when it preserves a required behavior the library does
 not supply directly, and explain that behavior.
 
-Do not mandate a top-level `failures` module. Use existing owners where the responsibility fits;
-justify any new technical owner under the dependency-policy process above. It must not become a
-miscellaneous utilities module, an app-wide class registry, or a route for domain to import outer
-layers. Remove unused registry machinery rather than moving it wholesale.
+Presentation, unwrapping and retry execution live in `failures` (see Target responsibilities).
+better-result's retry runs only inside `Result.tryPromise`, which retries a rejected promise; jig
+operations return `Result` values and never throw, and callers need a callback on every failed
+attempt, the last one included. `retryResult` is the thin wrapper that keeps that behavior: the first
+attempt runs at once, delays grow exponentially, and the final `Err` is returned. Never throw an
+`Err` to reach a library retry loop. `failures` must not become a miscellaneous utilities module,
+an app-wide class registry, or a route for domain to import outer layers. Remove unused registry
+machinery rather than moving it wholesale.
 
 Flow's failure contract comes from the steps and persistence capabilities it actually invokes,
 including portable failures representing invalid saved state where those already occur. It does
@@ -394,8 +411,10 @@ classes alone is not sufficient, and a new outward import is not an acceptable c
 Express the owner allowlist in the existing Dependency Cruiser pipeline. Scan every production file,
 including disconnected files. Keep module-level acyclicity including erased edges, runtime file
 cycles, resolution/package checks, production-to-spec rejection and unowned-file detection.
-Add composition as an explicit owner and remove integrations. Register any subsequently justified
-technical owner only with its concrete allowed edges and regression fixtures.
+Add composition as an explicit owner and remove integrations. Register `failures` as an owner that
+imports no project source, and allow only the owners whose table row lists it to import it.
+Register any subsequently justified technical owner only with its concrete allowed edges and
+regression fixtures.
 
 Only composition may import CLI across owners. Only CLI and composition may import app across
 owners, with CLI restricted to the declared public app entry. No other source owner may import
@@ -516,9 +535,9 @@ constraints are not. Generic flow extraction and new retry overrides do not bloc
   existing domain, settings, event or port dependencies.
 - **Additional transports and extension frameworks:** REST is a boundary check only. No server,
   plugin framework, universal application facade or replacement dependency registry is required.
-- **New technical owner:** No shared helper module is approved by this spec. If the planning
-  inventory requires one, its responsibility, consumers and allowed edges must be reviewed before
-  its implementation issue proceeds. It cannot weaken the core inward boundaries.
+- **Further technical owners:** `failures` is the only shared helper owner this spec approves. Any
+  other needs its responsibility, consumers and allowed edges reviewed before its implementation
+  issue proceeds, and it cannot weaken the core inward boundaries.
 - **Credential-independent status:** [Issue #50](https://github.com/ygrishajev/jig/issues/50) removes
   saved agent-credential loading from status separately. This refactor preserves the existing
   preparation failures.
