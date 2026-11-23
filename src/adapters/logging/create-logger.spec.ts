@@ -3,11 +3,14 @@ import { TaggedError } from 'better-result';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { DestinationStream } from 'pino';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { runId } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
+import { observedEvents } from '../../app/observed-events.js';
 import { RunStoreSetupInvalid } from '../../app/run-stores.js';
 import { ConfigInvalid } from '../../config/errors.js';
+import type { RunEvent } from '../../domain/events.js';
 import {
   SandboxCredentialsInvalid,
   SandboxPreparationInvalid,
@@ -116,7 +119,50 @@ describe('logged failures', () => {
     expect(logged()).toHaveLength(3);
   });
 
-  async function setup(input: { failure: Error }) {
+  it.each([
+    ['null', () => null],
+    ['a string', () => faker.lorem.sentence()],
+    ['a number', () => faker.number.int()],
+    ['an object without a message', () => ({ code: faker.string.alphanumeric(8) })],
+  ])('logs %s thrown in place of an error as it is', async (_case, create) => {
+    const failure = create();
+    const { logged } = await setup({ failure });
+
+    for (const line of logged()) {
+      expect(line.err).toEqual(failure);
+    }
+    expect(logged()).toHaveLength(3);
+  });
+
+  it('logs an observer that throws null and still hands the event to the other observers', async () => {
+    const { logged, runLogger } = await setup({});
+    const event: RunEvent = {
+      type: 'agentMessage',
+      runId: runId(),
+      role: faker.helpers.arrayElement(['planner', 'implementer', 'reviewer'] as const),
+      text: faker.lorem.sentence(),
+    };
+    const second = vi.fn<(event: RunEvent) => void>();
+    const events = observedEvents(runLogger, [
+      {
+        handle: () => {
+          throw null;
+        },
+      },
+      { handle: second },
+    ]);
+
+    events.publish(event);
+    runLogger.flush();
+
+    expect(second).toHaveBeenCalledWith(event);
+    expect(logged().filter((line) => 'err' in line)).toEqual([
+      expect.objectContaining({ err: null }),
+      expect.objectContaining({ err: null }),
+    ]);
+  });
+
+  async function setup(input: { failure?: unknown }) {
     const directory = await tempDirectory('jig-logger-failure-');
     const logFile = path.join(directory, 'run.log');
     const consoleLines: string[] = [];
@@ -124,12 +170,18 @@ describe('logged failures', () => {
       write: (line) => void consoleLines.push(line),
     };
     const message = faker.lorem.sentence();
-    createConsoleLogger('json', 'info', consoleDestination).error({ err: input.failure }, message);
     const runLogger = createRunLogger('json', logFile, 'info', consoleDestination);
-    runLogger.error({ err: input.failure }, message);
-    runLogger.flush();
+    if ('failure' in input) {
+      createConsoleLogger('json', 'info', consoleDestination).error(
+        { err: input.failure },
+        message,
+      );
+      runLogger.error({ err: input.failure }, message);
+      runLogger.flush();
+    }
     const parse = (line: string): { err: Record<string, unknown> } => JSON.parse(line);
     return {
+      runLogger,
       logged: () => [
         ...consoleLines.map(parse),
         ...readFileSync(logFile, 'utf-8').trim().split('\n').map(parse),

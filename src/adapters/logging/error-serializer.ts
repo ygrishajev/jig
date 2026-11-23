@@ -1,13 +1,12 @@
 import { pino } from 'pino';
 
-type SerializedError = ReturnType<typeof pino.stdSerializers.err>;
-
 /**
  * pino's own `err` serializer, with a split class logged under its legacy identity. It works on
  * the serialized copy, so the failure itself keeps its tag; message and stack frames are kept.
  */
-export function serializeError(error: Error): SerializedError {
-  const serialized = pino.stdSerializers.err(error);
+export function serializeError(value: unknown): unknown {
+  if (!isErrorLike(value)) return value;
+  const serialized = pino.stdSerializers.err(value);
   const tag: unknown = serialized._tag;
   if (typeof tag !== 'string' || !SPLIT_FROM_CONFIG_INVALID.has(tag) || serialized.type !== tag) {
     return serialized;
@@ -21,6 +20,16 @@ export function serializeError(error: Error): SerializedError {
       ? `${LEGACY_IDENTITY}${serialized.stack.slice(tag.length)}`
       : serialized.stack,
   };
+}
+
+/** pino's own test for a value its `err` serializer serializes; it logs anything else as it is. */
+function isErrorLike(value: unknown): value is Error {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'message' in value &&
+    typeof value.message === 'string'
+  );
 }
 
 /**

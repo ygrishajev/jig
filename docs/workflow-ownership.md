@@ -295,6 +295,7 @@ flowchart LR
   cli --> domain
   cli --> failures
   cli --> observers
+  cli --> ports
   config --> domain
   flow --> domain
   flow --> failures
