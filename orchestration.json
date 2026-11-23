@@ -65,7 +65,8 @@
     "publish-partial-work-as-a-draft-pr-and-2d6a3b10:stuck:9ea35ae29050b4fda5818b2a373ebc3a575d590e": "https://github.com/ygrishajev/jig/issues/14#issuecomment-6975980935",
     "add-jig-github-setup-and-a-manual-89ca2c32:blocked:27a525b3c23f922c272306573d78e9600169b332": "https://github.com/ygrishajev/jig/issues/15#issuecomment-7040239045",
     "refactor-domain-assign-error-ownership-8ba14cb6:blocked:73c61527a67afa9837e5dd9a3f954c33f654d556": "https://github.com/ygrishajev/jig/issues/56#issuecomment-7095661896",
-    "refactor-domain-assign-error-ownership-915740a5:blocked:f01af2188cb6ffc2b09be3fed6ea077800cff716": "https://github.com/ygrishajev/jig/issues/56#issuecomment-7101292420"
+    "refactor-domain-assign-error-ownership-915740a5:blocked:f01af2188cb6ffc2b09be3fed6ea077800cff716": "https://github.com/ygrishajev/jig/issues/56#issuecomment-7101292420",
+    "refactor-domain-assign-error-ownership-8ba14cb6:blocked:d0b3398d0e2f4b82d49a1e2e2adbb7219eabcf0b": "https://github.com/ygrishajev/jig/issues/56#issuecomment-7102796645"
   },
   "refusals": {},
   "refusalComments": {},
