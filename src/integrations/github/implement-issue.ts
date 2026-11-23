@@ -1,6 +1,7 @@
 import { panic, Result } from 'better-result';
 
 import { getCurrentBranch } from '../../adapters/git/branch.js';
+import { RemotePublicationReceipts } from '../../adapters/git/publication-receipts.js';
 import { exactHead } from '../../adapters/git/run-history.js';
 import type { App } from '../../app/container.js';
 import { withPublicationOwnership } from '../../app/publication-ownership.js';
@@ -103,7 +104,7 @@ export function implementIssue(
           message: `Check out the default branch "${base}" before implementing an issue (currently "${current}").`,
         }),
       );
-    const store = app.cradle.publicationReceipts;
+    const store = new RemotePublicationReceipts(app.cradle.repoRoot);
     const key = `${repository.owner}/${repository.repo}#${issueNumber}`;
     app.cradle.logger.info(
       { event: 'githubIssueRequestStarted', issueNumber },

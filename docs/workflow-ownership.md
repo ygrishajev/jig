@@ -370,8 +370,10 @@ Publication ownership has since moved out of the GitHub integration, replacing t
 - `app/publication-ownership.ts` → `app/report-cleanup.ts`, `domain/github-orchestration.ts`,
   `ports/observability.ts`, `ports/publication-receipts.ts`; the lease lifetime: claim, renewal
   before each effect, takeover refusal and release however the work ends.
-- `app/container.ts` registers `publicationReceipts`; `integrations/github/implement-issue.ts`
-  takes it from there and runs publication inside `withPublicationOwnership`.
+- `integrations/github/implement-issue.ts` → `adapters/git/publication-receipts.ts`,
+  `app/publication-ownership.ts`; it constructs `RemotePublicationReceipts` where it constructed
+  `OrchestrationStore` and runs publication inside `withPublicationOwnership`. `app/container.ts`
+  does not register the receipts; see [GitHub publication handoff](#github-publication-handoff).
 
 Dependency-cruiser's `failures-imports-only-better-result-and-node` rule allows production
 `failures` to import only itself, `better-result` and Node built-ins, and
@@ -383,6 +385,132 @@ for the planned composition owner until that slice moves executable wiring out o
 it expresses: a business rule in domain, a capability contract in its port, a configuration policy
 in config. Moving composition out of `app` and `integrations` and separating the GitHub
 integration are separate slices.
+
+## GitHub publication handoff
+
+This inventory records the GitHub command as it runs after publication ownership moved, for the
+composition and application-API issues that move the rest of it.
+
+### Composition prerequisite
+
+The composition predecessor this work was planned against is not on this branch:
+
+- There is no `src/composition/`. Executable startup is still `integrations/github/cli.ts`, which
+  `package.json` `bin.jig`, `main` and `scripts.dev` name.
+- Construction is still `createAppContainer` in `app/container.ts`, called by `openApp` in
+  `cli/with-app.ts`.
+- `docs/specs/application-boundaries.md` (Composition) records the construction mechanism as
+  unresolved pending spike #49; no decision or rationale is recorded.
+- No container-free operation or lifetime contract exists: `runJig` and `implementIssue` take the
+  container.
+
+Publication ownership is therefore not wired through composition, and the old container gains no
+registration for it. `implementIssue` constructs `RemotePublicationReceipts` from
+`app.cradle.repoRoot` at the point that constructed `OrchestrationStore`, and passes it to
+`withPublicationOwnership` with `app.cradle.clock` (`Date.now`, as the store's default) and
+`app.cradle.logger`. Installing the receipts from composition waits for that predecessor.
+
+### Consumers
+
+| Module                                          | Production importers                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `integrations/github/cli.ts`                    | none; the executable                                                                                                                              |
+| `integrations/github/command.ts`                | `integrations/github/cli.ts`                                                                                                                      |
+| `integrations/github/implement-issue.ts`        | `integrations/github/command.ts`                                                                                                                  |
+| `integrations/github/octokit-github.ts`         | `integrations/github/command.ts`                                                                                                                  |
+| `integrations/github/repository-identity.ts`    | `integrations/github/command.ts`                                                                                                                  |
+| `integrations/github/github-port.ts`            | `cli.ts`, `command.ts`, `implement-issue.ts`, `octokit-github.ts`, `request-snapshot.ts` in `integrations/github`                                 |
+| `integrations/github/errors.ts`                 | `command.ts`, `github-port.ts`, `implement-issue.ts`, `octokit-github.ts`, `repository-identity.ts`, `run-branch-publication.ts`                  |
+| `integrations/github/findings-comment.ts`       | `integrations/github/implement-issue.ts`                                                                                                          |
+| `integrations/github/request-snapshot.ts`       | `integrations/github/implement-issue.ts`                                                                                                          |
+| `integrations/github/run-branch-publication.ts` | `integrations/github/implement-issue.ts`                                                                                                          |
+| `domain/repository-identity.ts`                 | `domain/github-orchestration.ts`, and `command.ts`, `github-port.ts`, `implement-issue.ts`, `octokit-github.ts`, `repository-identity.ts`         |
+| `domain/github-orchestration.ts`                | `ports/publication-receipts.ts`, `adapters/git/publication-receipts.ts`, `app/publication-ownership.ts`, `integrations/github/implement-issue.ts` |
+| `ports/publication-receipts.ts`                 | `adapters/git/publication-receipts.ts`, `app/publication-ownership.ts`, `integrations/github/errors.ts`, `integrations/github/implement-issue.ts` |
+| `adapters/git/publication-receipts.ts`          | `integrations/github/implement-issue.ts`                                                                                                          |
+| `app/publication-ownership.ts`                  | `integrations/github/implement-issue.ts`                                                                                                          |
+
+Outside production, `tests/support/fake-github.ts` implements `GithubPort`, `src/boundary.spec.ts`
+builds the CLI from `command.ts`, and `tests/e2e/feature.spec.ts` builds it from `cli.ts`.
+
+### Preparation order
+
+1. `github implement --issue <n>` is parsed by `githubInputSchema` through `appAction`.
+2. `prepare` in `command.ts` reads `GITHUB_TOKEN`, then `GH_TOKEN`, refusing with
+   `GithubSetupInvalid` when neither is set, and resolves the repository from `GITHUB_REPOSITORY`
+   or `origin`, all before the app opens.
+3. `openApp` checks the repository root, parses the environment, reads `.jig/.env` credentials,
+   loads config and preset, and builds the container.
+4. `implementIssue` reads the default branch from GitHub and refuses another checked-out branch
+   with `BaseBranchMismatch`.
+5. It reads the shared orchestration and reuses the accepted snapshot for
+   `owner/repo#issue`; otherwise it fetches the issue and accepts it with `acceptRequest`.
+6. It runs `runJig` (below).
+7. Inside `withPublicationOwnership` it claims the lease, reads the run's code checkpoint from the
+   required `git-remote` store, chooses ready PR, draft PR, refusal or status comment, and runs
+   each outward effect (run-branch push, comment, PR) inside `whileOwned`, saving its receipt
+   after it. The lease is released however that ends.
+8. `withApp` disposes the container, the command prints `describeIssueOutcome`, and `cli.ts`
+   waits in `exitWhenDone`.
+
+### Persisted formats
+
+- `refs/jig/_orchestration` on `origin`, holding `orchestration.json` as
+  `JSON.stringify(state, null, 2)` plus a newline, committed as
+  `jig github: update orchestration` and saved with a leased push retried up to five times.
+  `orchestrationSchema` is version `1` with `requests`, `receipts`, `comments`, `refusals`,
+  `refusalComments`, `findingsComments` and `owners`; the last five default to empty so older
+  states load.
+- A lease is `{ token, expiresAt }` under `owners[key]`, `token` a random UUID and `expiresAt`
+  fifteen minutes past the last claim or renewal.
+- Comment markers: `<!-- jig:status:… -->`, `<!-- jig:refusal:… -->` and `<!-- jig:… -->` for
+  findings, appended to each body so a comment posted before its receipt was saved is found again.
+- Run state stays in the `git-remote` run store, and the run branch is pushed by
+  `run-branch-publication.ts`.
+
+The failures each contract returns are in the [failure signatures](#failure-signatures).
+
+### Behavioral coverage
+
+| Behavior                                                                                     | Spec                                                                                    |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Acceptance, receipts, refusals, markers and lease transitions                                | `domain/github-orchestration.spec.ts`                                                   |
+| `owner/repo` parsing                                                                         | `domain/repository-identity.spec.ts`, `integrations/github/repository-identity.spec.ts` |
+| Persisted format read by another clone, concurrent updates, contention budget, corrupt state | `adapters/git/publication-receipts.spec.ts`                                             |
+| Claim failure, renewal loss, release failure, work failure kept, panic released              | `app/publication-ownership.spec.ts`, in memory                                          |
+| Refusal, takeover, renewal and release observed across clones of one remote                  | `app/publication-ownership.spec.ts`, real temporary repositories                        |
+| Preparation, acceptance, publication outcomes, retries and refusals end to end               | `integrations/github/implement-issue.spec.ts`                                           |
+| Token and repository refusals before the app opens, resume from another clone                | `integrations/github/command.spec.ts`                                                   |
+| Workflow refusal, inspected-revision push and work-beyond-start                              | `integrations/github/run-branch-publication.spec.ts`                                    |
+| Octokit translation and paging                                                               | `integrations/github/octokit-github.spec.ts`                                            |
+| Every failure tag equals its class name, across owners                                       | `integrations/github/failure-ownership.spec.ts`                                         |
+
+### Shared execution binding
+
+`runJig(app, input)` in `app/run-jig.ts` is the one supported execution binding. `jig run`
+(`cli/commands/run.ts`) and `implementIssue` both call it; the issue passes
+`start: { text, merge: false, codePublication: 'deferred' }`, the accepted `runId` and
+`requiredStores: ['git-remote']`. The GitHub command has no execution path of its own.
+
+### Left to the application-API issue
+
+- A container-free GitHub operation replacing `implementIssue(app, …)`, bound to a container-free
+  `runJig`, with the token and repository preparation moved out of the CLI's `prepare`.
+- Receiving `PublicationReceipts`, the clock and the logger from composition instead of
+  constructing `RemotePublicationReceipts` in `implementIssue`.
+- The remaining rows of the GitHub redistribution table in `docs/specs/application-boundaries.md`:
+  startup to composition, registration to cli, coordination to app, Octokit to `adapters/github`.
+
+The lease lifetime, the receipts contract and its failures, their persistence and the pure
+transitions are done and need no change there.
+
+### Request and spec sequencing
+
+The request for this work asks for the lifetime to be wired through composition, and has later
+GitHub work build on that wiring, while also requiring the composition predecessor first. The spec
+says to complete spike #49 before planning container-specific details or rewriting container
+management, and that spike is unresolved. The two orders cannot both hold on this branch, so the
+composition wiring is left to land after the predecessor.
 
 ## Failure ownership audit
 
@@ -401,7 +529,7 @@ registry are gone; nothing replaces them with another union of every class.
 | Step policy assembly                      | `domain/retry.ts` (`transientRetryPolicy`, `TransientRetryPolicy`) | `flow/retry-policy.ts` (`transientRetryPolicy`, returns `RetryPolicy<{ kind: FailureKind }>`) |
 | Policy shape and retry loop               | `failures/retry.ts` (`RetryPolicy`, `retryResult`)                 | unchanged                                                                                     |
 | Step retry decision and events            | `flow/engine.ts:214-229`                                           | `flow/engine.ts:214-235`, over `StepFailure`                                                  |
-| Sandbox start retry                       | `app/container.ts:258-262`                                         | unchanged, imports `flow/retry-policy.ts`                                                     |
+| Sandbox start retry                       | `app/container.ts:252-256`                                         | unchanged, imports `flow/retry-policy.ts`                                                     |
 
 Local policies that do not use the step settings stay with their callers: `adapters/git/remote-ref.ts:58`
 (`RemoteUnavailable`), `steps/planning.ts:56-62` (one `PlanNotCovered` correction),
@@ -423,7 +551,7 @@ machine). Each module defines its own classes and re-exports nothing; there are 
 | `PlanNotCovered`       | `domain/errors.ts:54`  | domain (`domain/errors.ts:18`)                             | retry |                         | `domain/plan-coverage.ts:24`                                                                                                                                                                                                       | `instanceof` at `steps/planning.ts:59`, `:61`, re-raised as `AgentOutputInvalid` at `:65`                                                                |
 | `DesignUnresolved`     | `domain/errors.ts:62`  | domain (`domain/errors.ts:26`)                             | block | `findingIds`            | `domain/design-review.ts:240`                                                                                                                                                                                                      | `StepFailure`; engine block                                                                                                                              |
 | `RemoteUnavailable`    | `domain/errors.ts:70`  | shared Git module (`ports/git-failures.ts:4`)              | retry |                         | `adapters/git/merge.ts:85`, `adapters/git/remote-ref.ts:50`                                                                                                                                                                        | `_tag` at `adapters/git/remote-ref.ts:58`; `Workspace.isRunBranchMerged`, `RunStoreFailure`, `RunCodeRestoreFailure`                                     |
-| `SandboxUnavailable`   | `domain/errors.ts:78`  | agent session port (`ports/agent-session.ts:45`)           | retry |                         | `adapters/sandcastle/sandcastle-session.ts:320`, `:377`, `:419`, `:476`                                                                                                                                                            | `AgentSession.exec`, `SandboxGit.execGit`, `SaveWorkFailure`, `SessionOpenFailure`, `SessionCloseFailure`; sandbox start retry at `app/container.ts:259` |
+| `SandboxUnavailable`   | `domain/errors.ts:78`  | agent session port (`ports/agent-session.ts:45`)           | retry |                         | `adapters/sandcastle/sandcastle-session.ts:320`, `:377`, `:419`, `:476`                                                                                                                                                            | `AgentSession.exec`, `SandboxGit.execGit`, `SaveWorkFailure`, `SessionOpenFailure`, `SessionCloseFailure`; sandbox start retry at `app/container.ts:253` |
 | `SetupCommandFailed`   | `domain/errors.ts:87`  | agent session port (`ports/agent-session.ts:54`)           | retry | `output`                | `adapters/sandcastle/sandcastle-session.ts:397`, `:404`                                                                                                                                                                            | `SessionOpenFailure`; `instanceof` at `app/init-sandbox.ts:228`                                                                                          |
 | `RunStateConflict`     | `domain/errors.ts:95`  | shared run-state module (`ports/run-state-failures.ts:4`)  | block |                         | `adapters/git/remote-ref.ts:47`, `adapters/git/run-code.ts:37`, `adapters/run-store/composite-run-store.ts:104`, `adapters/run-store/git-remote-run-store.ts:98`                                                                   | `_tag` at `adapters/git/publication-receipts.ts:56`, `:59`; `RunStoreFailure`, `RunCodeRestoreFailure`                                                   |
 | `RunCodeUnavailable`   | `domain/errors.ts:103` | shared run-state module (`ports/run-state-failures.ts:12`) | block |                         | `adapters/git/run-code.ts:59`, `adapters/run-store/composite-run-store.ts:137`                                                                                                                                                     | `RunStoreFailure`, `RunCodeRestoreFailure`                                                                                                               |
@@ -452,7 +580,7 @@ and `PublicationInProgress` (`:39`) belong to that port, keep their tags and mes
 `ConfigInvalid` carried seven meanings. Only configuration validation keeps the class and the
 `ConfigInvalid` tag, now in `config/errors.ts`; its constructors are listed above. Each other
 meaning is its own class, `_tag` equal to the class name, kind `fatal` and the same message text, so
-the engine (`flow/engine.ts:233`), the sandbox start retry (`app/container.ts:259`, through
+the engine (`flow/engine.ts:233`), the sandbox start retry (`app/container.ts:253`, through
 `isTransient`) and the CLI (`cli/with-error-handling.ts`, message only, exit 1) decide and print
 exactly as before. Saved run state did not move to config, because `RunStoreFailure` would then
 make ports depend on config; `ports/run-store.ts` now names `RunStateInvalid` and
@@ -481,7 +609,7 @@ make ports depend on config; `ports/run-store.ts` now names `RunStateInvalid` an
 | `RunCode.checkpoint`, `restore` → `RunCodeRestoreFailure`  | `ports/run-code.ts:10`, `:15`, `:18`                                     | `GitCommandFailed`; `GitCommandFailed \| RemoteUnavailable \| RunStateConflict \| RunCodeUnavailable`                                                                                                                                                                                                                                                                                                                                                    |
 | `SandboxImages.labels`, `build`                            | `ports/sandbox-images.ts:6`, `:7`                                        | `ImageBuildFailed`                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `SessionOpenFailure`, `SessionCloseFailure`                | `adapters/sandcastle/sandcastle-session.ts:49`, `:58`                    | `ConfigInvalid \| SandboxCredentialsInvalid \| SandboxPreparationInvalid \| LocalPreparationFailed \| SandboxUnavailable \| SetupCommandFailed`; `SandboxUnavailable \| CodexLoginNotSaved`                                                                                                                                                                                                                                                              |
-| `RunSession` open and close                                | `app/container.ts:79`, `:89`, `:195`, `:257`                             | `SessionOpenFailure`; `SessionCloseFailure`                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `RunSession` open and close                                | `app/container.ts:76`, `:86`, `:189`, `:251`                             | `SessionOpenFailure`; `SessionCloseFailure`                                                                                                                                                                                                                                                                                                                                                                                                              |
 | flow step contracts: `StepFailure`, `RunStep`, `SliceStep` | `flow/define-flow.ts:15`, `:44`, `:81`                                   | `AgentSessionFailure \| WorkspaceFailure \| PlanNotCovered \| DesignUnresolved`                                                                                                                                                                                                                                                                                                                                                                          |
 | `FatalStepFailure`                                         | `flow/define-flow.ts:12`                                                 | the `fatal` members of `StepFailure`: `LocalStateUnwritable`                                                                                                                                                                                                                                                                                                                                                                                             |
 | engine: `runEngine` → `EngineFailure`                      | `flow/engine.ts:46`, `:63`                                               | `FatalStepFailure \| RunStoreFailure`; every `retry` and `block` step failure is consumed as a retry or a block, never returned                                                                                                                                                                                                                                                                                                                          |
@@ -492,7 +620,7 @@ make ports depend on config; `ports/run-store.ts` now names `RunStateInvalid` an
 | CLI: `AppOpenFailure`, `withApp`, `appAction`, `withInput` | `cli/with-app.ts:56`, `cli/app-action.ts`, `cli/with-input.ts`           | `RepositoryInvalid \| ConfigInvalid \| LocalPreparationFailed`; the command's own `E` plus that; `CommandInputInvalid`                                                                                                                                                                                                                                                                                                                                   |
 | `PublicationReceipts.read`, `update` → `ReceiptsFailure`   | `ports/publication-receipts.ts:11`, `:22`                                | `GitCommandFailed \| RemoteUnavailable \| RunStateConflict \| OrchestrationStateInvalid`; the remote adapter turns exhausted `RunStateConflict` retries into `OrchestrationStateInvalid`                                                                                                                                                                                                                                                                 |
 | `withPublicationOwnership`, `WhileOwned`                   | `app/publication-ownership.ts:33`, `ports/publication-receipts.ts:29`    | `ReceiptsFailure \| PublicationInProgress` plus the work's own; a release failure replaces success and is logged after a work failure                                                                                                                                                                                                                                                                                                                    |
-| GitHub integration: `IssueFailure`                         | `integrations/github/implement-issue.ts:63`                              | `RunJigFailure` plus GitHub failures other than `GithubSetupInvalid`; the publication receipts and publication unions name Git, remote and run-state classes                                                                                                                                                                                                                                                                                             |
+| GitHub integration: `IssueFailure`                         | `integrations/github/implement-issue.ts:65`                              | `RunJigFailure` plus GitHub failures other than `GithubSetupInvalid`; the publication receipts and publication unions name Git, remote and run-state classes                                                                                                                                                                                                                                                                                             |
 
 The assembled workflow is checked in app: `defineRunFlow` and `defineSliceFlow` in
 `app/run-flow.ts` type every step against `RunStep` and `SliceStep`, so a step that could return a
@@ -505,7 +633,7 @@ failure outside `StepFailure` does not compile. `flow/engine.spec.ts` pins `Fata
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | read  | `flow/engine.ts:222`, `flow/retry-policy.ts`                                                                                                                                                                                                           | `kind` through `isTransient`                                                                                                      |
 | read  | `flow/engine.ts:233-234`                                                                                                                                                                                                                               | `kind === 'fatal'` returns the error as a `FatalStepFailure`, anything else blocks with its `message`                             |
-| read  | `app/container.ts:259`                                                                                                                                                                                                                                 | `kind` of `SessionOpenFailure` through `transientRetryPolicy`                                                                     |
+| read  | `app/container.ts:253`                                                                                                                                                                                                                                 | `kind` of `SessionOpenFailure` through `transientRetryPolicy`                                                                     |
 | read  | `adapters/git/remote-ref.ts:58`                                                                                                                                                                                                                        | `_tag === 'RemoteUnavailable'`                                                                                                    |
 | read  | `adapters/git/publication-receipts.ts:56`, `:59`                                                                                                                                                                                                       | `_tag === 'RunStateConflict'`                                                                                                     |
 | read  | `steps/planning.ts:59`, `:61`, `:65`                                                                                                                                                                                                                   | `instanceof PlanNotCovered`, re-raised as `AgentOutputInvalid` with the same message                                              |
@@ -515,9 +643,9 @@ failure outside `StepFailure` does not compile. `flow/engine.spec.ts` pins `Fata
 | read  | `adapters/sandcastle/sandcastle-session.ts:316-325`                                                                                                                                                                                                    | sandcastle's own Effect failure `_tag`: `CwdError` becomes `SandboxPreparationInvalid`, the rest `SandboxUnavailable`             |
 | show  | `cli/with-error-handling.ts`                                                                                                                                                                                                                           | `message` only, exit 1                                                                                                            |
 | show  | `flow/engine.ts` `stepRetried`, `stepFailed`, `runFailed` → `observers/logging-observer.ts:23`, `:28`, `:63`, `observers/tracing-observer.ts:31`, `:36`                                                                                                | the failure's `message` as `reason`; no tag or kind                                                                               |
-| show  | console `{ err }` fields at `app/report-cleanup.ts:12` (from `app/container.ts:187`, `app/throwaway-sandbox.ts:70`, `app/publication-ownership.ts:64`), `app/throwaway-sandbox.ts:65`, `adapters/sandcastle/sandcastle-session.ts:264`, `:354`, `:382` | the console logger built by `createConsoleLogger` (`app/container.ts:132`), whose `err` serializer is `serializeError`            |
+| show  | console `{ err }` fields at `app/report-cleanup.ts:12` (from `app/container.ts:181`, `app/throwaway-sandbox.ts:70`, `app/publication-ownership.ts:64`), `app/throwaway-sandbox.ts:65`, `adapters/sandcastle/sandcastle-session.ts:264`, `:354`, `:382` | the console logger built by `createConsoleLogger` (`app/container.ts:129`), whose `err` serializer is `serializeError`            |
 | show  | `cli/commands/status.ts:42`                                                                                                                                                                                                                            | the stored `blockedReason` text                                                                                                   |
-| store | `run.log`: `{ err }` at `app/container.ts:261` (sandbox start failures) and `app/observed-events.ts:13` (observer failures), through `createRunLogger` (`app/container.ts:202`) into `.jig/<id>/state/run.log`                                         | `serializeError` writes `type`, `message`, `stack` and own enumerable fields — `_tag`, `name`, `kind` and fields such as `output` |
+| store | `run.log`: `{ err }` at `app/container.ts:255` (sandbox start failures) and `app/observed-events.ts:13` (observer failures), through `createRunLogger` (`app/container.ts:196`) into `.jig/<id>/state/run.log`                                         | `serializeError` writes `type`, `message`, `stack` and own enumerable fields — `_tag`, `name`, `kind` and fields such as `output` |
 | store | `run.log`: `stepRetried`, `stepFailed`, `runBlocked` and `runFailed` lines from `observers/logging-observer.ts`                                                                                                                                        | the failure's `message` as `reason`; no tag or kind                                                                               |
 | store | `blockedReason` in run state, written at `flow/engine.ts:321`                                                                                                                                                                                          | the failure's `message`                                                                                                           |
 | store | `adapters/local-store/run-artefacts.ts:26`                                                                                                                                                                                                             | `blockedReason` in the run's result file                                                                                          |
