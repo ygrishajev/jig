@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { PassThrough } from 'node:stream';
+import { stripVTControlCharacters } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 
 import { aPreset, aPresetLabel } from '../../../tests/support/builders.js';
@@ -29,12 +30,16 @@ describe('askForPreset', () => {
   });
 
   it('shows the description of the preset under the cursor', async () => {
-    const description = faker.lorem.sentence();
+    const description = faker.lorem.sentence(30);
     const { answer, type, shown } = setup({ presets: [aPreset({ description })] });
 
     await type(DOWN);
 
-    await vi.waitFor(() => expect(shown()).toContain(description));
+    await vi.waitFor(() =>
+      expect(stripVTControlCharacters(shown()).replaceAll(/\s/g, '')).toContain(
+        description.replaceAll(/\s/g, ''),
+      ),
+    );
     await type(CTRL_C);
     await answer;
   });
