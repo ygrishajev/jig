@@ -140,7 +140,7 @@ svg text{font-family:var(--sans)}
       <tr><td>config</td><td>Configuration and environment schemas and defaults, run settings, provider policy, presets and scratch naming</td><td>domain</td></tr>
       <tr><td>observers</td><td>Events, metrics, logging and tracing observers</td><td>domain, failures, ports</td></tr>
       <tr><td>adapters</td><td>Git, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, failures, observers, ports</td></tr>
-      <tr><td>flow</td><td>Generic flow contracts and engine</td><td>domain, failures, ports</td></tr>
+      <tr><td>flow</td><td>Generic flow contracts, engine and step retry policy</td><td>domain, failures, ports</td></tr>
       <tr><td>prompts</td><td>Agent request construction</td><td>domain</td></tr>
       <tr><td>steps</td><td>Individual workflow operations</td><td>domain, failures, flow, ports, prompts</td></tr>
       <tr><td>app</td><td>Composition, run lifecycle and concrete workflow assembly</td><td>adapters, config, domain, failures, flow, observers, ports, prompts, steps</td></tr>
@@ -349,10 +349,10 @@ svg text{font-family:var(--sans)}
     ["Publish events", "stepStarted, stepFinished, phaseChanged and the rest, to the observers.", "infra"],
     ["Stop", "at a final (done, completed, stuck) or a halt (paused, awaitingMerge).", "step"]
   ], { h: 60, gap: 14 });
-  var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values; domain classifies them (src/domain/errors.ts), src/failures/retry.ts retries them, and the engine decides what happens next.", [
+  var cFFail = flowCv("ef", "Failure policy", "Steps return typed errors as values; domain classifies them (src/domain/errors.ts), the engine retries them under the step policy that src/flow/retry-policy.ts assembles from the run settings, and decides what happens next.", [
     ["A step returns a JigError", "its kind decides: retry, block or fatal.", "fail"],
     ["retry — AgentRunFailed, AgentOutputInvalid", "also RemoteUnavailable, SandboxUnavailable, SetupCommandFailed.", "domain"],
-    ["Tried again", "retryResult (src/failures/retry.ts), up to maxStepRetries (2) with backoff; the engine publishes a stepRetried event each time.", "step"],
+    ["Tried again", "retryResult (src/failures/retry.ts) under transientRetryPolicy (src/flow/retry-policy.ts), up to maxStepRetries (2) with backoff; the engine publishes a stepRetried event each time.", "step"],
     ["block — MergeFailed, RunStateConflict, retries used up", "the reason is saved and the run stops; resume runs the step again.", "fail"],
     ["fatal — ConfigInvalid, RunRequestInvalid, RunInProgress", "also MetricsLogCorrupt; return an Err and print its message.", "fail"],
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]
