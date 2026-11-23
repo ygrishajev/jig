@@ -45,9 +45,7 @@ async function useThrowawaySandbox<T, E>(
   run: RunIdentity,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<Result<T, E>>,
-): Promise<
-  Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed | RepositoryInvalid>
-> {
+): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
   const { repoRoot, logger, openSession } = app.cradle;
   const events = observedEvents(logger, [new LoggingObserver(logger)]);
   const session = await openSession({ run, events, setupCommand });
