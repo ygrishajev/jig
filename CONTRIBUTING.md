@@ -92,8 +92,8 @@ moves its raw JSON. Presets cross the `PresetSource` contract in `src/config/pre
 `src/adapters/filesystem/preset-source.ts` orders the preset directories and yields candidates
 lazily, while config skips invalid names, lets the first candidate of a name win, validates it and
 merges whole roles. The process environment, working directory and home directory are captured at
-the process edge before config parses them: by composition for `jig run`, `jig status` and
-`jig presets`, and by `src/cli/with-app.ts` for the other commands. `npm run lint:dependencies` allows production config to import only
+the process edge before config parses them: by composition for `jig run`, `jig status`,
+`jig presets`, `jig init` and `jig build`, and by `src/cli/with-app.ts` for `jig github implement`. `npm run lint:dependencies` allows production config to import only
 `src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
 exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
 built-ins, and domain, ports, config and prompts cannot import it.
@@ -131,9 +131,21 @@ releases its sandbox session, then its scope, then telemetry, then the lock. Sto
 `src/adapters/run-store/repository-run-stores.ts` behind `RunStoreCatalog` in
 `src/ports/run-store.ts`, which also loads and checks a custom store module. Composition binds the
 run's runtime to `openRunRuntime` in `src/app/container.ts`, which still builds it with Awilix until
-spike #49 records the construction mechanism. `jig init`, `jig sandbox build` and
-`jig github implement` still open the container through `src/cli/with-app.ts`, which uses the same
-preparation and preset selection (`src/app/preset-selection.ts`).
+spike #49 records the construction mechanism.
+
+`jig init` and `jig build` call `initRepository` and `buildSandboxImage` from the same entry; the
+handler in `src/cli/commands/sandbox.ts` only parses input and prints the summary or image name.
+Both prepare the repository first (`build` then applies the preset; cancelling the pick builds
+nothing) and only then ask the supplied `openSandboxRuntime` for a `SandboxRuntime`, released
+however the operation ends. Init decides when to ask for agents, for a missing credential and
+whether to save it, through the `InitInteraction` composition supplies from
+`src/adapters/terminal/`; the starter files sit behind `StarterFiles` in
+`src/ports/starter-files.ts`, and agent credentials and the owner-only `.jig/.env` behind
+`AgentCredentials`. Agents run only on a session `withThrowawaySandbox` opens on its own branch,
+closes and removes. Composition binds `openSandboxRuntime` in `src/app/container.ts`, which still
+builds it with Awilix until #49. `jig github implement` still opens the container through
+`src/cli/with-app.ts`, which uses the same preparation and preset selection
+(`src/app/preset-selection.ts`).
 
 `jig github implement` is spread over the same owners. `src/cli/commands/github.ts` declares the
 command, parses its input and describes its outcome; `src/config/github-settings.ts` validates the

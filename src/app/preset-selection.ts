@@ -10,17 +10,53 @@ import {
   type PresetPick,
   type PresetSelection,
 } from '../config/presets.js';
-import type { PreparedRepository } from './repository-preparation.js';
+import {
+  type OperationContext,
+  type PreparedRepository,
+  prepareRepository,
+  type RepositoryPreparationFailure,
+  type RepositorySources,
+} from './repository-preparation.js';
+
+/** What an operation that may run under a preset prepares its repository with. */
+export interface PresetPreparation extends RepositorySources, PresetChooser {
+  context(): OperationContext;
+}
 
 /** Asks the operator which preset to use; nobody answering is `undefined`. */
 export interface PresetChooser {
   askForPreset(presets: Preset[]): Promise<PresetPick | undefined>;
 }
 
+/** A prepared repository whose config has the preset applied, and that preset's name, when one was. */
+export interface PresetRepository {
+  repository: PreparedRepository;
+  presetName?: PresetName;
+}
+
 /** The config an operation runs with, and the preset that replaced its agents, when one did. */
 export interface PresetConfig {
   config: JigConfig;
   presetName?: PresetName;
+}
+
+/**
+ * Prepares the repository the operation runs in, then applies the preset it was asked for, so a
+ * refusal of either comes before anything is built.
+ */
+export function prepareWithPreset(
+  capabilities: PresetPreparation,
+  { configPath, preset }: { configPath?: string; preset?: PresetSelection },
+): Promise<Result<PresetRepository, RepositoryPreparationFailure | ConfigInvalid>> {
+  return Result.gen(async function* () {
+    const prepared = yield* Result.await(
+      prepareRepository(capabilities.context(), capabilities, configPath),
+    );
+    const { config, presetName } = yield* Result.await(
+      configWithSelectedPreset(prepared, preset, capabilities),
+    );
+    return Result.ok({ repository: { ...prepared, config }, presetName });
+  });
 }
 
 /**

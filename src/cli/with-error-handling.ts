@@ -27,7 +27,7 @@ export function withErrorHandling<Args extends unknown[], E extends { message: s
 }
 
 /** Sets `exitCode` rather than calling `process.exit()`, so pending output still flushes. */
-const processFailureOutput: FailureOutput = {
+export const processFailureOutput: FailureOutput = {
   printError: (message) => console.error(message),
   setExitCode: (code) => {
     process.exitCode = code;

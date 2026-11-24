@@ -1,10 +1,7 @@
-import { Result } from 'better-result';
 import { Command } from 'commander';
 import { z } from 'zod';
 
-import { type InitResult, initSandbox } from '../../app/init-sandbox.js';
-import { ensureSandboxImage } from '../../app/sandbox-image.js';
-import { appAction, type CommandIo } from '../app-action.js';
+import type { InitResult, JigOperations } from '../../app/api.js';
 import {
   configInputSchema,
   configOption,
@@ -12,8 +9,23 @@ import {
   presetOption,
 } from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
+import {
+  type FailureOutput,
+  processFailureOutput,
+  withErrorHandling,
+} from '../with-error-handling.js';
+import { withInput } from '../with-input.js';
+import type { RunCommandIo } from './run.js';
 
-export function registerSandboxCommands(program: Command, io?: CommandIo): void {
+/** The operations the sandbox commands call. */
+export type SandboxOperations = Pick<JigOperations, 'init' | 'buildImage'>;
+
+export function registerSandboxCommands(
+  program: Command,
+  { init, buildImage }: SandboxOperations,
+  { outcomeLog }: Pick<RunCommandIo, 'outcomeLog'>,
+  failureOutput: FailureOutput = processFailureOutput,
+): void {
   program
     .command('init')
     .description("Set up this repository's sandbox and check its setup and verify commands in it")
@@ -21,16 +33,18 @@ export function registerSandboxCommands(program: Command, io?: CommandIo): void 
     .addOption(configOption())
     .addOption(logFormatOption())
     .action(
-      appAction(
-        initInputSchema,
-        async ({ agent }, app) => {
-          const result = await initSandbox(app, { useAgent: agent });
-          if (result.isErr()) return Result.err(result.error);
-          app.cradle.logger.info(initSummary(result.value, app.cradle.configSource.name));
-          if (result.value.status === 'failed') process.exitCode = 1;
-          return Result.ok();
-        },
-        io,
+      withErrorHandling(
+        withInput(initInputSchema, async ({ agent, config, logFormat }) => {
+          const initialized = await init({ useAgent: agent, configPath: config, logFormat });
+          return initialized.map(({ outcome, configName }) => {
+            outcomeLog(logFormat).info(
+              { status: outcome.status },
+              initSummary(outcome, configName),
+            );
+            if (outcome.status === 'failed') failureOutput.setExitCode(1);
+          });
+        }),
+        failureOutput,
       ),
     );
 
@@ -42,15 +56,14 @@ export function registerSandboxCommands(program: Command, io?: CommandIo): void 
     .addOption(presetOption())
     .addOption(logFormatOption())
     .action(
-      appAction(
-        buildInputSchema,
-        async ({ pullAgents }, app) => {
-          const image = await ensureSandboxImage(app.cradle, { pullAgents });
-          if (image.isErr()) return Result.err(image.error);
-          app.cradle.logger.info(`Sandbox image ready: ${image.value}`);
-          return Result.ok();
-        },
-        io,
+      withErrorHandling(
+        withInput(buildInputSchema, async ({ pullAgents, config, preset, logFormat }) => {
+          const built = await buildImage({ pullAgents, configPath: config, preset, logFormat });
+          return built.map(({ image }) => {
+            outcomeLog(logFormat).info({ image }, `Sandbox image ready: ${image}`);
+          });
+        }),
+        failureOutput,
       ),
     );
 }

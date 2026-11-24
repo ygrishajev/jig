@@ -1,60 +1,68 @@
-import type { AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
 import { randomBytes } from 'node:crypto';
 
-import { getCurrentBranch } from '../adapters/git/branch.js';
-import { discardBranch, discardBranchOnExit } from '../adapters/git/throwaway-branch.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
-import { LoggingObserver } from '../observers/logging-observer.js';
 import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
+import type { WarningLog } from '../ports/observability.js';
 import type { RunSession, SessionCloseFailure } from '../ports/run-session.js';
-import type { AppCradle } from './container.js';
 import { type Lifetime, releaseInOrder, withResource } from './lifecycle.js';
-import { observedEvents } from './observed-events.js';
+
+/** What a one-off sandbox is opened, and its branch removed, with. */
+export interface ThrowawaySandboxes {
+  readonly log: WarningLog;
+  currentBranch(): Promise<Result<string, RepositoryInvalid | GitCommandFailed>>;
+  /** Opens a sandbox for `run`; `null` starts it without a setup command. */
+  open(
+    run: RunIdentity,
+    setupCommand: string | null,
+  ): Promise<Result<RunSession, SessionOpenFailure>>;
+  discardBranch(branch: string): Promise<Result<void, GitCommandFailed>>;
+  /** Runs `use`, removing `branch` if the process exits before `use` finishes. */
+  discardBranchOnExit<T>(branch: string, use: () => Promise<T>): Promise<T>;
+}
+
+/** Why a throwaway sandbox gave no answer: the branch it starts from, Docker, or its own cleanup. */
+export type ThrowawaySandboxFailure =
+  SessionOpenFailure | SessionCloseFailure | GitCommandFailed | RepositoryInvalid;
 
 /**
  * A sandbox for a one-off check, on a branch of its own that is removed afterwards, even when the
- * process is interrupted; its events are logged to the console. It is never retried: a setup command that fails is the answer the
+ * process is interrupted. It is never retried: a setup command that fails is the answer the
  * caller is waiting for, not a hiccup.
  */
 export async function withThrowawaySandbox<T, E>(
-  app: AwilixContainer<AppCradle>,
+  sandboxes: ThrowawaySandboxes,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<Result<T, E>>,
-): Promise<
-  Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed | RepositoryInvalid>
-> {
-  const { repoRoot } = app.cradle;
-  const baseBranch = await getCurrentBranch(repoRoot);
+): Promise<Result<T, E | ThrowawaySandboxFailure>> {
+  const baseBranch = await sandboxes.currentBranch();
   if (baseBranch.isErr()) return Result.err(baseBranch.error);
   const run: RunIdentity = {
     runId: runIdSchema.parse(`init-${randomBytes(3).toString('hex')}`),
     baseBranch: baseBranch.value,
   };
-  return discardBranchOnExit(repoRoot, runBranchFor(run.runId), () =>
-    useThrowawaySandbox(app, run, setupCommand, use),
+  return sandboxes.discardBranchOnExit(runBranchFor(run.runId), () =>
+    useThrowawaySandbox(sandboxes, run, setupCommand, use),
   );
 }
 
 /** The sandbox closes before its branch is removed; both are attempted however `use` ends. */
 function useThrowawaySandbox<T, E>(
-  app: AwilixContainer<AppCradle>,
+  sandboxes: ThrowawaySandboxes,
   run: RunIdentity,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<Result<T, E>>,
 ): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
-  const { repoRoot, logger, openSession } = app.cradle;
-  const events = observedEvents(logger, [new LoggingObserver(logger)]);
   const sandbox: Lifetime<RunSession, SessionOpenFailure, SessionCloseFailure | GitCommandFailed> =
     {
-      acquire: () => openSession({ run, events, setupCommand }),
+      acquire: () => sandboxes.open(run, setupCommand),
       release: (session) =>
         releaseInOrder<SessionCloseFailure | GitCommandFailed>(
-          [() => session.close(), () => discardBranch(repoRoot, runBranchFor(run.runId))],
-          logger,
+          [() => session.close(), () => sandboxes.discardBranch(runBranchFor(run.runId))],
+          sandboxes.log,
         ),
     };
-  return withResource(sandbox, logger, use);
+  return withResource(sandbox, sandboxes.log, use);
 }

@@ -5,6 +5,7 @@ import {
   type AgentChoice,
   type AgentName,
   DEFAULT_CLAUDE_MODEL,
+  type MissingCredential,
 } from '../../config/agent-policy.js';
 import { ConfigInvalid } from '../../config/errors.js';
 import { SandboxCredentialsInvalid } from '../../ports/agent-session.js';
@@ -25,12 +26,6 @@ export interface AgentDefinition {
   /** Why a credential's value cannot work, when that can be told without running the agent. */
   credentialProblem(value: string): string | undefined;
   create(model?: string): Result<AgentProvider, ConfigInvalid>;
-}
-
-/** An agent that has none of the credentials that could authenticate it. */
-export interface MissingCredential {
-  provider: AgentName;
-  keys: string[];
 }
 
 /** What is wrong with running `provider` on `model`, if anything. */

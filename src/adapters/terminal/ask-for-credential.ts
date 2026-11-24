@@ -1,14 +1,9 @@
 import { confirm, input, password, select } from '@inquirer/prompts';
 
+import type { EnteredCredential, MissingCredential } from '../../config/agent-policy.js';
 import { CREDENTIALS_FILE } from '../local-store/credentials-file.js';
-import { AGENTS, type MissingCredential } from '../sandcastle/agents.js';
+import { AGENTS } from '../sandcastle/agents.js';
 import { askInTerminal, PROCESS_TERMINAL, type Terminal } from './terminal.js';
-
-export interface EnteredCredential {
-  name: string;
-  value: string;
-  save: boolean;
-}
 
 /** A credential typed by the operator, who decides whether it is kept for later runs. */
 export function askForCredential(

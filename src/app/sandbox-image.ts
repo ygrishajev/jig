@@ -1,25 +1,22 @@
 import { defaultImageName } from '@ai-hero/sandcastle/sandboxes/docker';
 import { Result } from 'better-result';
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Logger } from 'pino';
 
 import {
   type AgentInstall,
   agentLayerDockerfile,
-  DOCKERFILE,
   imageLabels,
   LABELS,
   parseAgentVersions,
   recipeHash,
   SANDBOX_DIRECTORY,
 } from '../adapters/sandbox-image/image-recipe.js';
+import { readSandboxDockerfile } from '../adapters/sandbox-image/starter-files.js';
 import { AGENTS } from '../adapters/sandcastle/agents.js';
 import type { ConfigInvalid } from '../config/errors.js';
 import { configuredSteps, type JigConfig, type StepConfig } from '../config/load-config.js';
-import { messageOf } from '../failures/messages.js';
-import { SandboxPreparationInvalid } from '../ports/agent-session.js';
+import type { SandboxPreparationInvalid } from '../ports/agent-session.js';
+import type { OperationLog } from '../ports/observability.js';
 import type { ImageBuildFailed, SandboxImages } from '../ports/sandbox-images.js';
 
 export interface EnsureImageDependencies {
@@ -27,7 +24,7 @@ export interface EnsureImageDependencies {
   config: JigConfig;
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
-  logger: Logger;
+  log: OperationLog;
 }
 
 interface ImageRecipe {
@@ -75,7 +72,7 @@ export async function ensureSandboxImage(
       agentsNeeded: await agentsNeeded(d, Object.values(steps), policy),
       policy,
     });
-    for (const warning of plan.warnings) d.logger.warn(warning);
+    for (const warning of plan.warnings) d.log.warn(warning);
     if (plan.action !== 'none') {
       yield* Result.await(buildImage(d, image, plan, recipe.buildArgs));
     }
@@ -99,31 +96,6 @@ async function readRecipe(
     dockerfileHash: recipeHash(dockerfile.value, uid, gid),
     buildArgs: { AGENT_UID: uid, AGENT_GID: gid },
   });
-}
-
-export async function readSandboxDockerfile(
-  repoRoot: string,
-): Promise<Result<string, SandboxPreparationInvalid>> {
-  const file = path.join(sandboxDirectory(repoRoot), DOCKERFILE);
-  const shown = path.join(SANDBOX_DIRECTORY, DOCKERFILE);
-  if (!existsSync(file)) {
-    return Result.err(
-      new SandboxPreparationInvalid({
-        message: `No sandbox Dockerfile at ${shown} — run jig init first.`,
-      }),
-    );
-  }
-  return Result.tryPromise({
-    try: () => readFile(file, 'utf-8'),
-    catch: (cause) =>
-      new SandboxPreparationInvalid({
-        message: `Could not read the sandbox Dockerfile at ${shown}: ${messageOf(cause)}`,
-      }),
-  });
-}
-
-function sandboxDirectory(repoRoot: string): string {
-  return path.join(repoRoot, SANDBOX_DIRECTORY);
 }
 
 /**
@@ -222,7 +194,7 @@ async function buildImage(
   buildArgs: Record<string, number>,
 ): Promise<Result<void, ImageBuildFailed>> {
   return Result.gen(async function* () {
-    d.logger.info(`building the sandbox image ${image}: ${plan.reason}`);
+    d.log.info(`building the sandbox image ${image}: ${plan.reason}`);
     const base = baseImageName(image);
     if (plan.action === 'all' || !(yield* Result.await(d.images.labels(base)))) {
       yield* Result.await(
@@ -244,4 +216,8 @@ async function buildImage(
 export function baseImageName(image: string): string {
   const lastSlash = image.lastIndexOf('/');
   return image.lastIndexOf(':') > lastSlash ? `${image}-base` : `${image}:base`;
+}
+
+function sandboxDirectory(repoRoot: string): string {
+  return path.join(repoRoot, SANDBOX_DIRECTORY);
 }

@@ -179,13 +179,17 @@ svg text{font-family:var(--sans)}
     asks composition's <code>openRuntime</code> for the run's capabilities, which
     <code>openRunRuntime</code> in <code>src/app/container.ts</code> still builds with Awilix. <code>runJig</code>
     owns the lock, store selection, start or resume and the release order through the wrappers in
-    <code>src/app/lifecycle.ts</code>. The other commands still prepare through <code>src/cli/with-app.ts</code> and receive the container that
-    <code>src/app/container.ts</code> builds; app still constructs adapters and scopes until spike #49
-    records the construction mechanism. The GitHub command registers through the same <code>appAction</code> bridge, and
+    <code>src/app/lifecycle.ts</code>. <code>jig init</code> and <code>jig build</code> call
+    <code>initRepository</code> and <code>buildSandboxImage</code> the same way: each prepares, then asks
+    composition's <code>openSandboxRuntime</code> for its runtime; init decides when to ask the
+    terminal for agents, credentials and save consent, and runs agents only in throwaway sandboxes it
+    closes. <code>src/app/container.ts</code> still builds both runtimes with Awilix until spike #49
+    records the construction mechanism. The GitHub command alone still prepares through
+    <code>src/cli/with-app.ts</code> and registers through the <code>appAction</code> bridge, and
     <code>implementIssue</code> takes the container only for its logger, repository root,
     <code>runJig</code> and the run store that holds its checkpoint; every Git and GitHub operation it uses arrives as a capability.
     <code>src/composition/main.ts</code> owns the executable: it composes the CLI, supplies the GitHub
-    command's concrete dependencies and the status and preset-listing operations, and starts it only
+    command's concrete dependencies and the run, status, preset-listing, init and image-build operations, and starts it only
     when it is the invoked script. Container construction still runs in app.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
@@ -334,7 +338,7 @@ svg text{font-family:var(--sans)}
     ["Slices", "status of each, with the last reviewer feedback.", "domain"],
     ["So far", "RunRecords (src/ports/run-records.ts): MetricsLog's summary of metrics.jsonl: slices, review rounds, tokens, cost, time.", "domain"]
   ]);
-  var cTInitAgent = flowCv("ia", "jig init", "src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
+  var cTInitAgent = flowCv("ia", "jig init", "initRepository in src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
     ["Write the starter files", ".sandcastle/Dockerfile, its .gitignore, jig.config.json — only those missing.", "step"],
     ["The planner proposes", "in a throwaway sandbox: toolchain lines, setupCommand, verifyCommand.", "infra"],
     ["Write and rebuild", "the toolchain goes between the Dockerfile markers; the config is updated.", "domain"],
@@ -451,7 +455,7 @@ svg text{font-family:var(--sans)}
     ["CI cache", "JIG_IMAGE_CACHE=gha builds through buildx with the GitHub Actions cache.", "infra"],
     ["sandboxImage set", "the named image is used as it is; nothing is built.", "step"]
   ]);
-  var cFInit = flowCv("bi", "Toolchain loop", "initSandbox in src/app/init-sandbox.ts.", [
+  var cFInit = flowCv("bi", "Toolchain loop", "initRepository in src/app/init-sandbox.ts.", [
     ["The planner proposes", "toolchain, setupCommand, verifyCommand.", "infra"],
     ["Write and rebuild", "only the toolchain section of the Dockerfile changes.", "domain"],
     ["Check in a throwaway sandbox", "setup on start, verify by exec.", "infra"],

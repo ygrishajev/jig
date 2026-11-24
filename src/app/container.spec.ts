@@ -4,14 +4,18 @@ import { Result } from 'better-result';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { aJigConfig, runId } from '../../tests/support/builders.js';
-import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js';
+import {
+  FakeAgentSession,
+  InMemoryPresetSource,
+  InMemoryRunStore,
+} from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { configDestination } from '../adapters/filesystem/config-source.js';
+import { configDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { parseEnvironment } from '../config/environment.js';
 import type { JigConfig } from '../config/load-config.js';
 import { SandboxUnavailable } from '../ports/agent-session.js';
-import { createAppContainer, runCapabilitiesOf } from './container.js';
+import { createAppContainer, openSandboxRuntime, runCapabilitiesOf } from './container.js';
 
 describe('runCapabilitiesOf', () => {
   it("opens a scope whose engine works in the run's sandbox, and closes that sandbox when asked", async () => {
@@ -123,6 +127,28 @@ describe('runCapabilitiesOf', () => {
       scopeDisposals: () => disposals,
     };
   }
+});
+
+describe('openSandboxRuntime', () => {
+  it('builds each sandbox over the config it is given, not the one the runtime opened with', async () => {
+    const repoRoot = await tempDirectory('jig-sandbox-runtime-');
+    const environment = unwrap(parseEnvironment({}, faker.system.directoryPath()));
+    const runtime = openSandboxRuntime({
+      repoRoot,
+      logFormat: 'json',
+      environment,
+      configSource: configFileSource(configDestination(repoRoot)),
+      config: aJigConfig(),
+      presetSource: new InMemoryPresetSource(),
+    });
+    onTestFinished(() => runtime.dispose());
+    const config = aJigConfig();
+
+    const sandbox = runtime.sandboxFor({ config, environment });
+
+    expect(sandbox.image.config).toBe(config);
+    expect(sandbox.image.repoRoot).toBe(repoRoot);
+  });
 });
 
 function sandboxUnavailable() {

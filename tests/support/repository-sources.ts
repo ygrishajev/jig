@@ -8,10 +8,13 @@ import {
 import { getCurrentBranch } from '../../src/adapters/git/branch.js';
 import { ensureRepositoryRoot } from '../../src/adapters/git/repository.js';
 import { exactHead } from '../../src/adapters/git/run-history.js';
+import { throwawayBranches } from '../../src/adapters/git/throwaway-branches.js';
 import { readCredentialsFile } from '../../src/adapters/local-store/credentials-file.js';
 import { LocalRunRecords } from '../../src/adapters/local-store/local-run-records.js';
 import { lockRun } from '../../src/adapters/local-store/run-lock.js';
 import { RepositoryRunStores } from '../../src/adapters/run-store/repository-run-stores.js';
+import { RepositoryStarterFiles } from '../../src/adapters/sandbox-image/starter-files.js';
+import { RepositoryAgentCredentials } from '../../src/adapters/sandcastle/agent-credentials.js';
 import type {
   OperationContext,
   RepositorySources,
@@ -19,8 +22,13 @@ import type {
   RunRuntime,
   RunSandbox,
   RuntimeRequest,
+  SandboxRuntime,
+  SandboxSettings,
   StatusCapabilities,
+  ThrowawaySandboxes,
 } from '../../src/app/api.js';
+import type { OperationLog } from '../../src/ports/observability.js';
+import type { SandboxImages } from '../../src/ports/sandbox-images.js';
 import { InMemoryPresetSource } from './fakes.js';
 
 /**
@@ -94,4 +102,44 @@ export function localRunRuntime(
     },
   };
   return { runtime, disposed: () => disposed };
+}
+
+/**
+ * What `jig init` and `jig build` work with over the real repository — its starter files, its
+ * credentials file and its branches — with the images, the sandbox and the log given. `settings`
+ * reads back what each sandbox was asked for; `disposed` tells whether the operation released it.
+ */
+export function localSandboxRuntime(
+  { repoRoot, configPath }: RuntimeRequest,
+  sandbox: {
+    images: SandboxImages;
+    open: ThrowawaySandboxes['open'];
+    log: OperationLog;
+    latestVersions?: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
+  },
+) {
+  let disposed = false;
+  const settings: SandboxSettings[] = [];
+  const runtime: SandboxRuntime = {
+    log: sandbox.log,
+    starterFiles: new RepositoryStarterFiles(repoRoot, configDestination(repoRoot, configPath)),
+    credentials: new RepositoryAgentCredentials(repoRoot),
+    sandboxFor: (requested) => {
+      settings.push(requested);
+      return {
+        image: {
+          repoRoot,
+          config: requested.config,
+          images: sandbox.images,
+          latestVersions: sandbox.latestVersions ?? (async () => ({})),
+          log: sandbox.log,
+        },
+        throwaway: { ...throwawayBranches(repoRoot), log: sandbox.log, open: sandbox.open },
+      };
+    },
+    dispose: async () => {
+      disposed = true;
+    },
+  };
+  return { runtime, settings: () => settings, disposed: () => disposed };
 }

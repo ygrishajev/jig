@@ -1,34 +1,29 @@
 import { faker } from '@faker-js/faker';
-import { asValue } from 'awilix';
 import { Result } from 'better-result';
 import { execa } from 'execa';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
-import { aJigConfig } from '../../tests/support/builders.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { configDestination } from '../adapters/filesystem/config-source.js';
-import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
-import { parseEnvironment } from '../config/environment.js';
-import { runBranchFor } from '../domain/run-state.js';
+import { throwawayBranches } from '../adapters/git/throwaway-branches.js';
+import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import { SandboxUnavailable, SetupCommandFailed } from '../ports/agent-session.js';
 import { GitCommandFailed } from '../ports/git-failures.js';
+import type { WarningLog } from '../ports/observability.js';
 import { MergeFailed } from '../ports/workspace.js';
-import { createAppContainer } from './container.js';
-import { withThrowawaySandbox } from './throwaway-sandbox.js';
+import { type ThrowawaySandboxes, withThrowawaySandbox } from './throwaway-sandbox.js';
 
 describe('withThrowawaySandbox', () => {
   it('preserves a failed branch lookup before opening a sandbox', async () => {
-    const { app, opened } = await setup();
-    const directory = await tempDirectory();
-    app.register({ repoRoot: asValue(directory) });
+    const { sandboxes, opened } = await setup({ outsideRepository: await tempDirectory() });
 
-    const result = await withThrowawaySandbox(app, null, async () => Result.ok());
+    const result = await withThrowawaySandbox(sandboxes, null, async () => Result.ok());
 
     expect(result.isErr()).toBe(true);
     expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
@@ -39,11 +34,11 @@ describe('withThrowawaySandbox', () => {
   });
 
   it('closes the sandbox and removes its branch when the work inside it fails', async () => {
-    const { app, session, branches, repoRoot } = await setup();
+    const { sandboxes, session, branches, repoRoot } = await setup();
     const failure = new Error(faker.lorem.sentence());
 
     await expect(
-      withThrowawaySandbox(app, null, async (): Promise<Result<void, never>> => {
+      withThrowawaySandbox(sandboxes, null, async (): Promise<Result<void, never>> => {
         throw failure;
       }),
     ).rejects.toBe(failure);
@@ -58,9 +53,9 @@ describe('withThrowawaySandbox', () => {
       message: faker.lorem.sentence(),
       output: faker.lorem.paragraph(),
     });
-    const { app, opened } = await setup({ failWith: failure });
+    const { sandboxes, opened } = await setup({ failWith: failure });
 
-    const result = await withThrowawaySandbox(app, `npm ${faker.word.verb()}`, async () =>
+    const result = await withThrowawaySandbox(sandboxes, `npm ${faker.word.verb()}`, async () =>
       Result.ok(),
     );
 
@@ -69,31 +64,31 @@ describe('withThrowawaySandbox', () => {
   });
 
   it("keeps the work's own failure when the sandbox does not close either", async () => {
-    const { app, session } = await setup();
+    const { sandboxes, session } = await setup();
     session.failCloseWith = sandboxUnavailable();
     const failure = new MergeFailed({ message: faker.lorem.sentence() });
 
-    const result = await withThrowawaySandbox(app, null, async () => Result.err(failure));
+    const result = await withThrowawaySandbox(sandboxes, null, async () => Result.err(failure));
 
     expect(result.isErr() && result.error).toBe(failure);
   });
 
   it('reports a sandbox that does not close after the work succeeded', async () => {
-    const { app, session } = await setup();
+    const { sandboxes, session } = await setup();
     const closeFailure = sandboxUnavailable();
     session.failCloseWith = closeFailure;
 
-    const result = await withThrowawaySandbox(app, null, async () => Result.ok());
+    const result = await withThrowawaySandbox(sandboxes, null, async () => Result.ok());
 
     expect(result.isErr() && result.error).toBe(closeFailure);
   });
 
   it('removes the worktree the close preserved for uncommitted changes, with its branch', async () => {
-    const { app, repoRoot, worktreeOf, branchOf, worktreeSession } = await setup({
+    const { sandboxes, repoRoot, worktreeOf, branchOf, worktreeSession } = await setup({
       withWorktree: true,
     });
 
-    const result = await withThrowawaySandbox(app, null, async (session) => {
+    const result = await withThrowawaySandbox(sandboxes, null, async (session) => {
       await writeFile(
         path.join(session.worktreePath, faker.system.fileName()),
         faker.lorem.paragraph(),
@@ -109,44 +104,44 @@ describe('withThrowawaySandbox', () => {
     ).not.toContain(worktreeOf());
   });
 
-  async function setup(input: { failWith?: SetupCommandFailed; withWorktree?: boolean } = {}) {
+  async function setup(
+    input: {
+      failWith?: SetupCommandFailed;
+      withWorktree?: boolean;
+      outsideRepository?: string;
+    } = {},
+  ) {
     const { dir: repoRoot } = await createTempRepo();
     const session = new FakeAgentSession(repoRoot);
     const branches: string[] = [];
     const worktrees: string[] = [];
     const worktreeSessions: HostWorktreeSession[] = [];
     let opened = 0;
-    const app = createAppContainer({
-      repoRoot,
-      configDestination: configDestination(repoRoot),
-      logFormat: 'json',
-      logLevel: 'silent',
-      environment: unwrap(parseEnvironment({}, faker.system.directoryPath())),
-      config: aJigConfig(),
-    });
-    app.register({
-      openSession: asValue(async ({ run }: OpenSessionInput) => {
-        opened++;
-        if (input.failWith) return Result.err(input.failWith);
-        const branch = runBranchFor(run.runId);
-        if (input.withWorktree) {
-          const worktree = path.join(
-            await tempDirectory('jig-worktree-'),
-            branch.replaceAll('/', '-'),
-          );
-          await simpleGit({ baseDir: repoRoot }).raw(['worktree', 'add', '-b', branch, worktree]);
-          worktrees.push(worktree);
-          branches.push(branch);
-          const worktreeSession = new HostWorktreeSession(repoRoot, worktree);
-          worktreeSessions.push(worktreeSession);
-          return Result.ok(worktreeSession);
-        }
-        await simpleGit({ baseDir: repoRoot }).branch([branch]);
+    const open = async ({ runId }: RunIdentity) => {
+      opened++;
+      if (input.failWith) return Result.err(input.failWith);
+      const branch = runBranchFor(runId);
+      if (input.withWorktree) {
+        const worktree = path.join(
+          await tempDirectory('jig-worktree-'),
+          branch.replaceAll('/', '-'),
+        );
+        await simpleGit({ baseDir: repoRoot }).raw(['worktree', 'add', '-b', branch, worktree]);
+        worktrees.push(worktree);
         branches.push(branch);
-        return Result.ok(session);
-      }),
-    });
-    onTestFinished(() => app.dispose());
+        const worktreeSession = new HostWorktreeSession(repoRoot, worktree);
+        worktreeSessions.push(worktreeSession);
+        return Result.ok(worktreeSession);
+      }
+      await simpleGit({ baseDir: repoRoot }).branch([branch]);
+      branches.push(branch);
+      return Result.ok(session);
+    };
+    const sandboxes: ThrowawaySandboxes = {
+      ...throwawayBranches(input.outsideRepository ?? repoRoot),
+      log: mock<WarningLog>(),
+      open,
+    };
     onTestFinished(async () => {
       const git = simpleGit({ baseDir: repoRoot });
       for (const worktree of worktrees) {
@@ -154,7 +149,7 @@ describe('withThrowawaySandbox', () => {
       }
     });
     return {
-      app,
+      sandboxes,
       session,
       branches,
       repoRoot,

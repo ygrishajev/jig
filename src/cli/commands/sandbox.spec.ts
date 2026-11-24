@@ -1,19 +1,20 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
 import { Command } from 'commander';
-import { writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { presetName } from '../../../tests/support/builders.js';
-import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { configFileSource } from '../../adapters/filesystem/config-source.js';
-import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
-import { createAppContainer } from '../../app/container.js';
-import type { Preset, PresetName } from '../../config/presets.js';
+import { LocalPreparationFailed } from '../../ports/local-state.js';
+import { ImageBuildFailed } from '../../ports/sandbox-images.js';
 import type { FailureOutput } from '../with-error-handling.js';
-import { buildInputSchema, initSummary, registerSandboxCommands } from './sandbox.js';
+import type { OutcomeLog } from './run.js';
+import {
+  buildInputSchema,
+  initSummary,
+  registerSandboxCommands,
+  type SandboxOperations,
+} from './sandbox.js';
 
 describe('initSummary', () => {
   it('tells the operator to check the starter files without an agent', () => {
@@ -66,59 +67,115 @@ describe('buildInputSchema', () => {
   });
 });
 
-describe('build --preset', () => {
-  it('asks which preset to use on a bare --preset and stops before opening the app when nobody answers', async () => {
+describe('sandbox commands', () => {
+  it('asks init for the agent and the config file it was given, and prints its summary', async () => {
+    const configPath = `${faker.word.noun()}.json`;
+    const { parse, init, outcomeLog, output } = setup({
+      initialized: Result.ok({ outcome: { status: 'written' }, configName: configPath }),
+    });
+
+    await parse(['init', '--no-agent', '--config', configPath, '--log-format', 'json']);
+
+    expect(init).toHaveBeenCalledWith({ useAgent: false, configPath, logFormat: 'json' });
+    expect(outcomeLog.info).toHaveBeenCalledWith(
+      { status: 'written' },
+      initSummary({ status: 'written' }, configPath),
+    );
+    expect(output.setExitCode).not.toHaveBeenCalled();
+  });
+
+  it('exits with 1 when setup or verify did not pass in the sandbox', async () => {
+    const { parse, output } = setup({
+      initialized: Result.ok({
+        outcome: { status: 'failed', attempts: 1, failure: faker.lorem.sentence() },
+        configName: configName(),
+      }),
+    });
+
+    await parse(['init']);
+
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+    expect(output.printError).not.toHaveBeenCalled();
+  });
+
+  it("prints init's failure and exits with 1 without a summary", async () => {
+    const failure = new LocalPreparationFailed({ message: faker.lorem.sentence() });
+    const { parse, outcomeLog, output } = setup({ initialized: Result.err(failure) });
+
+    await parse(['init']);
+
+    expect(output.printError).toHaveBeenCalledWith(failure.message);
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+    expect(outcomeLog.info).not.toHaveBeenCalled();
+  });
+
+  it('asks build for the preset, config and agent updates it was given, and names the image', async () => {
+    const image = `${faker.word.noun()}:${faker.system.semver()}`;
+    const configPath = `${faker.word.noun()}.json`;
     const preset = presetName();
-    const { parse, askForPreset, createApp, failureOutput } = await setup({
-      builtinPresets: [preset],
+    const { parse, buildImage, outcomeLog } = setup({ built: Result.ok({ image }) });
+
+    await parse([
+      'build',
+      '--pull-agents',
+      '--preset',
+      preset,
+      '--config',
+      configPath,
+      '--log-format',
+      'json',
+    ]);
+
+    expect(buildImage).toHaveBeenCalledWith({
+      pullAgents: true,
+      configPath,
+      preset: { kind: 'named', name: preset },
+      logFormat: 'json',
     });
-
-    await parse(['build', '--preset', '--log-format', 'json']);
-
-    expect(askForPreset.mock.calls[0]?.[0].map(({ name }: Preset) => name)).toEqual([preset]);
-    expect(createApp).not.toHaveBeenCalled();
-    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
+    expect(outcomeLog.info).toHaveBeenCalledWith({ image }, expect.stringContaining(image));
   });
 
-  it('looks up a named preset without asking and stops before opening the app when it is missing', async () => {
-    const { parse, askForPreset, createApp, failureOutput } = await setup({
-      builtinPresets: [presetName()],
+  it("prints build's failure and exits with 1", async () => {
+    const failure = new ImageBuildFailed({
+      message: faker.lorem.sentence(),
+      output: faker.lorem.paragraph(),
     });
+    const { parse, output } = setup({ built: Result.err(failure) });
 
-    await parse(['build', '--preset', presetName(), '--log-format', 'json']);
+    await parse(['build']);
 
-    expect(askForPreset).not.toHaveBeenCalled();
-    expect(createApp).not.toHaveBeenCalled();
-    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
+    expect(output.printError).toHaveBeenCalledWith(failure.message);
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
   });
 
-  async function setup(input: { builtinPresets: PresetName[] }) {
-    const repo = await createTempRepo();
-    const home = await tempDirectory('jig-build-home-');
-    const builtinPresetsDirectory = await tempDirectory('jig-build-builtin-');
-    for (const name of input.builtinPresets) {
-      await writeFile(path.join(builtinPresetsDirectory, `${name}.json`), '{}');
-    }
-    const askForPreset = vi.fn(async (_presets: Preset[]) => undefined);
-    const createApp = vi.fn(createAppContainer);
-    const failureOutput = mock<FailureOutput>();
+  function setup(input: {
+    initialized?: Awaited<ReturnType<SandboxOperations['init']>>;
+    built?: Awaited<ReturnType<SandboxOperations['buildImage']>>;
+  }) {
+    const init = vi.fn<SandboxOperations['init']>(
+      async () =>
+        input.initialized ??
+        Result.ok({ outcome: { status: 'written' }, configName: configName() }),
+    );
+    const buildImage = vi.fn<SandboxOperations['buildImage']>(
+      async () => input.built ?? Result.ok({ image: faker.word.noun() }),
+    );
+    const outcomeLog = mock<OutcomeLog>();
+    const output = mock<FailureOutput>();
     const program = new Command();
-    registerSandboxCommands(program, {
-      invocation: {
-        cwd: repo.dir,
-        environment: { HOME: home },
-        fallbackHomeDirectory: home,
-        askForPreset,
-        createAppContainer: createApp,
-        configSourceAt: configFileSource,
-        presetSourceAt: (locations) => presetDirectoriesSource(locations, builtinPresetsDirectory),
-      },
-      failureOutput,
-    });
-    const parse = async (argv: string[]) => {
-      await program.parseAsync(argv, { from: 'user' });
+    registerSandboxCommands(
+      program,
+      { init, buildImage },
+      { outcomeLog: () => outcomeLog },
+      output,
+    );
+    return {
+      init,
+      buildImage,
+      outcomeLog,
+      output,
+      parse: (argv: string[]) => program.parseAsync(argv, { from: 'user' }),
     };
-    return { parse, askForPreset, createApp, failureOutput };
   }
 });
 

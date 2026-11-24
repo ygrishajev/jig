@@ -15,9 +15,13 @@ import { readCredentialsFile } from '../adapters/local-store/credentials-file.js
 import { LocalRunRecords } from '../adapters/local-store/local-run-records.js';
 import { createConsoleLogger } from '../adapters/logging/create-logger.js';
 import { RepositoryRunStores } from '../adapters/run-store/repository-run-stores.js';
+import { askForAgents } from '../adapters/terminal/ask-for-agents.js';
+import { askForCredential } from '../adapters/terminal/ask-for-credential.js';
 import { askForPreset } from '../adapters/terminal/ask-for-preset.js';
 import { processRequestInputs } from '../adapters/terminal/standard-input.js';
 import {
+  buildSandboxImage,
+  initRepository,
   type JigOperations,
   listPresets,
   type OperationContext,
@@ -25,7 +29,7 @@ import {
   type RepositorySources,
   startOrResumeRun,
 } from '../app/api.js';
-import { openRunRuntime } from '../app/container.js';
+import { openRunRuntime, openSandboxRuntime } from '../app/container.js';
 import type { CommandIo } from '../cli/app-action.js';
 import { type GithubCommandDependencies, registerGithubCommands } from '../cli/commands/github.js';
 import type { RunCommandIo } from '../cli/commands/run.js';
@@ -70,6 +74,22 @@ const operations: JigOperations = {
       input,
     ),
   listPresets: () => listPresets({ ...repositorySources, context: processContext }),
+  init: (input) =>
+    initRepository(
+      {
+        ...repositorySources,
+        context: processContext,
+        openSandboxRuntime,
+        askForAgents,
+        askForCredential,
+      },
+      input,
+    ),
+  buildImage: (input) =>
+    buildSandboxImage(
+      { ...repositorySources, context: processContext, openSandboxRuntime, askForPreset },
+      input,
+    ),
 };
 
 const runIo: RunCommandIo = {

@@ -1,40 +1,43 @@
 import { faker } from '@faker-js/faker';
-import { asValue } from 'awilix';
 import { Result } from 'better-result';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { simpleGit } from 'simple-git';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { codexLogin, everyStepOn } from '../../tests/support/builders.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
+import {
+  localSandboxRuntime,
+  operationContextIn,
+  realRepositorySources,
+} from '../../tests/support/repository-sources.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
-import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
-import type { EnteredCredential } from '../adapters/terminal/ask-for-credential.js';
-import type { AgentChoice } from '../config/agent-policy.js';
+import type { AgentChoice, EnteredCredential } from '../config/agent-policy.js';
 import { ConfigUnwritable } from '../config/config-source.js';
-import { parseEnvironment } from '../config/environment.js';
 import { ConfigInvalid } from '../config/errors.js';
-import { loadConfig } from '../config/load-config.js';
 import type { AgentRole } from '../domain/agent-role.js';
+import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import {
   type ExecResult,
   SandboxCredentialsInvalid,
   SandboxUnavailable,
   SetupCommandFailed,
 } from '../ports/agent-session.js';
+import { RepositoryInvalid } from '../ports/git-failures.js';
 import { LocalPreparationFailed } from '../ports/local-state.js';
+import type { OperationLog } from '../ports/observability.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
-import { createAppContainer } from './container.js';
-import { initSandbox } from './init-sandbox.js';
+import { type InitInput, initRepository, type RuntimeRequest } from './api.js';
 
-describe('initSandbox', () => {
+describe('initRepository', () => {
   it('writes the sandbox Dockerfile, its gitignore and a starter config', async () => {
     const { init, file } = await setup({});
 
@@ -337,7 +340,7 @@ describe('initSandbox', () => {
       proposals: [proposal],
       exec: () => ({ exitCode: 0, output: '' }),
     });
-    await write(path.join(path.dirname(customConfig), '.keep'), '');
+    await write(customConfig, '{}');
 
     expect(await init({ useAgent: true })).toEqual({ status: 'verified', attempts: 1 });
     expect(JSON.parse(await file(customConfig))).toEqual({
@@ -359,16 +362,101 @@ describe('initSandbox', () => {
     expect(exists('.sandcastle/Dockerfile')).toBe(false);
   });
 
+  it('refuses a directory below the repository root before writing or building anything', async () => {
+    const { initResult, openSandboxRuntime, exists } = await setup({ startInSubdirectory: true });
+
+    const result = await initResult({ useAgent: true });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(RepositoryInvalid);
+    expect(openSandboxRuntime).not.toHaveBeenCalled();
+    expect(exists('.sandcastle/Dockerfile')).toBe(false);
+  });
+
+  it('names the config it wrote, the one the operator chose', async () => {
+    const customConfig = `${faker.word.noun()}.json`;
+    const { initResult, write } = await setup({ customConfig });
+    await write(customConfig, '{}');
+
+    const report = unwrap(await initResult({ useAgent: false }));
+
+    expect(report.configName).toBe(customConfig);
+  });
+
+  it('releases what it built once init is done, and when it fails', async () => {
+    const { initResult, linkTo, write, runtimes, repoRoot } = await setup({ configured: true });
+    await write('.sandcastle/keep', '');
+    await linkTo(path.join(await tempDirectory(), faker.string.uuid()), '.sandcastle/Dockerfile');
+
+    const refused = await initResult({ useAgent: false });
+    await unlink(path.join(repoRoot(), '.sandcastle/Dockerfile'));
+    const written = await initResult({ useAgent: false });
+
+    expect(refused.isErr()).toBe(true);
+    expect(written.isOk()).toBe(true);
+    expect(runtimes().map((runtime) => runtime.disposed())).toEqual([true, true]);
+  });
+
+  it.each([
+    [0, 'verified'],
+    [faker.number.int({ min: 1, max: 255 }), 'failed'],
+  ] as const)(
+    'checks the configured commands without an agent, verify exiting %i reports %s',
+    async (exitCode, status) => {
+      const verifyCommand = `npm run ${faker.word.verb()}`;
+      const { init, write, agent } = await setup({ exec: () => ({ exitCode, output: '' }) });
+      await write('jig.config.json', JSON.stringify({ ...everyStepOn(), verifyCommand }));
+
+      const outcome = await init({ useAgent: false });
+
+      expect(outcome).toMatchObject({ status, attempts: 1 });
+      expect(agent.commands).toEqual([verifyCommand]);
+      expect(agent.calls).toHaveLength(0);
+    },
+  );
+
+  it('runs the planner only in sandboxes it opened on branches of their own, closing each and removing its branch', async () => {
+    const { init, agent, openedBranches, localBranches } = await setup({
+      configured: true,
+      proposals: [toolchainProposal()],
+      exec: () => ({ exitCode: 0, output: '' }),
+    });
+
+    await init({ useAgent: true });
+
+    expect(agent.calls.map((call) => call.role)).toEqual(['planner']);
+    expect(openedBranches()).toHaveLength(2);
+    expect(agent.closed).toBe(true);
+    expect(await localBranches()).not.toEqual(expect.arrayContaining(openedBranches()));
+  });
+
+  it('hands the sandbox a credential the operator would not save', async () => {
+    const value = faker.string.alphanumeric(20);
+    const { init, runtimes, askForCredential } = await setup({
+      configured: true,
+      environment: {},
+      credential: { name: 'ANTHROPIC_API_KEY', value, save: false },
+      proposals: [toolchainProposal()],
+      exec: () => ({ exitCode: 0, output: '' }),
+    });
+
+    await init({ useAgent: true });
+
+    expect(askForCredential).toHaveBeenCalledTimes(1);
+    const [sandbox] = runtimes()[0]?.settings() ?? [];
+    expect(sandbox?.environment.credential('ANTHROPIC_API_KEY')).toBe(value);
+  });
+
   async function setup(input: {
     configured?: boolean;
     configWriteFailure?: ConfigUnwritable;
     customConfig?: string;
     answer?: AgentChoice;
-    environment?: NodeJS.ProcessEnv;
+    environment?: Record<string, string>;
     credential?: EnteredCredential;
     proposals?: ReturnType<typeof toolchainProposal>[];
     exec?: (command: string) => ExecResult;
     checkSandboxFailures?: SessionOpenFailure[];
+    startInSubdirectory?: boolean;
   }) {
     const repo = await createTempRepo();
     const codexHome = await tempDirectory();
@@ -380,51 +468,57 @@ describe('initSandbox', () => {
     for (const proposal of input.proposals ?? []) agent.script('planner', { output: proposal });
 
     const checkSandboxFailures = [...(input.checkSandboxFailures ?? [])];
-    const destination = configDestination(repo.dir, input.customConfig);
-    const source = configFileSource(destination);
-    const writeFailure = input.configWriteFailure;
-    const app = createAppContainer({
-      repoRoot: repo.dir,
-      configDestination: destination,
-      configSource: writeFailure
-        ? { ...source, write: async () => Result.err(writeFailure) }
-        : source,
-      logFormat: 'json',
-      logLevel: 'silent',
-      environment: unwrap(
-        parseEnvironment(
-          input.environment ?? {
-            ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
-            JIG_CODEX_AUTH_DIR: codexHome,
-            OPENROUTER_API_KEY: faker.string.alphanumeric(20),
-          },
-          faker.system.directoryPath(),
-        ),
-      ),
-      config: unwrap(loadConfig(configFileSource(configDestination(repo.dir)))),
-    });
+    const openedBranches: string[] = [];
+    const open = async ({ runId }: RunIdentity, setupCommand: string | null) => {
+      const failure = setupCommand === null ? undefined : checkSandboxFailures.shift();
+      if (failure) return Result.err(failure);
+      const branch = runBranchFor(runId);
+      await simpleGit({ baseDir: repo.dir }).branch([branch]);
+      openedBranches.push(branch);
+      return Result.ok(agent);
+    };
     const images = mock<SandboxImages>({
       labels: vi.fn().mockResolvedValue(Result.ok(undefined)),
       build: vi.fn().mockResolvedValue(Result.ok()),
     });
-    let questions = 0;
-    app.register({
-      images: asValue(images),
-      askForCredential: asValue(async () => input.credential),
-      askForAgents: asValue(async (roles: AgentRole[]) => {
-        questions++;
-        const { answer } = input;
-        return answer && Object.fromEntries(roles.map((role) => [role, answer]));
-      }),
-      latestVersions: asValue(async () => ({})),
-      openSession: asValue(async ({ setupCommand }: OpenSessionInput) => {
-        const failure = setupCommand === null ? undefined : checkSandboxFailures.shift();
-        if (failure) return Result.err(failure);
-        return Result.ok(agent);
-      }),
+    const built: ReturnType<typeof localSandboxRuntime>[] = [];
+    const openSandboxRuntime = vi.fn((request: RuntimeRequest) => {
+      const runtime = localSandboxRuntime(request, { images, open, log: mock<OperationLog>() });
+      built.push(runtime);
+      return runtime.runtime;
     });
-    const initResult = (options: { useAgent: boolean }) => initSandbox(app, options);
-    const init = async (options: { useAgent: boolean }) => (await initResult(options)).unwrap();
+    const writeFailure = input.configWriteFailure;
+    const sources = realRepositorySources({
+      configSourceFor: (repoRoot, configPath) => {
+        const source = configFileSource(configDestination(repoRoot, configPath));
+        return writeFailure ? { ...source, write: async () => Result.err(writeFailure) } : source;
+      },
+    });
+    const askForAgents = vi.fn(async (roles: AgentRole[]) => {
+      const { answer } = input;
+      return answer && Object.fromEntries(roles.map((role) => [role, answer]));
+    });
+    const askForCredential = vi.fn(async () => input.credential);
+    const cwd = input.startInSubdirectory ? path.join(repo.dir, faker.word.noun()) : repo.dir;
+    if (input.startInSubdirectory) await mkdir(cwd);
+    const environment = input.environment ?? {
+      ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
+      JIG_CODEX_AUTH_DIR: codexHome,
+      OPENROUTER_API_KEY: faker.string.alphanumeric(20),
+    };
+    const initResult = (options: Pick<InitInput, 'useAgent'>) =>
+      initRepository(
+        {
+          ...sources,
+          context: () => operationContextIn(cwd, environment),
+          openSandboxRuntime,
+          askForAgents,
+          askForCredential,
+        },
+        { ...options, configPath: input.customConfig, logFormat: 'json' },
+      );
+    const init = async (options: Pick<InitInput, 'useAgent'>) =>
+      unwrap(await initResult(options)).outcome;
     const file = (relativePath: string) => readFile(path.join(repo.dir, relativePath), 'utf-8');
     const write = async (relativePath: string, contents: string) => {
       const target = path.join(repo.dir, relativePath);
@@ -441,7 +535,13 @@ describe('initSandbox', () => {
       linkTo,
       agent,
       images,
-      asked: () => questions,
+      openSandboxRuntime,
+      askForCredential,
+      runtimes: () => built,
+      repoRoot: () => repo.dir,
+      openedBranches: () => openedBranches,
+      localBranches: async () => (await simpleGit({ baseDir: repo.dir }).branchLocal()).all,
+      asked: () => askForAgents.mock.calls.length,
       exists: (relativePath: string) => existsSync(path.join(repo.dir, relativePath)),
     };
   }

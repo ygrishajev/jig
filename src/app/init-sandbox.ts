@@ -1,25 +1,10 @@
-import { asValue, type AwilixContainer } from 'awilix';
 import { Result } from 'better-result';
-import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { z } from 'zod';
 
-import type { ConfigDestination } from '../adapters/filesystem/config-source.js';
-import { refuseSymlinks } from '../adapters/find-symlink.js';
-import { saveCredential } from '../adapters/local-store/credentials-file.js';
-import {
-  BASE_DOCKERFILE,
-  DOCKERFILE,
-  SANDBOX_DIRECTORY,
-  withToolchain,
-} from '../adapters/sandbox-image/image-recipe.js';
-import { collectCredentials, missingCredentials } from '../adapters/sandcastle/agents.js';
-import {
-  ignoreSandcastleDirectory,
-  type SessionOpenFailure,
-} from '../adapters/sandcastle/sandcastle-session.js';
-import { withCredentials } from '../config/environment.js';
+import type { LogFormat } from '../adapters/logging/create-logger.js';
+import type { AgentChoice, EnteredCredential, MissingCredential } from '../config/agent-policy.js';
+import type { ConfigSource } from '../config/config-source.js';
+import { type JigEnvironment, withCredentials } from '../config/environment.js';
 import type { ConfigInvalid } from '../config/errors.js';
 import {
   configuredSteps,
@@ -29,7 +14,7 @@ import {
   stepsWithoutAgent,
 } from '../config/load-config.js';
 import { updateConfig } from '../config/update-config.js';
-import { messageOf } from '../failures/messages.js';
+import type { AgentRole } from '../domain/agent-role.js';
 import {
   type AgentOutputInvalid,
   type AgentRunFailed,
@@ -37,14 +22,38 @@ import {
   type SandboxPreparationInvalid,
   SetupCommandFailed,
 } from '../ports/agent-session.js';
-import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
-import { LocalPreparationFailed, type LocalStateUnwritable } from '../ports/local-state.js';
-import type { RunSession, SessionCloseFailure } from '../ports/run-session.js';
+import type { LocalPreparationFailed, LocalStateUnwritable } from '../ports/local-state.js';
+import type { RunSession } from '../ports/run-session.js';
 import type { ImageBuildFailed } from '../ports/sandbox-images.js';
+import type { StarterFiles } from '../ports/starter-files.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
-import type { AppCradle } from './container.js';
-import { ensureSandboxImage, readSandboxDockerfile } from './sandbox-image.js';
-import { withThrowawaySandbox } from './throwaway-sandbox.js';
+import { disposableLifetime, withResource } from './lifecycle.js';
+import {
+  type PreparedRepository,
+  prepareRepository,
+  type RepositoryPreparationFailure,
+} from './repository-preparation.js';
+import { ensureSandboxImage } from './sandbox-image.js';
+import type {
+  SandboxCapabilities,
+  SandboxOperationCapabilities,
+  SandboxRuntime,
+} from './sandbox-runtime.js';
+import { type ThrowawaySandboxFailure, withThrowawaySandbox } from './throwaway-sandbox.js';
+
+export interface InitInput {
+  /** With an agent, the planner fills in the toolchain; without one, only the configured commands are checked. */
+  useAgent: boolean;
+  /** A config file other than the repository's own, relative to its root. */
+  configPath?: string;
+  logFormat: LogFormat;
+}
+
+/** How init ended, and the name of the config it wrote, for telling the operator what to commit. */
+export interface InitReport {
+  outcome: InitResult;
+  configName: string;
+}
 
 export type InitResult =
   | { status: 'verified'; attempts: number }
@@ -52,125 +61,119 @@ export type InitResult =
   | { status: 'written' }
   | { status: 'needs-agents'; instruction: string };
 
+export type InitCapabilities = SandboxOperationCapabilities & InitInteraction;
+
+/** The questions init asks the operator; nobody answering is `undefined`. */
+export interface InitInteraction {
+  askForAgents(roles: AgentRole[]): Promise<Partial<Record<AgentRole, AgentChoice>> | undefined>;
+  askForCredential(missing: MissingCredential): Promise<EnteredCredential | undefined>;
+}
+
 export type InitFailure =
-  SandboxCheckFailure | AgentRunFailed | AgentOutputInvalid | LocalStateUnwritable;
+  | RepositoryPreparationFailure
+  | SandboxCheckFailure
+  | AgentRunFailed
+  | AgentOutputInvalid
+  | LocalStateUnwritable;
 
 /** Why a throwaway sandbox gave no answer: the image, Docker, git, or the sandbox's own cleanup. */
 export type SandboxCheckFailure =
+  | ThrowawaySandboxFailure
   | LocalPreparationFailed
+  | SandboxPreparationInvalid
   | ImageBuildFailed
-  | SessionOpenFailure
-  | SessionCloseFailure
-  | GitCommandFailed
-  | RepositoryInvalid;
+  | ConfigInvalid
+  | SandboxCredentialsInvalid;
+
+interface InitContext {
+  runtime: SandboxRuntime;
+  interaction: InitInteraction;
+  prepared: PreparedRepository;
+  useAgent: boolean;
+}
+
+interface CredentialRequest {
+  runtime: Pick<SandboxRuntime, 'credentials' | 'sandboxFor'>;
+  interaction: InitInteraction;
+  steps: StepConfig[];
+  environment: JigEnvironment;
+}
 
 /**
  * Writes the sandbox Dockerfile and a starter config if the repository has none, and asks which
- * agents to use for steps without one; with none chosen, it stops there and says what to set. It then
- * asks for credentials those agents lack. With an agent, the planner then fills in the project's toolchain and setup and verify commands, and the
+ * agents to use for steps without one; with none chosen, it stops there and says what to set. It
+ * then asks for credentials those agents lack, saving each only when the operator agrees. With an
+ * agent, the planner fills in the project's toolchain and setup and verify commands, and the
  * result counts only once both commands pass inside the built sandbox — a failure goes back to
  * the planner. Without an agent, the commands already configured are checked.
  */
-export function initSandbox(
-  app: AwilixContainer<AppCradle>,
-  options: { useAgent: boolean },
-): Promise<Result<InitResult, InitFailure>> {
+export function initRepository(
+  capabilities: InitCapabilities,
+  { useAgent, configPath, logFormat }: InitInput,
+): Promise<Result<InitReport, InitFailure>> {
   return Result.gen(async function* () {
-    const { repoRoot, configDestination, configSource } = app.cradle;
-    yield* Result.await(writeStarterFiles(repoRoot, configDestination));
-    if (options.useAgent) yield* Result.await(chooseMissingAgents(app));
-    const config = yield* loadConfig(configSource);
-    app.register({ config: asValue(config) });
-    const steps = configuredSteps(config);
-    if (steps.isErr()) {
-      return Result.ok<InitResult, InitFailure>({
-        status: 'needs-agents',
-        instruction: steps.error.message,
-      });
-    }
-    if (!options.useAgent) return checkConfiguredCommands(app, config, Object.values(steps.value));
-    yield* Result.await(ensureCredentials(app, Object.values(steps.value)));
-
-    let previousFailure: string | undefined;
-    for (let attempt = 1; attempt <= TOOLCHAIN_ATTEMPTS; attempt++) {
-      const proposal = yield* Result.await(proposeToolchain(app, previousFailure));
-      yield* Result.await(writeToolchain(repoRoot, proposal.toolchain));
-      yield* Result.await(
-        updateConfig(configSource, {
-          setupCommand: proposal.setupCommand,
-          verifyCommand: proposal.verifyCommand,
-        }),
-      );
-      previousFailure = yield* Result.await(
-        checkInSandbox(app, proposal.setupCommand, proposal.verifyCommand),
-      );
-      if (!previousFailure)
-        return Result.ok<InitResult, InitFailure>({ status: 'verified', attempts: attempt });
-      app.cradle.logger.warn(`attempt ${attempt} did not pass in the sandbox`);
-    }
-    return Result.ok<InitResult, InitFailure>({
-      status: 'failed',
-      attempts: TOOLCHAIN_ATTEMPTS,
-      failure: previousFailure ?? '',
-    });
+    const prepared = yield* Result.await(
+      prepareRepository(capabilities.context(), capabilities, configPath),
+    );
+    const runtime = capabilities.openSandboxRuntime({ ...prepared, configPath, logFormat });
+    const outcome = yield* Result.await(
+      withResource(disposableLifetime(runtime), runtime.log, (opened) =>
+        initWith({ runtime: opened, interaction: capabilities, prepared, useAgent }),
+      ),
+    );
+    return Result.ok({ outcome, configName: prepared.configSource.name });
   });
 }
 
-async function writeStarterFiles(
-  repoRoot: string,
-  configDestination: ConfigDestination,
-): Promise<Result<void, LocalPreparationFailed | SandboxPreparationInvalid>> {
-  const ignored = await ignoreSandcastleDirectory(repoRoot);
-  if (ignored.isErr()) return ignored;
-  const dockerfile = path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE);
-  const config = configDestination.path;
-  const refused = refuseSymlinks([dockerfile, config]);
-  if (refused.isErr()) return refused;
-  const written = await writeIfMissing(dockerfile, BASE_DOCKERFILE);
-  if (written.isErr()) return written;
-  return writeIfMissing(config, '{}\n');
-}
-
-function writeIfMissing(
-  file: string,
-  contents: string,
-): Promise<Result<void, LocalPreparationFailed>> {
-  return existsSync(file) ? Promise.resolve(Result.ok()) : writeRepoFile(file, contents);
-}
-
-function writeRepoFile(
-  file: string,
-  contents: string,
-): Promise<Result<void, LocalPreparationFailed>> {
-  return Result.tryPromise({
-    try: () => writeFile(file, contents),
-    catch: (cause) =>
-      new LocalPreparationFailed({ message: `Could not write ${file}: ${messageOf(cause)}` }),
+function initWith({
+  runtime,
+  interaction,
+  prepared,
+  useAgent,
+}: InitContext): Promise<Result<InitResult, InitFailure>> {
+  return Result.gen(async function* () {
+    const { configSource, environment } = prepared;
+    yield* Result.await(runtime.starterFiles.writeMissing());
+    if (useAgent) yield* Result.await(chooseMissingAgents(configSource, interaction));
+    const config = yield* loadConfig(configSource);
+    const configured = configuredSteps(config);
+    if (configured.isErr()) {
+      return Result.ok<InitResult, InitFailure>({
+        status: 'needs-agents',
+        instruction: configured.error.message,
+      });
+    }
+    const steps = Object.values(configured.value);
+    const credentialRequest = { runtime, interaction, steps, environment };
+    if (!useAgent) return checkConfiguredCommands(config, credentialRequest);
+    const completed = yield* Result.await(ensureCredentials(credentialRequest));
+    const sandbox = runtime.sandboxFor({ config, environment: completed });
+    return proposeUntilVerified(sandbox, runtime, configSource);
   });
 }
 
 async function chooseMissingAgents(
-  app: AwilixContainer<AppCradle>,
+  configSource: ConfigSource,
+  interaction: InitInteraction,
 ): Promise<Result<void, ConfigInvalid>> {
-  const { configSource, askForAgents } = app.cradle;
   const config = loadConfig(configSource);
   if (config.isErr()) return Result.err(config.error);
   const missing = stepsWithoutAgent(config.value);
   if (missing.length === 0) return Result.ok();
-  const agents = await askForAgents(missing);
+  const agents = await interaction.askForAgents(missing);
   return agents ? updateConfig(configSource, agents) : Result.ok();
 }
 
 async function checkConfiguredCommands(
-  app: AwilixContainer<AppCradle>,
   config: JigConfig,
-  steps: StepConfig[],
+  request: CredentialRequest,
 ): Promise<Result<InitResult, InitFailure>> {
   const { verifyCommand, setupCommand } = config;
   if (!verifyCommand) return Result.ok({ status: 'written' });
-  const credentials = await ensureCredentials(app, steps);
-  if (credentials.isErr()) return Result.err(credentials.error);
-  const checked = await checkInSandbox(app, setupCommand, verifyCommand);
+  const completed = await ensureCredentials(request);
+  if (completed.isErr()) return Result.err(completed.error);
+  const sandbox = request.runtime.sandboxFor({ config, environment: completed.value });
+  const checked = await checkInSandbox(sandbox, setupCommand, verifyCommand);
   return checked.map((failure) =>
     failure ? { status: 'failed', attempts: 1, failure } : { status: 'verified', attempts: 1 },
   );
@@ -180,30 +183,30 @@ async function checkConfiguredCommands(
  * Asks for the credentials the configured agents lack, before anything is built for them. The
  * operator decides whether each is saved; either way it lasts for the rest of this command.
  */
-async function ensureCredentials(
-  app: AwilixContainer<AppCradle>,
-  steps: StepConfig[],
-): Promise<
+function ensureCredentials({
+  runtime: { credentials },
+  interaction,
+  steps,
+  environment,
+}: CredentialRequest): Promise<
   Result<
-    void,
+    JigEnvironment,
     ConfigInvalid | SandboxCredentialsInvalid | LocalPreparationFailed | LocalStateUnwritable
   >
 > {
   return Result.gen(async function* () {
-    const { repoRoot, environment, askForCredential } = app.cradle;
     const entered: Record<string, string> = {};
-    for (const missing of yield* missingCredentials(steps, environment.credential)) {
-      const credential = await askForCredential(missing);
+    for (const missing of yield* credentials.missing(steps, environment)) {
+      const credential = await interaction.askForCredential(missing);
       if (!credential) break;
       entered[credential.name] = credential.value;
       if (credential.save) {
-        yield* Result.await(saveCredential(repoRoot, credential.name, credential.value));
+        yield* Result.await(credentials.save({ name: credential.name, value: credential.value }));
       }
     }
     const completed = withCredentials(environment, entered);
-    app.register({ environment: asValue(completed) });
-    yield* collectCredentials(steps, completed.credential);
-    return Result.ok();
+    yield* credentials.check(steps, completed);
+    return Result.ok(completed);
   });
 }
 
@@ -213,11 +216,11 @@ async function ensureCredentials(
  * returned as the error, rather than spending the planner's attempts on it.
  */
 async function checkInSandbox(
-  app: AwilixContainer<AppCradle>,
+  sandbox: SandboxCapabilities,
   setupCommand: string | undefined,
   verifyCommand: string,
 ): Promise<Result<string | undefined, SandboxCheckFailure>> {
-  const checked = await withSandbox(app, setupCommand ?? null, async (session) => {
+  const checked = await withSandbox(sandbox, setupCommand ?? null, async (session) => {
     const verify = await session.exec(verifyCommand);
     return verify.map(({ exitCode, output }) =>
       exitCode === 0
@@ -232,28 +235,62 @@ async function checkInSandbox(
 }
 
 async function withSandbox<T, E>(
-  app: AwilixContainer<AppCradle>,
+  sandbox: SandboxCapabilities,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<Result<T, E>>,
 ): Promise<Result<T, E | SandboxCheckFailure>> {
-  const image = await ensureSandboxImage(app.cradle);
+  const image = await ensureSandboxImage(sandbox.image);
   if (image.isErr()) return Result.err(image.error);
-  return withThrowawaySandbox(app, setupCommand, use);
+  return withThrowawaySandbox(sandbox.throwaway, setupCommand, use);
+}
+
+function proposeUntilVerified(
+  sandbox: SandboxCapabilities,
+  runtime: Pick<SandboxRuntime, 'starterFiles' | 'log'>,
+  configSource: ConfigSource,
+): Promise<Result<InitResult, InitFailure>> {
+  return Result.gen(async function* () {
+    let previousFailure: string | undefined;
+    for (let attempt = 1; attempt <= TOOLCHAIN_ATTEMPTS; attempt++) {
+      const proposal = yield* Result.await(
+        proposeToolchain(sandbox, runtime.starterFiles, configSource, previousFailure),
+      );
+      yield* Result.await(runtime.starterFiles.writeToolchain(proposal.toolchain));
+      yield* Result.await(
+        updateConfig(configSource, {
+          setupCommand: proposal.setupCommand,
+          verifyCommand: proposal.verifyCommand,
+        }),
+      );
+      previousFailure = yield* Result.await(
+        checkInSandbox(sandbox, proposal.setupCommand, proposal.verifyCommand),
+      );
+      if (!previousFailure)
+        return Result.ok<InitResult, InitFailure>({ status: 'verified', attempts: attempt });
+      runtime.log.warn(`attempt ${attempt} did not pass in the sandbox`);
+    }
+    return Result.ok<InitResult, InitFailure>({
+      status: 'failed',
+      attempts: TOOLCHAIN_ATTEMPTS,
+      failure: previousFailure ?? '',
+    });
+  });
 }
 
 /** How many times the planner gets to fix a toolchain that failed setup or verify. */
 const TOOLCHAIN_ATTEMPTS = 3;
 
 async function proposeToolchain(
-  app: AwilixContainer<AppCradle>,
+  sandbox: SandboxCapabilities,
+  starterFiles: StarterFiles,
+  configSource: ConfigSource,
   previousFailure?: string,
 ): Promise<Result<z.infer<typeof toolchainSchema>, InitFailure>> {
   return Result.gen(async function* () {
-    const { repoRoot, configSource } = app.cradle;
     const config = yield* loadConfig(configSource);
-    const dockerfile = yield* Result.await(readSandboxDockerfile(repoRoot));
+    const dockerfile = yield* Result.await(starterFiles.readDockerfile());
     const proposed = yield* Result.await(
-      withSandbox(app, null, (session) =>
+      withSandbox(sandbox, null, (session) =>
         session.runForOutput({
           role: 'planner',
           prompt: toolchainPrompt({
@@ -275,13 +312,3 @@ const toolchainSchema = z.object({
   setupCommand: z.string(),
   verifyCommand: z.string(),
 });
-
-async function writeToolchain(
-  repoRoot: string,
-  toolchain: string,
-): Promise<Result<void, SandboxPreparationInvalid | LocalPreparationFailed>> {
-  const dockerfile = await readSandboxDockerfile(repoRoot);
-  const filled = dockerfile.andThen((contents) => withToolchain(contents, toolchain));
-  if (filled.isErr()) return Result.err(filled.error);
-  return writeRepoFile(path.join(repoRoot, SANDBOX_DIRECTORY, DOCKERFILE), filled.value);
-}

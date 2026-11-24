@@ -1,5 +1,18 @@
 import { z } from 'zod';
 
+/** An agent that has none of the credentials that could authenticate it. */
+export interface MissingCredential {
+  provider: AgentName;
+  keys: string[];
+}
+
+/** A credential the operator entered, and whether they agreed to keep it for later runs. */
+export interface EnteredCredential {
+  name: string;
+  value: string;
+  save: boolean;
+}
+
 export interface AgentChoice {
   provider: AgentName;
   model?: string;

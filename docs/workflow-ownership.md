@@ -326,8 +326,8 @@ dependencies: `adapters/github/octokit-github.ts`, `adapters/git/github-origin.t
 `adapters/git/orchestration-ref.ts` and `adapters/git/run-branches.ts`. It builds them only when the
 command runs, so `--help` and an imported builder need no token, repository or app. The CLI owns
 command translation; app still owns container construction and lifecycle, and `cli/with-app.ts`
-still builds the container for `jig run`, `jig init`, `jig sandbox build` and `jig github implement`.
-Composition also binds the status and preset-listing operations from `app/api.ts`; see
+still builds the container for `jig github implement`. Composition also binds the run, status,
+preset-listing, init and image-build operations from `app/api.ts`; see
 [Public application entry](#public-application-entry).
 
 `.dependency-cruiser.mjs` owns the production-owner list; a file under any other directory, such
@@ -478,9 +478,8 @@ message, the one surface that exposes the GitHub setup identity. Owner-local spe
 The GitHub command still registers through `cli/app-action.ts` (`appAction`), which opens the app
 with `cli/with-app.ts`, and `implementIssue` still takes the `App` container, only for its logger,
 its repository root, `runJig` and `openRunStore`, which reads the saved checkpoint from the
-configured and required stores. That bridge is the same one `jig run`, `jig init` and
-`jig sandbox build` use until their operations take explicit dependencies; it is not a pattern for
-new code.
+configured and required stores. No other command uses that bridge; it is not a pattern for new
+code.
 
 `src/boundary.spec.ts` and the `github-is-isolated` checks named in the application-boundaries
 specification were already absent when this move started; nothing replaces them.
@@ -733,9 +732,10 @@ Dependency-cruiser's `config-imports-only-approved-dependencies` rule allows pro
 import only `src/config`, `src/domain`, `better-result` and `zod`. Anything else fails, including
 adapters, ports, `node:fs`, `node:os`, `node:path`, `node:child_process`, `execa` and
 `write-file-atomic`. Config specs and the test packages they use are exempt. Adapters may import
-config's contracts, and ports still depend only on domain. `jig run`, `jig status` and
-`jig presets` call operations from `src/app/api.ts`; the other commands still receive the container through
-`src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepare the invocation, and
+config's contracts, and ports still depend only on domain. `jig run`, `jig status`,
+`jig presets`, `jig init` and `jig build` call operations from `src/app/api.ts`; `jig github
+implement` still receives the container through `src/cli/with-app.ts` and
+`src/cli/app-action.ts`, which also prepare the invocation, and
 `src/app/container.ts` still constructs adapters and scopes. `src/composition/main.ts` owns
 executable startup; moving the remaining preparation into application operations and container
 construction from `app` to composition are separate slices.
@@ -743,27 +743,34 @@ construction from `app` to composition are separate slices.
 ## Public application entry
 
 `src/app/api.ts` is the application's public entry. It exports `startOrResumeRun`,
-`readRunStatus` and `listPresets`, their input, context, capability, report and failure types, and
+`readRunStatus`, `listPresets`, `initRepository` and `buildSandboxImage`, their input, context,
+capability, report and failure types, and
 `JigOperations`, the bound operations the CLI receives. Its exported types name domain, config preset and port types only: no container,
 cradle, logger, tracer, Commander command or process object. `OperationContext` carries the working
 directory, a plain map of environment variables and the fallback home directory.
 
-| Concept                                                 | Owner before                                                    | Owner now                                                                        |
-| ------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Process context capture for status and presets          | `cli/with-app.ts` (`processInvocation`)                         | `composition/main.ts` (`processContext`)                                         |
-| Preparation order: repository, environment, credentials | `cli/with-app.ts` (`openApp`)                                   | `app/repository-preparation.ts` (`prepareRepository`)                            |
-| Status use case                                         | `app/run-status.ts`, given the container                        | `app/run-status.ts`, given `StatusCapabilities`                                  |
-| Preset listing                                          | `cli/commands/presets.ts`, reading the cradle                   | `app/list-presets.ts`                                                            |
-| `MetricsSummary`, `RunDocument`, `RunDocumentFile`      | `observers/metrics.ts`, `adapters/local-store/run-artefacts.ts` | `ports/run-records.ts`, with the `RunRecords` contract                           |
-| Run records for status                                  | `MetricsLog` and `RunArtefacts` built inside app                | `adapters/local-store/local-run-records.ts`, supplied by composition             |
-| Run command preparation and preset choice               | `cli/with-app.ts` (`openApp`, `selectedPreset`)                 | `app/run-operation.ts`, `app/preset-selection.ts`                                |
-| Request file and standard-input reads                   | `cli/read-request.ts` over `node:fs` and the process stdin      | `cli/read-request.ts` over supplied `RequestInputs`                              |
-| Run lock, store choice, start/resume, ended-run report  | `app/run-jig.ts`, given the container                           | `app/run-jig.ts`, given `RunCapabilities`                                        |
-| Built-in and custom store construction, module checks   | `app/run-stores.ts`                                             | `adapters/run-store/repository-run-stores.ts` (`RunStoreCatalog`)                |
-| Store selection: configured plus required, each once    | `app/run-stores.ts`                                             | `app/run-stores.ts` (`openRunStore` over a `RunStoreCatalog`)                    |
-| `RunStoreSetupInvalid`                                  | `app/run-stores.ts`                                             | `ports/run-store.ts`                                                             |
-| Acquire, use and release; release order                 | `app/container.ts` (`withRunScope`), `try`/`finally` in callers | `app/lifecycle.ts` (`withResource`, `releaseInOrder`)                            |
-| Cleanup log, run session, run telemetry                 | pino `Logger`, `RunSession` in `app/container.ts`, OTel tracer  | `WarningLog`, `RunTelemetry` in `ports/observability.ts`, `ports/run-session.ts` |
+| Concept                                                  | Owner before                                                    | Owner now                                                                           |
+| -------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Process context capture for status and presets           | `cli/with-app.ts` (`processInvocation`)                         | `composition/main.ts` (`processContext`)                                            |
+| Preparation order: repository, environment, credentials  | `cli/with-app.ts` (`openApp`)                                   | `app/repository-preparation.ts` (`prepareRepository`)                               |
+| Status use case                                          | `app/run-status.ts`, given the container                        | `app/run-status.ts`, given `StatusCapabilities`                                     |
+| Preset listing                                           | `cli/commands/presets.ts`, reading the cradle                   | `app/list-presets.ts`                                                               |
+| `MetricsSummary`, `RunDocument`, `RunDocumentFile`       | `observers/metrics.ts`, `adapters/local-store/run-artefacts.ts` | `ports/run-records.ts`, with the `RunRecords` contract                              |
+| Run records for status                                   | `MetricsLog` and `RunArtefacts` built inside app                | `adapters/local-store/local-run-records.ts`, supplied by composition                |
+| Run command preparation and preset choice                | `cli/with-app.ts` (`openApp`, `selectedPreset`)                 | `app/run-operation.ts`, `app/preset-selection.ts`                                   |
+| Request file and standard-input reads                    | `cli/read-request.ts` over `node:fs` and the process stdin      | `cli/read-request.ts` over supplied `RequestInputs`                                 |
+| Run lock, store choice, start/resume, ended-run report   | `app/run-jig.ts`, given the container                           | `app/run-jig.ts`, given `RunCapabilities`                                           |
+| Built-in and custom store construction, module checks    | `app/run-stores.ts`                                             | `adapters/run-store/repository-run-stores.ts` (`RunStoreCatalog`)                   |
+| Store selection: configured plus required, each once     | `app/run-stores.ts`                                             | `app/run-stores.ts` (`openRunStore` over a `RunStoreCatalog`)                       |
+| `RunStoreSetupInvalid`                                   | `app/run-stores.ts`                                             | `ports/run-store.ts`                                                                |
+| Acquire, use and release; release order                  | `app/container.ts` (`withRunScope`), `try`/`finally` in callers | `app/lifecycle.ts` (`withResource`, `releaseInOrder`)                               |
+| Cleanup log, run session, run telemetry                  | pino `Logger`, `RunSession` in `app/container.ts`, OTel tracer  | `WarningLog`, `RunTelemetry` in `ports/observability.ts`, `ports/run-session.ts`    |
+| Init and build preparation                               | `cli/with-app.ts` (`openApp`), given the container              | `app/init-sandbox.ts`, `app/build-image.ts`, given `SandboxOperationCapabilities`   |
+| When init asks for agents, credentials and save consent  | `app/init-sandbox.ts`, reading questions from the cradle        | `app/init-sandbox.ts` over the supplied `InitInteraction`                           |
+| Starter files: Dockerfile, sandbox ignore rules, config  | `app/init-sandbox.ts`, `app/sandbox-image.ts` over `node:fs`    | `adapters/sandbox-image/starter-files.ts` (`StarterFiles` in `ports/`)              |
+| Agent credential keys and the owner-only credential file | `app/init-sandbox.ts` calling adapters directly                 | `adapters/sandcastle/agent-credentials.ts` (`AgentCredentials`)                     |
+| Throwaway sandbox branch, open and console events        | `app/throwaway-sandbox.ts`, given the container                 | `app/throwaway-sandbox.ts` over `ThrowawaySandboxes`; events wired by the container |
+| Image build progress log                                 | pino `Logger`                                                   | `OperationLog` in `ports/observability.ts`                                          |
 
 The handlers in `cli/commands/status.ts` and `cli/commands/presets.ts` parse their input, call the
 operation and format its `Result`. `cli/with-app.ts` prepares through the same
@@ -785,15 +792,29 @@ failure is the cleanup failure, and every other failure or panic is logged. Open
 releases through `releasingOnPanic`: a panic after the sandbox opened closes it before the scope is
 disposed. A cleanup failure replaces a success and is logged after a failure.
 
+`cli/commands/sandbox.ts` parses `init` and `build` input, calls `init` or `buildImage` and prints
+the summary or the image name through the supplied outcome log; a failed toolchain check sets exit
+code 1. `initRepository` prepares the repository, then asks for the `SandboxRuntime` and releases
+it however init ends. Inside it, init writes the missing starter files (refusing links), asks
+`InitInteraction.askForAgents` only for steps without an agent and only with an agent, and stops
+with `needs-agents` when none is chosen. It asks `askForCredential` only for credentials the
+configured agents lack, stops asking at the first unanswered prompt, and saves an entered
+credential through `AgentCredentials.save` only when the operator agreed; either way the credential
+lasts for the command. It then checks the credentials before any image or sandbox is built. Every
+agent call runs on a session from `withThrowawaySandbox`, which closes it and removes its branch
+however the work ends. The report carries the outcome and the config's name, not the config
+source. `buildSandboxImage` prepares the repository, applies the preset (cancelling the pick
+builds nothing), ensures the image for the config and releases the runtime.
+
 ### Preparation, acquisition and release by operation
 
-| Operation                       | Before the app opens                                                                                                             | Preparation                                                                                                                 | Acquired, then released                                                                                                                                                                                                                                                                                                   |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jig status <id>`               | the run id parses                                                                                                                | repository root, environment, saved credentials, config; no preset, no credential prompt                                    | nothing: stores are peeked, refs and `.jig/` stay as they were, metrics and documents are this machine's; no container and no sandbox                                                                                                                                                                                     |
-| `jig presets`                   | none                                                                                                                             | repository root, environment, saved credentials, config (the repository's own), preset directories                          | nothing                                                                                                                                                                                                                                                                                                                   |
-| `jig run`                       | input parses; the request file or standard input is read through `RequestInputs` and refused when unusable, calling no operation | the same order, then the preset (asked for with a bare `--preset`, cancelling refuses), then the runtime (`openRunRuntime`) | the run lock, then the run stores; an ended run is reported without a sandbox; otherwise step credentials and the image, telemetry, then the sandbox scope; the sandbox closes before the scope is disposed, telemetry shuts down after it, the lock is released after that, and the runtime's container is disposed last |
-| `jig init`, `jig sandbox build` | input parses                                                                                                                     | the same order and the container                                                                                            | `init` asks for agents and credential-save consent inside the operation; its throwaway sandbox and the image build release before the container is disposed                                                                                                                                                               |
-| `jig github implement`          | the GitHub token and repository settings, then the origin, refused as `GithubSetupInvalid`                                       | the same order and the container                                                                                            | the publication lease around publication, the run through `runJig` as above, then the container                                                                                                                                                                                                                           |
+| Operation               | Before the app opens                                                                                                             | Preparation                                                                                                                 | Acquired, then released                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jig status <id>`       | the run id parses                                                                                                                | repository root, environment, saved credentials, config; no preset, no credential prompt                                    | nothing: stores are peeked, refs and `.jig/` stay as they were, metrics and documents are this machine's; no container and no sandbox                                                                                                                                                                                     |
+| `jig presets`           | none                                                                                                                             | repository root, environment, saved credentials, config (the repository's own), preset directories                          | nothing                                                                                                                                                                                                                                                                                                                   |
+| `jig run`               | input parses; the request file or standard input is read through `RequestInputs` and refused when unusable, calling no operation | the same order, then the preset (asked for with a bare `--preset`, cancelling refuses), then the runtime (`openRunRuntime`) | the run lock, then the run stores; an ended run is reported without a sandbox; otherwise step credentials and the image, telemetry, then the sandbox scope; the sandbox closes before the scope is disposed, telemetry shuts down after it, the lock is released after that, and the runtime's container is disposed last |
+| `jig init`, `jig build` | input parses                                                                                                                     | the same order, then for `build` the preset (cancelling refuses), then the runtime (`openSandboxRuntime`)                   | `init` writes the starter files, then asks for agents and credential-save consent inside the operation; each throwaway sandbox closes before its branch is removed, and the image build and sandboxes finish before the runtime is disposed                                                                               |
+| `jig github implement`  | the GitHub token and repository settings, then the origin, refused as `GithubSetupInvalid`                                       | the same order and the container                                                                                            | the publication lease around publication, the run through `runJig` as above, then the container                                                                                                                                                                                                                           |
 
 Output flushing stays with composition: `exitWhenDone` waits for standard output and error to
 drain after `parseAsync` returns, so it runs after every operation has released what it held.
@@ -809,8 +830,11 @@ The run operation is container-free as well: `startOrResumeRun` and `runJig` tak
 the specs run them over local adapters and a fake sandbox without Awilix. Its production runtime
 is the one container-specific piece left: composition binds `openRuntime` to `openRunRuntime` in
 `src/app/container.ts`, which builds the Awilix container as before and adapts it to
-`RunCapabilities`. Moving that construction into composition, or replacing Awilix, waits for #49;
-the integration is incomplete until then.
+`RunCapabilities`. Init and image builds follow the same shape: composition binds
+`openSandboxRuntime` in `src/app/container.ts`, which builds a container per sandbox setting and
+adapts it to `SandboxRuntime`; the specs run `initRepository` and `buildSandboxImage` over local
+adapters and a fake sandbox without Awilix. Moving that construction into composition, or
+replacing Awilix, waits for #49; the integration is incomplete until then.
 `cli/with-app.ts` now delegates its preparation — the repository check, the environment, the
 saved credentials and the config — to `prepareRepository` in `src/app/`, the same preparation
 status, preset listing and the run operation use, and its preset choice to

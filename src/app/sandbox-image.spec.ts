@@ -200,7 +200,7 @@ describe('ensureSandboxImage', () => {
             lookups++;
             return Object.fromEntries(packages.map((npmPackage) => [npmPackage, latestVersion()]));
           },
-          logger: pino({ level: 'silent' }),
+          log: pino({ level: 'silent' }),
         },
         options,
       );

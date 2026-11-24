@@ -16,7 +16,7 @@ export function buildCli(
 ): Command {
   const program = new Command();
   program.name('jig').description('Agentic SDLC pipeline orchestrator').version(packageVersion());
-  registerSandboxCommands(program);
+  registerSandboxCommands(program, operations, runIo, failureOutput);
   registerRunCommand(program, operations.run, runIo, failureOutput);
   registerStatusCommand(program, operations.status, failureOutput);
   registerPresetsCommand(program, operations.listPresets, failureOutput);

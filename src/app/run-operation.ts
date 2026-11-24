@@ -8,14 +8,9 @@ import type { JigConfig } from '../config/load-config.js';
 import type { PresetSource } from '../config/preset-source.js';
 import type { PresetSelection } from '../config/presets.js';
 import type { RunId } from '../domain/run-id.js';
-import { type Lifetime, withResource } from './lifecycle.js';
-import { configWithSelectedPreset, type PresetChooser } from './preset-selection.js';
-import {
-  type OperationContext,
-  prepareRepository,
-  type RepositoryPreparationFailure,
-  type RepositorySources,
-} from './repository-preparation.js';
+import { disposableLifetime, withResource } from './lifecycle.js';
+import { prepareWithPreset, type PresetPreparation } from './preset-selection.js';
+import type { RepositoryPreparationFailure } from './repository-preparation.js';
 import {
   type RunCapabilities,
   runJig,
@@ -38,8 +33,7 @@ export type RunRequest =
 
 export type RunFailure = RepositoryPreparationFailure | ConfigInvalid | RunJigFailure;
 
-export interface RunOperationCapabilities extends RepositorySources, PresetChooser {
-  context(): OperationContext;
+export interface RunOperationCapabilities extends PresetPreparation {
   /** Builds what the run works with once the repository and its config are known. */
   openRuntime(request: RuntimeRequest): RunRuntime;
 }
@@ -71,28 +65,15 @@ export function startOrResumeRun(
   { run, configPath, preset, logFormat }: RunInput,
 ): Promise<Result<RunReport, RunFailure>> {
   return Result.gen(async function* () {
-    const prepared = yield* Result.await(
-      prepareRepository(capabilities.context(), capabilities, configPath),
+    const { repository, presetName } = yield* Result.await(
+      prepareWithPreset(capabilities, { configPath, preset }),
     );
-    const { config, presetName } = yield* Result.await(
-      configWithSelectedPreset(prepared, preset, capabilities),
-    );
-    const runtime = capabilities.openRuntime({ ...prepared, config, configPath, logFormat });
-    return await withResource(runtimeLifetime(runtime), runtime.run.log, (opened) => {
+    const runtime = capabilities.openRuntime({ ...repository, configPath, logFormat });
+    return await withResource(disposableLifetime(runtime), runtime.run.log, (opened) => {
       if (presetName !== undefined) {
         opened.run.log.info({ preset: presetName }, `Using preset ${presetName}`);
       }
       return runJig(opened.run, run);
     });
   });
-}
-
-function runtimeLifetime(runtime: RunRuntime): Lifetime<RunRuntime, never, never> {
-  return {
-    acquire: async () => Result.ok(runtime),
-    release: async (opened) => {
-      await opened.dispose();
-      return Result.ok();
-    },
-  };
 }

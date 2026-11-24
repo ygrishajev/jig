@@ -12,6 +12,11 @@ export interface Lifetime<R, AcquireFailure, ReleaseFailure> {
 /** One step of releasing what was acquired. */
 export type Release<ReleaseFailure> = () => Promise<Result<void, ReleaseFailure>>;
 
+/** Something already built that only needs disposing; disposal cannot fail. */
+export interface DisposableResource {
+  dispose(): Promise<void>;
+}
+
 /**
  * Acquires the resource, hands it to `use` and releases it however `use` ends. A failed release
  * replaces a success and is logged after a failure. A panic in `use` still releases the resource
@@ -88,4 +93,17 @@ export async function releaseInOrder<ReleaseFailure>(
     else log.warn({ err: released.error }, 'a further cleanup failed as well');
   }
   return firstFailure;
+}
+
+/** The lifetime of something built before it is handed over: acquiring it is a no-op. */
+export function disposableLifetime<R extends DisposableResource>(
+  built: R,
+): Lifetime<R, never, never> {
+  return {
+    acquire: async () => Result.ok(built),
+    release: async (opened) => {
+      await opened.dispose();
+      return Result.ok();
+    },
+  };
 }
