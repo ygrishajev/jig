@@ -2,6 +2,7 @@ import type { Result } from 'better-result';
 
 import type { Preset } from '../config/presets.js';
 import type { BuildImageFailure, BuildImageInput, SandboxImageReport } from './build-image.js';
+import type { IssueFailure, IssueInput, IssueOutcome } from './implement-issue.js';
 import type { InitFailure, InitInput, InitReport } from './init-sandbox.js';
 import type { PresetListingFailure } from './list-presets.js';
 import type { RunReport } from './run-jig.js';
@@ -18,6 +19,7 @@ export interface JigOperations {
   listPresets(): Promise<Result<Preset[], PresetListingFailure>>;
   init(input: InitInput): Promise<Result<InitReport, InitFailure>>;
   buildImage(input: BuildImageInput): Promise<Result<SandboxImageReport, BuildImageFailure>>;
+  implementIssue(input: IssueInput): Promise<Result<IssueOutcome, IssueFailure>>;
 }
 
 export type { Preset, PresetPick, PresetSelection } from '../config/presets.js';
@@ -29,6 +31,14 @@ export {
   buildSandboxImage,
   type SandboxImageReport,
 } from './build-image.js';
+export {
+  implementGithubIssue,
+  type IssueCapabilities,
+  type IssueFailure,
+  type IssueInput,
+  type IssueOutcome,
+  type IssuePublication,
+} from './implement-issue.js';
 export {
   type InitCapabilities,
   type InitFailure,
@@ -64,6 +74,8 @@ export {
   type RunFailure,
   type RunInput,
   type RunOperationCapabilities,
+  type RunPreparation,
+  type RunPreparationFailure,
   type RunRequest,
   type RunRuntime,
   type RuntimeRequest,

@@ -21,6 +21,7 @@ import { askForPreset } from '../adapters/terminal/ask-for-preset.js';
 import { processRequestInputs } from '../adapters/terminal/standard-input.js';
 import {
   buildSandboxImage,
+  implementGithubIssue,
   initRepository,
   type JigOperations,
   listPresets,
@@ -30,15 +31,15 @@ import {
   startOrResumeRun,
 } from '../app/api.js';
 import { openRunRuntime, openSandboxRuntime } from '../app/container.js';
-import type { CommandIo } from '../cli/app-action.js';
-import { type GithubCommandDependencies, registerGithubCommands } from '../cli/commands/github.js';
+import { registerGithubCommands } from '../cli/commands/github.js';
 import type { RunCommandIo } from '../cli/commands/run.js';
 import { exitWhenDone } from '../cli/exit-when-done.js';
 import { buildCli } from '../cli/main.js';
+import type { FailureOutput } from '../cli/with-error-handling.js';
 
-export function buildJigCli(io?: CommandIo): Command {
-  const program = buildCli(operations, runIo, io);
-  registerGithubCommands(program, githubDependencies, io);
+export function buildJigCli(failureOutput?: FailureOutput): Command {
+  const program = buildCli(operations, runIo, failureOutput);
+  registerGithubCommands(program, operations.implementIssue, failureOutput);
   return program;
 }
 
@@ -90,21 +91,27 @@ const operations: JigOperations = {
       { ...repositorySources, context: processContext, openSandboxRuntime, askForPreset },
       input,
     ),
+  implementIssue: (input) =>
+    implementGithubIssue(
+      {
+        ...repositorySources,
+        context: processContext,
+        askForPreset,
+        openRuntime: openRunRuntime,
+        githubFor: (token) => OctokitGithub.authenticated(token),
+        githubOriginName,
+        publicationAt: (repoRoot) => ({
+          receipts: new GitOrchestrationStore(repoRoot),
+          runBranches: new GitRunBranches(repoRoot),
+        }),
+      },
+      input,
+    ),
 };
 
 const runIo: RunCommandIo = {
   requestInputs: processRequestInputs(),
   outcomeLog: (format) => createConsoleLogger(format),
-};
-
-/** Built on demand: an imported builder or `--help` touches neither GitHub nor the clone. */
-const githubDependencies: GithubCommandDependencies = {
-  githubFor: (token) => OctokitGithub.authenticated(token),
-  githubOriginName,
-  publicationAt: (repoRoot) => ({
-    receipts: new GitOrchestrationStore(repoRoot),
-    runBranches: new GitRunBranches(repoRoot),
-  }),
 };
 
 /**

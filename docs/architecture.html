@@ -184,13 +184,15 @@ svg text{font-family:var(--sans)}
     composition's <code>openSandboxRuntime</code> for its runtime; init decides when to ask the
     terminal for agents, credentials and save consent, and runs agents only in throwaway sandboxes it
     closes. <code>src/app/container.ts</code> still builds both runtimes with Awilix until spike #49
-    records the construction mechanism. The GitHub command alone still prepares through
-    <code>src/cli/with-app.ts</code> and registers through the <code>appAction</code> bridge, and
-    <code>implementIssue</code> takes the container only for its logger, repository root,
-    <code>runJig</code> and the run store that holds its checkpoint; every Git and GitHub operation it uses arrives as a capability.
-    <code>src/composition/main.ts</code> owns the executable: it composes the CLI, supplies the GitHub
-    command's concrete dependencies and the run, status, preset-listing, init and image-build operations, and starts it only
-    when it is the invoked script. Container construction still runs in app.</p>
+    records the construction mechanism. <code>jig github implement</code> calls
+    <code>implementGithubIssue</code> the same way: it refuses the GitHub token and repository
+    settings before anything is prepared or built, then runs through the same preparation, runtime
+    and release as <code>jig run</code> and hands <code>runJig</code> the accepted request; every Git
+    and GitHub operation it uses arrives as a capability. No command handler receives a container.
+    <code>src/composition/main.ts</code> owns the executable: it composes the CLI, binds the run,
+    status, preset-listing, init, image-build and issue operations with their concrete
+    dependencies, built lazily, and starts it only when it is the invoked script. Container
+    construction still runs in app.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
     of these owners. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
@@ -587,10 +589,10 @@ svg text{font-family:var(--sans)}
     cont("c-kinds", "Failure kinds", "concept", 960, 250, 380, ["retry, block, fatal."], cCKinds)
   ], []);
 
-  var githubIntegration = flowCv("gh", "jig github implement", "Each part has its usual owner. src/cli/commands/github.ts declares the command; src/app/implement-issue.ts implements the issue through supplied capabilities; src/composition/main.ts supplies the Octokit and Git implementations lazily, so help needs no token or repository.", [
-    ["Registered by composition", "src/composition/main.ts: buildJigCli() adds the GitHub command to buildCli() with GithubPort, origin discovery, receipts and run branches it builds only when the command runs.", "iface"],
-    ["Prepare command input", "src/cli/commands/github.ts parses --issue; src/config/github-settings.ts takes the token privately, GITHUB_TOKEN before GH_TOKEN, and GITHUB_REPOSITORY before the origin that src/adapters/git/github-origin.ts reads.", "iface"],
-    ["Check the base branch", "implementIssue refuses a checkout other than GitHub's default branch.", "module"],
+  var githubIntegration = flowCv("gh", "jig github implement", "Each part has its usual owner. src/cli/commands/github.ts declares the command and parses its input; implementGithubIssue in src/app/implement-issue.ts, called through src/app/api.ts, prepares and implements the issue through supplied capabilities; src/composition/main.ts supplies the Octokit and Git implementations lazily, so help needs no token or repository.", [
+    ["Registered by composition", "src/composition/main.ts: buildJigCli() adds the GitHub command to buildCli(), bound to implementGithubIssue with GithubPort, origin discovery, receipts and run branches it builds only when the operation asks for them.", "iface"],
+    ["Prepare the issue", "src/cli/commands/github.ts parses --issue; implementGithubIssue reads the settings through src/config/github-settings.ts, taking the token privately, GITHUB_TOKEN before GH_TOKEN, and GITHUB_REPOSITORY before the origin that src/adapters/git/github-origin.ts reads, then prepares the repository and runtime through withPreparedRun as jig run does.", "module"],
+    ["Check the base branch", "implementGithubIssue refuses a checkout other than GitHub's default branch.", "module"],
     ["Accept the request", "src/app/request-snapshot.ts reuses the accepted snapshot or accepts the issue once; src/domain/orchestration.ts freezes it with a deterministic run id.", "domain"],
     ["Run the core pipeline", "runJig: merge disabled, git-remote required, code publication deferred; saves push state only, recording a code checkpoint.", "module"],
     ["Inspect and publish code", "RunBranches (src/ports/run-branches.ts, implemented by src/adapters/git/run-branches.ts) inspects the exact checkpoint against the default-branch merge base, refuses the paths src/domain/protected-paths.ts marks unpublishable, and pushes only that object ID as a fast-forward under a lease.", "infra"],

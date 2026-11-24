@@ -7,12 +7,12 @@ import { registerPresetsCommand } from './commands/presets.js';
 import { registerRunCommand, type RunCommandIo } from './commands/run.js';
 import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';
-import type { CommandIo } from './app-action.js';
+import type { FailureOutput } from './with-error-handling.js';
 
 export function buildCli(
   operations: JigOperations,
   runIo: RunCommandIo,
-  { failureOutput }: CommandIo = {},
+  failureOutput?: FailureOutput,
 ): Command {
   const program = new Command();
   program.name('jig').description('Agentic SDLC pipeline orchestrator').version(packageVersion());

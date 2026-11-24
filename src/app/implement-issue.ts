@@ -1,5 +1,7 @@
 import { Result } from 'better-result';
 
+import type { GithubSettingsInvalid } from '../config/errors.js';
+import { type GithubSettings, githubSettingsFrom } from '../config/github-settings.js';
 import { outcomeIsComplete } from '../domain/invocation-status.js';
 import {
   commentMarker,
@@ -23,8 +25,10 @@ import type { RepositoryIdentity } from '../domain/repository-identity.js';
 import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
 import {
   type GithubFailure,
+  type GithubOriginDiscovery,
   type GithubPort,
   GithubRefused,
+  GithubSetupInvalid,
   type OpenPullRequest,
 } from '../ports/github.js';
 import type {
@@ -35,13 +39,19 @@ import type {
 } from '../ports/publication-receipts.js';
 import type { CodeCheckpoint, RunBranches, RunBranchFailure } from '../ports/run-branches.js';
 import type { RunStoreFailure, RunStoreSetupInvalid } from '../ports/run-store.js';
-import { type App, runCapabilitiesOf } from './container.js';
 import { BaseBranchMismatch } from './errors.js';
 import { findingsCommentBody } from './findings-comment.js';
 import { pullRequestFor, refusalCommentBody, statusCommentBody } from './publication-content.js';
 import { type WhileOwned, withPublicationOwnership } from './publication-ownership.js';
+import type { EnvironmentVariables } from './repository-preparation.js';
 import { acceptedRequestFor } from './request-snapshot.js';
-import { runJig, type RunJigFailure, type RunReport } from './run-jig.js';
+import { type RunCapabilities, runJig, type RunJigFailure, type RunReport } from './run-jig.js';
+import {
+  type RunOperationCapabilities,
+  type RunPreparation,
+  type RunPreparationFailure,
+  withPreparedRun,
+} from './run-operation.js';
 import { openRunStore } from './run-stores.js';
 
 export type IssueOutcome =
@@ -50,12 +60,19 @@ export type IssueOutcome =
   | { kind: 'commented'; outcome: RunReport['status']; url: string }
   | { kind: 'refused'; paths: string[]; url: string };
 
+/** The issue to implement, and how the operator asked its run's repository to be prepared. */
+export interface IssueInput extends RunPreparation {
+  issueNumber: number;
+}
+
 /**
- * What issue implementation needs besides the run itself: the GitHub API, and the receipts and run
- * branches of the clone it runs in, opened only once the issue flow reaches them.
+ * What issue implementation needs besides the run itself: the GitHub API for a token, the clone's
+ * GitHub origin, and the receipts and run branches of the clone it runs in. Each is asked for only
+ * once the issue flow reaches it.
  */
-export interface IssueCapabilities {
-  github: GithubPort;
+export interface IssueCapabilities extends RunOperationCapabilities {
+  githubFor(token: string): GithubPort;
+  githubOriginName: GithubOriginDiscovery;
   publicationAt(repoRoot: string): IssuePublication;
 }
 
@@ -66,6 +83,8 @@ export interface IssuePublication {
 }
 
 export type IssueFailure =
+  | GithubSetupInvalid
+  | RunPreparationFailure
   | RunJigFailure
   | GithubFailure
   | ReceiptStoreFailure
@@ -73,6 +92,14 @@ export type IssueFailure =
   | RunBranchFailure
   | RepositoryInvalid
   | BaseBranchMismatch;
+
+/** The run an issue is implemented in, in the clone it runs in, and the GitHub API it publishes to. */
+interface IssueRun {
+  run: RunCapabilities;
+  repoRoot: string;
+  github: GithubPort;
+  publicationAt(repoRoot: string): IssuePublication;
+}
 
 /**
  * Where the accepted request is published: the issue, its key in the receipts, its default branch,
@@ -88,25 +115,70 @@ interface IssueTarget {
   whileOwned: WhileOwned;
 }
 
+/** What reading the run's saved state back needs: the stores the run was saved to. */
+type RunStoreSelection = Pick<RunCapabilities, 'runStores' | 'config'>;
+
 type Publication =
   { kind: 'comment'; revision?: string } | { kind: 'ready' | 'draft'; revision: string };
 
 type PublicationFailure = GithubFailure | ReceiptStoreFailure | PublicationInProgress;
 
 /**
+ * Implements GitHub issue `issueNumber` in the repository the caller is in. The GitHub settings
+ * are refused before the repository is prepared or anything is built, and the token before the
+ * origin is asked for; the run then executes as `jig run` would and its outcome is published.
+ */
+export function implementGithubIssue(
+  capabilities: IssueCapabilities,
+  { issueNumber, ...preparation }: IssueInput,
+): Promise<Result<IssueOutcome, IssueFailure>> {
+  return Result.gen(async function* () {
+    const { cwd, environment } = capabilities.context();
+    const { token, repository } = yield* Result.await(
+      githubSettingsAt(environment, () => capabilities.githubOriginName(cwd)),
+    );
+    const github = capabilities.githubFor(token);
+    return await withPreparedRun(capabilities, preparation, (run, repoRoot) =>
+      implementIssue(
+        { run, repoRoot, github, publicationAt: capabilities.publicationAt },
+        repository,
+        issueNumber,
+      ),
+    );
+  });
+}
+
+/**
+ * A settings refusal becomes the GitHub port's `GithubSetupInvalid`, so the operation fails with
+ * one setup identity whichever check refused it.
+ */
+async function githubSettingsAt(
+  environment: EnvironmentVariables,
+  originName: () => ReturnType<GithubOriginDiscovery>,
+): Promise<Result<GithubSettings, GithubSetupInvalid>> {
+  const settings = await githubSettingsFrom(environment, originName);
+  return settings.mapError((failure) =>
+    failure._tag === 'GithubSettingsInvalid' ? asSetupInvalid(failure) : failure,
+  );
+}
+
+function asSetupInvalid({ message }: GithubSettingsInvalid): GithubSetupInvalid {
+  return new GithubSetupInvalid({ message });
+}
+
+/**
  * Implements issue `issueNumber` as one run on the default branch: accepts the issue once, runs
  * its snapshot through `runJig` with its state required on the remote and its code held back, and
  * publishes the outcome under the publication lease.
  */
-export function implementIssue(
-  app: App,
-  { github, publicationAt }: IssueCapabilities,
+function implementIssue(
+  { run, repoRoot, github, publicationAt }: IssueRun,
   repository: RepositoryIdentity,
   issueNumber: number,
 ): Promise<Result<IssueOutcome, IssueFailure>> {
   return Result.gen(async function* () {
-    const { logger, repoRoot } = app.cradle;
-    logger.info(
+    const { log } = run;
+    log.info(
       { event: 'githubIssuePreparationStarted', issueNumber, repository },
       `Checking GitHub issue #${issueNumber} in ${repository.owner}/${repository.repo}`,
     );
@@ -120,25 +192,25 @@ export function implementIssue(
         }),
       );
     const key = `${repository.owner}/${repository.repo}#${issueNumber}`;
-    logger.info(
+    log.info(
       { event: 'githubIssueRequestStarted', issueNumber },
       `Loading accepted request or fetching GitHub issue #${issueNumber}`,
     );
     const accepted = yield* Result.await(
       acceptedRequestFor(receipts, { github, repository, issueNumber, key }),
     );
-    logger.info(
+    log.info(
       { event: 'githubIssueRequestAccepted', issueNumber, runId: accepted.runId },
       `GitHub issue #${issueNumber} is ready as run ${accepted.runId}`,
     );
     const report = yield* Result.await(
-      runJig(runCapabilitiesOf(app), {
+      runJig(run, {
         start: { text: accepted.text, merge: false, codePublication: 'deferred' },
         runId: accepted.runId,
         requiredStores: REQUIRED_STORES,
       }),
     );
-    logger.info(
+    log.info(
       {
         event: 'githubIssueRunFinished',
         issueNumber,
@@ -148,8 +220,8 @@ export function implementIssue(
       `Run ${accepted.runId} finished ${report.status}; publishing the GitHub outcome`,
     );
     const target = { github, repository, issueNumber, key, base, title: accepted.title };
-    return withPublicationOwnership(receipts, key, logger, (whileOwned) =>
-      publishOutcome(app, { receipts, runBranches }, { ...target, whileOwned }, report),
+    return withPublicationOwnership(receipts, key, log, (whileOwned) =>
+      publishOutcome(run, { receipts, runBranches }, { ...target, whileOwned }, report),
     );
   });
 }
@@ -164,13 +236,13 @@ const REQUIRED_STORES = ['git-remote'];
  * reused, and its code reaches the remote only through `RunBranches.publish`.
  */
 function publishOutcome(
-  app: App,
+  run: RunStoreSelection,
   { receipts: store, runBranches }: IssuePublication,
   target: IssueTarget,
   report: RunReport,
 ): Promise<Result<IssueOutcome, IssueFailure>> {
   return Result.gen(async function* () {
-    const checkpoint = yield* Result.await(codeCheckpointOf(app, runBranches, report));
+    const checkpoint = yield* Result.await(codeCheckpointOf(run, runBranches, report));
     const publication = yield* Result.await(publicationFor(runBranches, report, checkpoint));
     if (publication.kind === 'comment')
       return publishStatus(runBranches, store, target, { report, revision: publication.revision });
@@ -209,15 +281,13 @@ function publishOutcome(
  * it has no starting commit to tell its work by.
  */
 function codeCheckpointOf(
-  app: App,
+  { runStores, config }: RunStoreSelection,
   runBranches: RunBranches,
   report: RunReport,
 ): Promise<Result<CodeCheckpoint, RunStoreSetupInvalid | RunStoreFailure | GitCommandFailed>> {
   return Result.gen(async function* () {
     const { runId } = report.state;
-    const store = yield* Result.await(
-      openRunStore(app.cradle.runStores, app.cradle.config, REQUIRED_STORES),
-    );
+    const store = yield* Result.await(openRunStore(runStores, config, REQUIRED_STORES));
     const saved = yield* Result.await(store.peek(runId));
     if (saved?.codeRevision)
       return Result.ok({ startingCommit: saved.startingCommit, codeRevision: saved.codeRevision });

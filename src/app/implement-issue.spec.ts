@@ -5,7 +5,7 @@ import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from 'pino';
 import { simpleGit } from 'simple-git';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import {
@@ -17,7 +17,6 @@ import {
   scriptWholeRun,
 } from '../../tests/support/agent-scripts.js';
 import {
-  aJigConfig,
   aPlannedSlice,
   aRunState,
   everyStepOn,
@@ -27,16 +26,20 @@ import {
 import { anIssue, FakeGithub } from '../../tests/support/fake-github.js';
 import { FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
+import {
+  operationContextIn,
+  realRepositorySources,
+} from '../../tests/support/repository-sources.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
+import { githubOriginName } from '../adapters/git/github-origin.js';
 import { GitOrchestrationStore } from '../adapters/git/orchestration-ref.js';
 import { GitRunBranches } from '../adapters/git/run-branches.js';
 import { GitRunCode } from '../adapters/git/run-code.js';
 import { CompositeRunStore } from '../adapters/run-store/composite-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { sandcastleSessionOptions } from '../adapters/sandcastle/open-session.js';
-import { parseEnvironment } from '../config/environment.js';
 import {
   claimPublication,
   pullRequestReceipt,
@@ -48,17 +51,137 @@ import { runDiagnostics } from '../domain/run-diagnostics.js';
 import { type RunId, runIdFor } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import { AgentRunFailed, type ExecResult } from '../ports/agent-session.js';
-import { RemoteUnavailable } from '../ports/git-failures.js';
-import { GithubNotFound, GithubRefused, GithubUnavailable } from '../ports/github.js';
-import { createAppContainer } from './container.js';
+import { RemoteUnavailable, RepositoryInvalid } from '../ports/git-failures.js';
 import {
-  implementIssue,
+  GithubNotFound,
+  GithubRefused,
+  GithubSetupInvalid,
+  GithubUnavailable,
+} from '../ports/github.js';
+import {
+  implementGithubIssue,
   type IssueCapabilities,
   type IssuePublication,
-} from './implement-issue.js';
+  type RunRuntime,
+  type RuntimeRequest,
+} from './api.js';
+import { createAppContainer, runCapabilitiesOf } from './container.js';
 import { requestText } from './request-snapshot.js';
 
-describe('implementIssue', () => {
+describe('implementGithubIssue', () => {
+  it('refuses a missing token before asking for the origin or building the run', async () => {
+    const { implement, originName, githubFor, openRuntime } = await setup({
+      githubEnvironment: {},
+    });
+
+    const result = await implement();
+
+    expect(result.isErr() && result.error).toBeInstanceOf(GithubSetupInvalid);
+    expect(originName).not.toHaveBeenCalled();
+    expect(githubFor).not.toHaveBeenCalled();
+    expect(openRuntime).not.toHaveBeenCalled();
+  });
+
+  it('refuses an empty token before building the run', async () => {
+    const { implement, openRuntime } = await setup({ githubEnvironment: { GITHUB_TOKEN: '' } });
+
+    const result = await implement();
+
+    expect(result.isErr() && result.error).toBeInstanceOf(GithubSetupInvalid);
+    expect(openRuntime).not.toHaveBeenCalled();
+  });
+
+  it('asks for the origin of the clone it runs in and refuses one not on GitHub before building the run', async () => {
+    const { implement, originName, openRuntime, dir } = await setup({
+      githubEnvironment: { GITHUB_TOKEN: faker.string.alphanumeric(20) },
+    });
+
+    const result = await implement();
+
+    expect(originName).toHaveBeenCalledWith(dir);
+    expect(result.isErr() && result.error).toBeInstanceOf(GithubSetupInvalid);
+    expect(openRuntime).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed repository before building the run', async () => {
+    const { implement, openRuntime } = await setup({
+      githubEnvironment: {
+        GITHUB_TOKEN: faker.string.alphanumeric(20),
+        GITHUB_REPOSITORY: faker.string.alpha(10),
+      },
+    });
+
+    const result = await implement();
+
+    expect(result.isErr() && result.error).toBeInstanceOf(GithubSetupInvalid);
+    expect(openRuntime).not.toHaveBeenCalled();
+  });
+
+  it('reaches GitHub with GITHUB_TOKEN when GH_TOKEN is set as well', async () => {
+    const token = faker.string.alphanumeric(20);
+    const { implement, github, githubFor } = await setup({
+      githubEnvironment: {
+        GITHUB_TOKEN: token,
+        GH_TOKEN: faker.string.alphanumeric(20),
+        GITHUB_REPOSITORY: `${faker.string.alpha(8)}/${faker.string.alpha(8)}`,
+      },
+    });
+    github.failOnce('getDefaultBranch', new GithubRefused({ message: faker.lorem.sentence() }));
+
+    await implement();
+
+    expect(githubFor).toHaveBeenCalledWith(token);
+  });
+
+  it('reaches GitHub with GH_TOKEN when it is the only token', async () => {
+    const token = faker.string.alphanumeric(20);
+    const { implement, github, githubFor } = await setup({
+      githubEnvironment: {
+        GH_TOKEN: token,
+        GITHUB_REPOSITORY: `${faker.string.alpha(8)}/${faker.string.alpha(8)}`,
+      },
+    });
+    github.failOnce('getDefaultBranch', new GithubRefused({ message: faker.lorem.sentence() }));
+
+    await implement();
+
+    expect(githubFor).toHaveBeenCalledWith(token);
+  });
+
+  it('refuses a directory below the repository root before building the run', async () => {
+    const { implementIn, openRuntime, dir } = await setup();
+    const subdirectory = path.join(dir, faker.string.alpha(10));
+    await mkdir(subdirectory);
+
+    const result = await implementIn(subdirectory);
+
+    expect(result.isErr() && result.error).toBeInstanceOf(RepositoryInvalid);
+    expect(openRuntime).not.toHaveBeenCalled();
+  });
+
+  it('releases the run it built once the outcome is published, and once GitHub refuses', async () => {
+    const { implement, github, dir, disposals } = await setup();
+    github.failOnce('getDefaultBranch', new GithubRefused({ message: faker.lorem.sentence() }));
+
+    expect((await implement()).isErr()).toBe(true);
+    unwrap(await implement());
+
+    expect(disposals()).toEqual([dir, dir]);
+  });
+
+  it('resumes publication from another clone without running the issue again', async () => {
+    const { implement, implementFromFreshClone, github, sessionCredentials } = await setup();
+    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
+    expect((await implement()).isErr()).toBe(true);
+
+    const outcome = unwrap(await implementFromFreshClone());
+
+    expect(outcome.kind).toBe('pullRequest');
+    expect(github.prsOpened).toBe(1);
+    expect(github.commentsMade).toBe(0);
+    expect(sessionCredentials).toHaveLength(1);
+  });
+
   it('reports GitHub preparation before a default branch lookup fails', async () => {
     const { implement, github, issue, logger } = await setup();
     github.failOnce('getDefaultBranch', new GithubRefused({ message: faker.lorem.sentence() }));
@@ -716,6 +839,7 @@ describe('implementIssue', () => {
     failingVerify = false,
     runStores,
     losePullRequestReceipt = false,
+    githubEnvironment,
   }: {
     paused?: boolean;
     unfinished?: boolean;
@@ -727,13 +851,14 @@ describe('implementIssue', () => {
     failingVerify?: boolean;
     runStores?: string[];
     losePullRequestReceipt?: boolean;
+    githubEnvironment?: Record<string, string>;
   } = {}) {
     const remote = await createRemote();
     const dir = await remote.cloneOf();
     const github = new FakeGithub();
     const issue = anIssue();
     github.issues.set(issue.number, issue);
-    const repository = { owner: faker.internet.username(), repo: faker.string.alpha(10) };
+    const repository = { owner: faker.string.alpha(10), repo: faker.string.alpha(10) };
     const key = `${repository.owner}/${repository.repo}#${issue.number}`;
     const id = runIdFor({ name: issue.title, key });
     const logger = mock<Logger>();
@@ -794,23 +919,13 @@ describe('implementIssue', () => {
       agent.script('describer', aDescription());
     } else scriptWholeRun(agent);
     const sessionCredentials: Record<string, string>[] = [];
-    const appIn = (repoRoot: string) => {
+    const disposals: string[] = [];
+    const openRuntime = vi.fn(({ configPath, ...request }: RuntimeRequest): RunRuntime => {
+      const { repoRoot } = request;
       const app = createAppContainer({
-        repoRoot,
-        logFormat: 'json',
+        ...request,
         logLevel: 'silent',
-        configDestination: configDestination(repoRoot),
-        config: aJigConfig(),
-        environment: unwrap(
-          parseEnvironment(
-            {
-              ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
-              GITHUB_TOKEN: faker.string.alphanumeric(20),
-              GH_TOKEN: faker.string.alphanumeric(20),
-            },
-            faker.system.directoryPath(),
-          ),
-        ),
+        configDestination: configDestination(repoRoot, configPath),
       });
       app.register({ logger: asValue(logger) });
       app.register({
@@ -837,17 +952,40 @@ describe('implementIssue', () => {
           return Result.ok(agent.reportUsageTo(events, run.runId));
         }),
       });
-      return app;
-    };
-    const app = appIn(dir);
+      return {
+        run: runCapabilitiesOf(app),
+        dispose: async () => {
+          disposals.push(repoRoot);
+          await app.dispose();
+        },
+      };
+    });
     const lostReceipt = { pending: losePullRequestReceipt };
-    const capabilities: IssueCapabilities = {
-      github,
+    const githubFor = vi.fn(() => github);
+    const originName = vi.fn(githubOriginName);
+    const environment = githubEnvironment ?? {
+      GITHUB_TOKEN: faker.string.alphanumeric(20),
+      GH_TOKEN: faker.string.alphanumeric(20),
+      GITHUB_REPOSITORY: `${repository.owner}/${repository.repo}`,
+    };
+    const capabilitiesIn = (cwd: string): IssueCapabilities => ({
+      ...realRepositorySources(),
+      context: () =>
+        operationContextIn(cwd, {
+          ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
+          ...environment,
+        }),
+      askForPreset: async () => undefined,
+      openRuntime,
+      githubFor,
+      githubOriginName: originName,
       publicationAt: (repoRoot) => ({
         receipts: losingPullRequestReceipt(new GitOrchestrationStore(repoRoot), key, lostReceipt),
         runBranches: new GitRunBranches(repoRoot),
       }),
-    };
+    });
+    const implementIn = (cwd: string) =>
+      implementGithubIssue(capabilitiesIn(cwd), { issueNumber: issue.number, logFormat: 'json' });
     return {
       dir,
       origin: remote.origin,
@@ -859,15 +997,17 @@ describe('implementIssue', () => {
       id,
       issue,
       key,
-      repository,
       agent,
       github,
+      githubFor,
+      originName,
+      openRuntime,
+      disposals: () => disposals,
       logger,
-      app,
       store: new GitOrchestrationStore(dir),
-      implement: () => implementIssue(app, capabilities, repository, issue.number),
-      implementFromFreshClone: async () =>
-        implementIssue(appIn(await remote.cloneOf()), capabilities, repository, issue.number),
+      implement: () => implementIn(dir),
+      implementIn,
+      implementFromFreshClone: async () => implementIn(await remote.cloneOf()),
     };
   }
 });

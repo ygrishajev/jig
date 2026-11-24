@@ -1,20 +1,7 @@
-import type { Result } from 'better-result';
 import type { Command } from 'commander';
 import { z } from 'zod';
 
-import {
-  implementIssue,
-  type IssueCapabilities,
-  type IssueOutcome,
-} from '../../app/implement-issue.js';
-import type { GithubSettingsInvalid } from '../../config/errors.js';
-import { type GithubSettings, githubSettingsFrom } from '../../config/github-settings.js';
-import {
-  type GithubOriginDiscovery,
-  type GithubPort,
-  GithubSetupInvalid,
-} from '../../ports/github.js';
-import { appAction, type CommandIo } from '../app-action.js';
+import type { IssueOutcome, JigOperations } from '../../app/api.js';
 import {
   configInputSchema,
   configOption,
@@ -22,27 +9,14 @@ import {
   presetOption,
 } from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
-import type { Invocation } from '../with-app.js';
-
-/**
- * What the GitHub command is wired with. Each is called only once a command runs, so help and an
- * imported builder need neither a token nor a repository.
- */
-export interface GithubCommandDependencies extends Pick<IssueCapabilities, 'publicationAt'> {
-  githubFor(token: string): GithubPort;
-  githubOriginName: GithubOriginDiscovery;
-}
+import { type FailureOutput, withErrorHandling } from '../with-error-handling.js';
+import { withInput } from '../with-input.js';
 
 export function registerGithubCommands(
   program: Command,
-  { githubFor, githubOriginName, publicationAt }: GithubCommandDependencies,
-  io?: CommandIo,
+  implementIssue: JigOperations['implementIssue'],
+  failureOutput?: FailureOutput,
 ): void {
-  const prepare = (
-    _input: unknown,
-    { cwd, environment }: Invocation,
-  ): Promise<Result<GithubSettings, GithubSetupInvalid>> =>
-    githubSettingsAt(environment, () => githubOriginName(cwd));
   program
     .command('github')
     .description('Implement GitHub issues as pull requests')
@@ -53,38 +27,21 @@ export function registerGithubCommands(
     .addOption(presetOption())
     .addOption(logFormatOption())
     .action(
-      appAction(
-        githubInputSchema,
-        async ({ issue }, app, { token, repository }) => {
-          const github = githubFor(token);
-          const result = await implementIssue(app, { github, publicationAt }, repository, issue);
-          return result.map((outcome) => {
-            console.log(describeIssueOutcome(outcome));
+      withErrorHandling(
+        withInput(githubInputSchema, async ({ issue, config, preset, logFormat }) => {
+          const outcome = await implementIssue({
+            issueNumber: issue,
+            configPath: config,
+            preset,
+            logFormat,
           });
-        },
-        io,
-        prepare,
+          return outcome.map((published) => {
+            console.log(describeIssueOutcome(published));
+          });
+        }),
+        failureOutput,
       ),
     );
-}
-
-/**
- * The command's GitHub settings, refused before the app opens. A settings refusal becomes the
- * GitHub port's `GithubSetupInvalid`, so the command fails with one setup identity whichever
- * check refused it.
- */
-async function githubSettingsAt(
-  environment: NodeJS.ProcessEnv,
-  originName: () => ReturnType<GithubOriginDiscovery>,
-): Promise<Result<GithubSettings, GithubSetupInvalid>> {
-  const settings = await githubSettingsFrom(environment, originName);
-  return settings.mapError((failure) =>
-    failure._tag === 'GithubSettingsInvalid' ? asSetupInvalid(failure) : failure,
-  );
-}
-
-function asSetupInvalid({ message }: GithubSettingsInvalid): GithubSetupInvalid {
-  return new GithubSetupInvalid({ message });
 }
 
 const githubInputSchema = logFormatInputSchema

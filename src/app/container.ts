@@ -64,7 +64,17 @@ import {
 import type { SandboxCapabilities, SandboxRuntime, SandboxSettings } from './sandbox-runtime.js';
 import type { ThrowawaySandboxes } from './throwaway-sandbox.js';
 
-export type App = AwilixContainer<AppCradle>;
+/** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
+export interface RunCradle extends AppCradle {
+  run: RunIdentity;
+  runStore: RunStore;
+  runLogger: Logger;
+  metricsLog: MetricsLog;
+  events: RunEvents;
+  session: RunSession;
+  workspace: Workspace;
+  engineDependencies: EngineDependencies;
+}
 
 /** Lives for the whole process: configuration and everything shared by every run. */
 export interface AppCradle {
@@ -83,18 +93,6 @@ export interface AppCradle {
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SessionOpenFailure>>;
-}
-
-/** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
-export interface RunCradle extends AppCradle {
-  run: RunIdentity;
-  runStore: RunStore;
-  runLogger: Logger;
-  metricsLog: MetricsLog;
-  events: RunEvents;
-  session: RunSession;
-  workspace: Workspace;
-  engineDependencies: EngineDependencies;
 }
 
 /**

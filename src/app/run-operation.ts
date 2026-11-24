@@ -19,8 +19,12 @@ import {
   type StartRequest,
 } from './run-jig.js';
 
-export interface RunInput {
+export interface RunInput extends RunPreparation {
   run: RunRequest;
+}
+
+/** How the operator asked a run's repository to be prepared: its config file, its preset and how it logs. */
+export interface RunPreparation {
   /** A config file other than the repository's own, relative to its root. */
   configPath?: string;
   preset?: PresetSelection;
@@ -31,7 +35,10 @@ export interface RunInput {
 export type RunRequest =
   { start: Omit<StartRequest, 'codePublication'>; runId?: RunId } | { resume: RunId };
 
-export type RunFailure = RepositoryPreparationFailure | ConfigInvalid | RunJigFailure;
+export type RunFailure = RunPreparationFailure | RunJigFailure;
+
+/** Why a run's repository could not be prepared, or its preset applied. */
+export type RunPreparationFailure = RepositoryPreparationFailure | ConfigInvalid;
 
 export interface RunOperationCapabilities extends PresetPreparation {
   /** Builds what the run works with once the repository and its config are known. */
@@ -62,8 +69,23 @@ export interface RunRuntime {
  */
 export function startOrResumeRun(
   capabilities: RunOperationCapabilities,
-  { run, configPath, preset, logFormat }: RunInput,
+  { run, ...preparation }: RunInput,
 ): Promise<Result<RunReport, RunFailure>> {
+  return withPreparedRun(capabilities, preparation, (runCapabilities) =>
+    runJig(runCapabilities, run),
+  );
+}
+
+/**
+ * Prepares the repository the caller is in and applies its preset, then hands `use` the run's
+ * capabilities there and releases what was built for them however `use` ends. Every operation
+ * that runs work through `runJig` gets its run this way.
+ */
+export function withPreparedRun<T, E>(
+  capabilities: RunOperationCapabilities,
+  { configPath, preset, logFormat }: RunPreparation,
+  use: (run: RunCapabilities, repoRoot: string) => Promise<Result<T, E>>,
+): Promise<Result<T, RunPreparationFailure | E>> {
   return Result.gen(async function* () {
     const { repository, presetName } = yield* Result.await(
       prepareWithPreset(capabilities, { configPath, preset }),
@@ -73,7 +95,7 @@ export function startOrResumeRun(
       if (presetName !== undefined) {
         opened.run.log.info({ preset: presetName }, `Using preset ${presetName}`);
       }
-      return runJig(opened.run, run);
+      return use(opened.run, repository.repoRoot);
     });
   });
 }

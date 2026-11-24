@@ -1,25 +1,12 @@
 import { faker } from '@faker-js/faker';
-import { asValue } from 'awilix';
 import { Result } from 'better-result';
 import { Command } from 'commander';
-import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
-import { scriptWholeRun } from '../../../tests/support/agent-scripts.js';
-import { everyStepOn } from '../../../tests/support/builders.js';
-import { anIssue, FakeGithub } from '../../../tests/support/fake-github.js';
-import { FakeAgentSession } from '../../../tests/support/fakes.js';
-import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
-import { createRemote } from '../../../tests/support/temp-repo.js';
-import { configFileSource } from '../../adapters/filesystem/config-source.js';
-import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
-import { githubOriginName } from '../../adapters/git/github-origin.js';
-import { GitOrchestrationStore } from '../../adapters/git/orchestration-ref.js';
-import { GitRunBranches } from '../../adapters/git/run-branches.js';
-import { createAppContainer } from '../../app/container.js';
+import { presetName } from '../../../tests/support/builders.js';
+import type { JigOperations } from '../../app/api.js';
 import { GithubRefused } from '../../ports/github.js';
-import type { Invocation } from '../with-app.js';
 import type { FailureOutput } from '../with-error-handling.js';
 import { describeIssueOutcome, registerGithubCommands } from './github.js';
 
@@ -73,178 +60,68 @@ describe('github implement command', () => {
     expect(description).toContain(outcome.url);
   });
 
-  it('refuses a missing token before opening the app', async () => {
-    const { run, output, createApp } = await setup();
-    await run(['--issue', '1']);
-    expect(output.setExitCode).toHaveBeenCalledWith(1);
-    expect(createApp).not.toHaveBeenCalled();
-  });
+  it('asks for the parsed issue with the config file, preset and log format it was given', async () => {
+    const { run, implementIssue, output } = setup();
+    const issueNumber = faker.number.int({ min: 1, max: 10_000 });
+    const config = `${faker.word.noun()}.json`;
+    const preset = presetName();
 
-  it('refuses a missing token before looking at the origin', async () => {
-    const { run, output, originName } = await setup();
-    await run(['--issue', '1']);
-    expect(output.setExitCode).toHaveBeenCalledWith(1);
-    expect(originName).not.toHaveBeenCalled();
-  });
+    const logFormat = faker.helpers.arrayElement(['pretty', 'json'] as const);
 
-  it('refuses a clone whose origin is not on GitHub before opening the app', async () => {
-    const { run, output, createApp, originName, invocation } = await setup({
-      environment: { GITHUB_TOKEN: faker.string.alphanumeric(30) },
+    await run([
+      '--issue',
+      String(issueNumber),
+      '--config',
+      config,
+      '--preset',
+      preset,
+      '--log-format',
+      logFormat,
+    ]);
+
+    expect(implementIssue).toHaveBeenCalledWith({
+      issueNumber,
+      configPath: config,
+      preset: { kind: 'named', name: preset },
+      logFormat,
     });
-    await run(['--issue', '1']);
-    expect(originName).toHaveBeenCalledWith(invocation.cwd);
-    expect(output.setExitCode).toHaveBeenCalledWith(1);
-    expect(createApp).not.toHaveBeenCalled();
-  });
-
-  it('refuses an empty token before opening the app', async () => {
-    const { run, output, createApp } = await setup({ environment: { GITHUB_TOKEN: '' } });
-    await run(['--issue', '1']);
-    expect(output.setExitCode).toHaveBeenCalledWith(1);
-    expect(createApp).not.toHaveBeenCalled();
-  });
-
-  it('prefers GITHUB_TOKEN when both tokens are configured', async () => {
-    const token = faker.string.alphanumeric(30);
-    const { run, githubFor, github } = await setup({
-      environment: {
-        GITHUB_TOKEN: token,
-        GH_TOKEN: faker.string.alphanumeric(30),
-        GITHUB_REPOSITORY: `${faker.string.alpha(8)}/${faker.string.alpha(8)}`,
-      },
-    });
-    github.failOnce('getDefaultBranch', new GithubRefused({ message: faker.lorem.sentence() }));
-    await run(['--issue', '1']);
-    expect(githubFor).toHaveBeenCalledWith(token);
+    expect(output.setExitCode).not.toHaveBeenCalled();
   });
 
   it.each(['0', '-1', 'text', '1.5'])(
-    'refuses invalid issue %s before opening the app',
+    'refuses invalid issue %s without asking to implement it',
     async (issue) => {
-      const { run, output, createApp } = await setup();
+      const { run, implementIssue, output } = setup();
+
       await run(['--issue', issue]);
-      expect(output.setExitCode).toHaveBeenCalledWith(1);
-      expect(createApp).not.toHaveBeenCalled();
-    },
-  );
 
-  it.each(['GITHUB_TOKEN', 'GH_TOKEN'])(
-    'passes %s privately and reports a GitHub refusal plainly',
-    async (variable) => {
-      const token = faker.string.alphanumeric(30);
-      const { run, output, githubFor, github } = await setup({
-        environment: {
-          [variable]: token,
-          GITHUB_REPOSITORY: `${faker.string.alpha(8)}/${faker.string.alpha(8)}`,
-        },
-      });
-      const message = faker.lorem.sentence();
-      github.failOnce('getDefaultBranch', new GithubRefused({ message }));
-      await run(['--issue', '1']);
-      expect(githubFor).toHaveBeenCalledWith(token);
-      expect(output.printError).toHaveBeenCalledWith(message);
+      expect(implementIssue).not.toHaveBeenCalled();
       expect(output.setExitCode).toHaveBeenCalledWith(1);
     },
   );
 
-  it('refuses a malformed repository before opening the app', async () => {
-    const { run, output, createApp } = await setup({
-      environment: { GITHUB_TOKEN: faker.string.alphanumeric(30), GITHUB_REPOSITORY: 'invalid' },
-    });
+  it("prints the operation's failure and exits with 1", async () => {
+    const failure = new GithubRefused({ message: faker.lorem.sentence() });
+    const { run, output } = setup({ published: Result.err(failure) });
+
     await run(['--issue', '1']);
+
+    expect(output.printError).toHaveBeenCalledWith(failure.message);
     expect(output.setExitCode).toHaveBeenCalledWith(1);
-    expect(createApp).not.toHaveBeenCalled();
   });
 
-  it('runs the issue and resumes publication from another clone', async () => {
-    const { run, output, github, invocation, cloneOf, sessionsOpened } = await setup({
-      environment: {
-        GITHUB_TOKEN: faker.string.alphanumeric(30),
-        GITHUB_REPOSITORY: `${faker.string.alpha(8)}/${faker.string.alpha(8)}`,
-        ANTHROPIC_API_KEY: faker.string.alphanumeric(30),
-      },
-    });
-    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
-    await run(['--issue', '1']);
-    expect(output.setExitCode).toHaveBeenCalledWith(1);
-    output.printError.mockClear();
-    output.setExitCode.mockClear();
-    invocation.cwd = await cloneOf();
-    await run(['--issue', '1']);
-    expect(output.printError).not.toHaveBeenCalled();
-    expect(output.setExitCode).not.toHaveBeenCalled();
-    expect(github.prsOpened).toBe(1);
-    expect(github.commentsMade).toBe(0);
-    expect(sessionsOpened()).toBe(1);
-  });
-
-  async function setup({ environment = {} }: { environment?: NodeJS.ProcessEnv } = {}) {
-    const remote = await createRemote();
-    const cwd = await remote.cloneOf();
+  function setup({
+    published = Result.ok({ kind: 'pullRequest', url: faker.internet.url(), reused: false }),
+  }: { published?: Awaited<ReturnType<JigOperations['implementIssue']>> } = {}) {
+    const implementIssue = vi.fn<JigOperations['implementIssue']>(async () => published);
     const output = mock<FailureOutput>();
-    const github = new FakeGithub();
-    github.issues.set(1, anIssue({ number: 1 }));
-    const githubFor = vi.fn(() => github);
-    const originName = vi.fn(githubOriginName);
-    let sessions = 0;
-    const createApp = vi.fn((input: Parameters<typeof createAppContainer>[0]) => {
-      const app = createAppContainer({ ...input, logLevel: 'silent' });
-      app.register({
-        config: asValue({
-          ...input.config,
-          ...everyStepOn(),
-          sandboxImage: faker.string.alpha(10),
-        }),
-        openSession: asValue(
-          async ({ run, events }: Parameters<typeof app.cradle.openSession>[0]) => {
-            sessions++;
-            await openRunWorktree({ repoRoot: input.repoRoot, ...run });
-            const agent = new FakeAgentSession(
-              sandboxCloneOf(input.repoRoot, run.runId),
-              undefined,
-              path.join(input.repoRoot, '.jig', run.runId, 'workspace'),
-            );
-            scriptWholeRun(agent);
-            return Result.ok(agent.reportUsageTo(events, run.runId));
-          },
-        ),
-      });
-      return app;
-    });
-    const invocation: Invocation = {
-      cwd,
-      environment,
-      fallbackHomeDirectory: faker.system.directoryPath(),
-      createAppContainer: createApp,
-      configSourceAt: configFileSource,
-      askForPreset: async () => undefined,
-      presetSourceAt: presetDirectoriesSource,
-    };
+    const program = new Command();
+    registerGithubCommands(program, implementIssue, output);
     return {
+      implementIssue,
       output,
-      invocation,
-      cloneOf: remote.cloneOf,
-      sessionsOpened: () => sessions,
-      createApp,
-      githubFor,
-      originName,
-      github,
-      run: (args: string[]) => {
-        const program = new Command();
-        registerGithubCommands(
-          program,
-          {
-            githubFor,
-            githubOriginName: originName,
-            publicationAt: (repoRoot) => ({
-              receipts: new GitOrchestrationStore(repoRoot),
-              runBranches: new GitRunBranches(repoRoot),
-            }),
-          },
-          { invocation, failureOutput: output },
-        );
-        return program.parseAsync(['github', 'implement', ...args], { from: 'user' });
-      },
+      run: (args: string[]) =>
+        program.parseAsync(['github', 'implement', ...args], { from: 'user' }),
     };
   }
 });

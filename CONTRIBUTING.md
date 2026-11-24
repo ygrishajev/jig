@@ -92,14 +92,14 @@ moves its raw JSON. Presets cross the `PresetSource` contract in `src/config/pre
 `src/adapters/filesystem/preset-source.ts` orders the preset directories and yields candidates
 lazily, while config skips invalid names, lets the first candidate of a name win, validates it and
 merges whole roles. The process environment, working directory and home directory are captured at
-the process edge before config parses them: by composition for `jig run`, `jig status`,
-`jig presets`, `jig init` and `jig build`, and by `src/cli/with-app.ts` for `jig github implement`. `npm run lint:dependencies` allows production config to import only
+the process edge before config parses them, by composition for every command.
+`npm run lint:dependencies` allows production config to import only
 `src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
 exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
 built-ins, and domain, ports, config and prompts cannot import it.
 
 `src/composition/main.ts` is the executable. `buildJigCli()` adds the GitHub commands to the core
-CLI with their concrete dependencies, and the module parses arguments only when it is the invoked
+CLI, bound to the same operations, and the module parses arguments only when it is the invoked
 script, so importing it starts nothing. `npm run lint:dependencies` lets no production owner but
 composition import `src/cli/`. Production composition may import only composition, cli, app,
 adapters, config, observers, ports, domain and failures, and no other production owner may import
@@ -143,17 +143,19 @@ whether to save it, through the `InitInteraction` composition supplies from
 `src/ports/starter-files.ts`, and agent credentials and the owner-only `.jig/.env` behind
 `AgentCredentials`. Agents run only on a session `withThrowawaySandbox` opens on its own branch,
 closes and removes. Composition binds `openSandboxRuntime` in `src/app/container.ts`, which still
-builds it with Awilix until #49. `jig github implement` still opens the container through
-`src/cli/with-app.ts`, which uses the same preparation and preset selection
-(`src/app/preset-selection.ts`).
+builds it with Awilix until #49.
 
-`jig github implement` is spread over the same owners. `src/cli/commands/github.ts` declares the
-command, parses its input and describes its outcome; `src/config/github-settings.ts` validates the
-token and repository settings and decides their precedence; `implementIssue` in
-`src/app/implement-issue.ts` accepts the issue, runs it through `runJig` with the container's run
-capabilities and publishes the outcome,
-using the request snapshot, findings and publication content in `src/app/`. It receives its
-capabilities: the GitHub API in `src/ports/github.ts` (implemented by
+`jig github implement` calls `implementGithubIssue` from the same entry. The handler in
+`src/cli/commands/github.ts` only parses the issue number and options and describes the outcome.
+The operation in `src/app/implement-issue.ts` reads the GitHub settings first, through
+`src/config/github-settings.ts`, which validates the token and repository and decides their
+precedence, so a missing token is refused before the origin is read and every settings refusal
+comes before the repository is prepared or anything is built. It then gets its run through
+`withPreparedRun` in `src/app/run-operation.ts`, the same preparation, preset selection, runtime
+and release `jig run` uses, accepts the issue, runs it through `runJig` with the remote store
+required and its code held back, and publishes the outcome, using the request snapshot, findings
+and publication content in `src/app/`. It receives its capabilities: the GitHub API for a token in
+`src/ports/github.ts` (implemented by
 `src/adapters/github/octokit-github.ts`) and the guarded run branches in `src/ports/run-branches.ts`
 (implemented by `src/adapters/git/run-branches.ts`, which enforces the protected-path refusal from
 `src/domain/protected-paths.ts`). `src/adapters/git/github-origin.ts` reads the repository name
