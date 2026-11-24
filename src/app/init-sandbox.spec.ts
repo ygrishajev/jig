@@ -351,6 +351,19 @@ describe('initRepository', () => {
     expect(exists('jig.config.json')).toBe(false);
   });
 
+  it('refuses a custom config that does not exist before writing or building anything', async () => {
+    const customConfig = path.join(faker.word.noun(), `${faker.word.noun()}.json`);
+    const { initResult, openSandboxRuntime, exists, write } = await setup({ customConfig });
+    await write(path.join(path.dirname(customConfig), '.keep'), '');
+
+    const result = await initResult({ useAgent: false });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(openSandboxRuntime).not.toHaveBeenCalled();
+    expect(exists(customConfig)).toBe(false);
+    expect(exists('.sandcastle/Dockerfile')).toBe(false);
+  });
+
   it('writes neither starter file when the config is a link', async () => {
     const { initResult, write, linkTo, exists } = await setup({});
     await write('.sandcastle/keep', '');

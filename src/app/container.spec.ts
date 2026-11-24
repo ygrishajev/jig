@@ -131,17 +131,7 @@ describe('runCapabilitiesOf', () => {
 
 describe('openSandboxRuntime', () => {
   it('builds each sandbox over the config it is given, not the one the runtime opened with', async () => {
-    const repoRoot = await tempDirectory('jig-sandbox-runtime-');
-    const environment = unwrap(parseEnvironment({}, faker.system.directoryPath()));
-    const runtime = openSandboxRuntime({
-      repoRoot,
-      logFormat: 'json',
-      environment,
-      configSource: configFileSource(configDestination(repoRoot)),
-      config: aJigConfig(),
-      presetSource: new InMemoryPresetSource(),
-    });
-    onTestFinished(() => runtime.dispose());
+    const { runtime, repoRoot, environment } = await setup({ openedWith: aJigConfig() });
     const config = aJigConfig();
 
     const sandbox = runtime.sandboxFor({ config, environment });
@@ -149,6 +139,21 @@ describe('openSandboxRuntime', () => {
     expect(sandbox.image.config).toBe(config);
     expect(sandbox.image.repoRoot).toBe(repoRoot);
   });
+
+  async function setup(input: { openedWith: JigConfig }) {
+    const repoRoot = await tempDirectory('jig-sandbox-runtime-');
+    const environment = unwrap(parseEnvironment({}, faker.system.directoryPath()));
+    const runtime = openSandboxRuntime({
+      repoRoot,
+      logFormat: 'json',
+      environment,
+      configSource: configFileSource(configDestination(repoRoot)),
+      config: input.openedWith,
+      presetSource: new InMemoryPresetSource(),
+    });
+    onTestFinished(() => runtime.dispose());
+    return { runtime, repoRoot, environment };
+  }
 });
 
 function sandboxUnavailable() {

@@ -98,6 +98,19 @@ describe('buildSandboxImage', () => {
     expect(images.build).not.toHaveBeenCalled();
   });
 
+  it('refuses a named preset nobody defined without asking or building anything', async () => {
+    const presetSource = new InMemoryPresetSource();
+    presetSource.put(0, presetName(), {});
+    const { build, askForPreset, openSandboxRuntime, images } = await setup({ presetSource });
+
+    const result = await build({ preset: { kind: 'named', name: presetName() } });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+    expect(askForPreset).not.toHaveBeenCalled();
+    expect(openSandboxRuntime).not.toHaveBeenCalled();
+    expect(images.build).not.toHaveBeenCalled();
+  });
+
   it('refuses a directory below the repository root before building anything', async () => {
     const { build, openSandboxRuntime } = await setup({ startInSubdirectory: true });
 
