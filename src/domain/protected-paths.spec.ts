@@ -1,7 +1,12 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { type ChangedFile, type ChangeKind, protectedChanges } from './protected-paths.js';
+import {
+  type ChangedFile,
+  type ChangeKind,
+  protectedChanges,
+  unpublishablePaths,
+} from './protected-paths.js';
 
 describe('protectedChanges', () => {
   it('leaves a test file the slice added alone', () => {
@@ -71,4 +76,25 @@ describe('protectedChanges', () => {
     ];
     return { change, configPaths, inNested, inSubdirectory, sourceFile, sourceExtension };
   }
+});
+
+describe('unpublishablePaths', () => {
+  it('keeps only the workflows among the changed paths', () => {
+    const workflows = [
+      `.github/workflows/${faker.lorem.slug()}.yml`,
+      `.github/workflows/${faker.lorem.slug()}/${faker.lorem.slug()}.yaml`,
+    ];
+    const others = [
+      `.github/workflows-old/${faker.lorem.slug()}.yml`,
+      `.github/workflow/${faker.lorem.slug()}.yml`,
+      `.github/workflows${faker.lorem.slug()}.yml`,
+      `docs/.github/workflows/${faker.lorem.slug()}.yml`,
+      `.github/actions/${faker.lorem.slug()}/action.yml`,
+      `.GitHub/Workflows/${faker.lorem.slug()}.yml`,
+    ];
+
+    expect(unpublishablePaths(faker.helpers.shuffle([...workflows, ...others])).sort()).toEqual(
+      [...workflows].sort(),
+    );
+  });
 });

@@ -9,9 +9,9 @@ import {
   aSlice,
   capturedOutput,
   failureOutput,
-} from '../../../tests/support/builders.js';
-import { OUTPUT_UNAVAILABLE } from '../../domain/diagnostics.js';
-import type { FailedVerification } from '../../domain/slice.js';
+} from '../../tests/support/builders.js';
+import { OUTPUT_UNAVAILABLE } from '../domain/diagnostics.js';
+import type { FailedVerification } from '../domain/slice.js';
 import { findingsCommentBody, stuckReason } from './findings-comment.js';
 
 describe('findingsCommentBody', () => {

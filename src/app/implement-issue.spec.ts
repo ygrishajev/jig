@@ -15,7 +15,7 @@ import {
   rejection,
   scriptPlanning,
   scriptWholeRun,
-} from '../../../tests/support/agent-scripts.js';
+} from '../../tests/support/agent-scripts.js';
 import {
   aJigConfig,
   aPlannedSlice,
@@ -23,32 +23,39 @@ import {
   everyStepOn,
   failureOutput,
   implementingPlanSteps,
-} from '../../../tests/support/builders.js';
-import { anIssue, FakeGithub } from '../../../tests/support/fake-github.js';
-import { FakeAgentSession } from '../../../tests/support/fakes.js';
-import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
-import { createRemote } from '../../../tests/support/temp-repo.js';
-import { unwrap } from '../../../tests/support/unwrap.js';
-import { configDestination } from '../../adapters/filesystem/config-source.js';
-import { GitOrchestrationStore } from '../../adapters/git/orchestration-ref.js';
-import { GitRunCode } from '../../adapters/git/run-code.js';
-import { CompositeRunStore } from '../../adapters/run-store/composite-run-store.js';
-import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store.js';
-import { sandcastleSessionOptions } from '../../adapters/sandcastle/open-session.js';
-import { createAppContainer } from '../../app/container.js';
-import { parseEnvironment } from '../../config/environment.js';
+} from '../../tests/support/builders.js';
+import { anIssue, FakeGithub } from '../../tests/support/fake-github.js';
+import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
+import { createRemote } from '../../tests/support/temp-repo.js';
+import { unwrap } from '../../tests/support/unwrap.js';
+import { configDestination } from '../adapters/filesystem/config-source.js';
+import { GitOrchestrationStore } from '../adapters/git/orchestration-ref.js';
+import { GitRunBranches } from '../adapters/git/run-branches.js';
+import { GitRunCode } from '../adapters/git/run-code.js';
+import { CompositeRunStore } from '../adapters/run-store/composite-run-store.js';
+import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
+import { sandcastleSessionOptions } from '../adapters/sandcastle/open-session.js';
+import { parseEnvironment } from '../config/environment.js';
 import {
   claimPublication,
+  pullRequestReceipt,
   releasePublication,
   withComment,
   withPullRequest,
-} from '../../domain/orchestration.js';
-import { runDiagnostics } from '../../domain/run-diagnostics.js';
-import { type RunId, runIdFor } from '../../domain/run-id.js';
-import { runBranchFor } from '../../domain/run-state.js';
-import { AgentRunFailed, type ExecResult } from '../../ports/agent-session.js';
-import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
-import { implementIssue } from './implement-issue.js';
+} from '../domain/orchestration.js';
+import { runDiagnostics } from '../domain/run-diagnostics.js';
+import { type RunId, runIdFor } from '../domain/run-id.js';
+import { runBranchFor } from '../domain/run-state.js';
+import { AgentRunFailed, type ExecResult } from '../ports/agent-session.js';
+import { RemoteUnavailable } from '../ports/git-failures.js';
+import { GithubNotFound, GithubRefused, GithubUnavailable } from '../ports/github.js';
+import { createAppContainer } from './container.js';
+import {
+  implementIssue,
+  type IssueCapabilities,
+  type IssuePublication,
+} from './implement-issue.js';
 import { requestText } from './request-snapshot.js';
 
 describe('implementIssue', () => {
@@ -170,6 +177,27 @@ describe('implementIssue', () => {
     expect(unwrap(await implement())).toEqual({ kind: 'pullRequest', url: pr.url, reused: true });
     expect(github.prsOpened).toBe(0);
     expect(github.commentsMade).toBe(0);
+  });
+
+  it('keeps the run state on the remote though the configuration stores runs only locally', async () => {
+    const { implement, dir, id } = await setup({ runStores: ['local'] });
+
+    unwrap(await implement());
+
+    expect(unwrap(await new GitRemoteRunStore(dir).load(id))?.runId).toBe(id);
+  });
+
+  it('reuses a PR whose receipt failed to save instead of opening another', async () => {
+    const { implement, github, id, store, key } = await setup({ losePullRequestReceipt: true });
+
+    const first = await implement();
+
+    expect(first.isErr() && first.error._tag).toBe('RemoteUnavailable');
+    expect(github.prsOpened).toBe(1);
+    const pr = github.pullRequests.get(runBranchFor(id));
+    expect(unwrap(await implement())).toEqual({ kind: 'pullRequest', url: pr?.url, reused: true });
+    expect(github.prsOpened).toBe(1);
+    expect(unwrap(await store.read()).receipts[key]).toMatchObject({ url: pr?.url });
   });
 
   it('refuses another base branch before accepting a request', async () => {
@@ -686,6 +714,8 @@ describe('implementIssue', () => {
     planningBlocked = false,
     workflow = false,
     failingVerify = false,
+    runStores,
+    losePullRequestReceipt = false,
   }: {
     paused?: boolean;
     unfinished?: boolean;
@@ -695,6 +725,8 @@ describe('implementIssue', () => {
     planningBlocked?: boolean;
     workflow?: boolean;
     failingVerify?: boolean;
+    runStores?: string[];
+    losePullRequestReceipt?: boolean;
   } = {}) {
     const remote = await createRemote();
     const dir = await remote.cloneOf();
@@ -789,6 +821,7 @@ describe('implementIssue', () => {
           mergeMode: auto ? 'auto' : 'manual',
           designGate: paused ? 'checkpoint' : 'auto',
           reviewCycleCap: failingVerify ? 2 : 1,
+          ...(runStores ? { runStores } : {}),
           ...(failingVerify ? { verifyCommand } : {}),
         }),
       });
@@ -807,6 +840,14 @@ describe('implementIssue', () => {
       return app;
     };
     const app = appIn(dir);
+    const lostReceipt = { pending: losePullRequestReceipt };
+    const capabilities: IssueCapabilities = {
+      github,
+      publicationAt: (repoRoot) => ({
+        receipts: losingPullRequestReceipt(new GitOrchestrationStore(repoRoot), key, lostReceipt),
+        runBranches: new GitRunBranches(repoRoot),
+      }),
+    };
     return {
       dir,
       origin: remote.origin,
@@ -824,9 +865,9 @@ describe('implementIssue', () => {
       logger,
       app,
       store: new GitOrchestrationStore(dir),
-      implement: () => implementIssue(app, github, repository, issue.number),
+      implement: () => implementIssue(app, capabilities, repository, issue.number),
       implementFromFreshClone: async () =>
-        implementIssue(appIn(await remote.cloneOf()), github, repository, issue.number),
+        implementIssue(appIn(await remote.cloneOf()), capabilities, repository, issue.number),
     };
   }
 });
@@ -855,6 +896,31 @@ async function commitOnBranch(dir: string, branch: string, files: Record<string,
   await git.add('.');
   await git.commit(faker.git.commitMessage());
   await git.checkout('-');
+}
+
+/**
+ * Receipts that fail, once, to save the PR recorded for `key`, as a lost push would after GitHub
+ * already opened it.
+ */
+function losingPullRequestReceipt(
+  receipts: GitOrchestrationStore,
+  key: string,
+  lost: { pending: boolean },
+): IssuePublication['receipts'] {
+  return {
+    read: () => receipts.read(),
+    claim: (publication) => receipts.claim(publication),
+    renew: (held) => receipts.renew(held),
+    release: (held) => receipts.release(held),
+    update: async (decide) => {
+      const current = await receipts.read();
+      if (lost.pending && current.isOk() && pullRequestReceipt(decide(current.value), key)) {
+        lost.pending = false;
+        return Result.err(new RemoteUnavailable({ message: faker.lorem.sentence() }));
+      }
+      return receipts.update(decide);
+    },
+  };
 }
 
 /** Makes origin refuse any orchestration update that records a findings comment. */

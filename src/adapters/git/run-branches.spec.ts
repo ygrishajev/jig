@@ -8,13 +8,13 @@ import { describe, expect, it } from 'vitest';
 import { aRunState, runId } from '../../../tests/support/builders.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { unwrap } from '../../../tests/support/unwrap.js';
-import { GitRunCode } from '../../adapters/git/run-code.js';
-import { CompositeRunStore } from '../../adapters/run-store/composite-run-store.js';
-import { GitRemoteRunStore } from '../../adapters/run-store/git-remote-run-store.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import { hasWorkBeyondStart, publishRunBranch } from './run-branch-publication.js';
+import { CompositeRunStore } from '../run-store/composite-run-store.js';
+import { GitRemoteRunStore } from '../run-store/git-remote-run-store.js';
+import { GitRunBranches } from './run-branches.js';
+import { GitRunCode } from './run-code.js';
 
-describe('publishRunBranch', () => {
+describe('GitRunBranches', () => {
   it('pushes exactly the inspected commit when no workflow changes', async () => {
     const { publish, commitOnRunBranch, remoteBranch } = await setup();
     const revision = await commitOnRunBranch({ write: { [allowedPath()]: faker.lorem.word() } });
@@ -109,7 +109,9 @@ describe('publishRunBranch', () => {
 
     expect(unwrap(await publish(codeRevision))).toEqual({ kind: 'unchanged' });
     expect(await remoteBranch()).toBeUndefined();
-    expect(unwrap(await hasWorkBeyondStart(here, { startingCommit, codeRevision }))).toBe(true);
+    expect(
+      unwrap(await new GitRunBranches(here).hasWorkBeyondStart({ startingCommit, codeRevision })),
+    ).toBe(true);
   });
 
   it('pushes commits that change nothing when asked to, reporting that they change no files', async () => {
@@ -183,7 +185,7 @@ describe('publishRunBranch', () => {
     const { here, commitOnRunBranch, id, remoteBranch } = await setup();
     const revision = await commitOnRunBranch({ write: { [allowedPath()]: faker.lorem.word() } });
 
-    const published = await publishRunBranch(here, {
+    const published = await new GitRunBranches(here).publish({
       runId: id,
       revision,
       defaultBranch: faker.string.alpha(12),
@@ -208,13 +210,13 @@ describe('publishRunBranch', () => {
       const store = freshStore();
       const restored = unwrap(await store.load(state.runId));
       if (!restored) panic('The initial checkpoint was not restored');
-      expect(unwrap(await hasWorkBeyondStart(here, restored))).toBe(false);
+      expect(unwrap(await new GitRunBranches(here).hasWorkBeyondStart(restored))).toBe(false);
       await git.checkout(runBranchFor(state.runId));
       await git.commit(faker.git.commitMessage(), ['--allow-empty']);
       unwrap(await store.save(restored));
       const resumed = unwrap(await freshStore().load(state.runId));
       if (!resumed) panic('The run checkpoint was not restored');
-      expect(unwrap(await hasWorkBeyondStart(here, resumed))).toBe(true);
+      expect(unwrap(await new GitRunBranches(here).hasWorkBeyondStart(resumed))).toBe(true);
     });
 
     it('counts commits made past the recorded starting commit', async () => {
@@ -224,9 +226,16 @@ describe('publishRunBranch', () => {
         write: { [allowedPath()]: faker.lorem.word() },
       });
 
-      expect(unwrap(await hasWorkBeyondStart(here, { startingCommit, codeRevision }))).toBe(true);
       expect(
-        unwrap(await hasWorkBeyondStart(here, { startingCommit, codeRevision: startingCommit })),
+        unwrap(await new GitRunBranches(here).hasWorkBeyondStart({ startingCommit, codeRevision })),
+      ).toBe(true);
+      expect(
+        unwrap(
+          await new GitRunBranches(here).hasWorkBeyondStart({
+            startingCommit,
+            codeRevision: startingCommit,
+          }),
+        ),
       ).toBe(false);
     });
 
@@ -236,7 +245,9 @@ describe('publishRunBranch', () => {
         write: { [allowedPath()]: faker.lorem.word() },
       });
 
-      expect(unwrap(await hasWorkBeyondStart(here, { codeRevision }))).toBe(false);
+      expect(unwrap(await new GitRunBranches(here).hasWorkBeyondStart({ codeRevision }))).toBe(
+        false,
+      );
     });
   });
 
@@ -281,7 +292,7 @@ describe('publishRunBranch', () => {
       return listed.trim() || undefined;
     };
     const publish = (revision: string, options: { pushUnchanged?: boolean } = {}) =>
-      publishRunBranch(here, { runId: id, revision, defaultBranch: 'main', ...options });
+      new GitRunBranches(here).publish({ runId: id, revision, defaultBranch: 'main', ...options });
     return { here, id, cloneOf, publish, commitOnRunBranch, seedDefault, remoteBranch };
   }
 });

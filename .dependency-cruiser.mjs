@@ -7,7 +7,6 @@ export const productionModules = [
   'domain',
   'failures',
   'flow',
-  'integrations',
   'observers',
   'ports',
   'prompts',
@@ -27,21 +26,11 @@ const failuresImporters = [
   'composition',
   'failures',
   'flow',
-  'integrations',
   'observers',
   'steps',
 ];
-/** The GitHub command still lives in integrations; it moves to cli in a later slice. */
-const transitionalCliCommand = '^src/integrations/github/command[.]ts$';
-/** The GitHub sources the composed builder registers until the GitHub command moves to cli. */
-const transitionalCompositionGithubSources = [
-  transitionalCliCommand,
-  '^src/integrations/github/github-port[.]ts$',
-];
-const compositionSourceAllowlist = [
-  '^src/(composition|cli|app|adapters|config|observers|ports|domain|failures)/',
-  ...transitionalCompositionGithubSources,
-];
+const compositionSourceAllowlist =
+  '^src/(composition|cli|app|adapters|config|observers|ports|domain|failures)/';
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 export default {
@@ -113,9 +102,8 @@ export default {
       name: 'composition-imports-only-allowed-sources',
       comment:
         'Composition wires and starts the executable: it may import the CLI it starts, the app, ' +
-        'adapters, config, observers, ports, domain and failures. Until the GitHub command moves ' +
-        'to cli it also imports that command and the port its builder takes, and no other ' +
-        'integrations source. Flow, steps and prompts stay behind the app.',
+        'adapters, config, observers, ports, domain and failures. Flow, steps and prompts stay ' +
+        'behind the app.',
       severity: 'error',
       from: { path: '^src/composition/', pathNot: testFilePattern },
       to: { path: '^src/', pathNot: compositionSourceAllowlist },
@@ -123,14 +111,10 @@ export default {
     {
       name: 'cli-is-imported-only-by-composition',
       comment:
-        'Composition is the only production owner that imports the CLI. The GitHub command in ' +
-        'integrations is the one transitional CLI-owned command outside src/cli. Specs and tooling ' +
+        'Composition is the only production owner that imports the CLI. Specs and tooling ' +
         'outside src/ may import CLI helpers.',
       severity: 'error',
-      from: {
-        path: '^src/',
-        pathNot: ['^src/(cli|composition)/', transitionalCliCommand, testFilePattern],
-      },
+      from: { path: '^src/', pathNot: ['^src/(cli|composition)/', testFilePattern] },
       to: { path: '^src/cli/' },
     },
     {

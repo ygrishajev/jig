@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
+import { Command } from 'commander';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
@@ -13,12 +14,14 @@ import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { configFileSource } from '../../adapters/filesystem/config-source.js';
 import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
+import { githubOriginName } from '../../adapters/git/github-origin.js';
+import { GitOrchestrationStore } from '../../adapters/git/orchestration-ref.js';
+import { GitRunBranches } from '../../adapters/git/run-branches.js';
 import { createAppContainer } from '../../app/container.js';
-import type { Invocation } from '../../cli/with-app.js';
-import type { FailureOutput } from '../../cli/with-error-handling.js';
-import { buildJigCli } from '../../composition/main.js';
-import { describeIssueOutcome } from './command.js';
-import { GithubRefused } from './errors.js';
+import { GithubRefused } from '../../ports/github.js';
+import type { Invocation } from '../with-app.js';
+import type { FailureOutput } from '../with-error-handling.js';
+import { describeIssueOutcome, registerGithubCommands } from './github.js';
 
 describe('github implement command', () => {
   it('describes a newly opened PR with its URL', () => {
@@ -73,6 +76,23 @@ describe('github implement command', () => {
   it('refuses a missing token before opening the app', async () => {
     const { run, output, createApp } = await setup();
     await run(['--issue', '1']);
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+    expect(createApp).not.toHaveBeenCalled();
+  });
+
+  it('refuses a missing token before looking at the origin', async () => {
+    const { run, output, originName } = await setup();
+    await run(['--issue', '1']);
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+    expect(originName).not.toHaveBeenCalled();
+  });
+
+  it('refuses a clone whose origin is not on GitHub before opening the app', async () => {
+    const { run, output, createApp, originName, invocation } = await setup({
+      environment: { GITHUB_TOKEN: faker.string.alphanumeric(30) },
+    });
+    await run(['--issue', '1']);
+    expect(originName).toHaveBeenCalledWith(invocation.cwd);
     expect(output.setExitCode).toHaveBeenCalledWith(1);
     expect(createApp).not.toHaveBeenCalled();
   });
@@ -136,7 +156,7 @@ describe('github implement command', () => {
     expect(createApp).not.toHaveBeenCalled();
   });
 
-  it('runs from the composing CLI and resumes publication from another clone', async () => {
+  it('runs the issue and resumes publication from another clone', async () => {
     const { run, output, github, invocation, cloneOf, sessionsOpened } = await setup({
       environment: {
         GITHUB_TOKEN: faker.string.alphanumeric(30),
@@ -165,6 +185,7 @@ describe('github implement command', () => {
     const github = new FakeGithub();
     github.issues.set(1, anIssue({ number: 1 }));
     const githubFor = vi.fn(() => github);
+    const originName = vi.fn(githubOriginName);
     let sessions = 0;
     const createApp = vi.fn((input: Parameters<typeof createAppContainer>[0]) => {
       const app = createAppContainer({ ...input, logLevel: 'silent' });
@@ -207,12 +228,24 @@ describe('github implement command', () => {
       sessionsOpened: () => sessions,
       createApp,
       githubFor,
+      originName,
       github,
-      run: (args: string[]) =>
-        buildJigCli({ invocation, failureOutput: output }, githubFor).parseAsync(
-          ['github', 'implement', ...args],
-          { from: 'user' },
-        ),
+      run: (args: string[]) => {
+        const program = new Command();
+        registerGithubCommands(
+          program,
+          {
+            githubFor,
+            githubOriginName: originName,
+            publicationAt: (repoRoot) => ({
+              receipts: new GitOrchestrationStore(repoRoot),
+              runBranches: new GitRunBranches(repoRoot),
+            }),
+          },
+          { invocation, failureOutput: output },
+        );
+        return program.parseAsync(['github', 'implement', ...args], { from: 'user' });
+      },
     };
   }
 });

@@ -4,14 +4,16 @@ import { z } from 'zod';
 
 import type { RepositoryIdentity } from '../../domain/repository-identity.js';
 import { retryResult } from '../../failures/retry.js';
-import { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
-import type {
-  GithubFailure,
-  GithubPort,
-  Issue,
-  OpenPullRequest,
-  PullRequest,
-} from './github-port.js';
+import {
+  type GithubFailure,
+  GithubNotFound,
+  type GithubPort,
+  GithubRefused,
+  GithubUnavailable,
+  type Issue,
+  type OpenPullRequest,
+  type PullRequest,
+} from '../../ports/github.js';
 
 export interface GithubClient {
   issues: {

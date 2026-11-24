@@ -70,20 +70,19 @@ agent calls; it is excluded from `npm test` and `npm run validate`.
 Explore the [interactive architecture map](docs/architecture.html) for module relationships
 and run flows. Download and open it in a browser; GitHub displays HTML as source.
 
-| Directory                  | Responsibility                                                        |
-| -------------------------- | --------------------------------------------------------------------- |
-| `src/composition/`         | The `jig` executable: composes the CLI and starts it.                 |
-| `src/cli/`                 | Commands and input parsing.                                           |
-| `src/app/`                 | Application lifecycle, workflow assembly, and container construction. |
-| `src/integrations/github/` | `jig github implement`: the command, issue flow and Octokit API.      |
-| `src/config/`              | Configuration schemas, defaults, presets, and policy.                 |
-| `src/domain/`              | State, validation, domain decisions, and business failures.           |
-| `src/failures/`            | Failure messages, panic unwrapping, and retry of `Result`s.           |
-| `src/flow/`                | Generic flow contracts, execution, and the step retry policy.         |
-| `src/steps/`               | Individual pipeline steps.                                            |
-| `src/ports/`               | Interfaces for external operations and their failures.                |
-| `src/adapters/`            | Git, containers, storage, config files, terminals, and telemetry.     |
-| `src/prompts/`             | Inputs sent to agents.                                                |
+| Directory          | Responsibility                                                        |
+| ------------------ | --------------------------------------------------------------------- |
+| `src/composition/` | The `jig` executable: composes the CLI and starts it.                 |
+| `src/cli/`         | Commands and input parsing.                                           |
+| `src/app/`         | Application lifecycle, workflow assembly, and container construction. |
+| `src/config/`      | Configuration schemas, defaults, presets, and policy.                 |
+| `src/domain/`      | State, validation, domain decisions, and business failures.           |
+| `src/failures/`    | Failure messages, panic unwrapping, and retry of `Result`s.           |
+| `src/flow/`        | Generic flow contracts, execution, and the step retry policy.         |
+| `src/steps/`       | Individual pipeline steps.                                            |
+| `src/ports/`       | Interfaces for external operations and their failures.                |
+| `src/adapters/`    | Git, containers, storage, config files, terminals, and telemetry.     |
+| `src/prompts/`     | Inputs sent to agents.                                                |
 
 Config owns policy and defaults, including the step retry count and delay that resolve into
 `RunSettings`; domain owns `RunSettings` and the rules and stopping caps that read it. Settings
@@ -99,12 +98,23 @@ exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-re
 built-ins, and domain, ports, config and prompts cannot import it.
 
 `src/composition/main.ts` is the executable. `buildJigCli()` adds the GitHub commands to the core
-CLI, and the module parses arguments only when it is the invoked script, so importing it starts
-nothing. `npm run lint:dependencies` lets no production owner but composition import `src/cli/`,
-except `src/integrations/github/command.ts`, the GitHub command that still lives in integrations.
-Production composition may import only composition, cli, app, adapters, config, observers, ports,
-domain, failures, `src/integrations/github/command.ts` and `src/integrations/github/github-port.ts`,
-and no other production owner may import composition. Specs and tooling outside `src/` may import CLI helpers.
+CLI with their concrete dependencies, and the module parses arguments only when it is the invoked
+script, so importing it starts nothing. `npm run lint:dependencies` lets no production owner but
+composition import `src/cli/`. Production composition may import only composition, cli, app,
+adapters, config, observers, ports, domain and failures, and no other production owner may import
+composition. A file under any directory not listed in the code map, `src/integrations/` included,
+fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
+
+`jig github implement` is spread over the same owners. `src/cli/commands/github.ts` declares the
+command, parses its input and describes its outcome; `src/config/github-settings.ts` validates the
+token and repository settings and decides their precedence; `implementIssue` in
+`src/app/implement-issue.ts` accepts the issue, runs it through `runJig` and publishes the outcome,
+using the request snapshot, findings and publication content in `src/app/`. It receives its
+capabilities: the GitHub API in `src/ports/github.ts` (implemented by
+`src/adapters/github/octokit-github.ts`) and the guarded run branches in `src/ports/run-branches.ts`
+(implemented by `src/adapters/git/run-branches.ts`, which enforces the protected-path refusal from
+`src/domain/protected-paths.ts`). `src/adapters/git/github-origin.ts` reads the repository name
+from the origin. Composition supplies each of these lazily, so help needs no token or repository.
 
 GitHub publication keeps its shared receipts and leases in `refs/jig/_orchestration`. Domain owns
 their state, schema and transitions (`src/domain/orchestration.ts`) and the repository identity
@@ -115,7 +125,8 @@ owns the publication lifetime: it claims the lease, renews it before each outwar
 it however the work ends.
 
 Each failure class lives with the owner of what it means: business failures in
-`src/domain/errors.ts`, capability failures in the port that declares them (publication receipts in
+`src/domain/errors.ts`, capability failures in the port that declares them (GitHub in `src/ports/github.ts`, run-branch
+publication in `src/ports/run-branches.ts`, publication receipts in
 `src/ports/publication-receipts.ts`; shared Git, run-state and local-state failures in `src/ports/git-failures.ts`, `src/ports/run-state-failures.ts` and
 `src/ports/local-state.ts`), configuration validation in `src/config/errors.ts`, and use-case and
 command input failures in `src/app/` and `src/cli/`. Import a class from its owner; there is no
