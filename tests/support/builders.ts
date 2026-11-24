@@ -35,7 +35,7 @@ import type {
   WorkFacts,
   WorkObservations,
 } from '../../src/domain/work-facts.js';
-import type { MetricsSummary } from '../../src/observers/metrics.js';
+import type { MetricsSummary } from '../../src/ports/run-records.js';
 import { InMemoryConfigSource } from './fakes.js';
 import { unwrap } from './unwrap.js';
 

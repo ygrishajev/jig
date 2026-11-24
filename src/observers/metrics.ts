@@ -4,6 +4,7 @@ import type { OutcomeType } from '../domain/outcome.js';
 import type { RunId } from '../domain/run-id.js';
 import type { CommitSummary, TokenUsage } from '../domain/usage.js';
 import type { Clock } from '../ports/observability.js';
+import type { MetricsSummary } from '../ports/run-records.js';
 
 export type MetricRecord =
   | {
@@ -25,18 +26,6 @@ export type MetricRecord =
       tokens: TokenUsage;
     }
   | { kind: 'retry'; at: string; runId: RunId; location: StepLocation; reason: string };
-
-export interface MetricsSummary {
-  durationMs: number;
-  steps: number;
-  agentCalls: number;
-  retries: number;
-  reviewRounds: number;
-  slicesCommitted: number;
-  linesChanged: number;
-  costUsd: number;
-  tokens: TokenUsage;
-}
 
 /** Records one line per step, agent call and retry, attributing agent calls to the step they ran in. */
 export class MetricsObserver {

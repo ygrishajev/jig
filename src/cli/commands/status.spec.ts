@@ -1,5 +1,8 @@
 import { faker } from '@faker-js/faker';
-import { describe, expect, it } from 'vitest';
+import { Result } from 'better-result';
+import { Command } from 'commander';
+import { describe, expect, it, vi } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
 import {
   aDesignFinding,
@@ -7,12 +10,61 @@ import {
   aRunBlockedByDesignReview,
   aRunState,
   aSlice,
+  runId,
 } from '../../../tests/support/builders.js';
-import type { RunStatus } from '../../app/run-status.js';
+import type { JigOperations, RunStatus } from '../../app/api.js';
+import { RunRequestInvalid } from '../../app/errors.js';
 import type { RunState } from '../../domain/run-state.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { formatSummary } from '../../observers/metrics.js';
-import { describeRun } from './status.js';
+import type { FailureOutput } from '../with-error-handling.js';
+import { describeRun, registerStatusCommand } from './status.js';
+
+describe('status command', () => {
+  it('asks for the run it was given, read through the config file it was given', async () => {
+    const { run, status, output } = setup();
+    const id = runId();
+    const config = `${faker.word.noun()}.json`;
+
+    await run([id, '--config', config]);
+
+    expect(status).toHaveBeenCalledWith({ runId: id, configPath: config });
+    expect(output.setExitCode).not.toHaveBeenCalled();
+  });
+
+  it('refuses a run id it cannot parse without asking for a status', async () => {
+    const { run, status, output } = setup();
+
+    await run([faker.string.alpha({ casing: 'upper', length: 8 })]);
+
+    expect(status).not.toHaveBeenCalled();
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  it("prints the operation's failure and exits with 1", async () => {
+    const failure = new RunRequestInvalid({ message: faker.lorem.sentence() });
+    const { run, output } = setup({ found: Result.err(failure) });
+
+    await run([runId()]);
+
+    expect(output.printError).toHaveBeenCalledWith(failure.message);
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  function setup({
+    found = Result.ok(aStatus({ state: aRunState() })),
+  }: { found?: Awaited<ReturnType<JigOperations['status']>> } = {}) {
+    const status = vi.fn<JigOperations['status']>(async () => found);
+    const output = mock<FailureOutput>();
+    const program = new Command();
+    registerStatusCommand(program, status, output);
+    return {
+      status,
+      output,
+      run: (args: string[]) => program.parseAsync(['status', ...args], { from: 'user' }),
+    };
+  }
+});
 
 describe('describeRun', () => {
   it("shows the run's phase, base and branch", () => {

@@ -143,9 +143,9 @@ svg text{font-family:var(--sans)}
       <tr><td>flow</td><td>Generic flow contracts, engine and step retry policy</td><td>domain, failures, ports</td></tr>
       <tr><td>prompts</td><td>Agent request construction</td><td>domain</td></tr>
       <tr><td>steps</td><td>Individual workflow operations</td><td>domain, failures, flow, ports, prompts</td></tr>
-      <tr><td>app</td><td>Container construction and scopes, run lifecycle, concrete workflow assembly and GitHub issue implementation</td><td>adapters, config, domain, failures, flow, observers, ports, prompts, steps</td></tr>
+      <tr><td>app</td><td>Public operations in <code>src/app/api.ts</code>, repository preparation, container construction and scopes, run lifecycle, concrete workflow assembly and GitHub issue implementation</td><td>adapters, config, domain, failures, flow, observers, ports, prompts, steps</td></tr>
       <tr><td>cli</td><td>Commands, including <code>github implement</code>, input parsing and output</td><td>adapters, app, config, domain, failures, observers, ports</td></tr>
-      <tr><td>composition</td><td>The executable: composes the CLI with its concrete GitHub dependencies, parses arguments when invoked and shuts down</td><td>adapters, cli</td></tr>
+      <tr><td>composition</td><td>The executable: captures the process context, binds the public operations and composes the CLI with its concrete dependencies, parses arguments when invoked and shuts down</td><td>adapters, app, cli</td></tr>
     </tbody>
   </table>
   <p><code>src/app/run-flow.ts</code> imports steps and flow contracts; steps import flow contracts.
@@ -167,16 +167,21 @@ svg text{font-family:var(--sans)}
     concrete path to write the starter file. <code>src/adapters/filesystem/preset-source.ts</code> orders the repository, home, XDG and starter
     preset directories, maps names to files, checks presence with <code>lstat</code> and reads preset JSON.
     Adapters own provider construction, credentials, authentication and scratch filesystem operations.
-    Config reads no file, environment variable or home directory: <code>src/cli/with-app.ts</code> captures
-    <code>process.env</code>, the working directory and the fallback home directory at the process edge
-    and hands them to <code>parseEnvironment</code>. That handler still prepares the invocation and
-    receives the container that <code>src/app/container.ts</code> builds; app still constructs adapters
-    and scopes. The GitHub command registers through the same <code>appAction</code> bridge, and
+    Config reads no file, environment variable or home directory: the process edge captures
+    <code>process.env</code>, the working directory and the fallback home directory, and
+    <code>prepareRepository</code> in <code>src/app/repository-preparation.ts</code> hands them to
+    <code>parseEnvironment</code> after checking the repository root and before reading saved
+    credentials and config. <code>jig status</code> and <code>jig presets</code> call
+    <code>readRunStatus</code> and <code>listPresets</code> from <code>src/app/api.ts</code>, bound by
+    composition to the captured context and lazily built sources; they build no container. The other
+    commands still prepare through <code>src/cli/with-app.ts</code> and receive the container that
+    <code>src/app/container.ts</code> builds; app still constructs adapters and scopes until spike #49
+    records the construction mechanism. The GitHub command registers through the same <code>appAction</code> bridge, and
     <code>implementIssue</code> takes the container only for its logger, repository root,
     <code>runJig</code> and the run store that holds its checkpoint; every Git and GitHub operation it uses arrives as a capability.
     <code>src/composition/main.ts</code> owns the executable: it composes the CLI, supplies the GitHub
-    command's concrete dependencies, and starts it only when it is the invoked script. Preparation
-    still runs in the CLI and container construction still in app.</p>
+    command's concrete dependencies and the status and preset-listing operations, and starts it only
+    when it is the invoked script. Container construction still runs in app.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
     of these owners. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
@@ -318,11 +323,11 @@ svg text{font-family:var(--sans)}
     ["Leave a halt or a block", "a halt moves to its resumeAt phase; a blocked reason is cleared.", "domain"],
     ["Carry on from the saved phase", "everything after this is the same as a new run.", "domain"]
   ]);
-  var cTStatus = flowCv("ts", "Show a run", "jig status <id>. Read-only: no sandbox, no agents.", [
+  var cTStatus = flowCv("ts", "Show a run", "jig status <id>. src/cli/commands/status.ts → readRunStatus in src/app/api.ts. Read-only: no sandbox, no agents, no credential prompt.", [
     ["Peek at the run", "the freshest copy in every configured store; no branch or ref moves.", "infra"],
     ["Documents", "design.md, plan.md, design-review.md and PR_DESCRIPTION.md, when written.", "step"],
     ["Slices", "status of each, with the last reviewer feedback.", "domain"],
-    ["So far", "MetricsLog's summary of metrics.jsonl: slices, review rounds, tokens, cost, time.", "domain"]
+    ["So far", "RunRecords (src/ports/run-records.ts): MetricsLog's summary of metrics.jsonl: slices, review rounds, tokens, cost, time.", "domain"]
   ]);
   var cTInitAgent = flowCv("ia", "jig init", "src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
     ["Write the starter files", ".sandcastle/Dockerfile, its .gitignore, jig.config.json — only those missing.", "step"],

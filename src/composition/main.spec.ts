@@ -5,14 +5,18 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
 import { tempDirectory } from '../../tests/support/temp-directory.js';
+import type { JigOperations } from '../app/api.js';
 import { buildCli, packageVersion } from '../cli/main.js';
 import { buildJigCli } from './main.js';
 
 describe('buildJigCli', () => {
   it('includes every core command alongside the GitHub command', () => {
-    const coreCommandNames = buildCli().commands.map((command) => command.name());
+    const coreCommandNames = buildCli(mock<JigOperations>()).commands.map((command) =>
+      command.name(),
+    );
 
     const composedCommandNames = buildJigCli().commands.map((command) => command.name());
 

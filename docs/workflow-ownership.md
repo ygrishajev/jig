@@ -297,6 +297,7 @@ flowchart LR
   cli --> observers
   cli --> ports
   composition --> adapters
+  composition --> app
   composition --> cli
   config --> domain
   flow --> domain
@@ -325,7 +326,9 @@ dependencies: `adapters/github/octokit-github.ts`, `adapters/git/github-origin.t
 `adapters/git/orchestration-ref.ts` and `adapters/git/run-branches.ts`. It builds them only when the
 command runs, so `--help` and an imported builder need no token, repository or app. The CLI owns
 command translation; app still owns container construction and lifecycle, and `cli/with-app.ts`
-still builds the container for each command.
+still builds the container for `jig run`, `jig init`, `jig sandbox build` and `jig github implement`.
+Composition also binds the status and preset-listing operations from `app/api.ts`; see
+[Public application entry](#public-application-entry).
 
 `.dependency-cruiser.mjs` owns the production-owner list; a file under any other directory, such
 as a reintroduced `src/integrations/`, fails as an unowned production file. Its
@@ -475,8 +478,9 @@ message, the one surface that exposes the GitHub setup identity. Owner-local spe
 The GitHub command still registers through `cli/app-action.ts` (`appAction`), which opens the app
 with `cli/with-app.ts`, and `implementIssue` still takes the `App` container, only for its logger,
 its repository root, `runJig` and `openRunStore`, which reads the saved checkpoint from the
-configured and required stores. That bridge is the same one every core command uses until
-application operations take explicit dependencies; it is not a pattern for new code.
+configured and required stores. That bridge is the same one `jig run`, `jig init` and
+`jig sandbox build` use until their operations take explicit dependencies; it is not a pattern for
+new code.
 
 `src/boundary.spec.ts` and the `github-is-isolated` checks named in the application-boundaries
 specification were already absent when this move started; nothing replaces them.
@@ -729,8 +733,65 @@ Dependency-cruiser's `config-imports-only-approved-dependencies` rule allows pro
 import only `src/config`, `src/domain`, `better-result` and `zod`. Anything else fails, including
 adapters, ports, `node:fs`, `node:os`, `node:path`, `node:child_process`, `execa` and
 `write-file-atomic`. Config specs and the test packages they use are exempt. Adapters may import
-config's contracts, and ports still depend only on domain. CLI commands still receive the container through
-`src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepares the invocation, and
+config's contracts, and ports still depend only on domain. `jig status` and `jig presets` call
+operations from `src/app/api.ts`; the other commands still receive the container through
+`src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepare the invocation, and
 `src/app/container.ts` still constructs adapters and scopes. `src/composition/main.ts` owns
-executable startup; moving preparation into application operations and container construction
-from `app` to composition are separate slices.
+executable startup; moving the remaining preparation into application operations and container
+construction from `app` to composition are separate slices.
+
+## Public application entry
+
+`src/app/api.ts` is the application's public entry. It exports `readRunStatus` and `listPresets`,
+their input, context, capability, report and failure types, and `JigOperations`, the bound pair the
+CLI receives. Its exported types name domain, config preset and port types only: no container,
+cradle, logger, tracer, Commander command or process object. `OperationContext` carries the working
+directory, a plain map of environment variables and the fallback home directory.
+
+| Concept                                                 | Owner before                                                    | Owner now                                                            |
+| ------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Process context capture for status and presets          | `cli/with-app.ts` (`processInvocation`)                         | `composition/main.ts` (`processContext`)                             |
+| Preparation order: repository, environment, credentials | `cli/with-app.ts` (`openApp`)                                   | `app/repository-preparation.ts` (`prepareRepository`)                |
+| Status use case                                         | `app/run-status.ts`, given the container                        | `app/run-status.ts`, given `StatusCapabilities`                      |
+| Preset listing                                          | `cli/commands/presets.ts`, reading the cradle                   | `app/list-presets.ts`                                                |
+| `MetricsSummary`, `RunDocument`, `RunDocumentFile`      | `observers/metrics.ts`, `adapters/local-store/run-artefacts.ts` | `ports/run-records.ts`, with the `RunRecords` contract               |
+| Run records for status                                  | `MetricsLog` and `RunArtefacts` built inside app                | `adapters/local-store/local-run-records.ts`, supplied by composition |
+
+The handlers in `cli/commands/status.ts` and `cli/commands/presets.ts` parse their input, call the
+operation and format its `Result`. `cli/with-app.ts` prepares through the same
+`prepareRepository`, so every command keeps one preparation order. Status keeps opening the
+configured run stores through `app/run-stores.ts`, which still builds the store adapters itself.
+
+### Preparation, acquisition and release by operation
+
+| Operation                       | Before the app opens                                                                       | Preparation                                                                                                | Acquired, then released                                                                                                                                                                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jig status <id>`               | the run id parses                                                                          | repository root, environment, saved credentials, config; no preset, no credential prompt                   | nothing: stores are peeked, refs and `.jig/` stay as they were, metrics and documents are this machine's; no container and no sandbox                                                                                                                                                                    |
+| `jig presets`                   | none                                                                                       | repository root, environment, saved credentials, config (the repository's own), preset directories         | nothing                                                                                                                                                                                                                                                                                                  |
+| `jig run`                       | input parses; the request file or standard input is read and refused when unusable         | the same order, then the preset (asked for with a bare `--preset`, cancelling refuses), then the container | the run lock, then the run stores; an ended run is reported without a sandbox; otherwise step credentials, telemetry, then the sandbox scope; the sandbox closes before the scope is disposed, telemetry shuts down after it, the lock is released last, and the container is disposed after the command |
+| `jig init`, `jig sandbox build` | input parses                                                                               | the same order and the container                                                                           | `init` asks for agents and credential-save consent inside the operation; its throwaway sandbox and the image build release before the container is disposed                                                                                                                                              |
+| `jig github implement`          | the GitHub token and repository settings, then the origin, refused as `GithubSetupInvalid` | the same order and the container                                                                           | the publication lease around publication, the run through `runJig` as above, then the container                                                                                                                                                                                                          |
+
+Output flushing stays with composition: `exitWhenDone` waits for standard output and error to
+drain after `parseAsync` returns, so it runs after every operation has released what it held.
+
+### Construction gate
+
+The application-boundaries specification defers the construction mechanism to spike #49 and
+requires its recorded decision before container-specific implementation is planned or container
+management is rewritten. No decision for #49 is recorded in this repository, and none was available
+to this slice, so none is assumed. Status and preset listing need no container: their operations
+are plain functions over supplied capabilities, and composition binds them with object literals.
+`src/app/container.ts`, `withRunScope`, `cli/with-app.ts`, `cli/app-action.ts` and the
+`awilix`-only-in-app lint rule are unchanged. Moving the remaining commands' construction into
+composition, keeping or removing Awilix, and restricting the CLI to `app/api.ts` in
+`.dependency-cruiser.mjs` stay gated on that decision and on the later command migrations.
+
+### Sequencing conflict
+
+The implementation request schedules the public API, the status and preset-listing migration and
+the documentation update (its steps 1, 2 and 7) for one slice, with composition supplying concrete
+sources. The specification's delivery section requires #49's recorded outcome before planning
+container-specific work. The two agree only where an operation needs no container. This slice
+therefore delivers only container-free operations, and the production construction of the other
+operations waits for #49.

@@ -1,15 +1,21 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
+import { Command } from 'commander';
 import { execa } from 'execa';
 import { readdirSync } from 'node:fs';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
 import { aPreset } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { describePresets } from './presets.js';
+import type { JigOperations } from '../../app/api.js';
+import { ConfigInvalid } from '../../config/errors.js';
+import type { FailureOutput } from '../with-error-handling.js';
+import { describePresets, registerPresetsCommand } from './presets.js';
 
 describe('presets command', () => {
   it("lists the operator's presets over the starters they shadow, with where each is read from", async () => {
@@ -39,11 +45,11 @@ describe('presets command', () => {
   async function setup() {
     const repo = await createTempRepo();
     const home = await tempDirectory('jig-presets-home-');
-    const coreBuilder = new URL('../main.ts', import.meta.url).href;
+    const composedBuilder = new URL('../../composition/main.ts', import.meta.url).href;
     const script = [
       `process.chdir(${JSON.stringify(repo.dir)});`,
-      `import { buildCli } from ${JSON.stringify(coreBuilder)};`,
-      `await buildCli().parseAsync(['presets'], { from: 'user' });`,
+      `import { buildJigCli } from ${JSON.stringify(composedBuilder)};`,
+      `await buildJigCli().parseAsync(['presets'], { from: 'user' });`,
     ].join('\n');
     const listPresets = () =>
       execa(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
@@ -53,6 +59,22 @@ describe('presets command', () => {
       });
     return { listPresets, repoRoot: await realpath(repo.dir) };
   }
+});
+
+describe('presets command handler', () => {
+  it("prints the listing's failure and exits with 1", async () => {
+    const failure = new ConfigInvalid({ message: faker.lorem.sentence() });
+    const listPresets = vi.fn<JigOperations['listPresets']>(async () => Result.err(failure));
+    const output = mock<FailureOutput>();
+    const program = new Command();
+    registerPresetsCommand(program, listPresets, output);
+
+    await program.parseAsync(['presets'], { from: 'user' });
+
+    expect(listPresets).toHaveBeenCalledOnce();
+    expect(output.printError).toHaveBeenCalledWith(failure.message);
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+  });
 });
 
 describe('describePresets', () => {

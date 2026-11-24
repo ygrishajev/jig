@@ -1,18 +1,19 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
+import type { Command } from 'commander';
 
-import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
-import { readRunStatus, type RunStatus } from '../../app/run-status.js';
+import type { JigOperations, RunStatus } from '../../app/api.js';
 import { runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { slicesInOrder } from '../../domain/slice.js';
 import { formatSummary } from '../../observers/metrics.js';
 import { configInputSchema, configOption } from '../config-option.js';
-import { withApp } from '../with-app.js';
-import { withErrorHandling } from '../with-error-handling.js';
+import { type FailureOutput, withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
 
-export function registerStatusCommand(program: Command): void {
+export function registerStatusCommand(
+  program: Command,
+  status: JigOperations['status'],
+  failureOutput?: FailureOutput,
+): void {
   program
     .command('status')
     .description('Show where a run is, without changing anything')
@@ -20,17 +21,18 @@ export function registerStatusCommand(program: Command): void {
     .addOption(configOption())
     .action(
       withErrorHandling(
-        withInput(configInputSchema.extend({ id: runIdSchema }), async ({ id, config }) => {
-          return withApp({ logFormat: defaultLogFormat(), config }, async (app) => {
-            const status = await readRunStatus(app, id);
-            if (status.isErr()) return Result.err(status.error);
-            console.log(describeRun(status.value));
-            return Result.ok();
+        withInput(statusInputSchema, async ({ id, config }) => {
+          const found = await status({ runId: id, configPath: config });
+          return found.map((run) => {
+            console.log(describeRun(run));
           });
         }),
+        failureOutput,
       ),
     );
 }
+
+const statusInputSchema = configInputSchema.extend({ id: runIdSchema });
 
 export function describeRun({ state, documents, metrics }: RunStatus): string {
   const slices = slicesInOrder(state.slices).map((slice) => {

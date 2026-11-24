@@ -33,6 +33,7 @@ import {
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
+import { realStatusCapabilities } from '../../tests/support/repository-sources.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
@@ -432,7 +433,7 @@ describe('runJig', () => {
     const exported = await readDocument(repo.dir, id, 'design-review.md');
     expect(exported).toBe(designReviewReport(report.state));
     for (const evidence of outstanding.evidence) expect(exported).toContain(evidence);
-    const status = (await readRunStatus(app, id)).unwrap();
+    const status = unwrap(await readRunStatus(realStatusCapabilities(repo.dir), { runId: id }));
     expect(status.state.blockedReason).toContain(outstanding.id);
     expect(status.documents.map((document) => document.name)).toContain('design-review.md');
   });

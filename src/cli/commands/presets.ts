@@ -1,24 +1,23 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
+import type { Command } from 'commander';
 
-import { defaultLogFormat } from '../../adapters/logging/create-logger.js';
-import { discoverPresets, type Preset } from '../../config/presets.js';
-import { withApp } from '../with-app.js';
-import { withErrorHandling } from '../with-error-handling.js';
+import type { JigOperations, Preset } from '../../app/api.js';
+import { type FailureOutput, withErrorHandling } from '../with-error-handling.js';
 
-export function registerPresetsCommand(program: Command): void {
+export function registerPresetsCommand(
+  program: Command,
+  listPresets: JigOperations['listPresets'],
+  failureOutput?: FailureOutput,
+): void {
   program
     .command('presets')
     .description('List the presets --preset can name, and where each is read from')
     .action(
       withErrorHandling(async () => {
-        return withApp({ logFormat: defaultLogFormat() }, async (app) => {
-          const presets = discoverPresets(app.cradle.presetSource);
-          if (presets.isErr()) return Result.err(presets.error);
-          console.log(describePresets(presets.value));
-          return Result.ok();
+        const presets = await listPresets();
+        return presets.map((listed) => {
+          console.log(describePresets(listed));
         });
-      }),
+      }, failureOutput),
     );
 }
 

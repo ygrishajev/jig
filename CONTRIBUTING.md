@@ -70,19 +70,19 @@ agent calls; it is excluded from `npm test` and `npm run validate`.
 Explore the [interactive architecture map](docs/architecture.html) for module relationships
 and run flows. Download and open it in a browser; GitHub displays HTML as source.
 
-| Directory          | Responsibility                                                        |
-| ------------------ | --------------------------------------------------------------------- |
-| `src/composition/` | The `jig` executable: composes the CLI and starts it.                 |
-| `src/cli/`         | Commands and input parsing.                                           |
-| `src/app/`         | Application lifecycle, workflow assembly, and container construction. |
-| `src/config/`      | Configuration schemas, defaults, presets, and policy.                 |
-| `src/domain/`      | State, validation, domain decisions, and business failures.           |
-| `src/failures/`    | Failure messages, panic unwrapping, and retry of `Result`s.           |
-| `src/flow/`        | Generic flow contracts, execution, and the step retry policy.         |
-| `src/steps/`       | Individual pipeline steps.                                            |
-| `src/ports/`       | Interfaces for external operations and their failures.                |
-| `src/adapters/`    | Git, containers, storage, config files, terminals, and telemetry.     |
-| `src/prompts/`     | Inputs sent to agents.                                                |
+| Directory          | Responsibility                                                      |
+| ------------------ | ------------------------------------------------------------------- |
+| `src/composition/` | The `jig` executable: composes the CLI and starts it.               |
+| `src/cli/`         | Commands and input parsing.                                         |
+| `src/app/`         | Public operations, lifecycle, workflow assembly, and the container. |
+| `src/config/`      | Configuration schemas, defaults, presets, and policy.               |
+| `src/domain/`      | State, validation, domain decisions, and business failures.         |
+| `src/failures/`    | Failure messages, panic unwrapping, and retry of `Result`s.         |
+| `src/flow/`        | Generic flow contracts, execution, and the step retry policy.       |
+| `src/steps/`       | Individual pipeline steps.                                          |
+| `src/ports/`       | Interfaces for external operations and their failures.              |
+| `src/adapters/`    | Git, containers, storage, config files, terminals, and telemetry.   |
+| `src/prompts/`     | Inputs sent to agents.                                              |
 
 Config owns policy and defaults, including the step retry count and delay that resolve into
 `RunSettings`; domain owns `RunSettings` and the rules and stopping caps that read it. Settings
@@ -91,8 +91,9 @@ defaults and update merging, and `src/adapters/filesystem/config-source.ts` reso
 moves its raw JSON. Presets cross the `PresetSource` contract in `src/config/preset-source.ts`:
 `src/adapters/filesystem/preset-source.ts` orders the preset directories and yields candidates
 lazily, while config skips invalid names, lets the first candidate of a name win, validates it and
-merges whole roles. The CLI captures the process environment, working directory and home directory
-before config parses them. `npm run lint:dependencies` allows production config to import only
+merges whole roles. The process environment, working directory and home directory are captured at
+the process edge before config parses them: by composition for `jig status` and `jig presets`, and
+by `src/cli/with-app.ts` for the other commands. `npm run lint:dependencies` allows production config to import only
 `src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
 exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
 built-ins, and domain, ports, config and prompts cannot import it.
@@ -104,6 +105,18 @@ composition import `src/cli/`. Production composition may import only compositio
 adapters, config, observers, ports, domain and failures, and no other production owner may import
 composition. Adapters cannot import app, flow, steps, cli or composition.
 A file under any directory not listed in the code map fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
+
+`src/app/api.ts` is the application's public entry. `jig status` and `jig presets` call its
+operations: `readRunStatus` and `listPresets` take the context composition captured and narrow
+capabilities composition supplies, and `prepareRepository` in `src/app/repository-preparation.ts`
+decides the order: repository root, environment, saved credentials, config, preset directories. The
+handlers in `src/cli/commands/status.ts` and `src/cli/commands/presets.ts` receive the bound
+operations as `JigOperations` and only parse input and format the result. Status reports its metrics
+and documents through the `RunRecords` contract in `src/ports/run-records.ts`, implemented by
+`src/adapters/local-store/local-run-records.ts`. `jig run`, `jig init`, `jig sandbox build` and
+`jig github implement` still open the container through `src/cli/with-app.ts`, which uses the same
+preparation; `src/app/container.ts` keeps constructing it until spike #49 records the construction
+mechanism.
 
 `jig github implement` is spread over the same owners. `src/cli/commands/github.ts` declares the
 command, parses its input and describes its outcome; `src/config/github-settings.ts` validates the

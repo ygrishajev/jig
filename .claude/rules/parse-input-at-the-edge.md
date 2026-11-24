@@ -19,7 +19,7 @@ paths:
 
 ## Target and current layout
 
-Today's app operations still take the container (`runJig(app: AwilixContainer<AppCradle>, input)`). [`docs/specs/application-boundaries.md`](../../docs/specs/application-boundaries.md) moves environment capture out of the CLI and gives it container-free operations; the examples show that target. Parsing stays at each edge either way.
+`readRunStatus` and `listPresets` in `src/app/api.ts` are container-free and take typed input (`{ runId: RunId }`); the other app operations still take the container (`runJig(app: AwilixContainer<AppCradle>, input)`). [`docs/specs/application-boundaries.md`](../../docs/specs/application-boundaries.md) moves environment capture out of the CLI and gives it container-free operations; the examples show that target. Parsing stays at each edge either way.
 
 ## Examples
 

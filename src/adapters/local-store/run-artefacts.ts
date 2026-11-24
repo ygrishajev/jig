@@ -8,15 +8,16 @@ import { designReviewReport } from '../../domain/design-review-report.js';
 import { type InvocationStatus, outcomeIsComplete } from '../../domain/invocation-status.js';
 import type { RunId } from '../../domain/run-id.js';
 import { type RunPhase, type RunState, runStopReason } from '../../domain/run-state.js';
-import { formatSummary, type MetricsSummary } from '../../observers/metrics.js';
+import { formatSummary } from '../../observers/metrics.js';
 import type { LocalStateUnwritable } from '../../ports/local-state.js';
+import {
+  type MetricsSummary,
+  RUN_DOCUMENTS,
+  type RunDocument,
+  type RunDocumentFile,
+} from '../../ports/run-records.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
-
-export interface RunDocumentFile {
-  name: RunDocument;
-  path: string;
-}
 
 interface RunResult {
   runId: RunId;
@@ -47,7 +48,7 @@ export class RunArtefacts {
         writeOrRemove(path.join(directory, name), contents);
       await write('result.json', `${JSON.stringify(resultFor(state, status, metrics), null, 2)}\n`);
       const contents = documentContents(state, metrics);
-      for (const name of DOCUMENTS) await write(name, contents[name]);
+      for (const name of RUN_DOCUMENTS) await write(name, contents[name]);
     });
   }
 
@@ -59,7 +60,7 @@ export class RunArtefacts {
   /** The documents this machine holds for the run; a run that has not produced one has no file. */
   documents(runId: RunId): RunDocumentFile[] {
     const directory = stateDirectory(this.repoRoot, runId);
-    return DOCUMENTS.map((name) => ({ name, path: path.join(directory, name) })).filter(
+    return RUN_DOCUMENTS.map((name) => ({ name, path: path.join(directory, name) })).filter(
       (document) => existsSync(document.path),
     );
   }
@@ -102,8 +103,3 @@ function pullRequestDescription(state: RunState, metrics: MetricsSummary): strin
   const footer = `<sub>jig run ${state.runId}: ${formatSummary(metrics)}</sub>`;
   return `${state.prDescription}\n\n---\n${footer}\n`;
 }
-
-/** The markdown a run leaves for a person to read, in the order `jig status` lists them. */
-const DOCUMENTS = ['design.md', 'plan.md', 'design-review.md', 'PR_DESCRIPTION.md'] as const;
-
-export type RunDocument = (typeof DOCUMENTS)[number];

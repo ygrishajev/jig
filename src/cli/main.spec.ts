@@ -1,11 +1,13 @@
 import { execa } from 'execa';
 import { describe, expect, it } from 'vitest';
+import { mock } from 'vitest-mock-extended';
 
+import type { JigOperations } from '../app/api.js';
 import { buildCli, packageVersion } from './main.js';
 
 describe('buildCli', () => {
   it('composes the core commands without the GitHub command and reports the package version', () => {
-    const program = buildCli();
+    const program = buildCli(mock<JigOperations>());
     expect(program.commands.map((command) => command.name())).toContain('run');
     expect(program.commands.map((command) => command.name())).not.toContain('github');
     expect(program.version()).toBe(packageVersion());
@@ -28,7 +30,7 @@ describe('buildCli', () => {
     const coreBuilder = new URL('./main.ts', import.meta.url).href;
     const script = [
       `import { buildCli } from ${JSON.stringify(coreBuilder)};`,
-      `await buildCli().parseAsync(['run', '--help'], { from: 'user' });`,
+      `await buildCli({}).parseAsync(['run', '--help'], { from: 'user' });`,
     ].join('\n');
     return {
       printRunHelp: () =>

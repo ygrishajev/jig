@@ -1,27 +1,23 @@
 import { faker } from '@faker-js/faker';
-import { asValue } from 'awilix';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   aDesignFinding,
-  aJigConfig,
   aRunBlockedByDesignReview,
   aRunState,
   aSlice,
   runId,
 } from '../../tests/support/builders.js';
+import { InMemoryConfigSource } from '../../tests/support/fakes.js';
+import { realStatusCapabilities } from '../../tests/support/repository-sources.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
-import { unwrap } from '../../tests/support/unwrap.js';
-import { configDestination } from '../adapters/filesystem/config-source.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
-import { parseEnvironment } from '../config/environment.js';
 import type { RunId } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
-import { createAppContainer } from './container.js';
 import { RunRequestInvalid } from './errors.js';
 import { readRunStatus } from './run-status.js';
 
@@ -88,19 +84,11 @@ describe('readRunStatus', () => {
   async function setup() {
     const { cloneOf } = await createRemote();
     const statusIn = async (repoRoot: string, runStores: string[], id: RunId) => {
-      const app = createAppContainer({
-        repoRoot,
-        configDestination: configDestination(repoRoot),
-        logFormat: 'json',
-        logLevel: 'silent',
-        environment: unwrap(parseEnvironment({}, faker.system.directoryPath())),
-        config: aJigConfig(),
-      });
-      onTestFinished(() => app.dispose());
-      app.register({
-        config: asValue(aJigConfig({ runStores })),
-      });
-      return readRunStatus(app, id);
+      const configSource = new InMemoryConfigSource({ json: { runStores } });
+      return readRunStatus(
+        realStatusCapabilities(repoRoot, { configSourceFor: () => configSource }),
+        { runId: id },
+      );
     };
     return { cloneOf, statusIn };
   }

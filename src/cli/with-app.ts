@@ -17,10 +17,13 @@ import type { LogFormat } from '../adapters/logging/create-logger.js';
 import { askForPreset, type PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import { processStandardInput, type StandardInput } from '../adapters/terminal/standard-input.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
+import {
+  prepareRepository,
+  type RepositoryPreparationFailure,
+  type RepositorySources,
+} from '../app/repository-preparation.js';
 import type { ConfigSource } from '../config/config-source.js';
-import { parseEnvironment, withCredentials } from '../config/environment.js';
 import { ConfigInvalid } from '../config/errors.js';
-import { loadConfig } from '../config/load-config.js';
 import type { PresetSource } from '../config/preset-source.js';
 import {
   configWithPreset,
@@ -28,8 +31,6 @@ import {
   type Preset,
   type PresetName,
 } from '../config/presets.js';
-import type { RepositoryInvalid } from '../ports/git-failures.js';
-import type { LocalPreparationFailed } from '../ports/local-state.js';
 import type { PresetSelection } from './config-option.js';
 
 /** Where the CLI was started, what it was started with, and who answers its questions; the only reads of `process`. */
@@ -52,8 +53,8 @@ export interface AppOptions {
   preset?: PresetSelection;
 }
 
-/** Why the app could not open: the repository, the environment, the credentials file or the config. */
-export type AppOpenFailure = RepositoryInvalid | ConfigInvalid | LocalPreparationFailed;
+/** Why the app could not open: the repository, the environment, the credentials file, the config or the preset. */
+export type AppOpenFailure = RepositoryPreparationFailure;
 
 /** Runs a command against the repository in the working directory, then releases what it opened. */
 export async function withApp<T, E extends { message: string }>(
@@ -85,32 +86,22 @@ export function processInvocation(): Invocation {
 
 function openApp(
   { logFormat, config: configPath, preset }: AppOptions,
-  {
-    cwd,
-    environment,
-    fallbackHomeDirectory,
-    askForPreset: ask,
-    createAppContainer: createApp,
-    configSourceAt,
-    presetSourceAt,
-  }: Invocation,
+  invocation: Invocation,
 ): Promise<Result<AwilixContainer<AppCradle>, AppOpenFailure>> {
   return Result.gen(async function* () {
-    yield* Result.await(ensureRepositoryRoot(cwd));
-    const parsedEnvironment = yield* parseEnvironment(environment, fallbackHomeDirectory);
-    const savedCredentials = yield* readCredentialsFile(cwd);
-    const jigEnvironment = withCredentials(parsedEnvironment, savedCredentials);
-    const destination = configDestination(cwd, configPath);
-    const configSource = configSourceAt(destination);
-    const projectConfig = yield* loadConfig(configSource);
-    const presetSource = presetSourceAt({ repoRoot: cwd, ...jigEnvironment });
-    const presetName = yield* Result.await(selectedPreset(preset, presetSource, ask));
-    const config = yield* configWithPreset(projectConfig, presetSource, presetName);
-    const app = createApp({
-      repoRoot: cwd,
+    const prepared = yield* Result.await(
+      prepareRepository(invocation, repositorySourcesOf(invocation), configPath),
+    );
+    const { repoRoot, environment, configSource, presetSource } = prepared;
+    const presetName = yield* Result.await(
+      selectedPreset(preset, presetSource, invocation.askForPreset),
+    );
+    const config = yield* configWithPreset(prepared.config, presetSource, presetName);
+    const app = invocation.createAppContainer({
+      repoRoot,
       logFormat,
-      environment: jigEnvironment,
-      configDestination: destination,
+      environment,
+      configDestination: configDestination(repoRoot, configPath),
       configSource,
       config,
       presetSource,
@@ -120,6 +111,16 @@ function openApp(
     }
     return Result.ok(app);
   });
+}
+
+function repositorySourcesOf({ configSourceAt, presetSourceAt }: Invocation): RepositorySources {
+  return {
+    ensureRepositoryRoot,
+    readSavedCredentials: readCredentialsFile,
+    configSourceFor: (repoRoot, configPath) =>
+      configSourceAt(configDestination(repoRoot, configPath)),
+    presetSourceFor: presetSourceAt,
+  };
 }
 
 function selectedPreset(
