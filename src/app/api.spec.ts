@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { Result } from 'better-result';
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
@@ -59,13 +59,12 @@ describe('application API', () => {
       expect(sources.configSourceFor).toHaveBeenCalledWith(repoRoot, configPath);
     });
 
-    it('refuses a directory the repository check refuses before reading anything from it', async () => {
-      const refusal = new RepositoryInvalid({ message: faker.lorem.sentence() });
-      const { status, sources, records } = await setup({ repository: Result.err(refusal) });
+    it('refuses a directory below the repository root before reading anything from it', async () => {
+      const { status, sources, records } = await setup({ startInSubdirectory: true });
 
       const result = await status({ runId: aRunState().runId });
 
-      expect(result.isErr() && result.error).toBe(refusal);
+      expect(result.isErr() && result.error).toBeInstanceOf(RepositoryInvalid);
       expect(sources.readSavedCredentials).not.toHaveBeenCalled();
       expect(sources.configSourceFor).not.toHaveBeenCalled();
       expect(records.metricsSummary).not.toHaveBeenCalled();
@@ -148,13 +147,13 @@ describe('application API', () => {
       expect(presetSource.listings).toBe(0);
     });
 
-    it('refuses a directory the repository check refuses before looking for presets', async () => {
-      const refusal = new RepositoryInvalid({ message: faker.lorem.sentence() });
-      const { presets, sources } = await setup({ repository: Result.err(refusal) });
+    it('refuses a directory below the repository root before looking for presets', async () => {
+      const { presets, sources } = await setup({ startInSubdirectory: true });
 
       const result = await presets();
 
-      expect(result.isErr() && result.error).toBe(refusal);
+      expect(result.isErr() && result.error).toBeInstanceOf(RepositoryInvalid);
+      expect(sources.configSourceFor).not.toHaveBeenCalled();
       expect(sources.presetSourceFor).not.toHaveBeenCalled();
     });
   });
@@ -162,7 +161,7 @@ describe('application API', () => {
   async function setup(
     input: {
       environment?: Record<string, string>;
-      repository?: Result<void, RepositoryInvalid>;
+      startInSubdirectory?: boolean;
       savedCredentials?: ReturnType<RepositorySources['readSavedCredentials']>;
       configSource?: InMemoryConfigSource;
       presetSource?: InMemoryPresetSource;
@@ -172,9 +171,7 @@ describe('application API', () => {
     const real = realRepositorySources();
     const configSource = input.configSource ?? new InMemoryConfigSource({ json: {} });
     const sources = {
-      ensureRepositoryRoot: vi.fn(
-        input.repository ? async () => input.repository! : real.ensureRepositoryRoot,
-      ),
+      ensureRepositoryRoot: real.ensureRepositoryRoot,
       readSavedCredentials: vi.fn(
         input.savedCredentials ? () => input.savedCredentials! : real.readSavedCredentials,
       ),
@@ -185,7 +182,8 @@ describe('application API', () => {
       metricsSummary: vi.fn().mockReturnValue(Result.ok(aMetricsSummary())),
       documents: vi.fn().mockReturnValue([]),
     });
-    const context = () => operationContextIn(repo.dir, input.environment);
+    const cwd = input.startInSubdirectory ? await subdirectoryOf(repo.dir) : repo.dir;
+    const context = () => operationContextIn(cwd, input.environment);
     return {
       repoRoot: repo.dir,
       sources,
@@ -202,6 +200,12 @@ describe('application API', () => {
     };
   }
 });
+
+async function subdirectoryOf(directory: string) {
+  const subdirectory = path.join(directory, faker.word.noun());
+  await mkdir(subdirectory);
+  return subdirectory;
+}
 
 async function filesUnder(directory: string) {
   const entries = await readdir(directory, { recursive: true, withFileTypes: true });

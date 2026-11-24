@@ -782,8 +782,12 @@ requires its recorded decision before container-specific implementation is plann
 management is rewritten. No decision for #49 is recorded in this repository, and none was available
 to this slice, so none is assumed. Status and preset listing need no container: their operations
 are plain functions over supplied capabilities, and composition binds them with object literals.
-`src/app/container.ts`, `withRunScope`, `cli/with-app.ts`, `cli/app-action.ts` and the
-`awilix`-only-in-app lint rule are unchanged. Moving the remaining commands' construction into
+`cli/with-app.ts` now delegates its preparation — the repository check, the environment, the
+saved credentials and the config — to `prepareRepository` in `src/app/`, the same preparation
+status and preset listing run, and keeps only preset selection and container creation. How it
+constructs the container and how the command's lifecycle releases it are unchanged:
+`src/app/container.ts`, `withRunScope`, `cli/app-action.ts`, the container creation and disposal in
+`cli/with-app.ts` and the `awilix`-only-in-app lint rule stay as they were. Moving the remaining commands' construction into
 composition, keeping or removing Awilix, and restricting the CLI to `app/api.ts` in
 `.dependency-cruiser.mjs` stay gated on that decision and on the later command migrations.
 
