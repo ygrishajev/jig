@@ -1,17 +1,7 @@
-import { panic, Result } from 'better-result';
+import { Result } from 'better-result';
 
-import { getCurrentBranch } from '../../adapters/git/branch.js';
-import { GitOrchestrationStore } from '../../adapters/git/orchestration-ref.js';
-import { exactHead } from '../../adapters/git/run-history.js';
-import type { App } from '../../app/container.js';
-import { type WhileOwned, withPublicationOwnership } from '../../app/publication-ownership.js';
-import { runJig, type RunJigFailure, type RunReport } from '../../app/run-jig.js';
-import { openRunStore, type RunStoreSetupInvalid } from '../../app/run-stores.js';
-import { outcomeIsComplete } from '../../domain/invocation-status.js';
+import { outcomeIsComplete } from '../domain/invocation-status.js';
 import {
-  type AcceptedRequest,
-  acceptedRequest,
-  acceptRequest,
   commentMarker,
   commentReceipt,
   findingsCommentReceipt,
@@ -28,32 +18,31 @@ import {
   withPullRequest,
   withRefusal,
   withRefusalComment,
-} from '../../domain/orchestration.js';
-import type { RepositoryIdentity } from '../../domain/repository-identity.js';
-import { runIdFor } from '../../domain/run-id.js';
-import { runBranchFor, type RunState } from '../../domain/run-state.js';
-import type { GitCommandFailed } from '../../ports/git-failures.js';
+} from '../domain/orchestration.js';
+import type { RepositoryIdentity } from '../domain/repository-identity.js';
+import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
+import {
+  type GithubFailure,
+  type GithubPort,
+  GithubRefused,
+  type OpenPullRequest,
+} from '../ports/github.js';
 import type {
   PublicationInProgress,
+  PublicationOwnership,
   ReceiptStore,
   ReceiptStoreFailure,
-} from '../../ports/publication-receipts.js';
-import type { RunStoreFailure } from '../../ports/run-store.js';
-import {
-  BaseBranchMismatch,
-  type GithubError,
-  GithubRefused,
-  type GithubSetupInvalid,
-} from './errors.js';
-import { findingsCommentBody, stuckReason } from './findings-comment.js';
-import type { GithubFailure, GithubPort, OpenPullRequest } from './github-port.js';
-import { requestText } from './request-snapshot.js';
-import {
-  hasWorkBeyondStart,
-  inspectRunBranch,
-  type PublicationFailure as BranchPublicationFailure,
-  publishRunBranch,
-} from './run-branch-publication.js';
+} from '../ports/publication-receipts.js';
+import type { CodeCheckpoint, RunBranches, RunBranchFailure } from '../ports/run-branches.js';
+import type { RunStoreFailure } from '../ports/run-store.js';
+import type { App } from './container.js';
+import { BaseBranchMismatch } from './errors.js';
+import { findingsCommentBody } from './findings-comment.js';
+import { pullRequestFor, refusalCommentBody, statusCommentBody } from './publication-content.js';
+import { type WhileOwned, withPublicationOwnership } from './publication-ownership.js';
+import { acceptedRequestFor } from './request-snapshot.js';
+import { runJig, type RunJigFailure, type RunReport } from './run-jig.js';
+import { openRunStore, type RunStoreSetupInvalid } from './run-stores.js';
 
 export type IssueOutcome =
   | { kind: 'pullRequest'; url: string; reused: boolean }
@@ -61,7 +50,29 @@ export type IssueOutcome =
   | { kind: 'commented'; outcome: RunReport['status']; url: string }
   | { kind: 'refused'; paths: string[]; url: string };
 
-type IssueFailure = RunJigFailure | Exclude<GithubError, GithubSetupInvalid>;
+/**
+ * What issue implementation needs besides the run itself: the GitHub API, and the receipts and run
+ * branches of the clone it runs in, opened only once the issue flow reaches them.
+ */
+export interface IssueCapabilities {
+  github: GithubPort;
+  publicationAt(repoRoot: string): IssuePublication;
+}
+
+/** The shared receipts and leases, and the guarded run branches, of one clone. */
+export interface IssuePublication {
+  receipts: ReceiptStore & PublicationOwnership;
+  runBranches: RunBranches;
+}
+
+export type IssueFailure =
+  | RunJigFailure
+  | GithubFailure
+  | ReceiptStoreFailure
+  | PublicationInProgress
+  | RunBranchFailure
+  | RepositoryInvalid
+  | BaseBranchMismatch;
 
 /**
  * Where the accepted request is published: the issue, its key in the receipts, its default branch,
@@ -77,42 +88,46 @@ interface IssueTarget {
   whileOwned: WhileOwned;
 }
 
-type CodeCheckpoint = Pick<RunState, 'startingCommit' | 'codeRevision'>;
-
 type Publication =
   { kind: 'comment'; revision?: string } | { kind: 'ready' | 'draft'; revision: string };
 
 type PublicationFailure = GithubFailure | ReceiptStoreFailure | PublicationInProgress;
 
+/**
+ * Implements issue `issueNumber` as one run on the default branch: accepts the issue once, runs
+ * its snapshot through `runJig` with its state required on the remote and its code held back, and
+ * publishes the outcome under the publication lease.
+ */
 export function implementIssue(
   app: App,
-  github: GithubPort,
+  { github, publicationAt }: IssueCapabilities,
   repository: RepositoryIdentity,
   issueNumber: number,
 ): Promise<Result<IssueOutcome, IssueFailure>> {
   return Result.gen(async function* () {
-    app.cradle.logger.info(
+    const { logger, repoRoot } = app.cradle;
+    logger.info(
       { event: 'githubIssuePreparationStarted', issueNumber, repository },
       `Checking GitHub issue #${issueNumber} in ${repository.owner}/${repository.repo}`,
     );
+    const { receipts, runBranches } = publicationAt(repoRoot);
     const base = yield* Result.await(github.getDefaultBranch(repository));
-    const current = yield* Result.await(getCurrentBranch(app.cradle.repoRoot));
+    const current = yield* Result.await(runBranches.checkedOutBranch());
     if (current !== base)
       return Result.err(
         new BaseBranchMismatch({
           message: `Check out the default branch "${base}" before implementing an issue (currently "${current}").`,
         }),
       );
-    const store = new GitOrchestrationStore(app.cradle.repoRoot);
     const key = `${repository.owner}/${repository.repo}#${issueNumber}`;
-    app.cradle.logger.info(
+    logger.info(
       { event: 'githubIssueRequestStarted', issueNumber },
       `Loading accepted request or fetching GitHub issue #${issueNumber}`,
     );
     const accepted = yield* Result.await(
-      acceptedRequestFor(store, github, repository, key, issueNumber),
+      acceptedRequestFor(receipts, { github, repository, issueNumber, key }),
     );
-    app.cradle.logger.info(
+    logger.info(
       { event: 'githubIssueRequestAccepted', issueNumber, runId: accepted.runId },
       `GitHub issue #${issueNumber} is ready as run ${accepted.runId}`,
     );
@@ -123,7 +138,7 @@ export function implementIssue(
         requiredStores: REQUIRED_STORES,
       }),
     );
-    app.cradle.logger.info(
+    logger.info(
       {
         event: 'githubIssueRunFinished',
         issueNumber,
@@ -133,36 +148,9 @@ export function implementIssue(
       `Run ${accepted.runId} finished ${report.status}; publishing the GitHub outcome`,
     );
     const target = { github, repository, issueNumber, key, base, title: accepted.title };
-    return withPublicationOwnership(store, key, app.cradle.logger, (whileOwned) =>
-      publishOutcome(app, store, { ...target, whileOwned }, report),
+    return withPublicationOwnership(receipts, key, logger, (whileOwned) =>
+      publishOutcome(app, { receipts, runBranches }, { ...target, whileOwned }, report),
     );
-  });
-}
-
-function acceptedRequestFor(
-  store: ReceiptStore,
-  github: GithubPort,
-  repository: RepositoryIdentity,
-  key: string,
-  issueNumber: number,
-): Promise<Result<AcceptedRequest, GithubFailure | ReceiptStoreFailure>> {
-  return Result.gen(async function* () {
-    const existing = yield* Result.await(store.read());
-    const accepted = acceptedRequest(existing, key);
-    if (accepted) return Result.ok(accepted);
-    const issue = yield* Result.await(github.getIssue(repository, issueNumber));
-    const state = yield* Result.await(
-      store.update((state) =>
-        acceptRequest(state, key, {
-          runId: runIdFor({ name: issue.title, key }),
-          title: issue.title,
-          text: requestText(issue),
-        }),
-      ),
-    );
-    const request: AcceptedRequest | undefined = acceptedRequest(state, key);
-    if (!request) panic('Accepting a request must preserve its snapshot');
-    return Result.ok(request);
   });
 }
 
@@ -173,24 +161,23 @@ const REQUIRED_STORES = ['git-remote'];
  * Publishes what the run left: a ready PR for a completed run with approved changes, a draft PR
  * with a findings comment for a stuck run that committed work, a refusal for one that changes a
  * workflow, and a status comment otherwise. Every run with code is inspected before any receipt is
- * reused, and its code reaches the remote only through `publishRunBranch`.
+ * reused, and its code reaches the remote only through `RunBranches.publish`.
  */
 function publishOutcome(
   app: App,
-  store: ReceiptStore,
+  { receipts: store, runBranches }: IssuePublication,
   target: IssueTarget,
   report: RunReport,
 ): Promise<Result<IssueOutcome, IssueFailure>> {
   return Result.gen(async function* () {
-    const { repoRoot } = app.cradle;
-    const checkpoint = yield* Result.await(codeCheckpointOf(app, report));
-    const publication = yield* Result.await(publicationFor(repoRoot, report, checkpoint));
+    const checkpoint = yield* Result.await(codeCheckpointOf(app, runBranches, report));
+    const publication = yield* Result.await(publicationFor(runBranches, report, checkpoint));
     if (publication.kind === 'comment')
-      return publishStatus(repoRoot, store, target, { report, revision: publication.revision });
+      return publishStatus(runBranches, store, target, { report, revision: publication.revision });
     const { revision } = publication;
     const pushed = yield* Result.await(
       target.whileOwned(() =>
-        publishRunBranch(repoRoot, {
+        runBranches.publish({
           runId: report.state.runId,
           revision,
           defaultBranch: target.base,
@@ -201,7 +188,11 @@ function publishOutcome(
     if (pushed.kind === 'refused')
       return refuse(store, target, { runId: report.state.runId, revision, paths: pushed.paths });
     if (pushed.kind === 'unchanged') return publishComment(store, target, { report, revision });
-    const pullRequest = pullRequestFor(report, target, publication.kind === 'draft');
+    const pullRequest = pullRequestFor(report, {
+      title: target.title,
+      issueNumber: target.issueNumber,
+      draft: publication.kind === 'draft',
+    });
     if (publication.kind === 'ready') return publishReady(store, target, pullRequest);
     return publishDraft(store, target, {
       report,
@@ -219,17 +210,16 @@ function publishOutcome(
  */
 function codeCheckpointOf(
   app: App,
+  runBranches: RunBranches,
   report: RunReport,
-): Promise<Result<CodeCheckpoint, RunStoreSetupInvalid | RunStoreFailure>> {
+): Promise<Result<CodeCheckpoint, RunStoreSetupInvalid | RunStoreFailure | GitCommandFailed>> {
   return Result.gen(async function* () {
     const { runId } = report.state;
     const store = yield* Result.await(openRunStore(app.cradle, REQUIRED_STORES));
     const saved = yield* Result.await(store.peek(runId));
     if (saved?.codeRevision)
       return Result.ok({ startingCommit: saved.startingCommit, codeRevision: saved.codeRevision });
-    const head = yield* Result.await(
-      exactHead(app.cradle.repoRoot, `refs/heads/${runBranchFor(runId)}`),
-    );
+    const head = yield* Result.await(runBranches.head(runId));
     return Result.ok({ codeRevision: head });
   });
 }
@@ -239,7 +229,7 @@ function codeCheckpointOf(
  * started as a draft; every other run, and one with no code, is reported in an issue comment.
  */
 function publicationFor(
-  repoRoot: string,
+  runBranches: RunBranches,
   report: RunReport,
   checkpoint: CodeCheckpoint,
 ): Promise<Result<Publication, GitCommandFailed>> {
@@ -249,22 +239,22 @@ function publicationFor(
     if (outcomeIsComplete(report.status))
       return Result.ok<Publication>({ kind: 'ready', revision });
     if (report.status !== 'stuck') return Result.ok<Publication>({ kind: 'comment', revision });
-    const committed = yield* Result.await(hasWorkBeyondStart(repoRoot, checkpoint));
+    const committed = yield* Result.await(runBranches.hasWorkBeyondStart(checkpoint));
     return Result.ok<Publication>({ kind: committed ? 'draft' : 'comment', revision });
   });
 }
 
 function publishStatus(
-  repoRoot: string,
+  runBranches: RunBranches,
   store: ReceiptStore,
   target: IssueTarget,
   { report, revision }: { report: RunReport; revision?: string },
-): Promise<Result<IssueOutcome, BranchPublicationFailure | PublicationFailure>> {
+): Promise<Result<IssueOutcome, RunBranchFailure | PublicationFailure>> {
   return Result.gen(async function* () {
     if (!revision) return publishComment(store, target, { report });
     const { runId } = report.state;
     const inspection = yield* Result.await(
-      inspectRunBranch(repoRoot, { runId, revision, defaultBranch: target.base }),
+      runBranches.inspect({ runId, revision, defaultBranch: target.base }),
     );
     if (inspection.kind === 'refused')
       return refuse(store, target, { runId, revision, paths: inspection.paths });
@@ -328,24 +318,6 @@ function commentOnce(
   });
 }
 
-function statusCommentBody(report: RunReport): string {
-  return `Run ${report.state.runId}: ${report.status}. ${statusCommentReason(report)}`;
-}
-
-function statusCommentReason(report: RunReport): string {
-  switch (report.status) {
-    case 'blocked':
-      return report.reason;
-    case 'halted':
-      return 'Paused at the design checkpoint.';
-    case 'stuck':
-      return stuckReason(report.state);
-    case 'completed':
-    case 'done':
-      return 'No changes were committed.';
-  }
-}
-
 /** Records the refusal before announcing it, so a crash in between still never publishes the code. */
 function refuse(
   store: ReceiptStore,
@@ -367,25 +339,6 @@ function refuse(
     );
     return Result.ok<IssueOutcome>({ kind: 'refused', paths: recorded.paths, url });
   });
-}
-
-function refusalCommentBody({ runId, revision, paths }: Refusal): string {
-  const listed = paths.map((path) => `- \`${path}\``).join('\n');
-  return `Run ${runId} was not published: revision ${revision} changes GitHub workflows, which jig does not push for review.\n\n${listed}`;
-}
-
-function pullRequestFor(
-  report: RunReport,
-  { title, issueNumber }: IssueTarget,
-  draft: boolean,
-): OpenPullRequest {
-  return {
-    head: runBranchFor(report.state.runId),
-    base: report.state.baseBranch,
-    title,
-    body: `${report.state.prDescription ?? ''}\n\nCloses #${issueNumber}`,
-    draft,
-  };
 }
 
 function publishReady(

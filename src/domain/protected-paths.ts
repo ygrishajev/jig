@@ -50,3 +50,11 @@ const protectedMatchers = protectedPathPatterns.map(({ pattern, flaggedWhen }) =
   flaggedWhen,
   isMatch: picomatch(pattern, { dot: true }),
 }));
+
+/** The paths among `paths` jig never pushes for review: GitHub would run them before anyone read them. */
+export function unpublishablePaths(paths: readonly string[]): string[] {
+  return paths.filter((path) => path.startsWith(WORKFLOW_DIRECTORY));
+}
+
+/** GitHub runs workflows from this directory only. */
+const WORKFLOW_DIRECTORY = '.github/workflows/';

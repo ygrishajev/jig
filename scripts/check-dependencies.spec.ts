@@ -14,7 +14,6 @@ const productionOwnersOutsideFailures = [
   'config',
   'domain',
   'flow',
-  'integrations',
   'observers',
   'ports',
   'prompts',
@@ -184,12 +183,10 @@ describe('dependency checking command', () => {
   });
 
   it.each(
-    ['adapters', 'app', 'cli', 'composition', 'flow', 'integrations', 'observers', 'steps'].flatMap(
-      (from) => [
-        [from, "import { b } from '../../failures/b.js'; export const a = b;"],
-        [from, "import type { B } from '../../failures/b.js'; export type A = B;"],
-      ],
-    ),
+    ['adapters', 'app', 'cli', 'composition', 'flow', 'observers', 'steps'].flatMap((from) => [
+      [from, "import { b } from '../../failures/b.js'; export const a = b;"],
+      [from, "import type { B } from '../../failures/b.js'; export type A = B;"],
+    ]),
   )('accepts %s importing failures: %s', async (from, source) => {
     const { run } = await setup({
       [`${from}/nested/a.ts`]: source,
@@ -262,23 +259,18 @@ describe('dependency checking command', () => {
     },
   );
 
-  it('accepts composition, same-owner, transitional, spec and tooling access to cli', async () => {
+  it('accepts composition, same-owner, spec and tooling access to cli', async () => {
     const { cwd, run } = await setup({
       'composition/nested/a.ts': [
         ...everyImportForm('../../cli/b.js'),
         "import { c } from '../c.js';",
         "import { b as failure } from '../../failures/b.js';",
-        "import { b as command } from '../../integrations/github/command.js';",
-        "import type { B as Port } from '../../integrations/github/github-port.js';",
-        'export const composed = [c, failure, command];',
-        'export type Composed = Port;',
+        'export const composed = [c, failure];',
       ].join('\n'),
       'composition/c.ts': 'export const c = 1;',
       'cli/b.ts': sharedTarget,
       'cli/nested/a.ts': everyImportForm('../b.js').join('\n'),
       'failures/b.ts': sharedTarget,
-      'integrations/github/command.ts': everyImportForm('../../cli/b.js').join('\n'),
-      'integrations/github/github-port.ts': sharedTarget,
       'app/a.spec.ts': [
         "import { b } from '../cli/b.js';",
         "import { c } from '../composition/c.js';",
@@ -304,8 +296,6 @@ describe('dependency checking command', () => {
             '../../cli/b.js',
           ]),
         ),
-        'integrations/github/implement-issue.ts': '../../cli/b.js',
-        'integrations/github/nested/command.ts': '../../../cli/b.js',
         'steps/deep/nested/a.ts': '../../../flow/../cli/b.js',
       };
       const { run } = await setup({
@@ -332,7 +322,6 @@ describe('dependency checking command', () => {
             '../../composition/b.js',
           ]),
         ),
-        'integrations/github/command.ts': '../../composition/b.js',
         'steps/deep/nested/a.ts': '../../../flow/../composition/b.js',
       };
       const { run } = await setup({
@@ -352,14 +341,9 @@ describe('dependency checking command', () => {
   it.each(importFormNames)(
     'rejects composition importing sources outside its allowlist through %s',
     async (form) => {
-      const targets = [
-        ...ownersOtherThan(...permittedCompositionDependencies, 'integrations').map(
-          (owner) => `${owner}/b.ts`,
-        ),
-        'integrations/b.ts',
-        'integrations/github/octokit-github.ts',
-        'integrations/github/nested/command.ts',
-      ];
+      const targets = ownersOtherThan(...permittedCompositionDependencies).map(
+        (owner) => `${owner}/b.ts`,
+      );
       const importers = Object.fromEntries(
         targets.map((target, index) => [
           `composition/nested/a${index}.ts`,
@@ -393,7 +377,7 @@ describe('dependency checking command', () => {
     },
   );
 
-  it.each(['unknown/a.ts', 'stray.ts', 'app-other/a.ts'])(
+  it.each(['unknown/a.ts', 'stray.ts', 'app-other/a.ts', 'integrations/github/command.ts'])(
     'rejects unowned production file %s',
     async (file) => {
       const { run } = await setup({ [file]: 'export const a = 1;' });
@@ -415,7 +399,7 @@ describe('dependency checking command', () => {
     expect(result.all).not.toContain('unowned-production-file: src/unknown/ignored.spec.ts');
   });
 
-  it('scans all thirteen owners including disconnected files', async () => {
+  it('scans all twelve owners including disconnected files', async () => {
     const owners = [...productionOwnersOutsideFailures, 'failures'];
     const { run } = await setup(
       Object.fromEntries(owners.map((owner) => [`${owner}/a.ts`, "import './missing.js';"])),
@@ -459,7 +443,7 @@ describe('dependency checking command', () => {
   }
 });
 
-/** The owners composition may import besides the two transitional GitHub sources. */
+/** The owners production composition may import. */
 const permittedCompositionDependencies = [
   'composition',
   'cli',

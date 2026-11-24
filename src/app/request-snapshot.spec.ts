@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { anIssue } from '../../../tests/support/fake-github.js';
+import { anIssue } from '../../tests/support/fake-github.js';
 import { requestText } from './request-snapshot.js';
 
 describe('requestText', () => {

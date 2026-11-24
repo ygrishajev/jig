@@ -1,7 +1,6 @@
-import type { Result } from 'better-result';
+import { type Result, TaggedError } from 'better-result';
 
-import type { RepositoryIdentity } from '../../domain/repository-identity.js';
-import type { GithubNotFound, GithubRefused, GithubUnavailable } from './errors.js';
+import type { RepositoryIdentity } from '../domain/repository-identity.js';
 
 export interface GithubPort {
   getIssue(repository: RepositoryIdentity, number: number): Promise<Result<Issue, GithubFailure>>;
@@ -50,3 +49,17 @@ export interface OpenPullRequest {
   body: string;
   draft: boolean;
 }
+
+/**
+ * Finds the `owner/repository` name the clone's origin gives GitHub, or `undefined` for an origin
+ * that is not on GitHub. The name is still unchecked; the GitHub settings decide whether it is one.
+ */
+export type GithubOriginDiscovery = (
+  repoRoot: string,
+) => Promise<Result<string | undefined, GithubSetupInvalid>>;
+
+export class GithubUnavailable extends TaggedError('GithubUnavailable')<{ message: string }> {}
+export class GithubRefused extends TaggedError('GithubRefused')<{ message: string }> {}
+export class GithubNotFound extends TaggedError('GithubNotFound')<{ message: string }> {}
+/** jig cannot reach the GitHub repository it is asked about: no token, or no repository to name. */
+export class GithubSetupInvalid extends TaggedError('GithubSetupInvalid')<{ message: string }> {}

@@ -1,10 +1,10 @@
-import type { CapturedOutput } from '../../domain/diagnostics.js';
+import type { CapturedOutput } from '../domain/diagnostics.js';
 import {
   type RunDiagnostics,
   runDiagnostics,
   type VerificationFailureDiagnostic,
-} from '../../domain/run-diagnostics.js';
-import { type RunState, runStopReason } from '../../domain/run-state.js';
+} from '../domain/run-diagnostics.js';
+import { type RunState, runStopReason } from '../domain/run-state.js';
 
 /**
  * The single PR-level comment a draft PR carries: why the run stopped and what is still

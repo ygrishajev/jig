@@ -139,14 +139,13 @@ svg text{font-family:var(--sans)}
       <tr><td>ports</td><td>External capability contracts and their failures</td><td>domain</td></tr>
       <tr><td>config</td><td>Configuration and environment schemas and defaults, run settings, provider policy, presets and scratch naming</td><td>domain</td></tr>
       <tr><td>observers</td><td>Events, metrics, logging and tracing observers</td><td>domain, failures, ports</td></tr>
-      <tr><td>adapters</td><td>Git, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, failures, observers, ports</td></tr>
+      <tr><td>adapters</td><td>Git, GitHub, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, failures, observers, ports</td></tr>
       <tr><td>flow</td><td>Generic flow contracts, engine and step retry policy</td><td>domain, failures, ports</td></tr>
       <tr><td>prompts</td><td>Agent request construction</td><td>domain</td></tr>
       <tr><td>steps</td><td>Individual workflow operations</td><td>domain, failures, flow, ports, prompts</td></tr>
-      <tr><td>app</td><td>Container construction and scopes, run lifecycle and concrete workflow assembly</td><td>adapters, config, domain, failures, flow, observers, ports, prompts, steps</td></tr>
-      <tr><td>cli</td><td>Core commands, input parsing and output</td><td>adapters, app, config, domain, failures, observers, ports</td></tr>
-      <tr><td>integrations</td><td>The GitHub command and forge orchestration</td><td>adapters, app, cli, domain, failures, ports</td></tr>
-      <tr><td>composition</td><td>The executable: composes the CLI, parses arguments when invoked and shuts down</td><td>cli, integrations</td></tr>
+      <tr><td>app</td><td>Container construction and scopes, run lifecycle, concrete workflow assembly and GitHub issue implementation</td><td>adapters, config, domain, failures, flow, observers, ports, prompts, steps</td></tr>
+      <tr><td>cli</td><td>Commands, including <code>github implement</code>, input parsing and output</td><td>adapters, app, config, domain, failures, observers, ports</td></tr>
+      <tr><td>composition</td><td>The executable: composes the CLI with its concrete GitHub dependencies, parses arguments when invoked and shuts down</td><td>adapters, cli</td></tr>
     </tbody>
   </table>
   <p><code>src/app/run-flow.ts</code> imports steps and flow contracts; steps import flow contracts.
@@ -172,9 +171,12 @@ svg text{font-family:var(--sans)}
     <code>process.env</code>, the working directory and the fallback home directory at the process edge
     and hands them to <code>parseEnvironment</code>. That handler still prepares the invocation and
     receives the container that <code>src/app/container.ts</code> builds; app still constructs adapters
-    and scopes. <code>src/composition/main.ts</code> owns the executable: it composes the CLI and starts it
-    only when it is the invoked script. Moving preparation into application operations and container
-    construction into composition is later work.</p>
+    and scopes. The GitHub command registers through the same <code>appAction</code> bridge, and
+    <code>implementIssue</code> takes the container only for its logger, repository root,
+    <code>runJig</code> and the run store that holds its checkpoint; every Git and GitHub operation it uses arrives as a capability.
+    <code>src/composition/main.ts</code> owns the executable: it composes the CLI, supplies the GitHub
+    command's concrete dependencies, and starts it only when it is the invoked script. Preparation
+    still runs in the CLI and container construction still in app.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
     of these owners. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
@@ -187,15 +189,12 @@ svg text{font-family:var(--sans)}
       <code>node:fs</code>, <code>node:path</code> or <code>node:child_process</code>, or other package
       such as <code>execa</code>. Config specs are exempt; adapters may import config.</li>
     <li>Production failures imports only <code>src/failures</code>, <code>better-result</code> and Node
-      built-ins. Only adapters, app, cli, composition, flow, integrations, observers and steps import it; domain,
+      built-ins. Only adapters, app, cli, composition, flow, observers and steps import it; domain,
       ports, config and prompts cannot.</li>
     <li>Adapters cannot import flow; flow cannot import app or steps.</li>
-    <li>Only composition imports cli across owners, except <code>src/integrations/github/command.ts</code>,
-      the GitHub command that still lives in integrations. No other owner imports composition.</li>
+    <li>Only composition imports cli across owners. No other owner imports composition.</li>
     <li>Production composition imports only composition, cli, app, adapters, config, observers, ports,
-      domain, failures, <code>src/integrations/github/command.ts</code> and <code>src/integrations/github/github-port.ts</code>.
-      Both GitHub exceptions last until the GitHub command moves to cli. Specs and tooling outside
-      <code>src/</code> may import CLI helpers.</li>
+      domain and failures. Specs and tooling outside <code>src/</code> may import CLI helpers.</li>
     <li>Layer restrictions include type imports. Resolution, package dependency and production-to-spec checks remain enabled.</li>
   </ul>
   <p>The checker reports cycle paths and the source imports involved.
@@ -574,14 +573,14 @@ svg text{font-family:var(--sans)}
     cont("c-kinds", "Failure kinds", "concept", 960, 250, 380, ["retry, block, fatal."], cCKinds)
   ], []);
 
-  var githubIntegration = flowCv("gh", "Integrations layer · GitHub", "src/integrations/github owns forge policy. src/composition/main.ts registers its command and imports only command.ts and github-port.ts from it; command.ts is the one CLI-owned command outside src/cli. Dependency Cruiser enforces both exceptions.", [
-    ["Registered by composition", "src/composition/main.ts: buildJigCli() adds the GitHub commands to buildCli().", "iface"],
-    ["Prepare command input", "command.ts parses --issue, reads token privately and resolves repository identity.", "iface"],
-    ["Check the base branch", "implement-issue.ts refuses a checkout other than GitHub's default branch.", "domain"],
-    ["Accept the request", "src/domain/orchestration.ts freezes the issue snapshot and deterministic run id.", "domain"],
+  var githubIntegration = flowCv("gh", "jig github implement", "Each part has its usual owner. src/cli/commands/github.ts declares the command; src/app/implement-issue.ts implements the issue through supplied capabilities; src/composition/main.ts supplies the Octokit and Git implementations lazily, so help needs no token or repository.", [
+    ["Registered by composition", "src/composition/main.ts: buildJigCli() adds the GitHub command to buildCli() with GithubPort, origin discovery, receipts and run branches it builds only when the command runs.", "iface"],
+    ["Prepare command input", "src/cli/commands/github.ts parses --issue; src/config/github-settings.ts takes the token privately, GITHUB_TOKEN before GH_TOKEN, and GITHUB_REPOSITORY before the origin that src/adapters/git/github-origin.ts reads.", "iface"],
+    ["Check the base branch", "implementIssue refuses a checkout other than GitHub's default branch.", "module"],
+    ["Accept the request", "src/app/request-snapshot.ts reuses the accepted snapshot or accepts the issue once; src/domain/orchestration.ts freezes it with a deterministic run id.", "domain"],
     ["Run the core pipeline", "runJig: merge disabled, git-remote required, code publication deferred; saves push state only, recording a code checkpoint.", "module"],
-    ["Inspect and publish code", "publishRunBranch inspects the exact checkpoint against the default-branch merge base, refuses workflow changes, pushes only that object ID under a lease.", "domain"],
-    ["Publish or reuse", "Under withPublicationOwnership (src/app/publication-ownership.ts), which renews the lease before each effect and releases it however publication ends: PR, refusal or status comment; markers recover comments; GithubPort hides the Octokit API adapter.", "ext"],
+    ["Inspect and publish code", "RunBranches (src/ports/run-branches.ts, implemented by src/adapters/git/run-branches.ts) inspects the exact checkpoint against the default-branch merge base, refuses the paths src/domain/protected-paths.ts marks unpublishable, and pushes only that object ID as a fast-forward under a lease.", "infra"],
+    ["Publish or reuse", "Under withPublicationOwnership (src/app/publication-ownership.ts), which renews the lease before each effect and releases it however publication ends: PR, refusal or status comment with content from src/app/publication-content.ts and src/app/findings-comment.ts; markers recover comments; GithubPort (src/ports/github.ts) hides the Octokit adapter in src/adapters/github.", "ext"],
     ["Record receipts", "GitOrchestrationStore (src/adapters/git/orchestration-ref.ts) implements the ReceiptStore and PublicationOwnership ports with RemoteRef leases at refs/jig/_orchestration; records refusals before commenting, and PR, status and refusal receipts.", "infra"]
   ], { h: 60, gap: 12 });
 
@@ -605,7 +604,7 @@ svg text{font-family:var(--sans)}
     leaf("x-docker", "Docker", "ext", 593, 650, 170, 109, ["images, buildx cache, npm"]),
     leaf("x-llm", "Agent APIs", "ext", 775, 650, 170, 109, ["Anthropic, OpenRouter, OpenAI — called from the sandbox"]),
     leaf("x-otel", "OTel collector", "ext", 957, 650, 170, 109, ["optional, OTLP/HTTP"]),
-    cont("i-github", "Integrations · GitHub", "iface", 1170, 186, 236, ["jig github implement --issue", "Registered by composition", "Snapshots and publication receipts"], githubIntegration),
+    cont("i-github", "jig github implement", "iface", 1170, 186, 236, ["jig github implement --issue", "Registered by composition", "Snapshots and publication receipts"], githubIntegration),
     cont("c-run", "How a run moves", "concept", 1170, 418, 190, ["A concept, not a module."], conceptCanvas)
   ], [
     { from: "i-github", to: "d-engine", route: [[1288, 338], [1288, 374], [178, 374], [178, 418]], label: "runJig, merge disabled", at: [1120, 368, "middle"] },
