@@ -332,8 +332,9 @@ builds the container for each command.
 
 `.dependency-cruiser.mjs` owns the production-owner list. Its
 `composition-imports-only-allowed-sources` rule lets production composition import only
-composition, cli, failures, `integrations/github/command.ts` and
-`integrations/github/github-port.ts`. `cli-is-imported-only-by-composition` lets no other
+composition, cli, app, adapters, config, observers, ports, domain, failures,
+`integrations/github/command.ts` and `integrations/github/github-port.ts`; flow, steps, prompts and
+every other integrations source stay out of reach. `cli-is-imported-only-by-composition` lets no other
 production owner import cli, except `integrations/github/command.ts`, the one CLI-owned command
 still outside `src/cli/`. `composition-is-imported-by-no-other-owner` keeps every other production
 owner from importing composition. Specs and tooling outside `src/`, such as `scripts/validate.ts`,

@@ -96,7 +96,7 @@ describe('dependency checking command', () => {
     ['flow', 'steps', 'flow-does-not-assemble-workflows'],
     ['app', 'cli', 'cli-is-imported-only-by-composition'],
     ['cli', 'composition', 'composition-is-imported-by-no-other-owner'],
-    ['composition', 'app', 'composition-imports-only-allowed-sources'],
+    ['composition', 'flow', 'composition-imports-only-allowed-sources'],
   ])('rejects type imports from %s to %s', async (from, to, rule) => {
     const specifier = path.posix.relative(from, `${to}/b.js`);
     const { run } = await setup({
@@ -250,6 +250,18 @@ describe('dependency checking command', () => {
     expect((await run()).exitCode).toBe(0);
   });
 
+  it.each(['app', 'adapters', 'config', 'observers', 'ports', 'domain'])(
+    'accepts composition importing %s through every import form',
+    async (owner) => {
+      const { run } = await setup({
+        'composition/nested/a.ts': everyImportForm(`../../${owner}/b.js`).join('\n'),
+        'composition/deep/nested/a.ts': everyImportForm(`../../../cli/../${owner}/b.js`).join('\n'),
+        [`${owner}/b.ts`]: sharedTarget,
+      });
+      expect((await run()).exitCode).toBe(0);
+    },
+  );
+
   it('accepts composition, same-owner, transitional, spec and tooling access to cli', async () => {
     const { cwd, run } = await setup({
       'composition/nested/a.ts': [
@@ -341,7 +353,7 @@ describe('dependency checking command', () => {
     'rejects composition importing sources outside its allowlist through %s',
     async (form) => {
       const targets = [
-        ...ownersOtherThan('cli', 'composition', 'failures', 'integrations').map(
+        ...ownersOtherThan(...permittedCompositionDependencies, 'integrations').map(
           (owner) => `${owner}/b.ts`,
         ),
         'integrations/b.ts',
@@ -356,7 +368,7 @@ describe('dependency checking command', () => {
       );
       const { run } = await setup({
         ...importersUsing(form, importers),
-        'composition/deep/nested/a.ts': importForms[form]('../../../cli/../app/b.js'),
+        'composition/deep/nested/a.ts': importForms[form]('../../../cli/../flow/b.js'),
         ...Object.fromEntries(targets.map((target) => [target, sharedTarget])),
       });
       const result = await run();
@@ -374,7 +386,7 @@ describe('dependency checking command', () => {
         violation(
           'composition-imports-only-allowed-sources',
           'composition/deep/nested/a.ts',
-          'app/b.ts',
+          'flow/b.ts',
         ),
       );
       expect(result.all).not.toContain('no-module-cycles');
@@ -446,6 +458,19 @@ describe('dependency checking command', () => {
     return { cwd, run: () => execa(process.execPath, [script], { cwd, all: true, reject: false }) };
   }
 });
+
+/** The owners composition may import besides the two transitional GitHub sources. */
+const permittedCompositionDependencies = [
+  'composition',
+  'cli',
+  'app',
+  'adapters',
+  'config',
+  'observers',
+  'ports',
+  'domain',
+  'failures',
+];
 
 const sharedTarget = 'export const b = 1; export type B = string;';
 

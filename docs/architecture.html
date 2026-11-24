@@ -192,8 +192,8 @@ svg text{font-family:var(--sans)}
     <li>Adapters cannot import flow; flow cannot import app or steps.</li>
     <li>Only composition imports cli across owners, except <code>src/integrations/github/command.ts</code>,
       the GitHub command that still lives in integrations. No other owner imports composition.</li>
-    <li>Production composition imports only composition, cli, failures,
-      <code>src/integrations/github/command.ts</code> and <code>src/integrations/github/github-port.ts</code>.
+    <li>Production composition imports only composition, cli, app, adapters, config, observers, ports,
+      domain, failures, <code>src/integrations/github/command.ts</code> and <code>src/integrations/github/github-port.ts</code>.
       Both GitHub exceptions last until the GitHub command moves to cli. Specs and tooling outside
       <code>src/</code> may import CLI helpers.</li>
     <li>Layer restrictions include type imports. Resolution, package dependency and production-to-spec checks remain enabled.</li>
