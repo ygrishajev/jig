@@ -214,9 +214,10 @@ svg text{font-family:var(--sans)}
       domain and failures. Specs and tooling outside <code>src/</code> may import CLI helpers.</li>
     <li>Only cli and composition import app across owners. Outside app and composition, specs
       included, app is reached only through <code>src/app/api.ts</code>; app and composition and
-      their specs may import any app module. The public entry imports no adapter or observer, and
-      production app has no type-only import of either, so no implementation type reaches a caller
-      through the operations' types. App's value imports of adapters and observers, the container
+      their specs may import any app module. The public entry imports no adapter or observer,
+      production app has no type-only import of either, and the declarations TypeScript emits from
+      the public entry reach neither, so a public type cannot name an implementation type however
+      app imports it. App's value imports of adapters and observers, the container
       construction in <code>src/app/container.ts</code>, wait for spike #49.</li>
     <li>Layer restrictions include type imports, re-exports and literal dynamic imports, through nested paths. Resolution, package dependency and production-to-spec checks remain enabled.</li>
   </ul>

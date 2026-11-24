@@ -531,6 +531,48 @@ describe('dependency checking command', () => {
     expect((await run()).exitCode).toBe(0);
   });
 
+  it.each([
+    ['adapters', 'export type Contract = Adapter;'],
+    ['observers', 'export type Contract = Adapter;'],
+    ['adapters', 'export const contract = () => constructed;'],
+    ['adapters', 'export interface Contract { size(adapter: Adapter): number }'],
+  ])('rejects a public type reaching %s through a value import: %s', async (owner, contract) => {
+    const { run } = await setup({
+      'app/api.ts': "export * from './nested/re-export.js';",
+      'app/nested/re-export.ts': "export * from './contract.js';",
+      'app/nested/contract.ts': [
+        `import { Adapter } from '../../${owner}/b.js';`,
+        'const constructed = new Adapter();',
+        contract,
+      ].join('\n'),
+      [`${owner}/b.ts`]: 'export class Adapter { readonly size = 1; }',
+    });
+    const result = await run();
+    expect(result.exitCode).toBe(1);
+    expect(result.all).toContain(
+      violation(
+        'app-public-types-reach-no-infrastructure',
+        'app/nested/contract.d.ts',
+        `${owner}/b.d.ts`,
+      ),
+    );
+    expect(result.all).not.toContain('no-module-cycles');
+  });
+
+  it('accepts a public operation constructing an adapter its types do not name', async () => {
+    const { run } = await setup({
+      'app/api.ts': "export { size } from './nested/operation.js';",
+      'app/nested/operation.ts': [
+        "import { Adapter } from '../../adapters/b.js';",
+        "import { observed } from '../../observers/c.js';",
+        'export function size(): number { return new Adapter().size + observed; }',
+      ].join('\n'),
+      'adapters/b.ts': 'export class Adapter { readonly size = 1; }',
+      'observers/c.ts': 'export const observed = 1;',
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
   it('accepts adapters importing the owners beneath them through every import form', async () => {
     const owners = ['config', 'domain', 'failures', 'observers', 'ports'];
     const { run } = await setup({

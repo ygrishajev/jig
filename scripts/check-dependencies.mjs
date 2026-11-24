@@ -1,12 +1,17 @@
 import { panic, Result } from 'better-result';
 import { allExtensions, cruise, format } from 'dependency-cruiser';
 import console from 'node:console';
-import { readdir } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
 import process from 'node:process';
+import ts from 'typescript';
 
 import configuration, {
   ownedProductionPath,
+  publicApplicationSource,
+  publicDeclarationRules,
   specRules,
   testFilePattern,
 } from '../.dependency-cruiser.mjs';
@@ -39,12 +44,55 @@ if (entries.isErr()) {
   });
   const specAccess =
     specs.length === 0 || (await inspect(specs, { ...configuration, forbidden: specRules }));
-  process.exitCode = unowned.length === 0 && architecture && runtime && specAccess ? 0 : 1;
+  const publicTypes = await inspectPublicDeclarations();
+  process.exitCode =
+    unowned.length === 0 && architecture && runtime && specAccess && publicTypes ? 0 : 1;
 }
 
-async function inspect(files, rules) {
+/**
+ * Cruises the declarations a caller of the public entry compiles against, which name every
+ * module a public type depends on, whether the source imported it as a type or a value.
+ */
+async function inspectPublicDeclarations() {
+  if (!existsSync(publicApplicationSource)) return true;
+  const directory = await Result.tryPromise(() => mkdtemp(join(tmpdir(), 'jig-declarations-')));
+  if (directory.isErr()) {
+    console.error(`Cannot emit public declarations: ${directory.error.cause}`);
+    return false;
+  }
+  emitDeclarations(publicApplicationSource, directory.value);
+  const passed = await inspect(
+    [publicApplicationSource.replace(/[.]ts$/, '.d.ts')],
+    { ...configuration, forbidden: publicDeclarationRules },
+    directory.value,
+  );
+  const removed = await Result.tryPromise(() =>
+    rm(directory.value, { recursive: true, force: true }),
+  );
+  if (removed.isErr()) console.error(`Cannot remove ${directory.value}: ${removed.error.cause}`);
+  return passed;
+}
+
+function emitDeclarations(entry, outDir) {
+  const { config } = ts.readConfigFile('tsconfig.json', ts.sys.readFile);
+  const { options } = ts.parseJsonConfigFileContent(config ?? {}, ts.sys, '.');
+  const program = ts.createProgram([entry], {
+    ...options,
+    noEmit: false,
+    declaration: true,
+    emitDeclarationOnly: true,
+    declarationMap: false,
+    incremental: false,
+    composite: false,
+    rootDir: '.',
+    outDir,
+  });
+  program.emit();
+}
+
+async function inspect(files, rules, baseDir = process.cwd()) {
   const result = await Result.tryPromise(() =>
-    cruise(files, { ...rules.options, ruleSet: rules, validate: true }),
+    cruise(files, { ...rules.options, baseDir, ruleSet: rules, validate: true }),
   );
   if (result.isErr()) {
     console.error(

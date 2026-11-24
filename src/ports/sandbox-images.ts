@@ -16,6 +16,13 @@ export interface ImageBuildSpec {
   labels?: Record<string, string>;
 }
 
+/** An agent CLI the sandbox image installs, at the version it pins. */
+export interface AgentInstall {
+  name: string;
+  npmPackage: string;
+  version: string;
+}
+
 /** A sandbox image could not be built, or docker could not be asked about one; `output` is what docker said. */
 export class ImageBuildFailed extends TaggedError('ImageBuildFailed')<{
   message: string;

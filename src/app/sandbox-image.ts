@@ -3,7 +3,6 @@ import { Result } from 'better-result';
 import path from 'node:path';
 
 import {
-  type AgentInstall,
   agentLayerDockerfile,
   imageLabels,
   LABELS,
@@ -17,7 +16,7 @@ import type { ConfigInvalid } from '../config/errors.js';
 import { configuredSteps, type JigConfig, type StepConfig } from '../config/load-config.js';
 import type { SandboxPreparationInvalid } from '../ports/agent-session.js';
 import type { OperationLog } from '../ports/observability.js';
-import type { ImageBuildFailed, SandboxImages } from '../ports/sandbox-images.js';
+import type { AgentInstall, ImageBuildFailed, SandboxImages } from '../ports/sandbox-images.js';
 
 export interface EnsureImageDependencies {
   repoRoot: string;

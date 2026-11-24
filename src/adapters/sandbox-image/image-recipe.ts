@@ -2,12 +2,7 @@ import { Result } from 'better-result';
 import { createHash } from 'node:crypto';
 
 import { SandboxPreparationInvalid } from '../../ports/agent-session.js';
-
-export interface AgentInstall {
-  name: string;
-  npmPackage: string;
-  version: string;
-}
+import type { AgentInstall } from '../../ports/sandbox-images.js';
 
 export const SANDBOX_DIRECTORY = '.sandcastle';
 
