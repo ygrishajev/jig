@@ -99,10 +99,5 @@
     "findings:ygrishajev/jig#67:refactor-domain-assign-error-ownership-8ba14cb6:stuck:0e28ddd8a63abececacc0189259c896b6b4767a8": "https://github.com/ygrishajev/jig/pull/67#issuecomment-7104919343",
     "findings:ygrishajev/jig#72:refactor-move-github-code-out-of-36eeb4db:stuck:ebab16bfacc69d4e3fc6d768df2daf2a88a3fc54": "https://github.com/ygrishajev/jig/pull/72#issuecomment-7117664067"
   },
-  "owners": {
-    "ygrishajev/jig#47": {
-      "token": "2d61a8cd-507e-4c06-973d-f8f7d26026f5",
-      "expiresAt": 1795479533370
-    }
-  }
+  "owners": {}
 }
