@@ -102,9 +102,9 @@ built-ins, and domain, ports, config and prompts cannot import it.
 CLI, and the module parses arguments only when it is the invoked script, so importing it starts
 nothing. `npm run lint:dependencies` lets no production owner but composition import `src/cli/`,
 except `src/integrations/github/command.ts`, the GitHub command that still lives in integrations.
-Production composition may import only composition, cli, failures,
-`src/integrations/github/command.ts` and `src/integrations/github/github-port.ts`, and no other
-production owner may import composition. Specs and tooling outside `src/` may import CLI helpers.
+Production composition may import only composition, cli, app, adapters, config, observers, ports,
+domain, failures, `src/integrations/github/command.ts` and `src/integrations/github/github-port.ts`,
+and no other production owner may import composition. Specs and tooling outside `src/` may import CLI helpers.
 
 Each failure class lives with the owner of what it means: business failures in
 `src/domain/errors.ts`, capability failures in the port that declares them (shared Git, run-state

@@ -39,7 +39,7 @@ const transitionalCompositionGithubSources = [
   '^src/integrations/github/github-port[.]ts$',
 ];
 const compositionSourceAllowlist = [
-  '^src/(composition|cli|failures)/',
+  '^src/(composition|cli|app|adapters|config|observers|ports|domain|failures)/',
   ...transitionalCompositionGithubSources,
 ];
 
@@ -112,9 +112,10 @@ export default {
     {
       name: 'composition-imports-only-allowed-sources',
       comment:
-        'Composition starts the executable: it imports the CLI it starts and failures. Until the ' +
-        'GitHub command moves to cli it also imports that command and the port its builder takes, ' +
-        'and no other integrations source.',
+        'Composition wires and starts the executable: it may import the CLI it starts, the app, ' +
+        'adapters, config, observers, ports, domain and failures. Until the GitHub command moves ' +
+        'to cli it also imports that command and the port its builder takes, and no other ' +
+        'integrations source. Flow, steps and prompts stay behind the app.',
       severity: 'error',
       from: { path: '^src/composition/', pathNot: testFilePattern },
       to: { path: '^src/', pathNot: compositionSourceAllowlist },
