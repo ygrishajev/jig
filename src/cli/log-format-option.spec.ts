@@ -3,7 +3,7 @@ import { Result } from 'better-result';
 import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 
-import type { LogFormat } from '../adapters/logging/create-logger.js';
+import type { LogFormat } from '../ports/observability.js';
 import { logFormatInputSchema, logFormatOption } from './log-format-option.js';
 import { CommandInputInvalid, withInput } from './with-input.js';
 

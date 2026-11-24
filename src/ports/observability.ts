@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import type { RunEvent } from '../domain/events.js';
 
 export interface EventSink {
@@ -31,3 +33,8 @@ export interface OperationLog extends WarningLog {
 export interface WarningLog {
   warn(details: { err: unknown }, message: string): void;
 }
+
+/** How operation logs render: pretty for a person at a terminal, JSON lines for anything else. */
+export const logFormatSchema = z.enum(['pretty', 'json']);
+
+export type LogFormat = z.infer<typeof logFormatSchema>;

@@ -19,7 +19,6 @@ import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { TOOLCHAIN_END, TOOLCHAIN_START } from '../adapters/sandbox-image/image-recipe.js';
-import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import type { AgentChoice, EnteredCredential } from '../config/agent-policy.js';
 import { ConfigUnwritable } from '../config/config-source.js';
 import { ConfigInvalid } from '../config/errors.js';
@@ -36,6 +35,7 @@ import { LocalPreparationFailed } from '../ports/local-state.js';
 import type { OperationLog } from '../ports/observability.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import { type InitInput, initRepository, type RuntimeRequest } from './api.js';
+import type { SandboxOpenFailure } from './sandbox-runtime.js';
 
 describe('initRepository', () => {
   it('writes the sandbox Dockerfile, its gitignore and a starter config', async () => {
@@ -468,7 +468,7 @@ describe('initRepository', () => {
     credential?: EnteredCredential;
     proposals?: ReturnType<typeof toolchainProposal>[];
     exec?: (command: string) => ExecResult;
-    checkSandboxFailures?: SessionOpenFailure[];
+    checkSandboxFailures?: SandboxOpenFailure[];
     startInSubdirectory?: boolean;
   }) {
     const repo = await createTempRepo();

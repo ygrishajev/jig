@@ -1,7 +1,8 @@
 import { Option } from 'commander';
 import { z } from 'zod';
 
-import { defaultLogFormat, logFormatSchema } from '../adapters/logging/create-logger.js';
+import { defaultLogFormat } from '../adapters/logging/create-logger.js';
+import { logFormatSchema } from '../ports/observability.js';
 
 /** The input of a command that takes `--log-format`; its input schema extends this one. */
 export const logFormatInputSchema = z.object({ logFormat: logFormatSchema });

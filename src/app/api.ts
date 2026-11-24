@@ -88,6 +88,7 @@ export type {
   SandboxRuntime,
   SandboxSettings,
 } from './sandbox-runtime.js';
+export { RunRequestInvalid } from './errors.js';
 export type { EnsureImageDependencies } from './sandbox-image.js';
 export type { ThrowawaySandboxes, ThrowawaySandboxFailure } from './throwaway-sandbox.js';
 export {

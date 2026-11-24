@@ -1,13 +1,13 @@
 import { Result } from 'better-result';
 import { randomBytes } from 'node:crypto';
 
-import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
 import type { WarningLog } from '../ports/observability.js';
 import type { RunSession, SessionCloseFailure } from '../ports/run-session.js';
 import { type Lifetime, releaseInOrder, withResource } from './lifecycle.js';
+import type { SandboxOpenFailure } from './sandbox-runtime.js';
 
 /** What a one-off sandbox is opened, and its branch removed, with. */
 export interface ThrowawaySandboxes {
@@ -17,7 +17,7 @@ export interface ThrowawaySandboxes {
   open(
     run: RunIdentity,
     setupCommand: string | null,
-  ): Promise<Result<RunSession, SessionOpenFailure>>;
+  ): Promise<Result<RunSession, SandboxOpenFailure>>;
   discardBranch(branch: string): Promise<Result<void, GitCommandFailed>>;
   /** Runs `use`, removing `branch` if the process exits before `use` finishes. */
   discardBranchOnExit<T>(branch: string, use: () => Promise<T>): Promise<T>;
@@ -25,7 +25,7 @@ export interface ThrowawaySandboxes {
 
 /** Why a throwaway sandbox gave no answer: the branch it starts from, Docker, or its own cleanup. */
 export type ThrowawaySandboxFailure =
-  SessionOpenFailure | SessionCloseFailure | GitCommandFailed | RepositoryInvalid;
+  SandboxOpenFailure | SessionCloseFailure | GitCommandFailed | RepositoryInvalid;
 
 /**
  * A sandbox for a one-off check, on a branch of its own that is removed afterwards, even when the
@@ -54,8 +54,8 @@ function useThrowawaySandbox<T, E>(
   run: RunIdentity,
   setupCommand: string | null,
   use: (session: RunSession) => Promise<Result<T, E>>,
-): Promise<Result<T, E | SessionOpenFailure | SessionCloseFailure | GitCommandFailed>> {
-  const sandbox: Lifetime<RunSession, SessionOpenFailure, SessionCloseFailure | GitCommandFailed> =
+): Promise<Result<T, E | SandboxOpenFailure | SessionCloseFailure | GitCommandFailed>> {
+  const sandbox: Lifetime<RunSession, SandboxOpenFailure, SessionCloseFailure | GitCommandFailed> =
     {
       acquire: () => sandboxes.open(run, setupCommand),
       release: (session) =>

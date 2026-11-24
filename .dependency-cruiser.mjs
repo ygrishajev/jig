@@ -14,6 +14,8 @@ export const productionModules = [
 ];
 export const testFilePattern = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 export const ownedProductionPath = `^src/(${productionModules.join('|')})/`;
+/** The one app module callers outside app and composition may import. */
+const publicApplicationEntry = '^src/app/api[.]ts$';
 const configAllowlist = [
   '^src/(config|domain)/',
   '(^|/)node_modules/better-result/',
@@ -31,6 +33,21 @@ const failuresImporters = [
 ];
 const compositionSourceAllowlist =
   '^src/(composition|cli|app|adapters|config|observers|ports|domain|failures)/';
+
+/** @type {import('dependency-cruiser').IForbiddenRuleType} */
+const appInternalsArePrivate = {
+  name: 'app-internals-are-private-to-app-and-composition',
+  comment:
+    'Outside app and composition, specs included, the application is reached only through its ' +
+    'public entry, src/app/api.ts, so callers see operations and portable types, not the modules ' +
+    'that implement or construct them.',
+  severity: 'error',
+  from: { path: '^src/', pathNot: '^src/(app|composition)/' },
+  to: { path: '^src/app/', pathNot: publicApplicationEntry },
+};
+
+/** The rules specs are held to as well; every other rule covers production sources only. */
+export const specRules = [appInternalsArePrivate];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 export default {
@@ -126,6 +143,36 @@ export default {
       severity: 'error',
       from: { path: '^src/', pathNot: ['^src/composition/', testFilePattern] },
       to: { path: '^src/composition/' },
+    },
+    {
+      name: 'app-is-imported-only-by-cli-and-composition',
+      comment:
+        'The CLI calls application operations and composition binds them; no other production ' +
+        'owner imports app. Specs and tooling outside src/ follow the private-entry rule below.',
+      severity: 'error',
+      from: { path: '^src/', pathNot: ['^src/(app|cli|composition)/', testFilePattern] },
+      to: { path: '^src/app/' },
+    },
+    appInternalsArePrivate,
+    {
+      name: 'app-public-entry-exposes-no-infrastructure',
+      comment:
+        'The public entry names domain, config and port types only; exporting from adapters or ' +
+        'observers would hand every caller an implementation type.',
+      severity: 'error',
+      from: { path: publicApplicationEntry },
+      to: { path: '^src/(adapters|observers)/' },
+    },
+    {
+      name: 'app-contracts-name-no-infrastructure-types',
+      comment:
+        'A type-only import from app names an adapter or observer type in an app contract, ' +
+        'which reaches callers of the public entry through the types it exports. App names the ' +
+        'port or its own type instead. Value imports in src/app/container.ts remain the ' +
+        'construction that spike #49 decides.',
+      severity: 'error',
+      from: { path: '^src/app/', pathNot: testFilePattern },
+      to: { path: '^src/(adapters|observers)/', dependencyTypes: ['type-only'] },
     },
     {
       name: 'no-orphans',

@@ -10,8 +10,7 @@ import { aRunState, aSlice, presetName, runId } from '../../../tests/support/bui
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import type { StandardInput } from '../../adapters/terminal/standard-input.js';
-import type { JigOperations, RunReport } from '../../app/api.js';
-import { RunRequestInvalid } from '../../app/errors.js';
+import { type JigOperations, type RunReport, RunRequestInvalid } from '../../app/api.js';
 import { runBranchFor, runStopReason } from '../../domain/run-state.js';
 import type { FailureOutput } from '../with-error-handling.js';
 import { nextStep, type OutcomeLog, registerRunCommand, runInputSchema } from './run.js';

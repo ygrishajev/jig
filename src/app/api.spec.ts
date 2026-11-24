@@ -6,7 +6,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { aMetricsSummary, aRunState, presetName, runId } from '../../tests/support/builders.js';
-import { InMemoryConfigSource, InMemoryPresetSource } from '../../tests/support/fakes.js';
+import {
+  InMemoryConfigSource,
+  InMemoryPresetSource,
+  InMemoryRunStore,
+} from '../../tests/support/fakes.js';
 import {
   localRunRuntime,
   operationContextIn,
@@ -23,7 +27,9 @@ import { RepositoryInvalid } from '../ports/git-failures.js';
 import { LocalPreparationFailed } from '../ports/local-state.js';
 import type { RunRecords } from '../ports/run-records.js';
 import { RunInProgress } from '../ports/run-state-failures.js';
+import type { RunStoreCatalog } from '../ports/run-store.js';
 import {
+  type JigOperations,
   listPresets,
   type Preset,
   type PresetPick,
@@ -31,11 +37,11 @@ import {
   type RepositorySources,
   type RunInput,
   type RunLog,
+  RunRequestInvalid,
   type RunSandbox,
   type RuntimeRequest,
   startOrResumeRun,
 } from './api.js';
-import { RunRequestInvalid } from './errors.js';
 
 describe('application API', () => {
   describe('readRunStatus', () => {
@@ -119,6 +125,18 @@ describe('application API', () => {
       expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
       expect(records.metricsSummary).not.toHaveBeenCalled();
       expect(records.documents).not.toHaveBeenCalled();
+    });
+
+    it('reads the run from whichever store implementation it is bound to', async () => {
+      const store = new InMemoryRunStore();
+      const state = aRunState();
+      unwrap(await store.save(state));
+      const { status, repoRoot } = await setup({ runStores: catalogOver(store) });
+
+      const result = unwrap(await status({ runId: state.runId }));
+
+      expect(result.state).toEqual(state);
+      expect(unwrap(await new LocalRunStore(repoRoot).load(state.runId))).toBeUndefined();
     });
 
     it("refuses a run no store holds without reading this machine's records", async () => {
@@ -206,6 +224,19 @@ describe('application API', () => {
         path.join(state.runId, 'state', 'result.json'),
       );
       expect(runtimes()[0]?.disposed()).toBe(true);
+    });
+
+    it('reports an ended run from whichever store implementation its runtime supplies', async () => {
+      const store = new InMemoryRunStore();
+      const state = aRunState({ phase: 'done' });
+      unwrap(await store.save(state));
+      const { run, repoRoot, sandbox } = await setup({ runStores: catalogOver(store) });
+
+      const report = unwrap(await run({ run: { resume: state.runId } }));
+
+      expect(report).toEqual({ state, status: 'done' });
+      expect(sandbox.openScope).not.toHaveBeenCalled();
+      expect(unwrap(await new LocalRunStore(repoRoot).load(state.runId))).toBeUndefined();
     });
 
     it('resumes a run from the custom store module the config names', async () => {
@@ -331,6 +362,7 @@ describe('application API', () => {
       configFromRepository?: boolean;
       presetSource?: InMemoryPresetSource;
       pick?: PresetPick;
+      runStores?: RunStoreCatalog;
     } = {},
   ) {
     const repo = await createTempRepo();
@@ -362,8 +394,23 @@ describe('application API', () => {
     const openRuntime = vi.fn((request: RuntimeRequest) => {
       const opened = localRunRuntime(request, { sandbox, log });
       built.push(opened);
-      return opened.runtime;
+      const { runtime } = opened;
+      return input.runStores
+        ? { ...runtime, run: { ...runtime.run, runStores: input.runStores } }
+        : runtime;
     });
+    const run: JigOperations['run'] = (runInput) =>
+      startOrResumeRun({ ...sources, context, openRuntime, askForPreset }, runInput);
+    const status: JigOperations['status'] = (statusInput) =>
+      readRunStatus(
+        {
+          ...sources,
+          context,
+          runRecordsAt: () => records,
+          runStoresAt: (repoRoot) => input.runStores ?? new RepositoryRunStores(repoRoot),
+        },
+        statusInput,
+      );
     const askForPreset = vi.fn(async (_presets: Preset[]) => input.pick);
     return {
       repoRoot: repo.dir,
@@ -374,23 +421,10 @@ describe('application API', () => {
       askForPreset,
       log,
       runtimes: () => built,
-      run: (runInput: Omit<RunInput, 'logFormat'>) =>
-        startOrResumeRun(
-          { ...sources, context, openRuntime, askForPreset },
-          { ...runInput, logFormat: 'json' },
-        ),
+      run: (runInput: Omit<RunInput, 'logFormat'>) => run({ ...runInput, logFormat: 'json' }),
       writeFileInRepository: (name: string, contents: string) =>
         writeFile(path.join(repo.dir, name), contents),
-      status: (statusInput: Parameters<typeof readRunStatus>[1]) =>
-        readRunStatus(
-          {
-            ...sources,
-            context,
-            runRecordsAt: () => records,
-            runStoresAt: (repoRoot) => new RepositoryRunStores(repoRoot),
-          },
-          statusInput,
-        ),
+      status,
       presets: () => listPresets({ ...sources, context }),
       saveRun: async (overrides: Parameters<typeof aRunState>[0] = {}) => {
         const state = aRunState(overrides);
@@ -401,6 +435,11 @@ describe('application API', () => {
     };
   }
 });
+
+/** Every store name the config or the operation asks for resolves to `store`. */
+function catalogOver(store: InMemoryRunStore): RunStoreCatalog {
+  return { storeNamed: async () => Result.ok(store), combined: () => store };
+}
 
 async function subdirectoryOf(directory: string) {
   const subdirectory = path.join(directory, faker.word.noun());

@@ -339,11 +339,25 @@ import cli, and `composition-is-imported-by-no-other-owner` keeps every other pr
 importing composition. Specs and tooling outside `src/`, such as `scripts/validate.ts`, may import
 CLI helpers.
 
-`adapters-do-not-import-flow` keeps adapters beneath everything that uses them: production and
-spec adapters import neither the workflow (app, flow, steps) nor the executable (cli,
-composition). Every one of these rules covers type imports, re-exports and literal dynamic imports
-through nested paths, and `scripts/check-dependencies.spec.ts` rejects each without an incidental
-cycle to carry the failure.
+`adapters-do-not-import-flow` keeps adapters beneath everything that uses them: production
+adapters import neither the workflow (app, flow, steps) nor the executable (cli, composition).
+
+Four rules hold the public application entry. `app-is-imported-only-by-cli-and-composition` lets
+no other production owner import app. `app-internals-are-private-to-app-and-composition` lets
+every file outside app and composition, specs included, import app only through `src/app/api.ts`;
+app and composition, and their specs, may import any app module, and tooling and helpers outside
+`src/` (`scripts/`, `tests/support/`, `tests/e2e/`) are not scanned. `app-public-entry-exposes-no-infrastructure` keeps
+`src/app/api.ts` from importing adapters or observers in any form, and
+`app-contracts-name-no-infrastructure-types` rejects a type-only import from production app into
+adapters or observers, which is how an implementation type would reach the public entry through
+the types it exports. `scripts/check-dependencies.mjs` cruises production sources against every
+rule and, in a separate pass over the specs under `src/`, applies the rules `.dependency-cruiser.mjs`
+lists in `specRules`: today only the private-app rule. It reports an unowned production file
+from the scanned file list.
+
+Every one of these rules covers type imports, re-exports and literal dynamic imports through
+nested paths, and `scripts/check-dependencies.spec.ts` rejects each without an incidental cycle to
+carry the failure.
 
 ### Shared failure helpers
 
@@ -744,35 +758,40 @@ composition waits for #49.
 
 `src/app/api.ts` is the application's public entry. It exports `startOrResumeRun`,
 `readRunStatus`, `listPresets`, `initRepository`, `buildSandboxImage` and `implementGithubIssue`,
-their input, context,
-capability, report and failure types, and
+their input, context, capability, report and failure types, `RunRequestInvalid`, and
 `JigOperations`, the bound operations the CLI receives. Its exported types name domain, config preset and port types only: no container,
 cradle, logger, tracer, Commander command or process object. `OperationContext` carries the working
 directory, a plain map of environment variables and the fallback home directory.
+`src/app/api.spec.ts` binds `run` and `status` as `JigOperations` members over a store catalog the
+spec substitutes, so a store implementation is swapped without changing an operation's
+signature, and a change that did alter it fails the typecheck.
 
-| Concept                                                  | Owner before                                                     | Owner now                                                                                     |
-| -------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Process context capture for every command                | `cli/with-app.ts` (`processInvocation`)                          | `composition/main.ts` (`processContext`)                                                      |
-| Preparation order: repository, environment, credentials  | `cli/with-app.ts` (`openApp`)                                    | `app/repository-preparation.ts` (`prepareRepository`)                                         |
-| Status use case                                          | `app/run-status.ts`, given the container                         | `app/run-status.ts`, given `StatusCapabilities`                                               |
-| Preset listing                                           | `cli/commands/presets.ts`, reading the cradle                    | `app/list-presets.ts`                                                                         |
-| `MetricsSummary`, `RunDocument`, `RunDocumentFile`       | `observers/metrics.ts`, `adapters/local-store/run-artefacts.ts`  | `ports/run-records.ts`, with the `RunRecords` contract                                        |
-| Run records for status                                   | `MetricsLog` and `RunArtefacts` built inside app                 | `adapters/local-store/local-run-records.ts`, supplied by composition                          |
-| Run command preparation and preset choice                | `cli/with-app.ts` (`openApp`, `selectedPreset`)                  | `app/run-operation.ts`, `app/preset-selection.ts`                                             |
-| Request file and standard-input reads                    | `cli/read-request.ts` over `node:fs` and the process stdin       | `cli/read-request.ts` over supplied `RequestInputs`                                           |
-| Run lock, store choice, start/resume, ended-run report   | `app/run-jig.ts`, given the container                            | `app/run-jig.ts`, given `RunCapabilities`                                                     |
-| Built-in and custom store construction, module checks    | `app/run-stores.ts`                                              | `adapters/run-store/repository-run-stores.ts` (`RunStoreCatalog`)                             |
-| Store selection: configured plus required, each once     | `app/run-stores.ts`                                              | `app/run-stores.ts` (`openRunStore` over a `RunStoreCatalog`)                                 |
-| `RunStoreSetupInvalid`                                   | `app/run-stores.ts`                                              | `ports/run-store.ts`                                                                          |
-| Acquire, use and release; release order                  | `app/container.ts` (`withRunScope`), `try`/`finally` in callers  | `app/lifecycle.ts` (`withResource`, `releaseInOrder`)                                         |
-| Cleanup log, run session, run telemetry                  | pino `Logger`, `RunSession` in `app/container.ts`, OTel tracer   | `WarningLog`, `RunTelemetry` in `ports/observability.ts`, `ports/run-session.ts`              |
-| Init and build preparation                               | `cli/with-app.ts` (`openApp`), given the container               | `app/init-sandbox.ts`, `app/build-image.ts`, given `SandboxOperationCapabilities`             |
-| When init asks for agents, credentials and save consent  | `app/init-sandbox.ts`, reading questions from the cradle         | `app/init-sandbox.ts` over the supplied `InitInteraction`                                     |
-| Starter files: Dockerfile, sandbox ignore rules, config  | `app/init-sandbox.ts`, `app/sandbox-image.ts` over `node:fs`     | `adapters/sandbox-image/starter-files.ts` (`StarterFiles` in `ports/`)                        |
-| Agent credential keys and the owner-only credential file | `app/init-sandbox.ts` calling adapters directly                  | `adapters/sandcastle/agent-credentials.ts` (`AgentCredentials`)                               |
-| Throwaway sandbox branch, open and console events        | `app/throwaway-sandbox.ts`, given the container                  | `app/throwaway-sandbox.ts` over `ThrowawaySandboxes`; events wired by the container           |
-| Image build progress log                                 | pino `Logger`                                                    | `OperationLog` in `ports/observability.ts`                                                    |
-| GitHub settings before preparation; issue run's runtime  | `cli/commands/github.ts`, `cli/app-action.ts`, `cli/with-app.ts` | `app/implement-issue.ts` (`implementGithubIssue`), `app/run-operation.ts` (`withPreparedRun`) |
+| Concept                                                  | Owner before                                                       | Owner now                                                                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Process context capture for every command                | `cli/with-app.ts` (`processInvocation`)                            | `composition/main.ts` (`processContext`)                                                      |
+| Preparation order: repository, environment, credentials  | `cli/with-app.ts` (`openApp`)                                      | `app/repository-preparation.ts` (`prepareRepository`)                                         |
+| Status use case                                          | `app/run-status.ts`, given the container                           | `app/run-status.ts`, given `StatusCapabilities`                                               |
+| Preset listing                                           | `cli/commands/presets.ts`, reading the cradle                      | `app/list-presets.ts`                                                                         |
+| `MetricsSummary`, `RunDocument`, `RunDocumentFile`       | `observers/metrics.ts`, `adapters/local-store/run-artefacts.ts`    | `ports/run-records.ts`, with the `RunRecords` contract                                        |
+| Run records for status                                   | `MetricsLog` and `RunArtefacts` built inside app                   | `adapters/local-store/local-run-records.ts`, supplied by composition                          |
+| Run command preparation and preset choice                | `cli/with-app.ts` (`openApp`, `selectedPreset`)                    | `app/run-operation.ts`, `app/preset-selection.ts`                                             |
+| Request file and standard-input reads                    | `cli/read-request.ts` over `node:fs` and the process stdin         | `cli/read-request.ts` over supplied `RequestInputs`                                           |
+| Run lock, store choice, start/resume, ended-run report   | `app/run-jig.ts`, given the container                              | `app/run-jig.ts`, given `RunCapabilities`                                                     |
+| Built-in and custom store construction, module checks    | `app/run-stores.ts`                                                | `adapters/run-store/repository-run-stores.ts` (`RunStoreCatalog`)                             |
+| Store selection: configured plus required, each once     | `app/run-stores.ts`                                                | `app/run-stores.ts` (`openRunStore` over a `RunStoreCatalog`)                                 |
+| `RunStoreSetupInvalid`                                   | `app/run-stores.ts`                                                | `ports/run-store.ts`                                                                          |
+| Acquire, use and release; release order                  | `app/container.ts` (`withRunScope`), `try`/`finally` in callers    | `app/lifecycle.ts` (`withResource`, `releaseInOrder`)                                         |
+| Cleanup log, run session, run telemetry                  | pino `Logger`, `RunSession` in `app/container.ts`, OTel tracer     | `WarningLog`, `RunTelemetry` in `ports/observability.ts`, `ports/run-session.ts`              |
+| Init and build preparation                               | `cli/with-app.ts` (`openApp`), given the container                 | `app/init-sandbox.ts`, `app/build-image.ts`, given `SandboxOperationCapabilities`             |
+| When init asks for agents, credentials and save consent  | `app/init-sandbox.ts`, reading questions from the cradle           | `app/init-sandbox.ts` over the supplied `InitInteraction`                                     |
+| Starter files: Dockerfile, sandbox ignore rules, config  | `app/init-sandbox.ts`, `app/sandbox-image.ts` over `node:fs`       | `adapters/sandbox-image/starter-files.ts` (`StarterFiles` in `ports/`)                        |
+| Agent credential keys and the owner-only credential file | `app/init-sandbox.ts` calling adapters directly                    | `adapters/sandcastle/agent-credentials.ts` (`AgentCredentials`)                               |
+| Throwaway sandbox branch, open and console events        | `app/throwaway-sandbox.ts`, given the container                    | `app/throwaway-sandbox.ts` over `ThrowawaySandboxes`; events wired by the container           |
+| Image build progress log                                 | pino `Logger`                                                      | `OperationLog` in `ports/observability.ts`                                                    |
+| GitHub settings before preparation; issue run's runtime  | `cli/commands/github.ts`, `cli/app-action.ts`, `cli/with-app.ts`   | `app/implement-issue.ts` (`implementGithubIssue`), `app/run-operation.ts` (`withPreparedRun`) |
+| `LogFormat` and its schema                               | `adapters/logging/create-logger.ts`                                | `ports/observability.ts`                                                                      |
+| Why a sandbox did not open, in app contracts             | `adapters/sandcastle/sandcastle-session.ts` (`SessionOpenFailure`) | `app/sandbox-runtime.ts` (`SandboxOpenFailure`)                                               |
+| `RunRequestInvalid` for the CLI                          | `app/errors.ts`, imported directly                                 | `app/errors.ts`, exported through `app/api.ts`                                                |
 
 The handlers in `cli/commands/status.ts` and `cli/commands/presets.ts` parse their input, call the
 operation and format its `Result`. Every operation prepares through `prepareRepository`, and those
@@ -847,10 +866,13 @@ the run operation's capabilities and the GitHub capabilities composition supplie
 its runtime from the same `openRunRuntime`. Its recovery specs still build that runtime with
 `createAppContainer` and `runCapabilitiesOf`, because a whole issue run needs the scope and session
 wiring only the container provides today. Moving that construction into composition, or replacing
-Awilix, waits for #49; the integration is incomplete until then. No command handler receives a
-container: `cli/with-app.ts` and `cli/app-action.ts` are gone. Keeping or removing Awilix, its
-lint rule, and restricting the CLI to `app/api.ts` in `.dependency-cruiser.mjs` stay gated on that
-decision.
+Awilix, waits for #49; the integration is incomplete until then. No command handler or CLI spec
+receives a container or imports an app module other than `app/api.ts`, and dependency lint
+enforces that. Keeping or removing Awilix and its lint rule stay gated on that decision, and so
+does a rule that keeps app from importing adapters and observers at all: `app/container.ts`
+constructs them, `app/observed-events.ts` connects the observers, and `app/sandbox-image.ts` reads
+the image recipe and agent list from the sandbox adapters. Until then only type-only imports from
+app into those owners are rejected.
 
 ### Sequencing conflict
 

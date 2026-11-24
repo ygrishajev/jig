@@ -4,7 +4,12 @@ import type { MissingCredential } from '../config/agent-policy.js';
 import type { JigEnvironment } from '../config/environment.js';
 import type { ConfigInvalid } from '../config/errors.js';
 import type { JigConfig, StepConfig } from '../config/load-config.js';
-import type { SandboxCredentialsInvalid } from '../ports/agent-session.js';
+import type {
+  SandboxCredentialsInvalid,
+  SandboxPreparationInvalid,
+  SandboxUnavailable,
+  SetupCommandFailed,
+} from '../ports/agent-session.js';
 import type { LocalPreparationFailed, LocalStateUnwritable } from '../ports/local-state.js';
 import type { OperationLog } from '../ports/observability.js';
 import type { StarterFiles } from '../ports/starter-files.js';
@@ -57,3 +62,15 @@ export interface SandboxCapabilities {
   readonly image: EnsureImageDependencies;
   readonly throwaway: ThrowawaySandboxes;
 }
+
+/**
+ * Why a sandbox did not open, named by the app so its contracts carry no adapter type. The
+ * configuration, credential, preparation and local file failures are the operator's to fix.
+ */
+export type SandboxOpenFailure =
+  | ConfigInvalid
+  | SandboxCredentialsInvalid
+  | SandboxPreparationInvalid
+  | LocalPreparationFailed
+  | SandboxUnavailable
+  | SetupCommandFailed;

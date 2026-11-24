@@ -1,6 +1,5 @@
 import { Result } from 'better-result';
 
-import type { LogFormat } from '../adapters/logging/create-logger.js';
 import type { ConfigSource } from '../config/config-source.js';
 import type { JigEnvironment } from '../config/environment.js';
 import type { ConfigInvalid } from '../config/errors.js';
@@ -8,6 +7,7 @@ import type { JigConfig } from '../config/load-config.js';
 import type { PresetSource } from '../config/preset-source.js';
 import type { PresetSelection } from '../config/presets.js';
 import type { RunId } from '../domain/run-id.js';
+import type { LogFormat } from '../ports/observability.js';
 import { disposableLifetime, withResource } from './lifecycle.js';
 import { prepareWithPreset, type PresetPreparation } from './preset-selection.js';
 import type { RepositoryPreparationFailure } from './repository-preparation.js';

@@ -1,6 +1,5 @@
 import { Result } from 'better-result';
 
-import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import type { ConfigInvalid } from '../config/errors.js';
 import { type JigConfig, validationWarnings } from '../config/load-config.js';
 import { newRunId, type RunId } from '../domain/run-id.js';
@@ -38,6 +37,7 @@ import { RunRequestInvalid } from './errors.js';
 import { type Lifetime, releaseInOrder, withResource } from './lifecycle.js';
 import { runFlow } from './run-flow.js';
 import { openRunStore } from './run-stores.js';
+import type { SandboxOpenFailure } from './sandbox-runtime.js';
 
 /**
  * Start a run from a request — named `runId`, or a fresh id — or resume the run `resume`.
@@ -73,7 +73,7 @@ type AdvanceFailure =
   | SandboxCredentialsInvalid
   | SandboxPreparationInvalid
   | ImageBuildFailed
-  | SessionOpenFailure
+  | SandboxOpenFailure
   | SessionCloseFailure
   | EngineFailure;
 
@@ -115,7 +115,7 @@ export interface RunSandbox {
     run: RunIdentity,
     store: RunStore,
     telemetry: RunTelemetry | undefined,
-  ): Promise<Result<RunScope, SessionOpenFailure>>;
+  ): Promise<Result<RunScope, SandboxOpenFailure>>;
 }
 
 /** The run's open sandbox and everything built for it, released in the order `runJig` decides. */
@@ -271,7 +271,7 @@ function scopeLifetime(
   sandbox: RunSandbox,
   log: WarningLog,
   { state, store, telemetry }: { state: RunState; store: RunStore; telemetry?: RunTelemetry },
-): Lifetime<RunScope, SessionOpenFailure, SessionCloseFailure> {
+): Lifetime<RunScope, SandboxOpenFailure, SessionCloseFailure> {
   return {
     acquire: () => sandbox.openScope(state, store, telemetry),
     release: (scope) =>

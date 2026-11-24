@@ -195,7 +195,8 @@ svg text{font-family:var(--sans)}
     construction still runs in app.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
-    of these owners. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
+    of these owners. Specs under <code>src/</code> are scanned in a separate pass against the
+    public-entry rule only. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
     including erased type imports and nested paths. A separate graph after type erasure rejects
     runtime file cycles; intra-module type cycles and mixed cycles broken by erasure pass.</p>
   <ul>
@@ -211,6 +212,12 @@ svg text{font-family:var(--sans)}
     <li>Only composition imports cli across owners. No other owner imports composition.</li>
     <li>Production composition imports only composition, cli, app, adapters, config, observers, ports,
       domain and failures. Specs and tooling outside <code>src/</code> may import CLI helpers.</li>
+    <li>Only cli and composition import app across owners. Outside app and composition, specs
+      included, app is reached only through <code>src/app/api.ts</code>; app and composition and
+      their specs may import any app module. The public entry imports no adapter or observer, and
+      production app has no type-only import of either, so no implementation type reaches a caller
+      through the operations' types. App's value imports of adapters and observers, the container
+      construction in <code>src/app/container.ts</code>, wait for spike #49.</li>
     <li>Layer restrictions include type imports, re-exports and literal dynamic imports, through nested paths. Resolution, package dependency and production-to-spec checks remain enabled.</li>
   </ul>
   <p>The checker reports cycle paths and the source imports involved.

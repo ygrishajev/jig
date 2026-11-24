@@ -16,11 +16,7 @@ import { LocalRunRecords } from '../adapters/local-store/local-run-records.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
 import { runLogFile } from '../adapters/local-store/run-paths.js';
-import {
-  createConsoleLogger,
-  createRunLogger,
-  type LogFormat,
-} from '../adapters/logging/create-logger.js';
+import { createConsoleLogger, createRunLogger } from '../adapters/logging/create-logger.js';
 import { RepositoryRunStores } from '../adapters/run-store/repository-run-stores.js';
 import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
@@ -31,7 +27,6 @@ import {
   type OpenSessionInput,
   stepCredentials,
 } from '../adapters/sandcastle/open-session.js';
-import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { startTelemetry, type Telemetry } from '../adapters/telemetry/open-telemetry.js';
 import type { ConfigSource } from '../config/config-source.js';
 import type { JigEnvironment } from '../config/environment.js';
@@ -47,7 +42,7 @@ import { MetricsObserver } from '../observers/metrics.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
 import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
-import type { Clock, RunTelemetry } from '../ports/observability.js';
+import type { Clock, LogFormat, RunTelemetry } from '../ports/observability.js';
 import type { RunSession } from '../ports/run-session.js';
 import type { RunStore, RunStoreCatalog } from '../ports/run-store.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
@@ -61,7 +56,12 @@ import {
   ensureSandboxImage,
   sandboxImageName,
 } from './sandbox-image.js';
-import type { SandboxCapabilities, SandboxRuntime, SandboxSettings } from './sandbox-runtime.js';
+import type {
+  SandboxCapabilities,
+  SandboxOpenFailure,
+  SandboxRuntime,
+  SandboxSettings,
+} from './sandbox-runtime.js';
 import type { ThrowawaySandboxes } from './throwaway-sandbox.js';
 
 /** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
@@ -92,7 +92,7 @@ export interface AppCradle {
   runStores: RunStoreCatalog;
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
-  openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SessionOpenFailure>>;
+  openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SandboxOpenFailure>>;
 }
 
 /**
@@ -221,7 +221,7 @@ async function openRunScope(
   { runId, baseBranch }: RunIdentity,
   runStore: RunStore,
   telemetry: RunTelemetry | undefined,
-): Promise<Result<RunScope, SessionOpenFailure>> {
+): Promise<Result<RunScope, SandboxOpenFailure>> {
   const { repoRoot, logger } = app.cradle;
   const run: RunIdentity = { runId, baseBranch };
   const scope = app.createScope<RunCradle>();
@@ -287,8 +287,8 @@ function openSessionRetrying({
   events,
   settings,
   runLogger,
-}: RunCradle): Promise<Result<RunSession, SessionOpenFailure>> {
-  return retryResult<RunSession, SessionOpenFailure>(() => openSession({ run, events }), {
+}: RunCradle): Promise<Result<RunSession, SandboxOpenFailure>> {
+  return retryResult<RunSession, SandboxOpenFailure>(() => openSession({ run, events }), {
     ...transientRetryPolicy(settings),
     onFailedAttempt: ({ error, attempt }) =>
       runLogger.warn({ err: error, attempt }, 'the sandbox did not start'),

@@ -2,12 +2,11 @@ import { Result } from 'better-result';
 import { Command } from 'commander';
 import { z } from 'zod';
 
-import type { LogFormat } from '../../adapters/logging/create-logger.js';
 import type { RequestInputs } from '../../adapters/terminal/standard-input.js';
-import type { JigOperations, RunReport, RunRequest } from '../../app/api.js';
-import type { RunRequestInvalid } from '../../app/errors.js';
+import type { JigOperations, RunReport, RunRequest, RunRequestInvalid } from '../../app/api.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, runStopReason } from '../../domain/run-state.js';
+import type { LogFormat } from '../../ports/observability.js';
 import {
   configInputSchema,
   configOption,

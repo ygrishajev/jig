@@ -5,7 +5,11 @@ import { readdir } from 'node:fs/promises';
 import { extname } from 'node:path';
 import process from 'node:process';
 
-import configuration, { ownedProductionPath, testFilePattern } from '../.dependency-cruiser.mjs';
+import configuration, {
+  ownedProductionPath,
+  specRules,
+  testFilePattern,
+} from '../.dependency-cruiser.mjs';
 
 const entries = await Result.tryPromise(() =>
   readdir('src', { recursive: true, withFileTypes: true }),
@@ -17,14 +21,14 @@ if (entries.isErr()) {
   const extensions = new Set(
     allExtensions.filter(({ available }) => available).map(({ extension }) => extension),
   );
-  const files = entries.value
-    .filter(
-      (entry) =>
-        entry.isFile() &&
-        extensions.has(extname(entry.name)) &&
-        !new RegExp(testFilePattern).test(entry.name),
-    )
+  const sources = entries.value
+    .filter((entry) => entry.isFile() && extensions.has(extname(entry.name)))
     .map((entry) => `${entry.parentPath}/${entry.name}`);
+  const isSpec = (file) => new RegExp(testFilePattern).test(file);
+  const files = sources.filter((file) => !isSpec(file));
+  const specs = sources.filter(isSpec);
+  const unowned = files.filter((file) => !new RegExp(ownedProductionPath).test(file));
+  for (const file of unowned) console.error(`unowned-production-file: ${file}`);
   const architecture = await inspect(files, configuration);
   const runtime = await inspect(files, {
     ...configuration,
@@ -33,7 +37,9 @@ if (entries.isErr()) {
     ],
     options: { ...configuration.options, tsPreCompilationDeps: false },
   });
-  process.exitCode = architecture && runtime ? 0 : 1;
+  const specAccess =
+    specs.length === 0 || (await inspect(specs, { ...configuration, forbidden: specRules }));
+  process.exitCode = unowned.length === 0 && architecture && runtime && specAccess ? 0 : 1;
 }
 
 async function inspect(files, rules) {
@@ -48,13 +54,6 @@ async function inspect(files, rules) {
   }
   const graph = result.value.output;
   if (typeof graph === 'string') panic('Expected dependency-cruiser object output');
-  const unowned = graph.modules.filter(
-    ({ source }) =>
-      source.startsWith('src/') &&
-      !new RegExp(testFilePattern).test(source) &&
-      !new RegExp(ownedProductionPath).test(source),
-  );
-  for (const { source } of unowned) console.error(`unowned-production-file: ${source}`);
   const report = await format(graph, { outputType: 'err-long' });
   console.log(report.output);
   for (const violation of graph.summary.violations.filter(({ type }) => type === 'cycle')) {
@@ -69,7 +68,7 @@ async function inspect(files, rules) {
       }
     }
   }
-  return graph.summary.error === 0 && unowned.length === 0;
+  return graph.summary.error === 0;
 }
 
 function owner(source) {

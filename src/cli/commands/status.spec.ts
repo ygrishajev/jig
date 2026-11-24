@@ -12,8 +12,7 @@ import {
   aSlice,
   runId,
 } from '../../../tests/support/builders.js';
-import type { JigOperations, RunStatus } from '../../app/api.js';
-import { RunRequestInvalid } from '../../app/errors.js';
+import { type JigOperations, RunRequestInvalid, type RunStatus } from '../../app/api.js';
 import type { RunState } from '../../domain/run-state.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { formatSummary } from '../../observers/metrics.js';

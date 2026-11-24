@@ -376,6 +376,161 @@ describe('dependency checking command', () => {
     },
   );
 
+  it('accepts the CLI, its specs and tooling reaching app through its public entry', async () => {
+    const { cwd, run } = await setup({
+      'cli/nested/a.ts': everyImportForm('../../app/api.js').join('\n'),
+      'cli/deep/nested/a.spec.ts': everyImportForm('../../../domain/../app/api.js').join('\n'),
+      'adapters/a.spec.ts': everyImportForm('../app/api.js').join('\n'),
+      'app/api.ts': "export { b } from './b.js'; export type { B } from './b.js';",
+      'app/b.ts': sharedTarget,
+    });
+    await mkdir(path.join(cwd, 'scripts'));
+    await writeFile(
+      path.join(cwd, 'scripts/tool.ts'),
+      "import { b } from '../src/app/b.js'; export const tool = b;",
+    );
+    expect((await run()).exitCode).toBe(0);
+  });
+
+  it('accepts app and composition, specs included, reaching private app modules', async () => {
+    const { run } = await setup({
+      'app/nested/a.ts': everyImportForm('../b.js').join('\n'),
+      'app/nested/a.spec.ts': everyImportForm('../b.js').join('\n'),
+      'composition/nested/a.ts': everyImportForm('../../app/b.js').join('\n'),
+      'composition/a.spec.ts': everyImportForm('../app/nested/c.js').join('\n'),
+      'app/b.ts': sharedTarget,
+      'app/nested/c.ts': sharedTarget,
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
+  it.each(importFormNames)(
+    'rejects the CLI and its specs reaching a private app module through %s',
+    async (form) => {
+      const importers = {
+        'cli/nested/a.ts': '../../app/b.js',
+        'cli/deep/nested/a.ts': '../../../domain/../app/nested/c.js',
+        'cli/nested/a.spec.ts': '../../app/b.js',
+        'cli/a.spec.ts': '../app/nested/c.js',
+      };
+      const { run } = await setup({
+        ...importersUsing(form, importers),
+        'app/api.ts': "export { b } from './b.js';",
+        'app/b.ts': sharedTarget,
+        'app/nested/c.ts': sharedTarget,
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      for (const [importer, target] of [
+        ['cli/nested/a.ts', 'app/b.ts'],
+        ['cli/deep/nested/a.ts', 'app/nested/c.ts'],
+        ['cli/nested/a.spec.ts', 'app/b.ts'],
+        ['cli/a.spec.ts', 'app/nested/c.ts'],
+      ])
+        expect(result.all).toContain(
+          violation('app-internals-are-private-to-app-and-composition', importer, target),
+        );
+      expect(result.all).not.toContain('no-module-cycles');
+    },
+  );
+
+  it.each(importFormNames)(
+    'rejects specs of other owners reaching a private app module through %s',
+    async (form) => {
+      const importers = Object.fromEntries(
+        ownersOtherThan('app', 'composition', 'cli').map((owner) => [
+          `${owner}/nested/a.spec.ts`,
+          '../../app/b.js',
+        ]),
+      );
+      const { run } = await setup({
+        ...importersUsing(form, importers),
+        'app/b.ts': sharedTarget,
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      for (const importer of Object.keys(importers))
+        expect(result.all).toContain(
+          violation('app-internals-are-private-to-app-and-composition', importer, 'app/b.ts'),
+        );
+    },
+  );
+
+  it.each(importFormNames)(
+    'rejects every production owner but the CLI and composition importing app through %s',
+    async (form) => {
+      const importers = {
+        ...Object.fromEntries(
+          ownersOtherThan('app', 'cli', 'composition').map((owner) => [
+            `${owner}/nested/a.ts`,
+            '../../app/api.js',
+          ]),
+        ),
+        'steps/deep/nested/a.ts': '../../../flow/../app/api.js',
+      };
+      const { run } = await setup({
+        ...importersUsing(form, importers),
+        'app/api.ts': sharedTarget,
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      for (const importer of Object.keys(importers))
+        expect(result.all).toContain(
+          violation('app-is-imported-only-by-cli-and-composition', importer, 'app/api.ts'),
+        );
+      expect(result.all).not.toContain('no-module-cycles');
+    },
+  );
+
+  it.each(
+    importFormNames.flatMap((form) =>
+      ['adapters', 'observers'].map((owner) => [form, owner] as const),
+    ),
+  )('rejects the public app entry exporting through %s from %s', async (form, owner) => {
+    const { run } = await setup({
+      'app/api.ts': importForms[form](`../${owner}/nested/b.js`),
+      [`${owner}/nested/b.ts`]: sharedTarget,
+    });
+    const result = await run();
+    expect(result.exitCode).toBe(1);
+    expect(result.all).toContain(
+      violation('app-public-entry-exposes-no-infrastructure', 'app/api.ts', `${owner}/nested/b.ts`),
+    );
+    expect(result.all).not.toContain('no-module-cycles');
+  });
+
+  it.each([
+    "import type { B } from '../../adapters/b.js'; export type A = B;",
+    "export type { B } from '../../adapters/b.js';",
+    "import type { B } from '../../observers/b.js'; export type A = B;",
+    "export type { B } from '../../observers/b.js';",
+  ])('rejects an app contract naming an infrastructure type: %s', async (source) => {
+    const { run } = await setup({
+      'app/nested/a.ts': source,
+      'adapters/b.ts': sharedTarget,
+      'observers/b.ts': sharedTarget,
+    });
+    const result = await run();
+    expect(result.exitCode).toBe(1);
+    expect(result.all).toContain('app-contracts-name-no-infrastructure-types');
+    expect(result.all).toContain('src/app/nested/a.ts');
+    expect(result.all).not.toContain('no-module-cycles');
+  });
+
+  it('accepts app constructing adapters and observers while their wiring waits for #49', async () => {
+    const { run } = await setup({
+      'app/nested/a.ts': [
+        "import { b } from '../../adapters/b.js';",
+        "import { c } from '../../observers/c.js';",
+        'export const wired = [b, c];',
+      ].join('\n'),
+      'app/a.spec.ts': "import type { B } from '../adapters/b.js'; export type A = B;",
+      'adapters/b.ts': sharedTarget,
+      'observers/c.ts': 'export const c = 1;',
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
   it('accepts adapters importing the owners beneath them through every import form', async () => {
     const owners = ['config', 'domain', 'failures', 'observers', 'ports'];
     const { run } = await setup({

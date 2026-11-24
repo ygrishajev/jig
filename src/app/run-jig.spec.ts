@@ -45,7 +45,6 @@ import { lockRun } from '../adapters/local-store/run-lock.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
 import { DOCKERFILE, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
-import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom, validationWarnings } from '../config/load-config.js';
 import { designReviewStage } from '../domain/design-review.js';
@@ -82,6 +81,7 @@ import {
   type RunScope,
 } from './run-jig.js';
 import { readRunStatus } from './run-status.js';
+import type { SandboxOpenFailure } from './sandbox-runtime.js';
 
 /** TEST-NET-1: routable nowhere, so an exporter aimed at it waits out its timeout. */
 const UNREACHABLE_COLLECTOR = 'http://192.0.2.1:4318';
@@ -633,9 +633,9 @@ describe('runJig', () => {
       held = { opened, released };
       return { opened: openedPromise, release };
     };
-    let sessionFailures: SessionOpenFailure[] = [];
+    let sessionFailures: SandboxOpenFailure[] = [];
     let sessionsOpened = 0;
-    const failNextSessions = (...failures: SessionOpenFailure[]) => {
+    const failNextSessions = (...failures: SandboxOpenFailure[]) => {
       sessionFailures = failures;
       return () => sessionsOpened;
     };

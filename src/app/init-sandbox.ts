@@ -1,7 +1,6 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import type { LogFormat } from '../adapters/logging/create-logger.js';
 import type { AgentChoice, EnteredCredential, MissingCredential } from '../config/agent-policy.js';
 import type { ConfigSource } from '../config/config-source.js';
 import { type JigEnvironment, withCredentials } from '../config/environment.js';
@@ -23,6 +22,7 @@ import {
   SetupCommandFailed,
 } from '../ports/agent-session.js';
 import type { LocalPreparationFailed, LocalStateUnwritable } from '../ports/local-state.js';
+import type { LogFormat } from '../ports/observability.js';
 import type { RunSession } from '../ports/run-session.js';
 import type { ImageBuildFailed } from '../ports/sandbox-images.js';
 import type { StarterFiles } from '../ports/starter-files.js';
