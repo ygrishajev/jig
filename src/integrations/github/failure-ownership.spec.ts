@@ -22,6 +22,10 @@ import {
 } from '../../ports/git-failures.js';
 import { LocalPreparationFailed, LocalStateUnwritable } from '../../ports/local-state.js';
 import {
+  OrchestrationStateInvalid,
+  PublicationInProgress,
+} from '../../ports/publication-receipts.js';
+import {
   MetricsLogCorrupt,
   RunCodeUnavailable,
   RunInProgress,
@@ -37,8 +41,6 @@ import {
   GithubRefused,
   GithubSetupInvalid,
   GithubUnavailable,
-  OrchestrationStateInvalid,
-  PublicationInProgress,
   RunBranchUnpublishable,
 } from './errors.js';
 

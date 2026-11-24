@@ -360,18 +360,17 @@ production imports replace the baseline's `domain/errors.ts` and `domain/retry.t
 the shared helpers and the retry policy:
 
 - `failures/messages.ts` ← every adapter that reports a thrown cause (`filesystem/config-source.ts`,
-  `filesystem/preset-source.ts`, `find-symlink.ts`, `git/git-workspace.ts`, `git/merge.ts`,
+  `filesystem/preset-source.ts`, `find-symlink.ts`, `git/git-workspace.ts`, `git/merge.ts`, `git/orchestration-ref.ts`,
   `git/repository.ts`, `git/run-history.ts`, `local-store/credentials-file.ts`,
   `local-store/local-run-store.ts`, `local-store/local-state.ts`, `local-store/run-lock.ts`,
   `run-store/git-remote-run-store.ts`, `sandbox-image/docker-images.ts`,
   `sandcastle/codex-auth.ts`, `sandcastle/private-clone-docker.ts`,
   `sandcastle/sandcastle-session.ts`, `sandcastle/structured-output.ts`, `terminal/terminal.ts`),
   `app/init-sandbox.ts`, `app/run-stores.ts`, `app/sandbox-image.ts`, `cli/read-request.ts`,
-  `cli/with-error-handling.ts`, `flow/engine.ts`, `integrations/github/orchestration-store.ts` and
-  `observers/run-events.ts`.
-- `failures/retry.ts` ← `adapters/git/remote-ref.ts`, `app/container.ts`, `flow/engine.ts`,
-  `flow/retry-policy.ts`, `integrations/github/octokit-github.ts`,
-  `integrations/github/orchestration-store.ts` and `steps/planning.ts`.
+  `cli/with-error-handling.ts`, `flow/engine.ts` and `observers/run-events.ts`.
+- `failures/retry.ts` ← `adapters/git/orchestration-ref.ts`, `adapters/git/remote-ref.ts`,
+  `app/container.ts`, `flow/engine.ts`, `flow/retry-policy.ts`,
+  `integrations/github/octokit-github.ts` and `steps/planning.ts`.
 - `flow/retry-policy.ts` → `domain/errors.ts`, `domain/settings.ts`, `failures/retry.ts`; it
   replaces `domain/retry.ts`, which no longer exists. `app/container.ts` and `flow/engine.ts`
   import it.
@@ -385,6 +384,40 @@ integrations, observers and steps import it; domain, ports, config and prompts c
 it expresses: a business rule in domain, a capability contract in its port, a configuration policy
 in config. Moving container construction from `app` to composition and redistributing the
 remaining GitHub integration are separate slices.
+
+## GitHub receipts and publication lifetime
+
+Durable GitHub receipts and publication leases have one owner per responsibility. The hidden ref,
+its file, its JSON layout, the commit message, the conflict retry budget and the lease period are
+unchanged, so receipts written before the move load as they did.
+
+| Responsibility                                                       | Was in `integrations/github/`                 | Owner now                                                                 |
+| -------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
+| `RepositoryIdentity` and its `owner/repository` schema               | `github-port.ts`, `repository-identity.ts`    | `domain/repository-identity.ts`                                           |
+| Orchestration state, schema, receipts, markers and lease transitions | `orchestration-state.ts`                      | `domain/orchestration.ts`                                                 |
+| Lease period (`OWNERSHIP_LEASE_MS`) and a fresh lease                | `orchestration-store.ts`                      | `domain/orchestration.ts` (`publicationLease`)                            |
+| Receipt-store and publication-ownership capabilities                 | `OrchestrationStore` class                    | `ports/publication-receipts.ts` (`ReceiptStore`, `PublicationOwnership`)  |
+| `OrchestrationStateInvalid`, `PublicationInProgress`, store failures | `errors.ts`, `orchestration-store.ts`         | `ports/publication-receipts.ts` (`ReceiptStoreFailure`)                   |
+| Persistence in `refs/jig/_orchestration` with conflict retries       | `orchestration-store.ts`                      | `adapters/git/orchestration-ref.ts` (`GitOrchestrationStore`)             |
+| Claim, renewal before each outward effect, release, cleanup report   | `OrchestrationStore.withPublicationOwnership` | `app/publication-ownership.ts` (`withPublicationOwnership`, `WhileOwned`) |
+
+The adapter no longer imports `app/report-cleanup.ts`; it exposes claim, renew and release as
+technical operations, and the app wrapper sequences them. The wrapper takes the ownership
+capability as an argument, refuses with `PublicationInProgress` when another job holds an
+unexpired lease, stops before an effect once another job has taken an expired lease over, and
+releases however the work ends. A failed release replaces successful work; after failed work it is
+logged and the work's failure is kept; a panic in the work still releases and then propagates.
+`GithubError` keeps naming both moved classes; their tags and messages are unchanged.
+
+The GitHub command, issue flow, Octokit API adapter, repository discovery and run-branch
+publication remain in `integrations/github/` for later slices. Until they move, two bounded
+exceptions remain. `command.ts` registers through `cli/app-action.ts` (`appAction`), and
+`implementIssue` takes the `App` container to reach the logger, repository root and run stores and
+constructs `GitOrchestrationStore` itself. Neither is a pattern for new code: new publication code
+receives `ReceiptStore` and `PublicationOwnership` and calls `withPublicationOwnership`.
+
+`src/boundary.spec.ts` and the `github-is-isolated` checks named in the application-boundaries
+specification were already absent when this move started; nothing replaces them.
 
 ## Failure ownership audit
 
@@ -444,7 +477,9 @@ machine). Each module defines its own classes and re-exports nothing; there are 
 
 `isTransient` (`domain/errors.ts:10`) and `FailureKind` (`:7`) stay in domain; the removed
 `isJigError` had no production caller. The GitHub integration's classes in
-`integrations/github/errors.ts` stay where they are and carry no `kind`.
+`integrations/github/errors.ts` stay where they are and carry no `kind`; `OrchestrationStateInvalid`
+and `PublicationInProgress` later moved to the publication-receipts port, as recorded under
+[GitHub receipts and publication lifetime](#github-receipts-and-publication-lifetime).
 
 #### `ConfigInvalid` split by meaning
 

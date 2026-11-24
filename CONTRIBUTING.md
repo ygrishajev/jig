@@ -75,7 +75,7 @@ and run flows. Download and open it in a browser; GitHub displays HTML as source
 | `src/composition/`         | The `jig` executable: composes the CLI and starts it.                 |
 | `src/cli/`                 | Commands and input parsing.                                           |
 | `src/app/`                 | Application lifecycle, workflow assembly, and container construction. |
-| `src/integrations/github/` | `jig github implement`: issue orchestration and publication.          |
+| `src/integrations/github/` | `jig github implement`: the command, issue flow and Octokit API.      |
 | `src/config/`              | Configuration schemas, defaults, presets, and policy.                 |
 | `src/domain/`              | State, validation, domain decisions, and business failures.           |
 | `src/failures/`            | Failure messages, panic unwrapping, and retry of `Result`s.           |
@@ -106,9 +106,17 @@ Production composition may import only composition, cli, app, adapters, config, 
 domain, failures, `src/integrations/github/command.ts` and `src/integrations/github/github-port.ts`,
 and no other production owner may import composition. Specs and tooling outside `src/` may import CLI helpers.
 
+GitHub publication keeps its shared receipts and leases in `refs/jig/_orchestration`. Domain owns
+their state, schema and transitions (`src/domain/orchestration.ts`) and the repository identity
+(`src/domain/repository-identity.ts`); `src/ports/publication-receipts.ts` declares the receipt-store
+and publication-ownership capabilities and their failures; `src/adapters/git/orchestration-ref.ts`
+persists them in the hidden ref; and `withPublicationOwnership` in `src/app/publication-ownership.ts`
+owns the publication lifetime: it claims the lease, renews it before each outward effect and releases
+it however the work ends.
+
 Each failure class lives with the owner of what it means: business failures in
-`src/domain/errors.ts`, capability failures in the port that declares them (shared Git, run-state
-and local-state failures in `src/ports/git-failures.ts`, `src/ports/run-state-failures.ts` and
+`src/domain/errors.ts`, capability failures in the port that declares them (publication receipts in
+`src/ports/publication-receipts.ts`; shared Git, run-state and local-state failures in `src/ports/git-failures.ts`, `src/ports/run-state-failures.ts` and
 `src/ports/local-state.ts`), configuration validation in `src/config/errors.ts`, and use-case and
 command input failures in `src/app/` and `src/cli/`. Import a class from its owner; there is no
 union of every class. `src/adapters/logging/error-serializer.ts` logs a class split out of
