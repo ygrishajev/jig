@@ -34,15 +34,15 @@ import type {
   ReceiptStoreFailure,
 } from '../ports/publication-receipts.js';
 import type { CodeCheckpoint, RunBranches, RunBranchFailure } from '../ports/run-branches.js';
-import type { RunStoreFailure } from '../ports/run-store.js';
-import type { App } from './container.js';
+import type { RunStoreFailure, RunStoreSetupInvalid } from '../ports/run-store.js';
+import { type App, runCapabilitiesOf } from './container.js';
 import { BaseBranchMismatch } from './errors.js';
 import { findingsCommentBody } from './findings-comment.js';
 import { pullRequestFor, refusalCommentBody, statusCommentBody } from './publication-content.js';
 import { type WhileOwned, withPublicationOwnership } from './publication-ownership.js';
 import { acceptedRequestFor } from './request-snapshot.js';
 import { runJig, type RunJigFailure, type RunReport } from './run-jig.js';
-import { openRunStore, type RunStoreSetupInvalid } from './run-stores.js';
+import { openRunStore } from './run-stores.js';
 
 export type IssueOutcome =
   | { kind: 'pullRequest'; url: string; reused: boolean }
@@ -132,7 +132,7 @@ export function implementIssue(
       `GitHub issue #${issueNumber} is ready as run ${accepted.runId}`,
     );
     const report = yield* Result.await(
-      runJig(app, {
+      runJig(runCapabilitiesOf(app), {
         start: { text: accepted.text, merge: false, codePublication: 'deferred' },
         runId: accepted.runId,
         requiredStores: REQUIRED_STORES,
@@ -215,7 +215,9 @@ function codeCheckpointOf(
 ): Promise<Result<CodeCheckpoint, RunStoreSetupInvalid | RunStoreFailure | GitCommandFailed>> {
   return Result.gen(async function* () {
     const { runId } = report.state;
-    const store = yield* Result.await(openRunStore(app.cradle, REQUIRED_STORES));
+    const store = yield* Result.await(
+      openRunStore(app.cradle.runStores, app.cradle.config, REQUIRED_STORES),
+    );
     const saved = yield* Result.await(store.peek(runId));
     if (saved?.codeRevision)
       return Result.ok({ startingCommit: saved.startingCommit, codeRevision: saved.codeRevision });

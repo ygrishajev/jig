@@ -1,6 +1,6 @@
 import { select } from '@inquirer/prompts';
 
-import type { Preset, PresetName } from '../../config/presets.js';
+import type { Preset, PresetPick } from '../../config/presets.js';
 import { askInTerminal, PROCESS_TERMINAL, type Terminal } from './terminal.js';
 
 interface PresetChoice {
@@ -8,8 +8,6 @@ interface PresetChoice {
   value: PresetPick;
   description?: string;
 }
-
-export type PresetPick = { kind: 'preset'; name: PresetName } | { kind: 'none' };
 
 export function askForPreset(
   presets: Preset[],

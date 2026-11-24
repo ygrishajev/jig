@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -91,7 +91,11 @@ describe('readRequest', () => {
       name,
       text,
       read: (source: Parameters<typeof readRequest>[0]) =>
-        readRequest(source, { cwd, standardInput }),
+        readRequest(source, {
+          cwd: () => cwd,
+          standardInput: () => standardInput,
+          readTextFile: (file) => readFile(file, 'utf-8'),
+        }),
     };
   }
 });

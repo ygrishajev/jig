@@ -44,7 +44,7 @@ Keep a finding only with a concrete failure scenario: what a reasonable next cha
 break. "A new document would be written but `jig status` would never show it" survives; "this
 could be cleaner" does not. Read every call site first. Check what a fix would change besides
 structure — retries, error formats, files written — and say so: moving `init`'s sandbox onto
-`withRunScope` would have retried a failed setup command the planner needs back at once.
+the run's sandbox scope would have retried a failed setup command the planner needs back at once.
 
 ## 5. Report, then mark
 

@@ -1,31 +1,25 @@
 import { Result } from 'better-result';
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { StandardInput } from '../adapters/terminal/standard-input.js';
+import type { RequestInputs, StandardInput } from '../adapters/terminal/standard-input.js';
+import type { StartRequest } from '../app/api.js';
 import { RunRequestInvalid } from '../app/errors.js';
-import type { StartRequest } from '../app/run-jig.js';
 import { messageOf } from '../failures/messages.js';
 
 /** Where a request comes from: a file, or text piped to standard input. */
 export type RequestSource = { file: string } | { stdin: true };
 
-export interface RequestReads {
-  cwd: string;
-  standardInput: StandardInput;
-}
-
 export async function readRequest(
   source: RequestSource,
-  { cwd, standardInput }: RequestReads,
+  inputs: RequestInputs,
 ): Promise<Result<StartRequest, RunRequestInvalid>> {
   if ('stdin' in source) {
-    const piped = await readPipedText(standardInput);
+    const piped = await readPipedText(inputs.standardInput());
     return piped.andThen((text) => nonBlank({ text }, 'standard input'));
   }
-  const file = path.resolve(cwd, source.file);
+  const file = path.resolve(inputs.cwd(), source.file);
   const text = await Result.tryPromise({
-    try: () => readFile(file, 'utf-8'),
+    try: () => inputs.readTextFile(file),
     catch: (error) =>
       new RunRequestInvalid({
         message: `Cannot read the request file "${file}": ${messageOf(error)}`,

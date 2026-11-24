@@ -8,19 +8,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { presetName } from '../../tests/support/builders.js';
-import { fakeStandardInput, InMemoryConfigSource } from '../../tests/support/fakes.js';
+import { InMemoryConfigSource } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configFileSource } from '../adapters/filesystem/config-source.js';
 import { presetDirectoriesSource } from '../adapters/filesystem/preset-source.js';
-import type { PresetPick } from '../adapters/terminal/ask-for-preset.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
 import type { ConfigSource } from '../config/config-source.js';
 import { ConfigInvalid } from '../config/errors.js';
-import type { Preset, PresetName } from '../config/presets.js';
+import type { Preset, PresetName, PresetPick, PresetSelection } from '../config/presets.js';
 import { RepositoryInvalid } from '../ports/git-failures.js';
-import type { PresetSelection } from './config-option.js';
 import { withApp } from './with-app.js';
 
 describe('withApp', () => {
@@ -332,7 +330,6 @@ describe('withApp', () => {
           askForPreset,
           createAppContainer: createApp,
           configSourceAt: (destination) => input.configSource ?? configFileSource(destination),
-          standardInput: fakeStandardInput(),
           presetSourceAt: (locations) =>
             presetDirectoriesSource(locations, builtinPresetsDirectory),
         },

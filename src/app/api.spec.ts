@@ -1,24 +1,38 @@
 import { faker } from '@faker-js/faker';
 import { Result } from 'better-result';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
-import { aMetricsSummary, aRunState, presetName } from '../../tests/support/builders.js';
+import { aMetricsSummary, aRunState, presetName, runId } from '../../tests/support/builders.js';
 import { InMemoryConfigSource, InMemoryPresetSource } from '../../tests/support/fakes.js';
 import {
+  localRunRuntime,
   operationContextIn,
   realRepositorySources,
 } from '../../tests/support/repository-sources.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
+import { lockRun } from '../adapters/local-store/run-lock.js';
+import { RepositoryRunStores } from '../adapters/run-store/repository-run-stores.js';
 import { ConfigInvalid } from '../config/errors.js';
+import { SandboxCredentialsInvalid } from '../ports/agent-session.js';
 import { RepositoryInvalid } from '../ports/git-failures.js';
 import { LocalPreparationFailed } from '../ports/local-state.js';
 import type { RunRecords } from '../ports/run-records.js';
-import { listPresets, readRunStatus, type RepositorySources } from './api.js';
+import { RunInProgress } from '../ports/run-state-failures.js';
+import {
+  listPresets,
+  readRunStatus,
+  type RepositorySources,
+  type RunInput,
+  type RunLog,
+  type RunSandbox,
+  type RuntimeRequest,
+  startOrResumeRun,
+} from './api.js';
 import { RunRequestInvalid } from './errors.js';
 
 describe('application API', () => {
@@ -158,6 +172,92 @@ describe('application API', () => {
     });
   });
 
+  describe('startOrResumeRun', () => {
+    it('starts a run under the id it was given, resumes it for the same request and refuses another', async () => {
+      const { run, repoRoot, runtimes } = await setup();
+      const id = runId();
+      const text = `# ${faker.lorem.sentence()}`;
+
+      const first = await run({ run: { start: { text }, runId: id } });
+      const started = unwrap(await new LocalRunStore(repoRoot).load(id));
+      const again = await run({ run: { start: { text }, runId: id } });
+      const other = await run({ run: { start: { text: faker.lorem.paragraph() }, runId: id } });
+
+      expect(first.isErr() && first.error).toBeInstanceOf(SandboxCredentialsInvalid);
+      expect(started).toMatchObject({ runId: id, request: text });
+      expect(again.isErr() && again.error).toBeInstanceOf(SandboxCredentialsInvalid);
+      expect(unwrap(await new LocalRunStore(repoRoot).load(id))).toEqual(started);
+      expect(other.isErr() && other.error).toBeInstanceOf(RunRequestInvalid);
+      expect(runtimes().every((runtime) => runtime.disposed())).toBe(true);
+    });
+
+    it('reports an ended run and records it without preparing or starting a sandbox', async () => {
+      const { run, saveRun, sandbox, runtimes, jigDirectory } = await setup();
+      const state = await saveRun({ phase: 'done' });
+
+      const report = unwrap(await run({ run: { resume: state.runId } }));
+
+      expect(report).toEqual({ state, status: 'done' });
+      expect(sandbox.checkCredentials).not.toHaveBeenCalled();
+      expect(sandbox.openScope).not.toHaveBeenCalled();
+      expect((await jigDirectory()).map(([file]) => file)).toContain(
+        path.join(state.runId, 'state', 'result.json'),
+      );
+      expect(runtimes()[0]?.disposed()).toBe(true);
+    });
+
+    it('resumes a run from the custom store module the config names', async () => {
+      const state = aRunState({ phase: 'done' });
+      const storeModule = `${faker.string.uuid()}.mjs`;
+      const { run, repoRoot, writeFileInRepository } = await setup({
+        configSource: new InMemoryConfigSource({ json: { runStores: [storeModule] } }),
+      });
+      await writeFileInRepository(
+        storeModule,
+        `export default () => ({ load: async () => (${JSON.stringify(state)}), save: async () => {} });`,
+      );
+
+      const report = unwrap(await run({ run: { resume: state.runId } }));
+
+      expect(report.state).toEqual(state);
+      expect(unwrap(await new LocalRunStore(repoRoot).load(state.runId))).toBeUndefined();
+    });
+
+    it('refuses a directory below the repository root before building anything for the run', async () => {
+      const { run, openRuntime } = await setup({ startInSubdirectory: true });
+
+      const result = await run({ run: { resume: runId() } });
+
+      expect(result.isErr() && result.error).toBeInstanceOf(RepositoryInvalid);
+      expect(openRuntime).not.toHaveBeenCalled();
+    });
+
+    it('refuses a run another process holds without opening a sandbox, and releases what it built', async () => {
+      const { run, repoRoot, sandbox, runtimes } = await setup();
+      const id = runId();
+      const release = unwrap(await lockRun(repoRoot, id));
+
+      const result = await run({ run: { resume: id } });
+      await release();
+
+      expect(result.isErr() && result.error).toBeInstanceOf(RunInProgress);
+      expect(sandbox.openScope).not.toHaveBeenCalled();
+      expect(runtimes()[0]?.disposed()).toBe(true);
+    });
+
+    it('stops before building anything when the operator picks no preset', async () => {
+      const presetSource = new InMemoryPresetSource();
+      presetSource.put(0, presetName(), {});
+      const { run, openRuntime, askForPreset } = await setup({ presetSource });
+
+      const result = await run({ run: { resume: runId() }, preset: { kind: 'ask' } });
+
+      expect(result.isErr() && result.error).toBeInstanceOf(ConfigInvalid);
+      expect(askForPreset).toHaveBeenCalledTimes(1);
+      expect(openRuntime).not.toHaveBeenCalled();
+    });
+  });
+
   async function setup(
     input: {
       environment?: Record<string, string>;
@@ -184,15 +284,46 @@ describe('application API', () => {
     });
     const cwd = input.startInSubdirectory ? await subdirectoryOf(repo.dir) : repo.dir;
     const context = () => operationContextIn(cwd, input.environment);
+    const sandbox = mock<RunSandbox>({
+      checkCredentials: vi.fn(() =>
+        Result.err(new SandboxCredentialsInvalid({ message: faker.lorem.sentence() })),
+      ),
+    });
+    const built: ReturnType<typeof localRunRuntime>[] = [];
+    const openRuntime = vi.fn((request: RuntimeRequest) => {
+      const opened = localRunRuntime(request, { sandbox, log: mock<RunLog>() });
+      built.push(opened);
+      return opened.runtime;
+    });
+    const askForPreset = vi.fn(async () => undefined);
     return {
       repoRoot: repo.dir,
       sources,
       records,
+      sandbox,
+      openRuntime,
+      askForPreset,
+      runtimes: () => built,
+      run: (runInput: Omit<RunInput, 'logFormat'>) =>
+        startOrResumeRun(
+          { ...sources, context, openRuntime, askForPreset },
+          { ...runInput, logFormat: 'json' },
+        ),
+      writeFileInRepository: (name: string, contents: string) =>
+        writeFile(path.join(repo.dir, name), contents),
       status: (statusInput: Parameters<typeof readRunStatus>[1]) =>
-        readRunStatus({ ...sources, context, runRecordsAt: () => records }, statusInput),
+        readRunStatus(
+          {
+            ...sources,
+            context,
+            runRecordsAt: () => records,
+            runStoresAt: (repoRoot) => new RepositoryRunStores(repoRoot),
+          },
+          statusInput,
+        ),
       presets: () => listPresets({ ...sources, context }),
-      saveRun: async () => {
-        const state = aRunState();
+      saveRun: async (overrides: Parameters<typeof aRunState>[0] = {}) => {
+        const state = aRunState(overrides);
         unwrap(await new LocalRunStore(repo.dir).save(state));
         return state;
       },

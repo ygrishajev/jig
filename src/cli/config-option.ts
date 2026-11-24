@@ -1,9 +1,7 @@
 import { Option } from 'commander';
 import { z } from 'zod';
 
-import { type PresetName, presetNameSchema } from '../config/presets.js';
-
-export type PresetSelection = { kind: 'named'; name: PresetName } | { kind: 'ask' };
+import { presetNameSchema, type PresetSelection } from '../config/presets.js';
 
 /** The input of a command that reads the config; its input schema extends this one. */
 export const configInputSchema = z.object({ config: z.string().min(1).optional() });

@@ -92,8 +92,8 @@ moves its raw JSON. Presets cross the `PresetSource` contract in `src/config/pre
 `src/adapters/filesystem/preset-source.ts` orders the preset directories and yields candidates
 lazily, while config skips invalid names, lets the first candidate of a name win, validates it and
 merges whole roles. The process environment, working directory and home directory are captured at
-the process edge before config parses them: by composition for `jig status` and `jig presets`, and
-by `src/cli/with-app.ts` for the other commands. `npm run lint:dependencies` allows production config to import only
+the process edge before config parses them: by composition for `jig run`, `jig status` and
+`jig presets`, and by `src/cli/with-app.ts` for the other commands. `npm run lint:dependencies` allows production config to import only
 `src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
 exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
 built-ins, and domain, ports, config and prompts cannot import it.
@@ -113,15 +113,32 @@ decides the order: repository root, environment, saved credentials, config, pres
 handlers in `src/cli/commands/status.ts` and `src/cli/commands/presets.ts` receive the bound
 operations as `JigOperations` and only parse input and format the result. Status reports its metrics
 and documents through the `RunRecords` contract in `src/ports/run-records.ts`, implemented by
-`src/adapters/local-store/local-run-records.ts`. `jig run`, `jig init`, `jig sandbox build` and
+`src/adapters/local-store/local-run-records.ts`.
+
+`jig run` calls `startOrResumeRun` from the same entry. The handler in `src/cli/commands/run.ts`
+parses its input and reads the request file or standard input through the `RequestInputs` it is
+given, so unusable input calls no operation. The operation prepares the repository, applies the
+preset (asking through a supplied chooser; nobody picking refuses the run) and only then asks the
+supplied `openRuntime` for the run's capabilities. `runJig` in `src/app/run-jig.ts` owns the run
+policy over `RunCapabilities`: the lock, which stores to open (`openRunStore` in
+`src/app/run-stores.ts` adds required stores to the configured ones), start or resume by id, the
+ended-run report, credentials and image before any sandbox, and the invocation's records.
+`withResource` and `releaseInOrder` in `src/app/lifecycle.ts` acquire, use and release: every
+release is attempted, a partial acquisition releases what it already holds, a work panic still
+releases and then propagates as thrown, and the cleanup rule of `reportCleanup` applies. A run
+releases its sandbox session, then its scope, then telemetry, then the lock. Stores are built by
+`src/adapters/run-store/repository-run-stores.ts` behind `RunStoreCatalog` in
+`src/ports/run-store.ts`, which also loads and checks a custom store module. Composition binds the
+run's runtime to `openRunRuntime` in `src/app/container.ts`, which still builds it with Awilix until
+spike #49 records the construction mechanism. `jig init`, `jig sandbox build` and
 `jig github implement` still open the container through `src/cli/with-app.ts`, which uses the same
-preparation; `src/app/container.ts` keeps constructing it until spike #49 records the construction
-mechanism.
+preparation and preset selection (`src/app/preset-selection.ts`).
 
 `jig github implement` is spread over the same owners. `src/cli/commands/github.ts` declares the
 command, parses its input and describes its outcome; `src/config/github-settings.ts` validates the
 token and repository settings and decides their precedence; `implementIssue` in
-`src/app/implement-issue.ts` accepts the issue, runs it through `runJig` and publishes the outcome,
+`src/app/implement-issue.ts` accepts the issue, runs it through `runJig` with the container's run
+capabilities and publishes the outcome,
 using the request snapshot, findings and publication content in `src/app/`. It receives its
 capabilities: the GitHub API in `src/ports/github.ts` (implemented by
 `src/adapters/github/octokit-github.ts`) and the guarded run branches in `src/ports/run-branches.ts`

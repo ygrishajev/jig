@@ -173,8 +173,13 @@ svg text{font-family:var(--sans)}
     <code>parseEnvironment</code> after checking the repository root and before reading saved
     credentials and config. <code>jig status</code> and <code>jig presets</code> call
     <code>readRunStatus</code> and <code>listPresets</code> from <code>src/app/api.ts</code>, bound by
-    composition to the captured context and lazily built sources; they build no container. The other
-    commands still prepare through <code>src/cli/with-app.ts</code> and receive the container that
+    composition to the captured context and lazily built sources; they build no container.
+    <code>jig run</code> calls <code>startOrResumeRun</code> from the same entry after the CLI has read the
+    request through supplied input capabilities; the operation prepares, selects the preset and then
+    asks composition's <code>openRuntime</code> for the run's capabilities, which
+    <code>openRunRuntime</code> in <code>src/app/container.ts</code> still builds with Awilix. <code>runJig</code>
+    owns the lock, store selection, start or resume and the release order through the wrappers in
+    <code>src/app/lifecycle.ts</code>. The other commands still prepare through <code>src/cli/with-app.ts</code> and receive the container that
     <code>src/app/container.ts</code> builds; app still constructs adapters and scopes until spike #49
     records the construction mechanism. The GitHub command registers through the same <code>appAction</code> bridge, and
     <code>implementIssue</code> takes the container only for its logger, repository root,
@@ -305,17 +310,17 @@ svg text{font-family:var(--sans)}
   function box(id, title, lines, canvas, pills) { return { id: id, title: title, lines: lines, canvas: canvas, pills: pills }; }
 
   /* ---------- level 3: the flow inside each box ---------- */
-  var cTNew = flowCv("tn", "Start a run", "jig run request.md [--id <id>]. src/cli/commands/run.ts → src/app/run-jig.ts.", [
-    ["Parse the command", "commander and zod: request, --id, --config, --preset, --log-format.", "iface"],
-    ["Build the container", "awilix (src/app/container.ts): config, settings, logger, image builder, sandbox opener.", "step"],
+  var cTNew = flowCv("tn", "Start a run", "jig run request.md [--id <id>]. src/cli/commands/run.ts → startOrResumeRun (src/app/api.ts) → src/app/run-jig.ts.", [
+    ["Parse and read the request", "commander and zod; then the file or standard input through supplied input capabilities. Unusable input calls no operation.", "iface"],
+    ["Prepare and build", "startOrResumeRun: repository, environment, credentials, config, preset; then openRunRuntime (awilix, src/app/container.ts).", "step"],
     ["Lock the run", "a second process for the same id fails with RunInProgress; a stale lock expires.", "infra"],
-    ["Open the run stores", "openRunStore: local, git-remote, or a module path (src/app/run-stores.ts).", "infra"],
+    ["Open the run stores", "openRunStore picks configured and required stores; RepositoryRunStores builds local, git-remote or a module path.", "infra"],
     ["Start the run", "a new id or --id; the base branch is the current branch. A finished run is returned as it is.", "domain"],
     ["Make sure the image is current", "ensureSandboxImage rebuilds only what changed.", "domain"],
-    ["withRunScope", "the sandbox (retried if it fails to start), run.log, metrics.jsonl and the observers.", "infra"],
+    ["Open the run scope", "telemetry, then the sandbox (retried if it fails to start), run.log, metrics.jsonl and the observers.", "infra"],
     ["runEngine(runFlow)", "until the run is done, halted, blocked or stuck.", "domain"],
     ["Write the result", "RunArtefacts: result.json with metrics, design.md, plan.md, design-review.md, PR_DESCRIPTION.md.", "infra"],
-    ["Close", "sandbox closed, scope disposed, traces flushed, lock released.", "step"]
+    ["Close", "withResource: sandbox closed, scope disposed, traces flushed, lock released, container disposed; each release attempted.", "step"]
   ], { h: 54, gap: 12 });
   var cTResume = flowCv("tr", "Resume a run", "jig run --id <id>, or the same request file with the same id.", [
     ["Load the run", "the freshest saved state; git-remote updates a stale local run branch.", "infra"],

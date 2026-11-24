@@ -8,7 +8,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { runId } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { observedEvents } from '../../app/observed-events.js';
-import { RunStoreSetupInvalid } from '../../app/run-stores.js';
 import { ConfigInvalid } from '../../config/errors.js';
 import type { RunEvent } from '../../domain/events.js';
 import {
@@ -19,6 +18,7 @@ import {
 import { RepositoryInvalid } from '../../ports/git-failures.js';
 import { LocalPreparationFailed } from '../../ports/local-state.js';
 import { RunStateInvalid } from '../../ports/run-state-failures.js';
+import { RunStoreSetupInvalid } from '../../ports/run-store.js';
 import { RunStoreOperationFailed } from '../../ports/run-store.js';
 import { createConsoleLogger, createRunLogger, defaultLogFormat } from './create-logger.js';
 

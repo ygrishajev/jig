@@ -62,7 +62,7 @@ with this interface:
 `status` uses `peek`, falling back to `load` when it is absent. Returned state is
 validated as a run. `load` and `peek` return a run object, or `null`/`undefined` when
 absent; `save` receives the run object. Methods may be asynchronous. See the
-[module store adapter](../src/app/run-stores.ts) for the module contract.
+[module store adapter](../src/adapters/run-store/repository-run-stores.ts) for the module contract.
 
 ## Logs and tracing
 

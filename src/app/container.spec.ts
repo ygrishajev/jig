@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { Result } from 'better-result';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { aJigConfig, runId } from '../../tests/support/builders.js';
 import { FakeAgentSession, InMemoryRunStore } from '../../tests/support/fakes.js';
@@ -10,55 +10,46 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
 import { parseEnvironment } from '../config/environment.js';
 import { SandboxUnavailable } from '../ports/agent-session.js';
-import { MergeFailed } from '../ports/workspace.js';
-import { createAppContainer, withRunScope } from './container.js';
+import { createAppContainer, runCapabilitiesOf } from './container.js';
 
-describe('withRunScope', () => {
-  it("hands the work the run's sandbox and closes it once the work is done", async () => {
-    const { app, session, run } = await setup();
+describe('runCapabilitiesOf', () => {
+  it("opens a scope whose engine works in the run's sandbox, and closes that sandbox when asked", async () => {
+    const { openScope, session, run } = await setup();
+    const store = new InMemoryRunStore();
 
-    const used = await withRunScope(app, run, new InMemoryRunStore(), {}, async (dependencies) =>
-      Result.ok(dependencies.ports.agent),
-    );
+    const scope = unwrap(await openScope(run, store, undefined));
 
-    expect(unwrap(used)).toBe(session);
+    expect(scope.engineDependencies.ports.agent).toBe(session);
+    expect(scope.engineDependencies.store).toBe(store);
+    expect(session.closed).toBe(false);
+    unwrap(await scope.closeSession());
     expect(session.closed).toBe(true);
+    await scope.dispose();
   });
 
   it('gives up opening the sandbox after the bounded retries with the last failure', async () => {
-    const { app, run, openAttempts } = await setup({ failWith: sandboxUnavailable() });
-    const store = new InMemoryRunStore();
+    const { openScope, run, openAttempts } = await setup({ failWith: sandboxUnavailable() });
 
-    const result = await withRunScope(app, run, store, {}, async () =>
-      Result.ok(faker.lorem.word()),
-    );
+    const result = await openScope(run, new InMemoryRunStore(), undefined);
 
     expect(result.isErr() && result.error).toBeInstanceOf(SandboxUnavailable);
     expect(openAttempts()).toBe(3);
   });
 
-  it("passes on the work's own failure and closes the sandbox", async () => {
-    const { app, session, run } = await setup();
-    const failure = new MergeFailed({ message: faker.lorem.sentence() });
+  it("lets the run's telemetry hear the run's events", async () => {
+    const { openScope, run } = await setup();
+    const heard = vi.fn();
+    const telemetry = { observer: { handle: heard }, shutdown: async () => {} };
 
-    const result = await withRunScope(app, run, new InMemoryRunStore(), {}, async () =>
-      Result.err(failure),
-    );
+    const scope = unwrap(await openScope(run, new InMemoryRunStore(), telemetry));
+    scope.engineDependencies.events.publish({
+      type: 'runResumed',
+      runId: run.runId,
+      phase: 'context',
+    });
 
-    expect(result.isErr() && result.error).toBe(failure);
-    expect(session.closed).toBe(true);
-  });
-
-  it('closes the sandbox when the work inside it throws', async () => {
-    const { app, session, run } = await setup();
-    const failure = new Error(faker.lorem.sentence());
-
-    await expect(
-      withRunScope(app, run, new InMemoryRunStore(), {}, async () => {
-        throw failure;
-      }),
-    ).rejects.toBe(failure);
-    expect(session.closed).toBe(true);
+    expect(heard).toHaveBeenCalledWith(expect.objectContaining({ runId: run.runId }));
+    await scope.dispose();
   });
 
   async function setup(input: { failWith?: SandboxUnavailable } = {}) {
@@ -83,7 +74,7 @@ describe('withRunScope', () => {
     });
     onTestFinished(() => app.dispose());
     return {
-      app,
+      openScope: runCapabilitiesOf(app).sandbox.openScope,
       session,
       run: { runId: runId(), baseBranch: faker.git.branch() },
       openAttempts: () => attempts,

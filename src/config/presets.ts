@@ -15,6 +15,12 @@ import type {
   PresetUnreadable,
 } from './preset-source.js';
 
+/** The preset a command was asked for: one by name, or one the operator picks from a list. */
+export type PresetSelection = { kind: 'named'; name: PresetName } | { kind: 'ask' };
+
+/** What the operator picked from the list: a preset, or the config file alone. */
+export type PresetPick = { kind: 'preset'; name: PresetName } | { kind: 'none' };
+
 export interface Preset {
   name: PresetName;
   label: PresetLabel;

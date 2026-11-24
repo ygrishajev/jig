@@ -2,11 +2,12 @@ import { Result } from 'better-result';
 import { Command } from 'commander';
 import { z } from 'zod';
 
+import type { LogFormat } from '../../adapters/logging/create-logger.js';
+import type { RequestInputs } from '../../adapters/terminal/standard-input.js';
+import type { JigOperations, RunReport, RunRequest } from '../../app/api.js';
 import type { RunRequestInvalid } from '../../app/errors.js';
-import { runJig, type RunJigInput, type RunReport } from '../../app/run-jig.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, runStopReason } from '../../domain/run-state.js';
-import { appAction, type CommandIo } from '../app-action.js';
 import {
   configInputSchema,
   configOption,
@@ -15,11 +16,27 @@ import {
 } from '../config-option.js';
 import { logFormatInputSchema, logFormatOption } from '../log-format-option.js';
 import { readRequest, type RequestSource } from '../read-request.js';
-import type { Invocation } from '../with-app.js';
+import { type FailureOutput, withErrorHandling } from '../with-error-handling.js';
+import { withInput } from '../with-input.js';
+
+/** Where the run command reads its request from and tells the operator what to do next. */
+export interface RunCommandIo {
+  requestInputs: RequestInputs;
+  outcomeLog(format: LogFormat): OutcomeLog;
+}
+
+export interface OutcomeLog {
+  info(details: object, message: string): void;
+}
 
 type RunToDo = { start: RequestSource; runId?: RunId; merge: boolean } | { resume: RunId };
 
-export function registerRunCommand(program: Command, io?: CommandIo): void {
+export function registerRunCommand(
+  program: Command,
+  run: JigOperations['run'],
+  { requestInputs, outcomeLog }: RunCommandIo,
+  failureOutput?: FailureOutput,
+): void {
   program
     .command('run')
     .description(
@@ -38,19 +55,17 @@ export function registerRunCommand(program: Command, io?: CommandIo): void {
     .addOption(presetOption())
     .addOption(logFormatOption())
     .action(
-      appAction(
-        runInputSchema,
-        async (_input, app, runInput) => {
-          const report = await runJig(app, runInput);
-          if (report.isErr()) return Result.err(report.error);
-          app.cradle.logger.info(
-            { runId: report.value.state.runId, branch: runBranchFor(report.value.state.runId) },
-            nextStep(report.value),
-          );
-          return Result.ok();
-        },
-        io,
-        prepareRun,
+      withErrorHandling(
+        withInput(runInputSchema, async ({ run: toDo, config, preset, logFormat }) => {
+          const request = await runRequestOf(toDo, requestInputs);
+          if (request.isErr()) return Result.err(request.error);
+          const report = await run({ run: request.value, configPath: config, preset, logFormat });
+          return report.map((stopped) => {
+            const { runId } = stopped.state;
+            outcomeLog(logFormat).info({ runId, branch: runBranchFor(runId) }, nextStep(stopped));
+          });
+        }),
+        failureOutput,
       ),
     );
 }
@@ -95,6 +110,19 @@ function runToDo(
   return undefined;
 }
 
+/** Reads the request a start names before any operation is asked for, so a refusal opens nothing. */
+async function runRequestOf(
+  toDo: RunToDo,
+  inputs: RequestInputs,
+): Promise<Result<RunRequest, RunRequestInvalid>> {
+  if ('resume' in toDo) return Result.ok(toDo);
+  const start = await readRequest(toDo.start, inputs);
+  return start.map((request) => {
+    const started = { ...request, merge: toDo.merge };
+    return toDo.runId ? { start: started, runId: toDo.runId } : { start: started };
+  });
+}
+
 /** What the operator does next, for where the run stopped. */
 export function nextStep(report: RunReport): string {
   const { state } = report;
@@ -124,16 +152,4 @@ function stuckMessage(state: RunState): string {
     `Finish that slice and the rest by hand on "${runBranchFor(state.runId)}" (its pull request description is in ${prDescriptionPath(state)}), ` +
     `or start a new run with a sharper request. The failure feedback: jig status ${state.runId}`
   );
-}
-
-async function prepareRun(
-  { run }: z.output<typeof runInputSchema>,
-  { cwd, standardInput }: Invocation,
-): Promise<Result<RunJigInput, RunRequestInvalid>> {
-  if ('resume' in run) return Result.ok(run);
-  const start = await readRequest(run.start, { cwd, standardInput });
-  return start.map((request) => {
-    const started = { ...request, merge: run.merge };
-    return run.runId ? { start: started, runId: run.runId } : { start: started };
-  });
 }

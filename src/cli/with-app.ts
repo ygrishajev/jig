@@ -14,24 +14,17 @@ import {
 import { ensureRepositoryRoot } from '../adapters/git/repository.js';
 import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import type { LogFormat } from '../adapters/logging/create-logger.js';
-import { askForPreset, type PresetPick } from '../adapters/terminal/ask-for-preset.js';
-import { processStandardInput, type StandardInput } from '../adapters/terminal/standard-input.js';
+import { askForPreset } from '../adapters/terminal/ask-for-preset.js';
 import { type AppCradle, createAppContainer } from '../app/container.js';
+import { configWithSelectedPreset } from '../app/preset-selection.js';
 import {
   prepareRepository,
   type RepositoryPreparationFailure,
   type RepositorySources,
 } from '../app/repository-preparation.js';
 import type { ConfigSource } from '../config/config-source.js';
-import { ConfigInvalid } from '../config/errors.js';
 import type { PresetSource } from '../config/preset-source.js';
-import {
-  configWithPreset,
-  discoverPresets,
-  type Preset,
-  type PresetName,
-} from '../config/presets.js';
-import type { PresetSelection } from './config-option.js';
+import type { Preset, PresetPick, PresetSelection } from '../config/presets.js';
 
 /** Where the CLI was started, what it was started with, and who answers its questions; the only reads of `process`. */
 export interface Invocation {
@@ -42,7 +35,6 @@ export interface Invocation {
   askForPreset: (presets: Preset[]) => Promise<PresetPick | undefined>;
   createAppContainer: typeof createAppContainer;
   configSourceAt: (destination: ConfigDestination) => ConfigSource;
-  standardInput: StandardInput;
   presetSourceAt: (locations: PresetLocations) => PresetSource;
 }
 
@@ -79,7 +71,6 @@ export function processInvocation(): Invocation {
     askForPreset,
     createAppContainer,
     configSourceAt: configFileSource,
-    standardInput: processStandardInput(),
     presetSourceAt: presetDirectoriesSource,
   };
 }
@@ -93,10 +84,9 @@ function openApp(
       prepareRepository(invocation, repositorySourcesOf(invocation), configPath),
     );
     const { repoRoot, environment, configSource, presetSource } = prepared;
-    const presetName = yield* Result.await(
-      selectedPreset(preset, presetSource, invocation.askForPreset),
+    const { config, presetName } = yield* Result.await(
+      configWithSelectedPreset(prepared, preset, invocation),
     );
-    const config = yield* configWithPreset(prepared.config, presetSource, presetName);
     const app = invocation.createAppContainer({
       repoRoot,
       logFormat,
@@ -121,24 +111,4 @@ function repositorySourcesOf({ configSourceAt, presetSourceAt }: Invocation): Re
       configSourceAt(configDestination(repoRoot, configPath)),
     presetSourceFor: presetSourceAt,
   };
-}
-
-function selectedPreset(
-  selection: PresetSelection | undefined,
-  source: PresetSource,
-  ask: Invocation['askForPreset'],
-): Promise<Result<PresetName | undefined, ConfigInvalid>> {
-  return Result.gen(async function* () {
-    if (selection?.kind !== 'ask') return Result.ok(selection?.name);
-    const presets = yield* discoverPresets(source);
-    const pick = presets.length > 0 ? await ask(presets) : undefined;
-    if (pick === undefined) {
-      return Result.err(
-        new ConfigInvalid({
-          message: 'No preset was picked — pass --preset <name>; jig presets lists them.',
-        }),
-      );
-    }
-    return Result.ok(pick.kind === 'preset' ? pick.name : undefined);
-  });
 }

@@ -1,6 +1,6 @@
 import { Result } from 'better-result';
-import type { Logger } from 'pino';
 
+import type { WarningLog } from '../ports/observability.js';
 import {
   type HeldPublication,
   PublicationInProgress,
@@ -25,7 +25,7 @@ export type WhileOwned = <T, E>(
 export async function withPublicationOwnership<T, E>(
   ownership: PublicationOwnership,
   key: string,
-  logger: Logger,
+  log: WarningLog,
   use: (whileOwned: WhileOwned) => Promise<Result<T, E>>,
 ): Promise<Result<T, E | ReceiptStoreFailure | PublicationInProgress>> {
   const claimed = await ownership.claim(key);
@@ -48,7 +48,7 @@ export async function withPublicationOwnership<T, E>(
   } finally {
     released = await ownership.release(held);
   }
-  return reportCleanup(used, released, logger);
+  return reportCleanup(used, released, log);
 }
 
 async function renewOwnership(

@@ -1,10 +1,10 @@
 import { faker } from '@faker-js/faker';
 import { Result } from 'better-result';
-import type { Logger } from 'pino';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import { GitCommandFailed } from '../ports/git-failures.js';
+import type { WarningLog } from '../ports/observability.js';
 import { reportCleanup } from './report-cleanup.js';
 
 describe('reportCleanup', () => {
@@ -37,7 +37,7 @@ describe('reportCleanup', () => {
   function setup(
     input: { workFailure?: GitCommandFailed; cleanupFailure?: GitCommandFailed } = {},
   ) {
-    const logger = mock<Logger>();
+    const logger = mock<WarningLog>();
     const value = faker.lorem.word();
     const work = input.workFailure ? Result.err(input.workFailure) : Result.ok(value);
     const cleanup = input.cleanupFailure ? Result.err(input.cleanupFailure) : Result.ok();

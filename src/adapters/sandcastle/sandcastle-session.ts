@@ -24,7 +24,6 @@ import {
   AgentRunFailed,
   type AgentRunInput,
   type AgentSession,
-  type CodexLoginNotSaved,
   type ExecResult,
   type SandboxCredentialsInvalid,
   SandboxPreparationInvalid,
@@ -34,6 +33,7 @@ import {
 import type { GitCommandFailed } from '../../ports/git-failures.js';
 import type { LocalPreparationFailed } from '../../ports/local-state.js';
 import type { EventSink } from '../../ports/observability.js';
+import type { SessionCloseFailure } from '../../ports/run-session.js';
 import type { SandboxGit } from '../../ports/sandbox-git.js';
 import { refuseSymlinks } from '../find-symlink.js';
 import { type CodexAuthCache, openCodexAuthCache } from './codex-auth.js';
@@ -53,9 +53,6 @@ export type SessionOpenFailure =
   | LocalPreparationFailed
   | SandboxUnavailable
   | SetupCommandFailed;
-
-/** Why a sandbox did not close cleanly: the container would not stop, or the login was not handed back. */
-export type SessionCloseFailure = SandboxUnavailable | CodexLoginNotSaved;
 
 export type SandboxFactory = (options: CreateSandboxOptions) => Promise<Sandbox>;
 

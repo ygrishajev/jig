@@ -24,6 +24,7 @@ import {
   aDisposition,
   aFeaturePlan,
   aJigConfig,
+  aMetricsSummary,
   aPlannedSlice,
   aRunState,
   designDocs,
@@ -46,23 +47,40 @@ import { DOCKERFILE, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-r
 import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
 import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
 import { parseEnvironment } from '../config/environment.js';
-import { type JigConfig, validationWarnings } from '../config/load-config.js';
+import { type JigConfig, runSettingsFrom, validationWarnings } from '../config/load-config.js';
 import { designReviewStage } from '../domain/design-review.js';
 import { designReviewReport } from '../domain/design-review-report.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
 import { runBranchFor, type RunPhase } from '../domain/run-state.js';
+import { rootCause } from '../failures/messages.js';
+import { RunEvents } from '../observers/run-events.js';
 import {
+  type AgentSession,
+  SandboxCredentialsInvalid,
   SandboxPreparationInvalid,
   SandboxUnavailable,
   SetupCommandFailed,
 } from '../ports/agent-session.js';
 import { GitCommandFailed } from '../ports/git-failures.js';
 import { LocalStateUnwritable } from '../ports/local-state.js';
+import type { InvocationRecords } from '../ports/run-records.js';
 import { RunInProgress } from '../ports/run-state-failures.js';
+import {
+  type RunStore,
+  type RunStoreCatalog,
+  RunStoreOperationFailed,
+} from '../ports/run-store.js';
 import { ImageBuildFailed, type SandboxImages } from '../ports/sandbox-images.js';
-import { createAppContainer } from './container.js';
+import type { Workspace } from '../ports/workspace.js';
+import { createAppContainer, runCapabilitiesOf } from './container.js';
 import { RunRequestInvalid } from './errors.js';
-import { runJig } from './run-jig.js';
+import {
+  type RunCapabilities,
+  runJig,
+  type RunLog,
+  type RunSandbox,
+  type RunScope,
+} from './run-jig.js';
 import { readRunStatus } from './run-status.js';
 
 /** TEST-NET-1: routable nowhere, so an exporter aimed at it waits out its timeout. */
@@ -74,7 +92,10 @@ describe('runJig', () => {
     const directory = await tempDirectory();
     app.register({ repoRoot: asValue(directory) });
 
-    const result = await runJig(app, { start: { text: faker.lorem.paragraph() }, runId: runId() });
+    const result = await runJig(runCapabilitiesOf(app), {
+      start: { text: faker.lorem.paragraph() },
+      runId: runId(),
+    });
 
     expect(result.isErr()).toBe(true);
     expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
@@ -90,7 +111,9 @@ describe('runJig', () => {
     const agent = agentFor(id);
     scriptWholeRun(agent);
 
-    const report = (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    const report = (
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+    ).unwrap();
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(agent.closed).toBe(true);
@@ -103,7 +126,7 @@ describe('runJig', () => {
     scriptWholeRun(agentFor(id));
 
     const report = (
-      await runJig(app, { start: { text: aRequest(), merge: false }, runId: id })
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest(), merge: false }, runId: id })
     ).unwrap();
 
     expect(report).toMatchObject({ status: 'completed', state: { phase: 'completed' } });
@@ -116,10 +139,12 @@ describe('runJig', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
     const request = aRequest();
-    (await runJig(app, { start: { text: request, merge: false }, runId: id })).unwrap();
+    (
+      await runJig(runCapabilitiesOf(app), { start: { text: request, merge: false }, runId: id })
+    ).unwrap();
 
     const second = (
-      await runJig(app, { start: { text: request, merge: true }, runId: id })
+      await runJig(runCapabilitiesOf(app), { start: { text: request, merge: true }, runId: id })
     ).unwrap();
 
     expect(second).toMatchObject({ status: 'completed', state: { merge: false } });
@@ -130,7 +155,7 @@ describe('runJig', () => {
     const state = aRunState({ phase: 'completed', merge: false });
     await new LocalRunStore(repo.dir).save(state);
 
-    const report = (await runJig(app, { resume: state.runId })).unwrap();
+    const report = (await runJig(runCapabilitiesOf(app), { resume: state.runId })).unwrap();
 
     expect(report.status).toBe('completed');
     expect(sessionsOpened()).toBe(0);
@@ -146,7 +171,7 @@ describe('runJig', () => {
     await new LocalRunStore(repo.dir).save(aRunState({ runId: id, phase: 'done' }));
     await symlink(tracked, path.join(stateDir, 'design.md'));
 
-    const refusal = await runJig(app, { resume: id });
+    const refusal = await runJig(runCapabilitiesOf(app), { resume: id });
 
     expect(await readFile(tracked, 'utf-8')).toBe(original);
     expect(refusal.isErr() && refusal.error).toBeInstanceOf(LocalStateUnwritable);
@@ -158,7 +183,9 @@ describe('runJig', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
 
-    const report = (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    const report = (
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+    ).unwrap();
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
   });
@@ -167,10 +194,10 @@ describe('runJig', () => {
     const { app, aRequest, agentFor, repo } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    (await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })).unwrap();
     await simpleGit({ baseDir: repo.dir }).merge([runBranchFor(id), '--no-edit']);
 
-    const report = (await runJig(app, { resume: id })).unwrap();
+    const report = (await runJig(runCapabilitiesOf(app), { resume: id })).unwrap();
 
     expect(report.status).toBe('done');
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'done', complete: true });
@@ -181,10 +208,14 @@ describe('runJig', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
     const request = aRequest();
-    const first = (await runJig(app, { start: { text: request }, runId: id })).unwrap();
+    const first = (
+      await runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id })
+    ).unwrap();
     const commitsAfterFirst = await runBranchCommits(repo.dir, id);
 
-    const second = (await runJig(app, { start: { text: request }, runId: id })).unwrap();
+    const second = (
+      await runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id })
+    ).unwrap();
 
     expect(second).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(second.state.runId).toBe(id);
@@ -202,16 +233,16 @@ describe('runJig', () => {
     scriptWholeRun(agentFor(id));
     const request = aRequest();
     const held = holdNextSession();
-    const first = runJig(app, { start: { text: request }, runId: id });
+    const first = runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id });
     await held.opened;
 
-    const refused = await runJig(app, { start: { text: request }, runId: id });
+    const refused = await runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id });
 
     expect(refused.isErr() && refused.error).toBeInstanceOf(RunInProgress);
 
     held.release();
     await first;
-    expect((await runJig(app, { resume: id })).unwrap()).toMatchObject({
+    expect((await runJig(runCapabilitiesOf(app), { resume: id })).unwrap()).toMatchObject({
       state: { phase: 'awaitingMerge' },
     });
   });
@@ -228,7 +259,9 @@ describe('runJig', () => {
       }),
     );
 
-    const report = (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    const report = (
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+    ).unwrap();
 
     expect(report.state.phase).toBe('awaitingMerge');
     expect(opened()).toBe(3);
@@ -242,7 +275,7 @@ describe('runJig', () => {
       new SandboxPreparationInvalid({ message: faker.lorem.sentence() }),
     );
 
-    const result = await runJig(app, { start: { text: aRequest() }, runId: id });
+    const result = await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id });
 
     expect(result.isErr() && result.error).toBeInstanceOf(SandboxPreparationInvalid);
     expect(opened()).toBe(1);
@@ -252,9 +285,9 @@ describe('runJig', () => {
     const { app, aRequest, agentFor } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    (await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })).unwrap();
 
-    const result = await runJig(app, { start: { text: aRequest() }, runId: id });
+    const result = await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id });
 
     expect(result.isErr() && result.error).toBeInstanceOf(RunRequestInvalid);
   });
@@ -262,7 +295,7 @@ describe('runJig', () => {
   it('refuses to resume a run that does not exist', async () => {
     const { app } = await setup();
 
-    const result = await runJig(app, { resume: runId() });
+    const result = await runJig(runCapabilitiesOf(app), { resume: runId() });
 
     expect(result.isErr() && result.error).toBeInstanceOf(RunRequestInvalid);
   });
@@ -271,7 +304,7 @@ describe('runJig', () => {
     const { app, repo } = await setup();
     const id = runId();
 
-    const failed = await runJig(app, { resume: id });
+    const failed = await runJig(runCapabilitiesOf(app), { resume: id });
 
     expect(failed.isErr() && failed.error).toBeInstanceOf(RunRequestInvalid);
     const release = (await lockRun(repo.dir, id)).unwrap();
@@ -283,7 +316,9 @@ describe('runJig', () => {
     failNextSessions(new SandboxPreparationInvalid({ message: faker.lorem.sentence() }));
     const heading = faker.string.alpha({ length: 8, casing: 'lower' });
 
-    await runJig(app, { start: { text: `# ${heading}\n\n${faker.lorem.paragraph()}` } });
+    await runJig(runCapabilitiesOf(app), {
+      start: { text: `# ${heading}\n\n${faker.lorem.paragraph()}` },
+    });
 
     expect(await readdir(path.join(repo.dir, '.jig'))).toContainEqual(
       expect.stringMatching(new RegExp(`^${heading}-[0-9a-f]{8}$`)),
@@ -297,7 +332,7 @@ describe('runJig', () => {
       const state = aRunState({ phase });
       await new LocalRunStore(repo.dir).save(state);
 
-      const report = (await runJig(app, { resume: state.runId })).unwrap();
+      const report = (await runJig(runCapabilitiesOf(app), { resume: state.runId })).unwrap();
 
       expect(report).toMatchObject({ status: phase, state: { phase } });
       expect(sessionsOpened()).toBe(0);
@@ -313,13 +348,15 @@ describe('runJig', () => {
     const request = aRequest();
     const expected = validationWarnings(app.cradle.config);
 
-    const first = (await runJig(app, { start: { text: request }, runId: id })).unwrap();
+    const first = (
+      await runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id })
+    ).unwrap();
 
     expect(first.state.slices).toHaveLength(2);
     expect(expected).toHaveLength(2);
     expect(warnings()).toEqual(expected);
 
-    (await runJig(app, { start: { text: request }, runId: id })).unwrap();
+    (await runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id })).unwrap();
 
     expect(warnings()).toEqual([...expected, ...expected]);
   });
@@ -342,7 +379,7 @@ describe('runJig', () => {
       ),
     );
 
-    const result = await runJig(app, { start: { text: aRequest() }, runId: id });
+    const result = await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id });
 
     expect(result.isErr() && result.error).toBeInstanceOf(ImageBuildFailed);
     expect(logger.warn).toHaveBeenCalledTimes(validationWarnings(app.cradle.config).length);
@@ -359,7 +396,7 @@ describe('runJig', () => {
     const state = aRunState({ phase: 'done' });
     await new LocalRunStore(repo.dir).save(state);
 
-    (await runJig(app, { resume: state.runId })).unwrap();
+    (await runJig(runCapabilitiesOf(app), { resume: state.runId })).unwrap();
 
     expect(warnings()).toEqual(validationWarnings(app.cradle.config));
     expect(warnings()).not.toEqual([]);
@@ -379,7 +416,9 @@ describe('runJig', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
 
-    const report = (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    const report = (
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+    ).unwrap();
 
     expect(report.status).toBe('halted');
     expect(warnings()).toEqual([]);
@@ -390,7 +429,9 @@ describe('runJig', () => {
     const id = runId();
     scriptWholeRun(agentFor(id));
 
-    const { state } = (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    const { state } = (
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+    ).unwrap();
 
     expect(designReviewStage(state)).toBe('approved');
     expect(await readDocument(repo.dir, id, 'design-review.md')).toBe(designReviewReport(state));
@@ -408,7 +449,9 @@ describe('runJig', () => {
       output: [aPlannedSlice({ description: implementingPlanSteps(1) })],
     });
 
-    const report = (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    const report = (
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+    ).unwrap();
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'paused' } });
     expect(designReviewStage(report.state)).toBe('approved');
@@ -426,7 +469,9 @@ describe('runJig', () => {
     const outstanding = aDesignFinding({ resolution: 'operatorDecision' });
     scriptRevisedDesign(agentFor(id), designFindings(outstanding));
 
-    const report = (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    const report = (
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+    ).unwrap();
 
     expect(report).toMatchObject({ status: 'blocked', state: { phase: 'resolvingDesign' } });
     expect((await readResult(repo.dir, id)).blockedReason).toContain(outstanding.id);
@@ -444,7 +489,9 @@ describe('runJig', () => {
     const malformed = { output: { verdict: faker.lorem.word() } };
     const { finding, revised } = scriptRevisedDesign(agentFor(id), malformed, malformed, malformed);
 
-    const report = (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    const report = (
+      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+    ).unwrap();
 
     expect(report).toMatchObject({ status: 'blocked', state: { phase: 'reviewingDesign' } });
     expect(designReviewStage(report.state)).toBe('awaitingReReview');
@@ -460,7 +507,7 @@ describe('runJig', () => {
     const agent = agentFor(id);
     scriptRevisedDesign(agent, designFindings(aDesignFinding()));
 
-    (await runJig(app, { start: { text: aRequest() }, runId: id })).unwrap();
+    (await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })).unwrap();
 
     const records = unwrap(new MetricsLog(repo.dir, id).readAll());
     const rolesCalledIn = (phase: RunPhase) =>
@@ -483,6 +530,66 @@ describe('runJig', () => {
     expect(metrics.tokens.input).toBe(sum(agent.usage.map((usage) => usage.tokens.input)));
     expect(metrics.costUsd).toBeCloseTo(sum(agent.usage.map((usage) => usage.costUsd)));
     expect(metrics.durationMs).toBe(sum(steps.map((step) => step.durationMs)));
+  });
+
+  it('fails with the sandbox that did not close once the run itself succeeded, and releases the lock', async () => {
+    const { app, aRequest, agentFor, repo } = await setup();
+    const id = runId();
+    const agent = agentFor(id);
+    scriptWholeRun(agent);
+    const closeFailure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    agent.failCloseWith = closeFailure;
+
+    const result = await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id });
+
+    expect(result.isErr() && result.error).toBe(closeFailure);
+    await unwrap(await lockRun(repo.dir, id))();
+  });
+
+  it('keeps the failure saving to a custom store over a sandbox that did not close, and logs the close', async () => {
+    const { repo, ...prepared } = await setup();
+    const storeModule = `${faker.string.uuid()}.mjs`;
+    await writeFile(
+      path.join(repo.dir, storeModule),
+      `let saves = 0;
+       export default () => ({
+         load: async () => undefined,
+         save: async () => { if (++saves > 1) throw new Error('store is full'); },
+       });`,
+    );
+    prepared.app.register({
+      config: asValue({ ...prepared.app.cradle.config, runStores: [storeModule] }),
+    });
+    const id = runId();
+    const agent = prepared.agentFor(id);
+    scriptWholeRun(agent);
+    const closeFailure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    agent.failCloseWith = closeFailure;
+
+    const result = await runJig(runCapabilitiesOf(prepared.app), {
+      start: { text: prepared.aRequest() },
+      runId: id,
+    });
+
+    expect(result.isErr() && result.error).toBeInstanceOf(RunStoreOperationFailed);
+    expect(agent.closed).toBe(true);
+    expect(prepared.loggedFailures()).toContain(closeFailure);
+  });
+
+  it('closes the sandbox and releases the lock when the work crashes, passing the crash on', async () => {
+    const { app, aRequest, agentFor, repo } = await setup();
+    const id = runId();
+    const crash = new Error(faker.lorem.sentence());
+    const agent = agentFor(id).script('planner', { crash });
+
+    const thrown = await runJig(runCapabilitiesOf(app), {
+      start: { text: aRequest() },
+      runId: id,
+    }).catch((error: unknown) => error);
+
+    expect(rootCause(thrown)).toBe(crash);
+    expect(agent.closed).toBe(true);
+    await unwrap(await lockRun(repo.dir, id))();
   });
 
   async function setup(
@@ -568,6 +675,183 @@ describe('runJig', () => {
       logger,
       images,
       warnings: () => logger.warn.mock.calls.map(([message]) => message),
+      loggedFailures: () =>
+        logger.warn.mock.calls.map(([details]) => (details as { err?: unknown }).err),
+    };
+  }
+});
+
+describe('runJig over supplied capabilities', () => {
+  it('closes the sandbox, disposes the scope, shuts telemetry down and unlocks, in that order, keeping the work failure', async () => {
+    const saveFailure = new RunStoreOperationFailed({ message: faker.lorem.sentence() });
+    const closeFailure = new SandboxUnavailable({ message: faker.lorem.sentence() });
+    const { run, releases, log } = setup({ saved: Result.err(saveFailure), closed: closeFailure });
+
+    const result = await run();
+
+    expect(result.isErr() && result.error).toBe(saveFailure);
+    expect(releases()).toEqual(['closeSession', 'dispose', 'shutdown', 'unlock']);
+    expect(log.warn.mock.calls.map(([details]) => (details as { err?: unknown }).err)).toContain(
+      closeFailure,
+    );
+  });
+
+  it('releases telemetry and the lock when the sandbox does not start', async () => {
+    const openFailure = new SandboxPreparationInvalid({ message: faker.lorem.sentence() });
+    const { run, releases } = setup({ opened: openFailure });
+
+    const result = await run();
+
+    expect(result.isErr() && result.error).toBe(openFailure);
+    expect(releases()).toEqual(['shutdown', 'unlock']);
+  });
+
+  it('releases everything after the work panics and passes the panic on as it was thrown', async () => {
+    const bug = new Error(faker.lorem.sentence());
+    const { run, releases } = setup({ saveThrows: bug });
+
+    const thrown = await run().catch((error: unknown) => error);
+
+    expect(rootCause(thrown)).toBe(bug);
+    expect(releases()).toEqual(['closeSession', 'dispose', 'shutdown', 'unlock']);
+  });
+
+  it('refuses a run whose lock another process holds without opening a store or a sandbox', async () => {
+    const held = new RunInProgress({ message: faker.lorem.sentence() });
+    const { run, capabilities } = setup({ locked: held });
+
+    const result = await run();
+
+    expect(result.isErr() && result.error).toBe(held);
+    expect(capabilities.runStores.storeNamed).not.toHaveBeenCalled();
+    expect(capabilities.sandbox.openScope).not.toHaveBeenCalled();
+  });
+
+  it('refuses missing credentials before preparing the image or starting telemetry, and unlocks', async () => {
+    const missing = new SandboxCredentialsInvalid({ message: faker.lorem.sentence() });
+    const { run, capabilities, releases } = setup({ credentials: missing });
+
+    const result = await run();
+
+    expect(result.isErr() && result.error).toBe(missing);
+    expect(capabilities.sandbox.ensureImage).not.toHaveBeenCalled();
+    expect(capabilities.sandbox.startTelemetry).not.toHaveBeenCalled();
+    expect(releases()).toEqual(['unlock']);
+  });
+
+  it('reports an ended run as it is and records it, without preparing or starting a sandbox', async () => {
+    const { run, capabilities, state } = setup({ phase: 'done' });
+
+    const report = unwrap(await run());
+
+    expect(report).toEqual({ state, status: 'done' });
+    expect(capabilities.sandbox.checkCredentials).not.toHaveBeenCalled();
+    expect(capabilities.sandbox.openScope).not.toHaveBeenCalled();
+    expect(capabilities.records.recordInvocation).toHaveBeenCalledWith(
+      state,
+      'done',
+      expect.anything(),
+    );
+  });
+
+  it('opens every configured and required store once, in that order', async () => {
+    const configured = [faker.string.uuid(), 'local'];
+    const required = ['git-remote', faker.string.uuid()];
+    const { capabilities, state } = setup({ phase: 'done', runStores: configured });
+
+    unwrap(
+      await runJig(capabilities, {
+        start: { text: state.request },
+        runId: state.runId,
+        requiredStores: [...required, configured[0] ?? ''],
+      }),
+    );
+
+    expect(capabilities.runStores.storeNamed.mock.calls.map(([name]) => name)).toEqual([
+      ...configured,
+      ...required,
+    ]);
+  });
+
+  function setup(
+    input: {
+      phase?: 'paused' | 'done';
+      locked?: RunInProgress;
+      credentials?: SandboxCredentialsInvalid;
+      opened?: SandboxPreparationInvalid;
+      closed?: SandboxUnavailable;
+      saved?: Result<void, RunStoreOperationFailed>;
+      saveThrows?: Error;
+      runStores?: string[];
+    } = {},
+  ) {
+    const state = aRunState({ phase: input.phase ?? 'paused' });
+    const released: string[] = [];
+    const store = mock<RunStore>({
+      load: async () => Result.ok(state),
+      save: async () => {
+        if (input.saveThrows) throw input.saveThrows;
+        return input.saved ?? Result.ok();
+      },
+    });
+    const config = aJigConfig({ runStores: input.runStores ?? ['local'] });
+    const settings = runSettingsFrom(config);
+    const scope: RunScope = {
+      engineDependencies: {
+        ports: { agent: mock<AgentSession>(), workspace: mock<Workspace>() },
+        store,
+        events: new RunEvents(),
+        clock: { now: () => Date.now() },
+        settings,
+      },
+      closeSession: async () => {
+        released.push('closeSession');
+        return input.closed ? Result.err(input.closed) : Result.ok();
+      },
+      dispose: async () => {
+        released.push('dispose');
+      },
+    };
+    const log = mock<RunLog>();
+    const capabilities = {
+      config,
+      log,
+      lockRun: vi.fn<RunCapabilities['lockRun']>(async () =>
+        input.locked
+          ? Result.err(input.locked)
+          : Result.ok(async () => {
+              released.push('unlock');
+            }),
+      ),
+      runStores: mock<RunStoreCatalog>({
+        storeNamed: vi.fn(async () => Result.ok(store)),
+        combined: () => store,
+      }),
+      startingPoint: vi.fn<RunCapabilities['startingPoint']>(),
+      records: mock<InvocationRecords>({
+        metricsSummary: () => Result.ok(aMetricsSummary()),
+        recordInvocation: vi.fn(async () => Result.ok()),
+      }),
+      sandbox: mock<RunSandbox>({
+        checkCredentials: vi.fn(() =>
+          input.credentials ? Result.err(input.credentials) : Result.ok(),
+        ),
+        ensureImage: vi.fn(async () => Result.ok()),
+        startTelemetry: vi.fn(async () => ({
+          observer: { handle: () => {} },
+          shutdown: async () => {
+            released.push('shutdown');
+          },
+        })),
+        openScope: vi.fn(async () => (input.opened ? Result.err(input.opened) : Result.ok(scope))),
+      }),
+    } satisfies RunCapabilities;
+    return {
+      state,
+      log,
+      capabilities,
+      releases: () => released,
+      run: () => runJig(capabilities, { resume: state.runId }),
     };
   }
 });

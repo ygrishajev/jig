@@ -9,13 +9,14 @@ import { mock } from 'vitest-mock-extended';
 
 import { tempDirectory } from '../../tests/support/temp-directory.js';
 import type { JigOperations } from '../app/api.js';
+import type { RunCommandIo } from '../cli/commands/run.js';
 import { buildCli, packageVersion } from '../cli/main.js';
 import { buildJigCli } from './main.js';
 
 describe('buildJigCli', () => {
   it('includes every core command alongside the GitHub command', () => {
-    const coreCommandNames = buildCli(mock<JigOperations>()).commands.map((command) =>
-      command.name(),
+    const coreCommandNames = buildCli(mock<JigOperations>(), mock<RunCommandIo>()).commands.map(
+      (command) => command.name(),
     );
 
     const composedCommandNames = buildJigCli().commands.map((command) => command.name());

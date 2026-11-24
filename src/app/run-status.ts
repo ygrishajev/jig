@@ -4,7 +4,7 @@ import type { RunId } from '../domain/run-id.js';
 import type { RunState } from '../domain/run-state.js';
 import type { MetricsSummary, RunDocumentFile, RunRecords } from '../ports/run-records.js';
 import type { MetricsLogCorrupt } from '../ports/run-state-failures.js';
-import type { RunStoreFailure } from '../ports/run-store.js';
+import type { RunStoreCatalog, RunStoreFailure, RunStoreSetupInvalid } from '../ports/run-store.js';
 import { RunRequestInvalid } from './errors.js';
 import {
   type OperationContext,
@@ -12,7 +12,7 @@ import {
   type RepositoryPreparationFailure,
   type RepositorySources,
 } from './repository-preparation.js';
-import { openRunStore, type RunStoreSetupInvalid } from './run-stores.js';
+import { openRunStore } from './run-stores.js';
 
 export interface StatusInput {
   runId: RunId;
@@ -37,6 +37,7 @@ export type RunStatusFailure =
 export interface StatusCapabilities extends RepositorySources {
   context(): OperationContext;
   runRecordsAt(repoRoot: string): RunRecords;
+  runStoresAt(repoRoot: string): RunStoreCatalog;
 }
 
 /**
@@ -52,7 +53,7 @@ export function readRunStatus(
     const { repoRoot, config } = yield* Result.await(
       prepareRepository(capabilities.context(), capabilities, configPath),
     );
-    const store = yield* Result.await(openRunStore({ repoRoot, config }));
+    const store = yield* Result.await(openRunStore(capabilities.runStoresAt(repoRoot), config));
     const state = yield* Result.await(store.peek(runId));
     if (!state) {
       return Result.err(new RunRequestInvalid({ message: `No run found with id "${runId}".` }));

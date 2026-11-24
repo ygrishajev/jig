@@ -17,7 +17,6 @@ import {
 import { collectCredentials, missingCredentials } from '../adapters/sandcastle/agents.js';
 import {
   ignoreSandcastleDirectory,
-  type SessionCloseFailure,
   type SessionOpenFailure,
 } from '../adapters/sandcastle/sandcastle-session.js';
 import { withCredentials } from '../config/environment.js';
@@ -40,9 +39,10 @@ import {
 } from '../ports/agent-session.js';
 import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
 import { LocalPreparationFailed, type LocalStateUnwritable } from '../ports/local-state.js';
+import type { RunSession, SessionCloseFailure } from '../ports/run-session.js';
 import type { ImageBuildFailed } from '../ports/sandbox-images.js';
 import { toolchainPrompt } from '../prompts/toolchain.js';
-import { type AppCradle, type RunSession } from './container.js';
+import type { AppCradle } from './container.js';
 import { ensureSandboxImage, readSandboxDockerfile } from './sandbox-image.js';
 import { withThrowawaySandbox } from './throwaway-sandbox.js';
 

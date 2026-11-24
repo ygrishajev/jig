@@ -9,7 +9,7 @@ import { mock } from 'vitest-mock-extended';
 import { scriptWholeRun } from '../../../tests/support/agent-scripts.js';
 import { everyStepOn } from '../../../tests/support/builders.js';
 import { anIssue, FakeGithub } from '../../../tests/support/fake-github.js';
-import { FakeAgentSession, fakeStandardInput } from '../../../tests/support/fakes.js';
+import { FakeAgentSession } from '../../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../../tests/support/open-run-worktree.js';
 import { createRemote } from '../../../tests/support/temp-repo.js';
 import { configFileSource } from '../../adapters/filesystem/config-source.js';
@@ -217,7 +217,6 @@ describe('github implement command', () => {
       fallbackHomeDirectory: faker.system.directoryPath(),
       createAppContainer: createApp,
       configSourceAt: configFileSource,
-      standardInput: fakeStandardInput(),
       askForPreset: async () => undefined,
       presetSourceAt: presetDirectoriesSource,
     };

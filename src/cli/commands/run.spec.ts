@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
+import { Result } from 'better-result';
 import { Command } from 'commander';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
@@ -8,15 +9,12 @@ import { mock } from 'vitest-mock-extended';
 import { aRunState, aSlice, presetName, runId } from '../../../tests/support/builders.js';
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import { createTempRepo } from '../../../tests/support/temp-repo.js';
-import { configFileSource } from '../../adapters/filesystem/config-source.js';
-import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source.js';
 import type { StandardInput } from '../../adapters/terminal/standard-input.js';
-import { createAppContainer } from '../../app/container.js';
-import type { Preset, PresetName } from '../../config/presets.js';
+import type { JigOperations, RunReport } from '../../app/api.js';
+import { RunRequestInvalid } from '../../app/errors.js';
 import { runBranchFor, runStopReason } from '../../domain/run-state.js';
 import type { FailureOutput } from '../with-error-handling.js';
-import { nextStep, registerRunCommand, runInputSchema } from './run.js';
+import { nextStep, type OutcomeLog, registerRunCommand, runInputSchema } from './run.js';
 
 describe('nextStep', () => {
   it('asks for nothing more once the run is done', () => {
@@ -158,109 +156,139 @@ describe('runInputSchema', () => {
   });
 });
 
-describe('run -', () => {
-  it('refuses a terminal before opening the app', async () => {
-    const standardInput = fakeStandardInput({ isTerminal: true });
-    const { parse, createApp, failureOutput } = await setup({ standardInput });
+describe('run command', () => {
+  it('starts the run a request file describes, with the options it was given', async () => {
+    const text = faker.lorem.paragraph();
+    const { parse, run, writeRequest } = setup();
+    const file = await writeRequest(text);
+    const id = runId();
+    const config = `${faker.word.noun()}.json`;
+    const preset = presetName();
 
-    await parse(['run', '-', '--log-format', 'json']);
+    await parse([file, '--id', id, '--no-merge', '--config', config, '--preset', preset]);
+
+    expect(run).toHaveBeenCalledWith({
+      run: { start: { text, file, merge: false }, runId: id },
+      configPath: config,
+      preset: { kind: 'named', name: preset },
+      logFormat: 'json',
+    });
+  });
+
+  it('resumes the run an id names and tells the operator what to do next', async () => {
+    const state = aRunState({ phase: 'done' });
+    const { parse, run, outcomeLog, output } = setup({ report: { state, status: 'done' } });
+
+    await parse(['--id', state.runId]);
+
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ run: { resume: state.runId } }));
+    expect(outcomeLog.info).toHaveBeenCalledWith(
+      { runId: state.runId, branch: runBranchFor(state.runId) },
+      nextStep({ state, status: 'done' }),
+    );
+    expect(output.setExitCode).not.toHaveBeenCalled();
+  });
+
+  it('asks the operation for a preset on a bare --preset', async () => {
+    const { parse, run } = setup();
+
+    await parse(['--id', runId(), '--preset']);
+
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ preset: { kind: 'ask' } }));
+  });
+
+  it("prints the operation's failure and exits with 1", async () => {
+    const failure = new RunRequestInvalid({ message: faker.lorem.sentence() });
+    const { parse, output, outcomeLog } = setup({ failure });
+
+    await parse(['--id', runId()]);
+
+    expect(output.printError).toHaveBeenCalledWith(failure.message);
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+    expect(outcomeLog.info).not.toHaveBeenCalled();
+  });
+
+  it('refuses input that names neither a request nor a run without asking for one', async () => {
+    const { parse, run, output } = setup();
+
+    await parse([]);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  it('refuses a terminal on standard input without reading it or asking for a run', async () => {
+    const standardInput = fakeStandardInput({ isTerminal: true });
+    const { parse, run, output } = setup({ standardInput });
+
+    await parse(['-']);
 
     expect(standardInput.readAll).not.toHaveBeenCalled();
-    expect(createApp).not.toHaveBeenCalled();
-    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
   });
 
-  it('refuses blank piped text before opening the app', async () => {
-    const standardInput = fakeStandardInput({ text: ' \n\t\n' });
-    const { parse, createApp, failureOutput } = await setup({ standardInput });
+  it('refuses blank piped text without asking for a run', async () => {
+    const { parse, run, output } = setup({
+      standardInput: fakeStandardInput({ text: ' \n\t\n' }),
+    });
 
-    await parse(['run', '-', '--log-format', 'json']);
+    await parse(['-']);
 
-    expect(createApp).not.toHaveBeenCalled();
-    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
   });
 
-  async function setup(input: { standardInput: StandardInput }) {
-    const repo = await createTempRepo();
-    const home = await tempDirectory('jig-run-home-');
-    const createApp = vi.fn(createAppContainer);
-    const failureOutput = mock<FailureOutput>();
+  it('refuses a request file it cannot read without asking for a run', async () => {
+    const { parse, run, output } = setup();
+
+    await parse([`${faker.string.uuid()}.md`]);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(output.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  function setup(
+    input: {
+      report?: RunReport;
+      failure?: RunRequestInvalid;
+      standardInput?: StandardInput;
+    } = {},
+  ) {
+    const report = input.report ?? { state: aRunState(), status: 'done' as const };
+    const run = vi.fn<JigOperations['run']>(async () =>
+      input.failure ? Result.err(input.failure) : Result.ok(report),
+    );
+    const outcomeLog = mock<OutcomeLog>();
+    const output = mock<FailureOutput>();
+    const directory = tempDirectory('jig-run-request-');
+    const standardInput = input.standardInput ?? fakeStandardInput();
     const program = new Command();
-    registerRunCommand(program, {
-      invocation: {
-        cwd: repo.dir,
-        environment: { HOME: home },
-        fallbackHomeDirectory: home,
-        askForPreset: vi.fn(async (_presets: Preset[]) => undefined),
-        createAppContainer: createApp,
-        configSourceAt: configFileSource,
-        standardInput: input.standardInput,
-        presetSourceAt: presetDirectoriesSource,
+    registerRunCommand(
+      program,
+      run,
+      {
+        requestInputs: {
+          cwd: () => process.cwd(),
+          standardInput: () => standardInput,
+          readTextFile: (file) => readFile(file, 'utf-8'),
+        },
+        outcomeLog: () => outcomeLog,
       },
-      failureOutput,
-    });
-    const parse = async (argv: string[]) => {
-      await program.parseAsync(argv, { from: 'user' });
-    };
-    return { parse, createApp, failureOutput };
-  }
-});
-
-describe('run --preset', () => {
-  it('asks which preset to use on a bare --preset and stops before opening the app when nobody answers', async () => {
-    const preset = presetName();
-    const { parse, request, askForPreset, createApp, failureOutput } = await setup({
-      builtinPresets: [preset],
-    });
-
-    await parse(['run', request, '--preset', '--log-format', 'json']);
-
-    expect(askForPreset.mock.calls[0]?.[0].map(({ name }: Preset) => name)).toEqual([preset]);
-    expect(createApp).not.toHaveBeenCalled();
-    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
-  });
-
-  it('looks up a named preset without asking and stops before opening the app when it is missing', async () => {
-    const { parse, request, askForPreset, createApp, failureOutput } = await setup({
-      builtinPresets: [presetName()],
-    });
-
-    await parse(['run', request, '--preset', presetName(), '--log-format', 'json']);
-
-    expect(askForPreset).not.toHaveBeenCalled();
-    expect(createApp).not.toHaveBeenCalled();
-    expect(failureOutput.setExitCode).toHaveBeenCalledWith(1);
-  });
-
-  async function setup(input: { builtinPresets: PresetName[] }) {
-    const repo = await createTempRepo();
-    const request = path.join(repo.dir, 'request.md');
-    await writeFile(request, faker.lorem.paragraph());
-    const home = await tempDirectory('jig-run-home-');
-    const builtinPresetsDirectory = await tempDirectory('jig-run-builtin-');
-    for (const name of input.builtinPresets) {
-      await writeFile(path.join(builtinPresetsDirectory, `${name}.json`), '{}');
-    }
-    const askForPreset = vi.fn(async (_presets: Preset[]) => undefined);
-    const createApp = vi.fn(createAppContainer);
-    const failureOutput = mock<FailureOutput>();
-    const program = new Command();
-    registerRunCommand(program, {
-      invocation: {
-        cwd: repo.dir,
-        environment: { HOME: home },
-        fallbackHomeDirectory: home,
-        askForPreset,
-        createAppContainer: createApp,
-        configSourceAt: configFileSource,
-        standardInput: fakeStandardInput(),
-        presetSourceAt: (locations) => presetDirectoriesSource(locations, builtinPresetsDirectory),
+      output,
+    );
+    return {
+      run,
+      outcomeLog,
+      output,
+      parse: async (argv: string[]) => {
+        await program.parseAsync(['run', ...argv, '--log-format', 'json'], { from: 'user' });
       },
-      failureOutput,
-    });
-    const parse = async (argv: string[]) => {
-      await program.parseAsync(argv, { from: 'user' });
+      writeRequest: async (text: string) => {
+        const file = path.join(await directory, `${faker.string.uuid()}.md`);
+        await writeFile(file, text);
+        return file;
+      },
     };
-    return { parse, request, askForPreset, createApp, failureOutput };
   }
 });

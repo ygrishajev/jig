@@ -13,20 +13,27 @@ import { GitRunBranches } from '../adapters/git/run-branches.js';
 import { OctokitGithub } from '../adapters/github/octokit-github.js';
 import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import { LocalRunRecords } from '../adapters/local-store/local-run-records.js';
+import { createConsoleLogger } from '../adapters/logging/create-logger.js';
+import { RepositoryRunStores } from '../adapters/run-store/repository-run-stores.js';
+import { askForPreset } from '../adapters/terminal/ask-for-preset.js';
+import { processRequestInputs } from '../adapters/terminal/standard-input.js';
 import {
   type JigOperations,
   listPresets,
   type OperationContext,
   readRunStatus,
   type RepositorySources,
+  startOrResumeRun,
 } from '../app/api.js';
+import { openRunRuntime } from '../app/container.js';
 import type { CommandIo } from '../cli/app-action.js';
 import { type GithubCommandDependencies, registerGithubCommands } from '../cli/commands/github.js';
+import type { RunCommandIo } from '../cli/commands/run.js';
 import { exitWhenDone } from '../cli/exit-when-done.js';
 import { buildCli } from '../cli/main.js';
 
 export function buildJigCli(io?: CommandIo): Command {
-  const program = buildCli(operations, io);
+  const program = buildCli(operations, runIo, io);
   registerGithubCommands(program, githubDependencies, io);
   return program;
 }
@@ -47,16 +54,27 @@ const processContext = (): OperationContext => ({
 });
 
 const operations: JigOperations = {
+  run: (input) =>
+    startOrResumeRun(
+      { ...repositorySources, context: processContext, askForPreset, openRuntime: openRunRuntime },
+      input,
+    ),
   status: (input) =>
     readRunStatus(
       {
         ...repositorySources,
         context: processContext,
         runRecordsAt: (repoRoot) => new LocalRunRecords(repoRoot),
+        runStoresAt: (repoRoot) => new RepositoryRunStores(repoRoot),
       },
       input,
     ),
   listPresets: () => listPresets({ ...repositorySources, context: processContext }),
+};
+
+const runIo: RunCommandIo = {
+  requestInputs: processRequestInputs(),
+  outcomeLog: (format) => createConsoleLogger(format),
 };
 
 /** Built on demand: an imported builder or `--help` touches neither GitHub nor the clone. */

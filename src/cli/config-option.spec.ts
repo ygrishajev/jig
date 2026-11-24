@@ -3,7 +3,8 @@ import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 
 import { presetName } from '../../tests/support/builders.js';
-import { presetInputSchema, presetOption, type PresetSelection } from './config-option.js';
+import type { PresetSelection } from '../config/presets.js';
+import { presetInputSchema, presetOption } from './config-option.js';
 import { CommandInputInvalid, withInput } from './with-input.js';
 
 describe('presetOption', () => {

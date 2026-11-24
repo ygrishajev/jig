@@ -1,30 +1,36 @@
-import type { Tracer } from '@opentelemetry/api';
 import { asFunction, asValue, type AwilixContainer, createContainer, InjectionMode } from 'awilix';
 import { Result } from 'better-result';
 import type { Logger } from 'pino';
 
-import { type ConfigDestination, configFileSource } from '../adapters/filesystem/config-source.js';
+import {
+  type ConfigDestination,
+  configDestination,
+  configFileSource,
+} from '../adapters/filesystem/config-source.js';
 import { presetDirectoriesSource } from '../adapters/filesystem/preset-source.js';
+import { getCurrentBranch } from '../adapters/git/branch.js';
 import { GitWorkspace } from '../adapters/git/git-workspace.js';
+import { exactHead } from '../adapters/git/run-history.js';
+import { LocalRunRecords } from '../adapters/local-store/local-run-records.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
-import { RunArtefacts } from '../adapters/local-store/run-artefacts.js';
+import { lockRun } from '../adapters/local-store/run-lock.js';
 import { runLogFile } from '../adapters/local-store/run-paths.js';
 import {
   createConsoleLogger,
   createRunLogger,
   type LogFormat,
 } from '../adapters/logging/create-logger.js';
+import { RepositoryRunStores } from '../adapters/run-store/repository-run-stores.js';
 import { DockerImages } from '../adapters/sandbox-image/docker-images.js';
 import { latestAgentVersions } from '../adapters/sandbox-image/latest-agent-versions.js';
 import type { MissingCredential } from '../adapters/sandcastle/agents.js';
 import {
   openSandcastleSession,
   type OpenSessionInput,
+  stepCredentials,
 } from '../adapters/sandcastle/open-session.js';
-import type {
-  SessionCloseFailure,
-  SessionOpenFailure,
-} from '../adapters/sandcastle/sandcastle-session.js';
+import type { SessionOpenFailure } from '../adapters/sandcastle/sandcastle-session.js';
+import { startTelemetry, type Telemetry } from '../adapters/telemetry/open-telemetry.js';
 import { askForAgents } from '../adapters/terminal/ask-for-agents.js';
 import {
   askForCredential,
@@ -36,7 +42,7 @@ import type { JigEnvironment } from '../config/environment.js';
 import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import type { PresetSource } from '../config/preset-source.js';
 import type { AgentRole } from '../domain/agent-role.js';
-import { type RunIdentity } from '../domain/run-state.js';
+import type { RunIdentity } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import { retryResult } from '../failures/retry.js';
 import type { EngineDependencies } from '../flow/engine.js';
@@ -45,15 +51,16 @@ import { LoggingObserver } from '../observers/logging-observer.js';
 import { MetricsObserver } from '../observers/metrics.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
-import type { AgentSession } from '../ports/agent-session.js';
-import type { Clock } from '../ports/observability.js';
-import type { RunStore } from '../ports/run-store.js';
-import type { SandboxGit } from '../ports/sandbox-git.js';
+import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.js';
+import type { Clock, RunTelemetry } from '../ports/observability.js';
+import type { RunSession } from '../ports/run-session.js';
+import type { RunStore, RunStoreCatalog } from '../ports/run-store.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { observedEvents } from './observed-events.js';
-import { reportCleanup } from './report-cleanup.js';
-import { sandboxImageName } from './sandbox-image.js';
+import type { RunCapabilities, RunScope, StartingPoint } from './run-jig.js';
+import type { RunRuntime, RuntimeRequest } from './run-operation.js';
+import { ensureSandboxImage, sandboxImageName } from './sandbox-image.js';
 
 export type App = AwilixContainer<AppCradle>;
 
@@ -70,7 +77,7 @@ export interface AppCradle {
   settings: RunSettings;
   logger: Logger;
   clock: Clock;
-  artefacts: RunArtefacts;
+  runStores: RunStoreCatalog;
   images: SandboxImages;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   openSession: (input: OpenSessionInput) => Promise<Result<RunSession, SessionOpenFailure>>;
@@ -78,12 +85,6 @@ export interface AppCradle {
     roles: AgentRole[],
   ) => Promise<Partial<Record<AgentRole, AgentChoice>> | undefined>;
   askForCredential: (missing: MissingCredential) => Promise<EnteredCredential | undefined>;
-}
-
-/** The run's sandbox: where agents and commands run, and the host worktree of the run branch. */
-export interface RunSession extends AgentSession, SandboxGit {
-  readonly worktreePath: string;
-  close(): Promise<Result<void, SessionCloseFailure>>;
 }
 
 /** Lives for one run: its sandbox, its log file, its events. Disposed when the run stops. */
@@ -96,6 +97,18 @@ export interface RunCradle extends AppCradle {
   session: RunSession;
   workspace: Workspace;
   engineDependencies: EngineDependencies;
+}
+
+/**
+ * Builds the container a run works in and hands back its capabilities; `dispose` releases what
+ * the container built. Spike #49 decides how this construction moves out of `app`.
+ */
+export function openRunRuntime({ configPath, ...request }: RuntimeRequest): RunRuntime {
+  const app = createAppContainer({
+    ...request,
+    configDestination: configDestination(request.repoRoot, configPath),
+  });
+  return { run: runCapabilitiesOf(app), dispose: () => app.dispose() };
 }
 
 export function createAppContainer(input: {
@@ -129,7 +142,9 @@ export function createAppContainer(input: {
       createConsoleLogger(logFormat, logLevel),
     ).singleton(),
     clock: asValue({ now: () => Date.now() }),
-    artefacts: asFunction(({ repoRoot }: AppCradle) => new RunArtefacts(repoRoot)).singleton(),
+    runStores: asFunction(
+      ({ repoRoot }: AppCradle) => new RepositoryRunStores(repoRoot),
+    ).singleton(),
     images: asFunction(
       ({ logger, environment }: AppCradle) =>
         new DockerImages({
@@ -158,36 +173,49 @@ export function createAppContainer(input: {
   return container;
 }
 
-/**
- * Starts the run's sandbox, builds everything scoped to the run and hands `use` what the engine
- * needs. The sandbox is closed and the scope disposed afterwards, however `use` ends.
- */
-export async function withRunScope<T, E>(
+/** The run's capabilities over this container; the run, not the container, decides their order. */
+export function runCapabilitiesOf(app: AwilixContainer<AppCradle>): RunCapabilities {
+  const { repoRoot, config, environment, logger, runStores } = app.cradle;
+  return {
+    config,
+    log: logger,
+    lockRun: (runId) => lockRun(repoRoot, runId),
+    runStores,
+    startingPoint: () => startingPointOf(repoRoot),
+    records: new LocalRunRecords(repoRoot),
+    sandbox: {
+      checkCredentials: () => stepCredentials(config, environment).map(() => undefined),
+      ensureImage: async () => (await ensureSandboxImage(app.cradle)).map(() => undefined),
+      startTelemetry: async () => tracingTelemetry(await startTelemetry(environment.telemetry)),
+      openScope: (run, runStore, telemetry) => openRunScope(app, run, runStore, telemetry),
+    },
+  };
+}
+
+async function startingPointOf(
+  repoRoot: string,
+): Promise<Result<StartingPoint, RepositoryInvalid | GitCommandFailed>> {
+  const baseBranch = await getCurrentBranch(repoRoot);
+  if (baseBranch.isErr()) return Result.err(baseBranch.error);
+  const startingCommit = await exactHead(repoRoot, 'HEAD');
+  if (startingCommit.isErr()) return Result.err(startingCommit.error);
+  return Result.ok({ baseBranch: baseBranch.value, startingCommit: startingCommit.value });
+}
+
+function tracingTelemetry(telemetry: Telemetry | undefined): RunTelemetry | undefined {
+  if (!telemetry) return undefined;
+  return { observer: new TracingObserver(telemetry.tracer), shutdown: () => telemetry.shutdown() };
+}
+
+/** A sandbox that fails to start leaves no scope behind: what was built for it is disposed. */
+async function openRunScope(
   app: AwilixContainer<AppCradle>,
   { runId, baseBranch }: RunIdentity,
   runStore: RunStore,
-  options: { tracer?: Tracer },
-  use: (dependencies: EngineDependencies) => Promise<Result<T, E>>,
-): Promise<Result<T, SessionOpenFailure | SessionCloseFailure | E>> {
-  const scope = await openRunScope(app, { runId, baseBranch }, runStore, options);
-  if (scope.isErr()) return Result.err(scope.error);
-  let used: Result<T, E>;
-  let closed: Result<void, SessionCloseFailure>;
-  try {
-    used = await use(scope.value.cradle.engineDependencies);
-  } finally {
-    closed = await closeRunScope(scope.value);
-  }
-  return reportCleanup(used, closed, app.cradle.logger);
-}
-
-async function openRunScope(
-  app: AwilixContainer<AppCradle>,
-  run: RunIdentity,
-  runStore: RunStore,
-  options: { tracer?: Tracer },
-): Promise<Result<AwilixContainer<RunCradle>, SessionOpenFailure>> {
+  telemetry: RunTelemetry | undefined,
+): Promise<Result<RunScope, SessionOpenFailure>> {
   const { repoRoot } = app.cradle;
+  const run: RunIdentity = { runId, baseBranch };
   const scope = app.createScope<RunCradle>();
   scope.register({
     run: asValue(run),
@@ -202,7 +230,7 @@ async function openRunScope(
       observedEvents(runLogger, [
         new LoggingObserver(runLogger),
         new MetricsObserver((record) => metricsLog.append(record), clock),
-        ...(options.tracer ? [new TracingObserver(options.tracer)] : []),
+        ...(telemetry ? [telemetry.observer] : []),
       ]),
     ).scoped(),
   });
@@ -235,7 +263,11 @@ async function openRunScope(
       }),
     ).scoped(),
   });
-  return Result.ok(scope);
+  return Result.ok({
+    engineDependencies: scope.cradle.engineDependencies,
+    closeSession: () => session.close(),
+    dispose: () => scope.dispose(),
+  });
 }
 
 /**
@@ -254,15 +286,4 @@ function openSessionRetrying({
     onFailedAttempt: ({ error, attempt }) =>
       runLogger.warn({ err: error, attempt }, 'the sandbox did not start'),
   });
-}
-
-/** Awilix's `dispose` alone would leave the sandbox running, so the session is closed first. */
-async function closeRunScope(
-  scope: AwilixContainer<RunCradle>,
-): Promise<Result<void, SessionCloseFailure>> {
-  try {
-    return await scope.cradle.session.close();
-  } finally {
-    await scope.dispose();
-  }
 }

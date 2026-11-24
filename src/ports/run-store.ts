@@ -10,6 +10,16 @@ import type {
   RunStateInvalid,
 } from './run-state-failures.js';
 
+/**
+ * Builds the stores a run's state can be kept in: the built-in `local` and `git-remote`, or the
+ * operator's own module at a path. Which stores a run uses is the caller's decision.
+ */
+export interface RunStoreCatalog {
+  storeNamed(name: string): Promise<Result<RunStore, RunStoreSetupInvalid>>;
+  /** One store over every copy: each is written, and the freshest copy wins on load. */
+  combined(stores: RunStore[]): RunStore;
+}
+
 /** Where run state lives between invocations. Saved after every transition. */
 export interface RunStore {
   /** Reads the run to carry on with it; may bring this machine's copy of it up to date. */
@@ -32,5 +42,10 @@ export type RunStoreFailure =
 export class RunStoreOperationFailed extends TaggedError('RunStoreOperationFailed')<{
   message: string;
 }> {
+  readonly kind = 'fatal' as const;
+}
+
+/** A store named in `runStores` cannot be used: its module would not load, or is not a store. */
+export class RunStoreSetupInvalid extends TaggedError('RunStoreSetupInvalid')<{ message: string }> {
   readonly kind = 'fatal' as const;
 }
