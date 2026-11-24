@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { asValue } from 'awilix';
+import { asFunction, asValue } from 'awilix';
 import { Result } from 'better-result';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -9,6 +9,7 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination } from '../adapters/filesystem/config-source.js';
 import { parseEnvironment } from '../config/environment.js';
+import type { JigConfig } from '../config/load-config.js';
 import { SandboxUnavailable } from '../ports/agent-session.js';
 import { createAppContainer, runCapabilitiesOf } from './container.js';
 
@@ -52,7 +53,33 @@ describe('runCapabilitiesOf', () => {
     await scope.dispose();
   });
 
-  async function setup(input: { failWith?: SandboxUnavailable } = {}) {
+  it('disposes the scope and passes the panic on when opening the sandbox panics', async () => {
+    const bug = new Error(faker.lorem.sentence());
+    const { openScope, run, scopeDisposals } = await setup({ openPanic: bug });
+
+    const thrown = await openScope(run, new InMemoryRunStore(), undefined).catch(
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBe(bug);
+    expect(scopeDisposals()).toHaveLength(1);
+  });
+
+  it('closes the opened sandbox before disposing the scope when building the scope panics', async () => {
+    const bug = new Error(faker.lorem.sentence());
+    const { openScope, run, scopeDisposals } = await setup({ workspacePanic: bug });
+
+    const thrown = await openScope(run, new InMemoryRunStore(), undefined).catch(
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBe(bug);
+    expect(scopeDisposals()).toEqual([{ sessionClosed: true }]);
+  });
+
+  async function setup(
+    input: { failWith?: SandboxUnavailable; openPanic?: Error; workspacePanic?: Error } = {},
+  ) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
     const config = aJigConfig();
@@ -65,11 +92,26 @@ describe('runCapabilitiesOf', () => {
       config,
     });
     let attempts = 0;
+    const disposals: { sessionClosed: boolean }[] = [];
+    const { workspacePanic } = input;
     app.register({
       settings: asValue({ ...app.cradle.settings, maxStepRetries: 2, retryDelayMs: 0 }),
-      openSession: asValue(async () => {
+      openSession: asFunction(() => async () => {
         attempts++;
+        if (input.openPanic) throw input.openPanic;
         return input.failWith ? Result.err(input.failWith) : Result.ok(session);
+      })
+        .scoped()
+        .disposer(() => {
+          disposals.push({ sessionClosed: session.closed });
+        }),
+      ...(workspacePanic && {
+        config: asValue({
+          ...config,
+          get commitSigning(): JigConfig['commitSigning'] {
+            throw workspacePanic;
+          },
+        }),
       }),
     });
     onTestFinished(() => app.dispose());
@@ -78,6 +120,7 @@ describe('runCapabilitiesOf', () => {
       session,
       run: { runId: runId(), baseBranch: faker.git.branch() },
       openAttempts: () => attempts,
+      scopeDisposals: () => disposals,
     };
   }
 });

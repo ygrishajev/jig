@@ -123,9 +123,10 @@ supplied `openRuntime` for the run's capabilities. `runJig` in `src/app/run-jig.
 policy over `RunCapabilities`: the lock, which stores to open (`openRunStore` in
 `src/app/run-stores.ts` adds required stores to the configured ones), start or resume by id, the
 ended-run report, credentials and image before any sandbox, and the invocation's records.
-`withResource` and `releaseInOrder` in `src/app/lifecycle.ts` acquire, use and release: every
-release is attempted, a partial acquisition releases what it already holds, a work panic still
-releases and then propagates as thrown, and the cleanup rule of `reportCleanup` applies. A run
+`withResource`, `releaseInOrder` and `releasingOnPanic` in `src/app/lifecycle.ts` acquire, use
+and release: every release is attempted, a partial acquisition releases what it already holds even
+when it panics, the first panic propagates as thrown while a cleanup that fails or panics after it
+is logged, and the cleanup rule of `reportCleanup` applies. A run
 releases its sandbox session, then its scope, then telemetry, then the lock. Stores are built by
 `src/adapters/run-store/repository-run-stores.ts` behind `RunStoreCatalog` in
 `src/ports/run-store.ts`, which also loads and checks a custom store module. Composition binds the

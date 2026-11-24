@@ -69,8 +69,37 @@ describe('withResource', () => {
     expect(loggedFailures()[0]).toBe(releaseFailure);
   });
 
+  it('passes the work panic on and logs a release that panics after it', async () => {
+    const bug = new Error(faker.lorem.sentence());
+    const cleanupBug = new Error(faker.lorem.sentence());
+    const { use, events, loggedFailures } = setup({ releasePanic: cleanupBug });
+
+    const thrown = await use(async () => {
+      throw bug;
+    }).catch((error: unknown) => error);
+
+    expect(thrown).toBe(bug);
+    expect(events).toEqual(['acquire', 'release']);
+    expect(loggedFailures()).toEqual([cleanupBug]);
+  });
+
+  it('passes a release panic on once the work succeeded', async () => {
+    const cleanupBug = new Error(faker.lorem.sentence());
+    const { use } = setup({ releasePanic: cleanupBug });
+
+    const thrown = await use(async () => Result.ok(faker.lorem.word())).catch(
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBe(cleanupBug);
+  });
+
   function setup(
-    input: { acquireFailure?: GitCommandFailed; releaseFailure?: GitCommandFailed } = {},
+    input: {
+      acquireFailure?: GitCommandFailed;
+      releaseFailure?: GitCommandFailed;
+      releasePanic?: Error;
+    } = {},
   ) {
     const events: string[] = [];
     const acquired = faker.string.alpha(8);
@@ -82,6 +111,7 @@ describe('withResource', () => {
       },
       release: async () => {
         events.push('release');
+        if (input.releasePanic) throw input.releasePanic;
         return input.releaseFailure ? Result.err(input.releaseFailure) : Result.ok();
       },
     };
@@ -99,7 +129,9 @@ describe('withResource', () => {
 describe('releaseInOrder', () => {
   it('attempts every release in order and returns the first failure, logging the later ones', async () => {
     const failures = [aGitCommandFailed(), aGitCommandFailed()];
-    const { release, attempted, loggedFailures } = setup([undefined, failures[0], failures[1]]);
+    const { release, attempted, loggedFailures } = setup({
+      outcomes: [undefined, failures[0], failures[1]],
+    });
 
     const released = await release();
 
@@ -110,7 +142,7 @@ describe('releaseInOrder', () => {
   });
 
   it('succeeds when every release did', async () => {
-    const { release, attempted, loggedFailures } = setup([undefined, undefined]);
+    const { release, attempted, loggedFailures } = setup({ outcomes: [undefined, undefined] });
 
     unwrap(await release());
 
@@ -120,7 +152,7 @@ describe('releaseInOrder', () => {
 
   it('still attempts the later releases after one panics, and passes the panic on', async () => {
     const bug = new Error(faker.lorem.sentence());
-    const { release, attempted } = setup([bug, undefined]);
+    const { release, attempted } = setup({ outcomes: [bug, undefined] });
 
     const thrown = await release().catch((error: unknown) => error);
 
@@ -128,10 +160,47 @@ describe('releaseInOrder', () => {
     expect(attempted()).toEqual([0, 1]);
   });
 
-  function setup(outcomes: (GitCommandFailed | Error | undefined)[]) {
+  it('passes the panic on and logs a later release that failed', async () => {
+    const bug = new Error(faker.lorem.sentence());
+    const failure = aGitCommandFailed();
+    const { release, attempted, loggedFailures } = setup({ outcomes: [bug, failure] });
+
+    const thrown = await release().catch((error: unknown) => error);
+
+    expect(thrown).toBe(bug);
+    expect(attempted()).toEqual([0, 1]);
+    expect(loggedFailures()).toHaveLength(1);
+    expect(loggedFailures()[0]).toBe(failure);
+  });
+
+  it('passes the panic on and logs an earlier release that failed', async () => {
+    const failure = aGitCommandFailed();
+    const bug = new Error(faker.lorem.sentence());
+    const { release, attempted, loggedFailures } = setup({ outcomes: [failure, bug, undefined] });
+
+    const thrown = await release().catch((error: unknown) => error);
+
+    expect(thrown).toBe(bug);
+    expect(attempted()).toEqual([0, 1, 2]);
+    expect(loggedFailures()).toHaveLength(1);
+    expect(loggedFailures()[0]).toBe(failure);
+  });
+
+  it('passes the first panic on and logs every later panic', async () => {
+    const bugs = [0, 1, 2].map(() => new Error(faker.lorem.sentence()));
+    const { release, attempted, loggedFailures } = setup({ outcomes: bugs });
+
+    const thrown = await release().catch((error: unknown) => error);
+
+    expect(thrown).toBe(bugs[0]);
+    expect(attempted()).toEqual([0, 1, 2]);
+    expect(loggedFailures()).toEqual([bugs[1], bugs[2]]);
+  });
+
+  function setup(input: { outcomes: (GitCommandFailed | Error | undefined)[] }) {
     const attempts: number[] = [];
     const log = mock<WarningLog>();
-    const releases = outcomes.map((outcome, index) => async () => {
+    const releases = input.outcomes.map((outcome, index) => async () => {
       attempts.push(index);
       if (outcome instanceof GitCommandFailed) return Result.err(outcome);
       if (outcome) throw outcome;

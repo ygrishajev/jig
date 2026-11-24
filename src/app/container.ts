@@ -57,6 +57,7 @@ import type { RunSession } from '../ports/run-session.js';
 import type { RunStore, RunStoreCatalog } from '../ports/run-store.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
+import { releasingOnPanic } from './lifecycle.js';
 import { observedEvents } from './observed-events.js';
 import type { RunCapabilities, RunScope, StartingPoint } from './run-jig.js';
 import type { RunRuntime, RuntimeRequest } from './run-operation.js';
@@ -207,16 +208,52 @@ function tracingTelemetry(telemetry: Telemetry | undefined): RunTelemetry | unde
   return { observer: new TracingObserver(telemetry.tracer), shutdown: () => telemetry.shutdown() };
 }
 
-/** A sandbox that fails to start leaves no scope behind: what was built for it is disposed. */
+/**
+ * A sandbox that fails to start, or a panic while building the scope, leaves nothing behind: the
+ * sandbox opened so far is closed before the scope is disposed.
+ */
 async function openRunScope(
   app: AwilixContainer<AppCradle>,
   { runId, baseBranch }: RunIdentity,
   runStore: RunStore,
   telemetry: RunTelemetry | undefined,
 ): Promise<Result<RunScope, SessionOpenFailure>> {
-  const { repoRoot } = app.cradle;
+  const { repoRoot, logger } = app.cradle;
   const run: RunIdentity = { runId, baseBranch };
   const scope = app.createScope<RunCradle>();
+  const disposeScope = async (): Promise<Result<void, never>> => {
+    await scope.dispose();
+    return Result.ok();
+  };
+  const opened = await releasingOnPanic(
+    async () => {
+      registerRunServices(scope, { repoRoot, run, runStore, telemetry });
+      return openSessionRetrying(scope.cradle);
+    },
+    [disposeScope],
+    logger,
+  );
+  if (opened.isErr()) {
+    await scope.dispose();
+    return Result.err(opened.error);
+  }
+  const session = opened.value;
+  return releasingOnPanic(
+    async () => Result.ok(handOverRunScope(app, scope, { run, session })),
+    [() => session.close(), disposeScope],
+    logger,
+  );
+}
+
+function registerRunServices(
+  scope: AwilixContainer<RunCradle>,
+  {
+    repoRoot,
+    run,
+    runStore,
+    telemetry,
+  }: { repoRoot: string; run: RunIdentity; runStore: RunStore; telemetry?: RunTelemetry },
+): void {
   scope.register({
     run: asValue(run),
     runStore: asValue(runStore),
@@ -233,40 +270,6 @@ async function openRunScope(
         ...(telemetry ? [telemetry.observer] : []),
       ]),
     ).scoped(),
-  });
-
-  const opened = await openSessionRetrying(scope.cradle);
-  if (opened.isErr()) {
-    await scope.dispose();
-    return Result.err(opened.error);
-  }
-  const session = opened.value;
-  scope.register({
-    session: asValue(session),
-    workspace: asFunction(
-      () =>
-        new GitWorkspace({
-          repoRoot,
-          worktreePath: session.worktreePath,
-          sandbox: session,
-          signing: app.cradle.config.commitSigning,
-          ...run,
-        }),
-    ).scoped(),
-    engineDependencies: asFunction(
-      ({ workspace, runStore: store, events, clock, settings }: RunCradle): EngineDependencies => ({
-        ports: { agent: session, workspace },
-        store,
-        events,
-        clock,
-        settings,
-      }),
-    ).scoped(),
-  });
-  return Result.ok({
-    engineDependencies: scope.cradle.engineDependencies,
-    closeSession: () => session.close(),
-    dispose: () => scope.dispose(),
   });
 }
 
@@ -286,4 +289,38 @@ function openSessionRetrying({
     onFailedAttempt: ({ error, attempt }) =>
       runLogger.warn({ err: error, attempt }, 'the sandbox did not start'),
   });
+}
+
+function handOverRunScope(
+  app: AwilixContainer<AppCradle>,
+  scope: AwilixContainer<RunCradle>,
+  { run, session }: { run: RunIdentity; session: RunSession },
+): RunScope {
+  scope.register({
+    session: asValue(session),
+    workspace: asFunction(
+      () =>
+        new GitWorkspace({
+          repoRoot: app.cradle.repoRoot,
+          worktreePath: session.worktreePath,
+          sandbox: session,
+          signing: app.cradle.config.commitSigning,
+          ...run,
+        }),
+    ).scoped(),
+    engineDependencies: asFunction(
+      ({ workspace, runStore: store, events, clock, settings }: RunCradle): EngineDependencies => ({
+        ports: { agent: session, workspace },
+        store,
+        events,
+        clock,
+        settings,
+      }),
+    ).scoped(),
+  });
+  return {
+    engineDependencies: scope.cradle.engineDependencies,
+    closeSession: () => session.close(),
+    dispose: () => scope.dispose(),
+  };
 }

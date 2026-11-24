@@ -780,8 +780,10 @@ the image, then starts telemetry and the sandbox scope and records the invocatio
 acquisition goes through `withResource`, so a later failed acquisition releases what was already
 held, a work panic releases everything and propagates as thrown, and releases run in reverse order
 of acquisition: session, scope, telemetry, lock, runtime. `releaseInOrder` attempts both the
-session close and the scope disposal; the first failure is the cleanup failure and later ones are
-logged. A cleanup failure replaces a success and is logged after a failure.
+session close and the scope disposal; the first panic propagates as thrown, otherwise the first
+failure is the cleanup failure, and every other failure or panic is logged. Opening the scope
+releases through `releasingOnPanic`: a panic after the sandbox opened closes it before the scope is
+disposed. A cleanup failure replaces a success and is logged after a failure.
 
 ### Preparation, acquisition and release by operation
 
