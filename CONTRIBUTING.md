@@ -102,8 +102,8 @@ CLI with their concrete dependencies, and the module parses arguments only when 
 script, so importing it starts nothing. `npm run lint:dependencies` lets no production owner but
 composition import `src/cli/`. Production composition may import only composition, cli, app,
 adapters, config, observers, ports, domain and failures, and no other production owner may import
-composition. A file under any directory not listed in the code map, `src/integrations/` included,
-fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
+composition. Adapters cannot import app, flow, steps, cli or composition.
+A file under any directory not listed in the code map fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
 
 `jig github implement` is spread over the same owners. `src/cli/commands/github.ts` declares the
 command, parses its input and describes its outcome; `src/config/github-settings.ts` validates the

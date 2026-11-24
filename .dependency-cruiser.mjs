@@ -88,9 +88,12 @@ export default {
     },
     {
       name: 'adapters-do-not-import-flow',
+      comment:
+        'Adapters implement capabilities for the layers above them, so they import neither the ' +
+        'workflow (app, flow, steps) nor the executable (cli, composition) that uses them.',
       severity: 'error',
       from: { path: '^src/adapters/' },
-      to: { path: '^src/flow/' },
+      to: { path: '^src/(app|flow|steps|cli|composition)/' },
     },
     {
       name: 'flow-does-not-assemble-workflows',

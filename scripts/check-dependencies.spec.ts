@@ -90,7 +90,6 @@ describe('dependency checking command', () => {
   it.each([
     ['domain', 'ports', 'domain-is-independent'],
     ['ports', 'config', 'ports-depend-only-on-domain'],
-    ['adapters', 'flow', 'adapters-do-not-import-flow'],
     ['flow', 'app', 'flow-does-not-assemble-workflows'],
     ['flow', 'steps', 'flow-does-not-assemble-workflows'],
     ['app', 'cli', 'cli-is-imported-only-by-composition'],
@@ -372,6 +371,52 @@ describe('dependency checking command', () => {
           'composition/deep/nested/a.ts',
           'flow/b.ts',
         ),
+      );
+      expect(result.all).not.toContain('no-module-cycles');
+    },
+  );
+
+  it('accepts adapters importing the owners beneath them through every import form', async () => {
+    const owners = ['config', 'domain', 'failures', 'observers', 'ports'];
+    const { run } = await setup({
+      ...Object.fromEntries(
+        owners.map((owner) => [
+          `adapters/nested/${owner}.ts`,
+          everyImportForm(`../../${owner}/b.js`).join('\n'),
+        ]),
+      ),
+      'adapters/deep/nested/a.ts': everyImportForm('../../../app/../ports/b.js').join('\n'),
+      ...Object.fromEntries(owners.map((owner) => [`${owner}/b.ts`, sharedTarget])),
+    });
+    expect((await run()).exitCode).toBe(0);
+  });
+
+  it.each(importFormNames)(
+    'rejects adapters importing the workflow or the executable through %s',
+    async (form) => {
+      const targets = ['app', 'flow', 'steps', 'cli', 'composition'].map(
+        (owner) => `${owner}/b.ts`,
+      );
+      const importers = Object.fromEntries(
+        targets.map((target, index) => [
+          `adapters/nested/a${index}.ts`,
+          `../../${target.replace(/[.]ts$/, '.js')}`,
+        ]),
+      );
+      const { run } = await setup({
+        ...importersUsing(form, importers),
+        'adapters/deep/nested/a.ts': importForms[form]('../../../ports/../steps/b.js'),
+        ...Object.fromEntries(targets.map((target) => [target, sharedTarget])),
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      targets.forEach((target, index) =>
+        expect(result.all).toContain(
+          violation('adapters-do-not-import-flow', `adapters/nested/a${index}.ts`, target),
+        ),
+      );
+      expect(result.all).toContain(
+        violation('adapters-do-not-import-flow', 'adapters/deep/nested/a.ts', 'steps/b.ts'),
       );
       expect(result.all).not.toContain('no-module-cycles');
     },

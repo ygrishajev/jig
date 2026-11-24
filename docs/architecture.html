@@ -129,7 +129,7 @@ svg text{font-family:var(--sans)}
 <details id="source-map">
   <summary>Source modules and enforced boundaries</summary>
   <p>The zoomable map shows execution. This table shows current production source imports,
-    including type imports, grouped by the thirteen top-level <code>src/</code> owners.
+    including type imports, grouped by the twelve top-level <code>src/</code> owners.
     Same-owner imports are omitted; a listed dependency describes the current graph, not an exemption.</p>
   <table>
     <thead><tr><th>Module</th><th>Owns</th><th>Imports other owners</th></tr></thead>
@@ -191,11 +191,11 @@ svg text{font-family:var(--sans)}
     <li>Production failures imports only <code>src/failures</code>, <code>better-result</code> and Node
       built-ins. Only adapters, app, cli, composition, flow, observers and steps import it; domain,
       ports, config and prompts cannot.</li>
-    <li>Adapters cannot import flow; flow cannot import app or steps.</li>
+    <li>Adapters cannot import app, flow, steps, cli or composition; flow cannot import app or steps.</li>
     <li>Only composition imports cli across owners. No other owner imports composition.</li>
     <li>Production composition imports only composition, cli, app, adapters, config, observers, ports,
       domain and failures. Specs and tooling outside <code>src/</code> may import CLI helpers.</li>
-    <li>Layer restrictions include type imports. Resolution, package dependency and production-to-spec checks remain enabled.</li>
+    <li>Layer restrictions include type imports, re-exports and literal dynamic imports, through nested paths. Resolution, package dependency and production-to-spec checks remain enabled.</li>
   </ul>
   <p>The checker reports cycle paths and the source imports involved.
     Select it with <code>npm run validate -- lint:dependencies</code>, or exclude it with
