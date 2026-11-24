@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import type { InvocationStatus } from '../../domain/invocation-status.js';
-import { runIdSchema } from '../../domain/run-id.js';
-import type { RepositoryIdentity } from './github-port.js';
+import type { InvocationStatus } from './invocation-status.js';
+import type { RepositoryIdentity } from './repository-identity.js';
+import { runIdSchema } from './run-id.js';
 
 /** Which findings comment a draft PR carries: one per PR, run, outcome and exact revision. */
 export interface FindingsIdentity extends CommentIdentity {
@@ -36,9 +36,9 @@ const refusalSchema = z.object({
 /** A revision held back from publication, with every path that made it ineligible. */
 export type Refusal = z.infer<typeof refusalSchema>;
 
-const ownershipSchema = z.object({ token: z.string(), expiresAt: z.number() });
+const leaseSchema = z.object({ token: z.string(), expiresAt: z.number() });
 
-export type PublicationOwnership = z.infer<typeof ownershipSchema>;
+export type PublicationLease = z.infer<typeof leaseSchema>;
 
 /** Fields added after version 1 default to empty, so state saved before them still loads. */
 export const orchestrationSchema = z.object({
@@ -49,7 +49,7 @@ export const orchestrationSchema = z.object({
   refusals: z.record(refusalSchema).default({}),
   refusalComments: z.record(z.string()).default({}),
   findingsComments: z.record(z.string()).default({}),
-  owners: z.record(ownershipSchema).default({}),
+  owners: z.record(leaseSchema).default({}),
 });
 
 export type Orchestration = z.infer<typeof orchestrationSchema>;
@@ -192,11 +192,18 @@ export function findingsMarker(identity: FindingsIdentity): string {
   return `<!-- jig:${findingsKey(identity)} -->`;
 }
 
+export function publicationLease(token: string, now: number): PublicationLease {
+  return { token, expiresAt: now + OWNERSHIP_LEASE_MS };
+}
+
+/** How long a publication owner holds its lease unrenewed; a crashed job's lease lapses after this. */
+export const OWNERSHIP_LEASE_MS = 15 * 60 * 1000;
+
 /** Takes publication of `key` for `claim` unless another owner holds an unexpired lease. */
 export function claimPublication(
   state: Orchestration,
   key: string,
-  claim: PublicationOwnership,
+  claim: PublicationLease,
   now: number,
 ): Orchestration {
   const owner = state.owners[key];
@@ -208,7 +215,7 @@ export function claimPublication(
 export function renewPublication(
   state: Orchestration,
   key: string,
-  claim: PublicationOwnership,
+  claim: PublicationLease,
 ): Orchestration {
   if (!ownsPublication(state, key, claim.token)) return state;
   return { ...state, owners: { ...state.owners, [key]: claim } };

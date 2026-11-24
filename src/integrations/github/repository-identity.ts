@@ -1,9 +1,11 @@
 import { Result } from 'better-result';
-import { z } from 'zod';
 
 import { gitCommand, openRepo } from '../../adapters/git/repository.js';
+import {
+  type RepositoryIdentity,
+  repositoryIdentitySchema,
+} from '../../domain/repository-identity.js';
 import { GithubSetupInvalid } from './errors.js';
-import type { RepositoryIdentity } from './github-port.js';
 
 export async function repositoryIdentity(
   repoRoot: string,
@@ -26,18 +28,10 @@ export async function repositoryIdentity(
 }
 
 function parseRepository(value: unknown): Result<RepositoryIdentity, GithubSetupInvalid> {
-  const parsed = repositorySchema.safeParse(value);
+  const parsed = repositoryIdentitySchema.safeParse(value);
   return parsed.success
     ? Result.ok(parsed.data)
     : Result.err(
         new GithubSetupInvalid({ message: 'Repository must identify a GitHub owner/repository.' }),
       );
 }
-
-const repositorySchema = z
-  .string()
-  .regex(/^[\w.-]+\/[\w.-]+$/)
-  .transform((value): RepositoryIdentity => {
-    const [owner, repo] = value.split('/');
-    return { owner, repo };
-  });

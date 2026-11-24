@@ -578,11 +578,11 @@ svg text{font-family:var(--sans)}
     ["Registered by composition", "src/composition/main.ts: buildJigCli() adds the GitHub commands to buildCli().", "iface"],
     ["Prepare command input", "command.ts parses --issue, reads token privately and resolves repository identity.", "iface"],
     ["Check the base branch", "implement-issue.ts refuses a checkout other than GitHub's default branch.", "domain"],
-    ["Accept the request", "orchestration-state.ts freezes the issue snapshot and deterministic run id.", "domain"],
+    ["Accept the request", "src/domain/orchestration.ts freezes the issue snapshot and deterministic run id.", "domain"],
     ["Run the core pipeline", "runJig: merge disabled, git-remote required, code publication deferred; saves push state only, recording a code checkpoint.", "module"],
     ["Inspect and publish code", "publishRunBranch inspects the exact checkpoint against the default-branch merge base, refuses workflow changes, pushes only that object ID under a lease.", "domain"],
-    ["Publish or reuse", "Under a leased publication owner: PR, refusal or status comment; markers recover comments; GithubPort hides the Octokit API adapter.", "ext"],
-    ["Record receipts", "OrchestrationStore uses RemoteRef leases at refs/jig/_orchestration; records refusals before commenting, and PR, status and refusal receipts.", "infra"]
+    ["Publish or reuse", "Under withPublicationOwnership (src/app/publication-ownership.ts), which renews the lease before each effect and releases it however publication ends: PR, refusal or status comment; markers recover comments; GithubPort hides the Octokit API adapter.", "ext"],
+    ["Record receipts", "GitOrchestrationStore (src/adapters/git/orchestration-ref.ts) implements the ReceiptStore and PublicationOwnership ports with RemoteRef leases at refs/jig/_orchestration; records refusals before commenting, and PR, status and refusal receipts.", "infra"]
   ], { h: 60, gap: 12 });
 
   /* ---------- level 1: the layered map ---------- */

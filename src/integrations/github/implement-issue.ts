@@ -1,29 +1,13 @@
 import { panic, Result } from 'better-result';
 
 import { getCurrentBranch } from '../../adapters/git/branch.js';
+import { GitOrchestrationStore } from '../../adapters/git/orchestration-ref.js';
 import { exactHead } from '../../adapters/git/run-history.js';
 import type { App } from '../../app/container.js';
+import { type WhileOwned, withPublicationOwnership } from '../../app/publication-ownership.js';
 import { runJig, type RunJigFailure, type RunReport } from '../../app/run-jig.js';
 import { openRunStore, type RunStoreSetupInvalid } from '../../app/run-stores.js';
 import { outcomeIsComplete } from '../../domain/invocation-status.js';
-import { runIdFor } from '../../domain/run-id.js';
-import { runBranchFor, type RunState } from '../../domain/run-state.js';
-import type { GitCommandFailed } from '../../ports/git-failures.js';
-import type { RunStoreFailure } from '../../ports/run-store.js';
-import {
-  BaseBranchMismatch,
-  type GithubError,
-  GithubRefused,
-  type GithubSetupInvalid,
-  type PublicationInProgress,
-} from './errors.js';
-import { findingsCommentBody, stuckReason } from './findings-comment.js';
-import type {
-  GithubFailure,
-  GithubPort,
-  OpenPullRequest,
-  RepositoryIdentity,
-} from './github-port.js';
 import {
   type AcceptedRequest,
   acceptedRequest,
@@ -44,8 +28,25 @@ import {
   withPullRequest,
   withRefusal,
   withRefusalComment,
-} from './orchestration-state.js';
-import { OrchestrationStore, type StoreFailure, type WhileOwned } from './orchestration-store.js';
+} from '../../domain/orchestration.js';
+import type { RepositoryIdentity } from '../../domain/repository-identity.js';
+import { runIdFor } from '../../domain/run-id.js';
+import { runBranchFor, type RunState } from '../../domain/run-state.js';
+import type { GitCommandFailed } from '../../ports/git-failures.js';
+import type {
+  PublicationInProgress,
+  ReceiptStore,
+  ReceiptStoreFailure,
+} from '../../ports/publication-receipts.js';
+import type { RunStoreFailure } from '../../ports/run-store.js';
+import {
+  BaseBranchMismatch,
+  type GithubError,
+  GithubRefused,
+  type GithubSetupInvalid,
+} from './errors.js';
+import { findingsCommentBody, stuckReason } from './findings-comment.js';
+import type { GithubFailure, GithubPort, OpenPullRequest } from './github-port.js';
 import { requestText } from './request-snapshot.js';
 import {
   hasWorkBeyondStart,
@@ -81,7 +82,7 @@ type CodeCheckpoint = Pick<RunState, 'startingCommit' | 'codeRevision'>;
 type Publication =
   { kind: 'comment'; revision?: string } | { kind: 'ready' | 'draft'; revision: string };
 
-type PublicationFailure = GithubFailure | StoreFailure | PublicationInProgress;
+type PublicationFailure = GithubFailure | ReceiptStoreFailure | PublicationInProgress;
 
 export function implementIssue(
   app: App,
@@ -102,7 +103,7 @@ export function implementIssue(
           message: `Check out the default branch "${base}" before implementing an issue (currently "${current}").`,
         }),
       );
-    const store = new OrchestrationStore(app.cradle.repoRoot);
+    const store = new GitOrchestrationStore(app.cradle.repoRoot);
     const key = `${repository.owner}/${repository.repo}#${issueNumber}`;
     app.cradle.logger.info(
       { event: 'githubIssueRequestStarted', issueNumber },
@@ -132,19 +133,19 @@ export function implementIssue(
       `Run ${accepted.runId} finished ${report.status}; publishing the GitHub outcome`,
     );
     const target = { github, repository, issueNumber, key, base, title: accepted.title };
-    return store.withPublicationOwnership(key, app.cradle.logger, (whileOwned) =>
+    return withPublicationOwnership(store, key, app.cradle.logger, (whileOwned) =>
       publishOutcome(app, store, { ...target, whileOwned }, report),
     );
   });
 }
 
 function acceptedRequestFor(
-  store: OrchestrationStore,
+  store: ReceiptStore,
   github: GithubPort,
   repository: RepositoryIdentity,
   key: string,
   issueNumber: number,
-): Promise<Result<AcceptedRequest, GithubFailure | StoreFailure>> {
+): Promise<Result<AcceptedRequest, GithubFailure | ReceiptStoreFailure>> {
   return Result.gen(async function* () {
     const existing = yield* Result.await(store.read());
     const accepted = acceptedRequest(existing, key);
@@ -176,7 +177,7 @@ const REQUIRED_STORES = ['git-remote'];
  */
 function publishOutcome(
   app: App,
-  store: OrchestrationStore,
+  store: ReceiptStore,
   target: IssueTarget,
   report: RunReport,
 ): Promise<Result<IssueOutcome, IssueFailure>> {
@@ -255,7 +256,7 @@ function publicationFor(
 
 function publishStatus(
   repoRoot: string,
-  store: OrchestrationStore,
+  store: ReceiptStore,
   target: IssueTarget,
   { report, revision }: { report: RunReport; revision?: string },
 ): Promise<Result<IssueOutcome, BranchPublicationFailure | PublicationFailure>> {
@@ -272,7 +273,7 @@ function publishStatus(
 }
 
 function publishComment(
-  store: OrchestrationStore,
+  store: ReceiptStore,
   target: IssueTarget,
   { report, revision }: { report: RunReport; revision?: string },
 ): Promise<Result<IssueOutcome, PublicationFailure>> {
@@ -309,7 +310,7 @@ function commentOnce(
     receipt: string | undefined;
     marker: string;
     body: string;
-    save: (url: string) => Promise<Result<unknown, StoreFailure>>;
+    save: (url: string) => Promise<Result<unknown, ReceiptStoreFailure>>;
   },
 ): Promise<Result<string, PublicationFailure>> {
   return Result.gen(async function* () {
@@ -347,7 +348,7 @@ function statusCommentReason(report: RunReport): string {
 
 /** Records the refusal before announcing it, so a crash in between still never publishes the code. */
 function refuse(
-  store: OrchestrationStore,
+  store: ReceiptStore,
   target: IssueTarget,
   refusal: Refusal,
 ): Promise<Result<IssueOutcome, PublicationFailure>> {
@@ -388,7 +389,7 @@ function pullRequestFor(
 }
 
 function publishReady(
-  store: OrchestrationStore,
+  store: ReceiptStore,
   target: IssueTarget,
   publication: OpenPullRequest,
 ): Promise<Result<IssueOutcome, PublicationFailure>> {
@@ -402,7 +403,7 @@ function publishReady(
 
 /** Reuses the issue's recorded PR, or one open for the same head, before opening a new one. */
 function openPullRequestOnce(
-  store: OrchestrationStore,
+  store: ReceiptStore,
   { github, repository, key, whileOwned }: IssueTarget,
   publication: OpenPullRequest,
 ): Promise<Result<{ receipt: PullRequestReceipt; reused: boolean }, PublicationFailure>> {
@@ -426,7 +427,7 @@ function openPullRequestOnce(
  * one recorded before findings were posted, still gets exactly one.
  */
 function publishDraft(
-  store: OrchestrationStore,
+  store: ReceiptStore,
   target: IssueTarget,
   draft: {
     report: RunReport;

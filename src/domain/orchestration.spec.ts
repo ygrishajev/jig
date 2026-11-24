@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { runId } from '../../../tests/support/builders.js';
+import { runId } from '../../tests/support/builders.js';
 import {
   acceptedRequest,
   acceptRequest,
@@ -14,7 +14,9 @@ import {
   type FindingsIdentity,
   findingsMarker,
   orchestrationSchema,
+  OWNERSHIP_LEASE_MS,
   ownsPublication,
+  publicationLease,
   pullRequestReceipt,
   refusalCommentReceipt,
   refusalMarker,
@@ -25,7 +27,7 @@ import {
   withPullRequest,
   withRefusal,
   withRefusalComment,
-} from './orchestration-state.js';
+} from './orchestration.js';
 
 describe('orchestration state', () => {
   it('finds a request only after it is accepted', () => {
@@ -161,6 +163,22 @@ describe('orchestration state', () => {
     expect(ownsPublication(claimPublication(released, key, second, now), key, second.token)).toBe(
       true,
     );
+  });
+
+  it('holds a fresh lease against other claims until it has gone unrenewed for the lease period', () => {
+    const { state, key } = setup();
+    const now = faker.number.int({ min: 1000, max: 100000 });
+    const other = { token: faker.string.uuid(), expiresAt: now + 2 * OWNERSHIP_LEASE_MS };
+    const owned = claimPublication(state, key, publicationLease(faker.string.uuid(), now), now);
+
+    expect(claimPublication(owned, key, other, now + OWNERSHIP_LEASE_MS - 1)).toBe(owned);
+    expect(
+      ownsPublication(
+        claimPublication(owned, key, other, now + OWNERSHIP_LEASE_MS),
+        key,
+        other.token,
+      ),
+    ).toBe(true);
   });
 
   function setup() {

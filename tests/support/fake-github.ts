@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { Result } from 'better-result';
 
+import type { RepositoryIdentity } from '../../src/domain/repository-identity.js';
 import { GithubNotFound } from '../../src/integrations/github/errors.js';
 import type {
   GithubFailure,
@@ -8,7 +9,6 @@ import type {
   Issue,
   OpenPullRequest,
   PullRequest,
-  RepositoryIdentity,
 } from '../../src/integrations/github/github-port.js';
 
 /** Issues and PRs share GitHub's numbering, so the fake keeps their numbers apart. */
