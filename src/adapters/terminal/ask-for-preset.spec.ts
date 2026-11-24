@@ -29,7 +29,7 @@ describe('askForPreset', () => {
   });
 
   it('shows the description of the preset under the cursor', async () => {
-    const description = faker.lorem.sentence();
+    const description = faker.lorem.words(3);
     const { answer, type, shown } = setup({ presets: [aPreset({ description })] });
 
     await type(DOWN);
