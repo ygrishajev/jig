@@ -327,14 +327,20 @@ command runs, so `--help` and an imported builder need no token, repository or a
 command translation; app still owns container construction and lifecycle, and `cli/with-app.ts`
 still builds the container for each command.
 
-`.dependency-cruiser.mjs` owns the production-owner list. It has no `integrations` owner, so a
-file under `src/integrations/` fails as an unowned production file. Its
+`.dependency-cruiser.mjs` owns the production-owner list; a file under any other directory, such
+as a reintroduced `src/integrations/`, fails as an unowned production file. Its
 `composition-imports-only-allowed-sources` rule lets production composition import only
 composition, cli, app, adapters, config, observers, ports, domain and failures; flow, steps and
 prompts stay out of reach. `cli-is-imported-only-by-composition` lets no other production owner
 import cli, and `composition-is-imported-by-no-other-owner` keeps every other production owner from
 importing composition. Specs and tooling outside `src/`, such as `scripts/validate.ts`, may import
 CLI helpers.
+
+`adapters-do-not-import-flow` keeps adapters beneath everything that uses them: production and
+spec adapters import neither the workflow (app, flow, steps) nor the executable (cli,
+composition). Every one of these rules covers type imports, re-exports and literal dynamic imports
+through nested paths, and `scripts/check-dependencies.spec.ts` rejects each without an incidental
+cycle to carry the failure.
 
 ### Shared failure helpers
 
