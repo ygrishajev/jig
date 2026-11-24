@@ -25,6 +25,8 @@ import type { RunRecords } from '../ports/run-records.js';
 import { RunInProgress } from '../ports/run-state-failures.js';
 import {
   listPresets,
+  type Preset,
+  type PresetPick,
   readRunStatus,
   type RepositorySources,
   type RunInput,
@@ -245,6 +247,68 @@ describe('application API', () => {
       expect(runtimes()[0]?.disposed()).toBe(true);
     });
 
+    it('hands the runtime the agents of the preset the operator picks at a bare --preset', async () => {
+      const preset = presetName();
+      const reviewer = { provider: 'claude', model: faker.word.noun() };
+      const presetSource = new InMemoryPresetSource();
+      presetSource.put(0, preset, { reviewer });
+      const { run, saveRun, openRuntime, askForPreset, log } = await setup({
+        presetSource,
+        pick: { kind: 'preset', name: preset },
+      });
+      const state = await saveRun({ phase: 'done' });
+
+      unwrap(await run({ run: { resume: state.runId }, preset: { kind: 'ask' } }));
+
+      expect(askForPreset.mock.calls[0]?.[0].map(({ name }) => name)).toEqual([preset]);
+      expect(openRuntime.mock.calls[0]?.[0].config.reviewer).toEqual(reviewer);
+      expect(log.info).toHaveBeenCalledWith({ preset }, expect.any(String));
+    });
+
+    it('hands the runtime the project config untouched when the operator picks none', async () => {
+      const reviewer = { provider: 'claude', model: faker.word.noun() };
+      const presetSource = new InMemoryPresetSource();
+      presetSource.put(0, presetName(), {
+        reviewer: { provider: 'codex', model: faker.word.noun() },
+      });
+      const { run, saveRun, openRuntime, log } = await setup({
+        configSource: new InMemoryConfigSource({ json: { reviewer } }),
+        presetSource,
+        pick: { kind: 'none' },
+      });
+      const state = await saveRun({ phase: 'done' });
+
+      unwrap(await run({ run: { resume: state.runId }, preset: { kind: 'ask' } }));
+
+      expect(openRuntime.mock.calls[0]?.[0].config.reviewer).toEqual(reviewer);
+      expect(log.info).not.toHaveBeenCalled();
+    });
+
+    it('applies the picked preset over the config file it was given and hands the runtime that file', async () => {
+      const preset = presetName();
+      const reviewer = { provider: 'claude', model: faker.word.noun() };
+      const configPath = `${faker.string.uuid()}.json`;
+      const presetSource = new InMemoryPresetSource();
+      presetSource.put(0, preset, { reviewer });
+      const { run, repoRoot, saveRun, openRuntime, writeFileInRepository } = await setup({
+        configFromRepository: true,
+        presetSource,
+        pick: { kind: 'preset', name: preset },
+      });
+      await writeFileInRepository(configPath, JSON.stringify({ mergeMode: 'auto' }));
+      const state = await saveRun({ phase: 'done' });
+
+      unwrap(await run({ run: { resume: state.runId }, preset: { kind: 'ask' }, configPath }));
+
+      const request = openRuntime.mock.calls[0]?.[0];
+      expect(request).toMatchObject({
+        repoRoot,
+        configPath,
+        config: { mergeMode: 'auto', reviewer },
+      });
+      expect(request?.configSource.name).toBe(configPath);
+    });
+
     it('stops before building anything when the operator picks no preset', async () => {
       const presetSource = new InMemoryPresetSource();
       presetSource.put(0, presetName(), {});
@@ -264,7 +328,9 @@ describe('application API', () => {
       startInSubdirectory?: boolean;
       savedCredentials?: ReturnType<RepositorySources['readSavedCredentials']>;
       configSource?: InMemoryConfigSource;
+      configFromRepository?: boolean;
       presetSource?: InMemoryPresetSource;
+      pick?: PresetPick;
     } = {},
   ) {
     const repo = await createTempRepo();
@@ -275,7 +341,9 @@ describe('application API', () => {
       readSavedCredentials: vi.fn(
         input.savedCredentials ? () => input.savedCredentials! : real.readSavedCredentials,
       ),
-      configSourceFor: vi.fn(() => configSource),
+      configSourceFor: vi.fn(
+        input.configFromRepository ? real.configSourceFor : () => configSource,
+      ),
       presetSourceFor: vi.fn(() => input.presetSource ?? new InMemoryPresetSource()),
     } satisfies RepositorySources;
     const records = mock<RunRecords>({
@@ -289,13 +357,14 @@ describe('application API', () => {
         Result.err(new SandboxCredentialsInvalid({ message: faker.lorem.sentence() })),
       ),
     });
+    const log = mock<RunLog>();
     const built: ReturnType<typeof localRunRuntime>[] = [];
     const openRuntime = vi.fn((request: RuntimeRequest) => {
-      const opened = localRunRuntime(request, { sandbox, log: mock<RunLog>() });
+      const opened = localRunRuntime(request, { sandbox, log });
       built.push(opened);
       return opened.runtime;
     });
-    const askForPreset = vi.fn(async () => undefined);
+    const askForPreset = vi.fn(async (_presets: Preset[]) => input.pick);
     return {
       repoRoot: repo.dir,
       sources,
@@ -303,6 +372,7 @@ describe('application API', () => {
       sandbox,
       openRuntime,
       askForPreset,
+      log,
       runtimes: () => built,
       run: (runInput: Omit<RunInput, 'logFormat'>) =>
         startOrResumeRun(

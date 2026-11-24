@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { asValue } from 'awilix';
 import { panic, Result } from 'better-result';
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from 'pino';
 import { simpleGit } from 'simple-git';
@@ -22,9 +22,10 @@ import {
   everyStepOn,
   failureOutput,
   implementingPlanSteps,
+  presetName,
 } from '../../tests/support/builders.js';
 import { anIssue, FakeGithub } from '../../tests/support/fake-github.js';
-import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { FakeAgentSession, InMemoryPresetSource } from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
 import {
   operationContextIn,
@@ -62,6 +63,8 @@ import {
   implementGithubIssue,
   type IssueCapabilities,
   type IssuePublication,
+  type PresetPick,
+  type RunPreparation,
   type RunRuntime,
   type RuntimeRequest,
 } from './api.js';
@@ -157,6 +160,30 @@ describe('implementGithubIssue', () => {
 
     expect(result.isErr() && result.error).toBeInstanceOf(RepositoryInvalid);
     expect(openRuntime).not.toHaveBeenCalled();
+  });
+
+  it('hands the run the preset the operator picks over the config file it was given', async () => {
+    const preset = presetName();
+    const reviewer = { provider: 'claude', model: faker.word.noun() };
+    const configPath = `${faker.string.uuid()}.json`;
+    const presetSource = new InMemoryPresetSource();
+    presetSource.put(0, preset, { reviewer });
+    const { implement, openRuntime, dir } = await setup({
+      presetSource,
+      pick: { kind: 'preset', name: preset },
+    });
+    await appendFile(path.join(dir, '.git', 'info', 'exclude'), `${configPath}\n`);
+    await writeFile(path.join(dir, configPath), JSON.stringify({ mergeMode: 'auto' }));
+
+    unwrap(await implement({ configPath, preset: { kind: 'ask' } }));
+
+    const request = openRuntime.mock.calls[0]?.[0];
+    expect(request).toMatchObject({
+      repoRoot: dir,
+      configPath,
+      config: { mergeMode: 'auto', reviewer },
+    });
+    expect(request?.configSource.name).toBe(configPath);
   });
 
   it('releases the run it built once the outcome is published, and once GitHub refuses', async () => {
@@ -840,6 +867,8 @@ describe('implementGithubIssue', () => {
     runStores,
     losePullRequestReceipt = false,
     githubEnvironment,
+    presetSource = new InMemoryPresetSource(),
+    pick,
   }: {
     paused?: boolean;
     unfinished?: boolean;
@@ -852,6 +881,8 @@ describe('implementGithubIssue', () => {
     runStores?: string[];
     losePullRequestReceipt?: boolean;
     githubEnvironment?: Record<string, string>;
+    presetSource?: InMemoryPresetSource;
+    pick?: PresetPick;
   } = {}) {
     const remote = await createRemote();
     const dir = await remote.cloneOf();
@@ -969,13 +1000,13 @@ describe('implementGithubIssue', () => {
       GITHUB_REPOSITORY: `${repository.owner}/${repository.repo}`,
     };
     const capabilitiesIn = (cwd: string): IssueCapabilities => ({
-      ...realRepositorySources(),
+      ...realRepositorySources({ presetSourceFor: () => presetSource }),
       context: () =>
         operationContextIn(cwd, {
           ANTHROPIC_API_KEY: faker.string.alphanumeric(20),
           ...environment,
         }),
-      askForPreset: async () => undefined,
+      askForPreset: async () => pick,
       openRuntime,
       githubFor,
       githubOriginName: originName,
@@ -984,8 +1015,12 @@ describe('implementGithubIssue', () => {
         runBranches: new GitRunBranches(repoRoot),
       }),
     });
-    const implementIn = (cwd: string) =>
-      implementGithubIssue(capabilitiesIn(cwd), { issueNumber: issue.number, logFormat: 'json' });
+    const implementIn = (cwd: string, preparation: Omit<RunPreparation, 'logFormat'> = {}) =>
+      implementGithubIssue(capabilitiesIn(cwd), {
+        ...preparation,
+        issueNumber: issue.number,
+        logFormat: 'json',
+      });
     return {
       dir,
       origin: remote.origin,
@@ -1005,7 +1040,7 @@ describe('implementGithubIssue', () => {
       disposals: () => disposals,
       logger,
       store: new GitOrchestrationStore(dir),
-      implement: () => implementIn(dir),
+      implement: (preparation?: Omit<RunPreparation, 'logFormat'>) => implementIn(dir, preparation),
       implementIn,
       implementFromFreshClone: async () => implementIn(await remote.cloneOf()),
     };
