@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { execa } from 'execa';
-import { writeFile } from 'node:fs/promises';
+import { symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +58,15 @@ describe('buildJigCli', () => {
     expect(result.stdout).toBe(completionMarker);
   }, 30_000);
 
+  it('runs when invoked through a symbolic link, as an installed executable is', async () => {
+    const { runThroughSymlink } = setup();
+
+    const result = await runThroughSymlink(['--version']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe(packageVersion());
+  }, 30_000);
+
   function setup() {
     let output = '';
     const program = buildJigCli()
@@ -86,6 +95,20 @@ describe('buildJigCli', () => {
             reject: false,
           },
         ),
+      runThroughSymlink: async (processArguments: string[]) => {
+        const installed = path.join(await tempDirectory(), 'jig.ts');
+        await symlink(fileURLToPath(new URL('./main.ts', import.meta.url)), installed);
+        return execa(
+          process.execPath,
+          [
+            '--import',
+            createRequire(import.meta.url).resolve('tsx'),
+            installed,
+            ...processArguments,
+          ],
+          { reject: false },
+        );
+      },
       importAndBuildInSubprocess: async (processArguments: string[]) => {
         const completionMarker = faker.string.uuid();
         const importer = path.join(await tempDirectory(), 'import-composition.mjs');
