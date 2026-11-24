@@ -2,6 +2,7 @@ export const productionModules = [
   'adapters',
   'app',
   'cli',
+  'composition',
   'config',
   'domain',
   'failures',
@@ -23,11 +24,23 @@ const failuresImporters = [
   'adapters',
   'app',
   'cli',
+  'composition',
   'failures',
   'flow',
   'integrations',
   'observers',
   'steps',
+];
+/** The GitHub command still lives in integrations; it moves to cli in a later slice. */
+const transitionalCliCommand = '^src/integrations/github/command[.]ts$';
+/** The GitHub sources the composed builder registers until the GitHub command moves to cli. */
+const transitionalCompositionGithubSources = [
+  transitionalCliCommand,
+  '^src/integrations/github/github-port[.]ts$',
+];
+const compositionSourceAllowlist = [
+  '^src/(composition|cli|failures)/',
+  ...transitionalCompositionGithubSources,
 ];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
@@ -97,10 +110,34 @@ export default {
       to: { path: '^src/(app|steps)/' },
     },
     {
-      name: 'github-is-isolated',
+      name: 'composition-imports-only-allowed-sources',
+      comment:
+        'Composition starts the executable: it imports the CLI it starts and failures. Until the ' +
+        'GitHub command moves to cli it also imports that command and the port its builder takes, ' +
+        'and no other integrations source.',
       severity: 'error',
-      from: { pathNot: '^src/integrations/github/' },
-      to: { path: '^src/integrations/github/' },
+      from: { path: '^src/composition/', pathNot: testFilePattern },
+      to: { path: '^src/', pathNot: compositionSourceAllowlist },
+    },
+    {
+      name: 'cli-is-imported-only-by-composition',
+      comment:
+        'Composition is the only production owner that imports the CLI. The GitHub command in ' +
+        'integrations is the one transitional CLI-owned command outside src/cli. Specs and tooling ' +
+        'outside src/ may import CLI helpers.',
+      severity: 'error',
+      from: {
+        path: '^src/',
+        pathNot: ['^src/(cli|composition)/', transitionalCliCommand, testFilePattern],
+      },
+      to: { path: '^src/cli/' },
+    },
+    {
+      name: 'composition-is-imported-by-no-other-owner',
+      comment: 'Composition wires the executable; no other production owner imports it.',
+      severity: 'error',
+      from: { path: '^src/', pathNot: ['^src/composition/', testFilePattern] },
+      to: { path: '^src/composition/' },
     },
     {
       name: 'no-orphans',

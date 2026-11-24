@@ -18,7 +18,7 @@ import {
 } from './feature-repository.js';
 import { e2eAgents, withCodexSubscription } from './support.js';
 
-const CLI = fileURLToPath(new URL('../../dist/integrations/github/cli.js', import.meta.url));
+const CLI = fileURLToPath(new URL('../../dist/composition/main.js', import.meta.url));
 const RUN_ID = runIdSchema.parse('feature-e2e');
 const FEATURE_TEST_COUNT = 6;
 

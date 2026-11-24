@@ -271,7 +271,7 @@ Configuration imports only domain; adapters consume configuration policy.
 Provider construction, credential checks, authentication and filesystem operations
 remain with their existing owners.
 
-Dependency-first topological order: `domain`, `failures`, `ports`, `config`, `observers`, `adapters`, `flow`, `prompts`, `steps`, `app`, `cli`, `integrations`.
+Dependency-first topological order: `domain`, `failures`, `ports`, `config`, `observers`, `adapters`, `flow`, `prompts`, `steps`, `app`, `cli`, `integrations`, `composition`.
 
 ```mermaid
 flowchart LR
@@ -296,6 +296,8 @@ flowchart LR
   cli --> failures
   cli --> observers
   cli --> ports
+  composition --> cli
+  composition --> integrations
   config --> domain
   flow --> domain
   flow --> failures
@@ -317,6 +319,26 @@ flowchart LR
   steps --> ports
   steps --> prompts
 ```
+
+### Executable composition and the CLI
+
+`src/composition/main.ts` owns the executable: `buildJigCli()` registers the core commands from
+`cli/main.ts` and the GitHub commands, and when the module is the invoked script (compared by real
+path, so an installed symlink works) it parses the arguments and calls `exitWhenDone`. Importing it
+starts nothing. It imports `cli/app-action.ts`, `cli/exit-when-done.ts`, `cli/main.ts`,
+`integrations/github/command.ts` and `integrations/github/github-port.ts`. The CLI owns command
+translation; app still owns container construction and lifecycle, and `cli/with-app.ts` still
+builds the container for each command.
+
+`.dependency-cruiser.mjs` owns the production-owner list. Its
+`composition-imports-only-allowed-sources` rule lets production composition import only
+composition, cli, failures, `integrations/github/command.ts` and
+`integrations/github/github-port.ts`. `cli-is-imported-only-by-composition` lets no other
+production owner import cli, except `integrations/github/command.ts`, the one CLI-owned command
+still outside `src/cli/`. `composition-is-imported-by-no-other-owner` keeps every other production
+owner from importing composition. Specs and tooling outside `src/`, such as `scripts/validate.ts`,
+may import CLI helpers. Both GitHub exceptions are temporary: they end when the GitHub command moves
+to cli and the rest of `integrations` is redistributed.
 
 ### Shared failure helpers
 
@@ -355,14 +377,13 @@ the shared helpers and the retry policy:
 
 Dependency-cruiser's `failures-imports-only-better-result-and-node` rule allows production
 `failures` to import only itself, `better-result` and Node built-ins, and
-`failures-is-imported-only-by-listed-owners` lets only adapters, app, cli, flow, integrations,
-observers and steps import it; domain, ports, config and prompts cannot. `integrations` stands in
-for the planned composition owner until that slice moves executable wiring out of it.
+`failures-is-imported-only-by-listed-owners` lets only adapters, app, cli, composition, flow,
+integrations, observers and steps import it; domain, ports, config and prompts cannot.
 
 `failures` is a one-off owner, not a home for shared utilities. A new helper belongs with the rule
 it expresses: a business rule in domain, a capability contract in its port, a configuration policy
-in config. Moving composition out of `app` and `integrations` and separating the GitHub
-integration are separate slices.
+in config. Moving container construction from `app` to composition and redistributing the
+remaining GitHub integration are separate slices.
 
 ## Failure ownership audit
 
@@ -614,5 +635,6 @@ adapters, ports, `node:fs`, `node:os`, `node:path`, `node:child_process`, `execa
 `write-file-atomic`. Config specs and the test packages they use are exempt. Adapters may import
 config's contracts, and ports still depend only on domain. CLI commands still receive the container through
 `src/cli/with-app.ts` and `src/cli/app-action.ts`, which also prepares the invocation, and
-`src/app/container.ts` remains the composition root; moving preparation into application
-operations and composition out of `app` are separate slices.
+`src/app/container.ts` still constructs adapters and scopes. `src/composition/main.ts` owns
+executable startup; moving preparation into application operations and container construction
+from `app` to composition are separate slices.

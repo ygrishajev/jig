@@ -16,7 +16,7 @@ import { presetDirectoriesSource } from '../../adapters/filesystem/preset-source
 import { createAppContainer } from '../../app/container.js';
 import type { Invocation } from '../../cli/with-app.js';
 import type { FailureOutput } from '../../cli/with-error-handling.js';
-import { buildJigCli } from './cli.js';
+import { buildJigCli } from '../../composition/main.js';
 import { describeIssueOutcome } from './command.js';
 import { GithubRefused } from './errors.js';
 

@@ -70,18 +70,20 @@ agent calls; it is excluded from `npm test` and `npm run validate`.
 Explore the [interactive architecture map](docs/architecture.html) for module relationships
 and run flows. Download and open it in a browser; GitHub displays HTML as source.
 
-| Directory       | Responsibility                                                    |
-| --------------- | ----------------------------------------------------------------- |
-| `src/cli/`      | Commands and input parsing.                                       |
-| `src/app/`      | Application lifecycle, workflow assembly, and wiring.             |
-| `src/config/`   | Configuration schemas, defaults, presets, and policy.             |
-| `src/domain/`   | State, validation, domain decisions, and business failures.       |
-| `src/failures/` | Failure messages, panic unwrapping, and retry of `Result`s.       |
-| `src/flow/`     | Generic flow contracts, execution, and the step retry policy.     |
-| `src/steps/`    | Individual pipeline steps.                                        |
-| `src/ports/`    | Interfaces for external operations and their failures.            |
-| `src/adapters/` | Git, containers, storage, config files, terminals, and telemetry. |
-| `src/prompts/`  | Inputs sent to agents.                                            |
+| Directory                  | Responsibility                                                        |
+| -------------------------- | --------------------------------------------------------------------- |
+| `src/composition/`         | The `jig` executable: composes the CLI and starts it.                 |
+| `src/cli/`                 | Commands and input parsing.                                           |
+| `src/app/`                 | Application lifecycle, workflow assembly, and container construction. |
+| `src/integrations/github/` | `jig github implement`: issue orchestration and publication.          |
+| `src/config/`              | Configuration schemas, defaults, presets, and policy.                 |
+| `src/domain/`              | State, validation, domain decisions, and business failures.           |
+| `src/failures/`            | Failure messages, panic unwrapping, and retry of `Result`s.           |
+| `src/flow/`                | Generic flow contracts, execution, and the step retry policy.         |
+| `src/steps/`               | Individual pipeline steps.                                            |
+| `src/ports/`               | Interfaces for external operations and their failures.                |
+| `src/adapters/`            | Git, containers, storage, config files, terminals, and telemetry.     |
+| `src/prompts/`             | Inputs sent to agents.                                                |
 
 Config owns policy and defaults, including the step retry count and delay that resolve into
 `RunSettings`; domain owns `RunSettings` and the rules and stopping caps that read it. Settings
@@ -95,6 +97,14 @@ before config parses them. `npm run lint:dependencies` allows production config 
 `src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
 exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
 built-ins, and domain, ports, config and prompts cannot import it.
+
+`src/composition/main.ts` is the executable. `buildJigCli()` adds the GitHub commands to the core
+CLI, and the module parses arguments only when it is the invoked script, so importing it starts
+nothing. `npm run lint:dependencies` lets no production owner but composition import `src/cli/`,
+except `src/integrations/github/command.ts`, the GitHub command that still lives in integrations.
+Production composition may import only composition, cli, failures,
+`src/integrations/github/command.ts` and `src/integrations/github/github-port.ts`, and no other
+production owner may import composition. Specs and tooling outside `src/` may import CLI helpers.
 
 Each failure class lives with the owner of what it means: business failures in
 `src/domain/errors.ts`, capability failures in the port that declares them (shared Git, run-state

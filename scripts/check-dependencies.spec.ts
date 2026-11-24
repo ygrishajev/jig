@@ -10,6 +10,7 @@ const productionOwnersOutsideFailures = [
   'adapters',
   'app',
   'cli',
+  'composition',
   'config',
   'domain',
   'flow',
@@ -93,7 +94,9 @@ describe('dependency checking command', () => {
     ['adapters', 'flow', 'adapters-do-not-import-flow'],
     ['flow', 'app', 'flow-does-not-assemble-workflows'],
     ['flow', 'steps', 'flow-does-not-assemble-workflows'],
-    ['app', 'integrations/github', 'github-is-isolated'],
+    ['app', 'cli', 'cli-is-imported-only-by-composition'],
+    ['cli', 'composition', 'composition-is-imported-by-no-other-owner'],
+    ['composition', 'app', 'composition-imports-only-allowed-sources'],
   ])('rejects type imports from %s to %s', async (from, to, rule) => {
     const specifier = path.posix.relative(from, `${to}/b.js`);
     const { run } = await setup({
@@ -181,10 +184,12 @@ describe('dependency checking command', () => {
   });
 
   it.each(
-    ['adapters', 'app', 'cli', 'flow', 'integrations', 'observers', 'steps'].flatMap((from) => [
-      [from, "import { b } from '../../failures/b.js'; export const a = b;"],
-      [from, "import type { B } from '../../failures/b.js'; export type A = B;"],
-    ]),
+    ['adapters', 'app', 'cli', 'composition', 'flow', 'integrations', 'observers', 'steps'].flatMap(
+      (from) => [
+        [from, "import { b } from '../../failures/b.js'; export const a = b;"],
+        [from, "import type { B } from '../../failures/b.js'; export type A = B;"],
+      ],
+    ),
   )('accepts %s importing failures: %s', async (from, source) => {
     const { run } = await setup({
       [`${from}/nested/a.ts`]: source,
@@ -245,6 +250,137 @@ describe('dependency checking command', () => {
     expect((await run()).exitCode).toBe(0);
   });
 
+  it('accepts composition, same-owner, transitional, spec and tooling access to cli', async () => {
+    const { cwd, run } = await setup({
+      'composition/nested/a.ts': [
+        ...everyImportForm('../../cli/b.js'),
+        "import { c } from '../c.js';",
+        "import { b as failure } from '../../failures/b.js';",
+        "import { b as command } from '../../integrations/github/command.js';",
+        "import type { B as Port } from '../../integrations/github/github-port.js';",
+        'export const composed = [c, failure, command];',
+        'export type Composed = Port;',
+      ].join('\n'),
+      'composition/c.ts': 'export const c = 1;',
+      'cli/b.ts': sharedTarget,
+      'cli/nested/a.ts': everyImportForm('../b.js').join('\n'),
+      'failures/b.ts': sharedTarget,
+      'integrations/github/command.ts': everyImportForm('../../cli/b.js').join('\n'),
+      'integrations/github/github-port.ts': sharedTarget,
+      'app/a.spec.ts': [
+        "import { b } from '../cli/b.js';",
+        "import { c } from '../composition/c.js';",
+        'export const spec = [b, c];',
+      ].join('\n'),
+    });
+    await mkdir(path.join(cwd, 'scripts'));
+    await writeFile(
+      path.join(cwd, 'scripts/validate.ts'),
+      "import { b } from '../src/cli/b.js'; export const tool = b;",
+    );
+    const result = await run();
+    expect(result.exitCode).toBe(0);
+  });
+
+  it.each(importFormNames)(
+    'rejects every other production owner importing cli through %s',
+    async (form) => {
+      const importers = {
+        ...Object.fromEntries(
+          ownersOtherThan('cli', 'composition').map((owner) => [
+            `${owner}/nested/a.ts`,
+            '../../cli/b.js',
+          ]),
+        ),
+        'integrations/github/implement-issue.ts': '../../cli/b.js',
+        'integrations/github/nested/command.ts': '../../../cli/b.js',
+        'steps/deep/nested/a.ts': '../../../flow/../cli/b.js',
+      };
+      const { run } = await setup({
+        ...importersUsing(form, importers),
+        'cli/b.ts': sharedTarget,
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      for (const importer of Object.keys(importers))
+        expect(result.all).toContain(
+          violation('cli-is-imported-only-by-composition', importer, 'cli/b.ts'),
+        );
+      expect(result.all).not.toContain('no-module-cycles');
+    },
+  );
+
+  it.each(importFormNames)(
+    'rejects every other production owner importing composition through %s',
+    async (form) => {
+      const importers = {
+        ...Object.fromEntries(
+          ownersOtherThan('composition').map((owner) => [
+            `${owner}/nested/a.ts`,
+            '../../composition/b.js',
+          ]),
+        ),
+        'integrations/github/command.ts': '../../composition/b.js',
+        'steps/deep/nested/a.ts': '../../../flow/../composition/b.js',
+      };
+      const { run } = await setup({
+        ...importersUsing(form, importers),
+        'composition/b.ts': sharedTarget,
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      for (const importer of Object.keys(importers))
+        expect(result.all).toContain(
+          violation('composition-is-imported-by-no-other-owner', importer, 'composition/b.ts'),
+        );
+      expect(result.all).not.toContain('no-module-cycles');
+    },
+  );
+
+  it.each(importFormNames)(
+    'rejects composition importing sources outside its allowlist through %s',
+    async (form) => {
+      const targets = [
+        ...ownersOtherThan('cli', 'composition', 'failures', 'integrations').map(
+          (owner) => `${owner}/b.ts`,
+        ),
+        'integrations/b.ts',
+        'integrations/github/octokit-github.ts',
+        'integrations/github/nested/command.ts',
+      ];
+      const importers = Object.fromEntries(
+        targets.map((target, index) => [
+          `composition/nested/a${index}.ts`,
+          `../../${target.replace(/[.]ts$/, '.js')}`,
+        ]),
+      );
+      const { run } = await setup({
+        ...importersUsing(form, importers),
+        'composition/deep/nested/a.ts': importForms[form]('../../../cli/../app/b.js'),
+        ...Object.fromEntries(targets.map((target) => [target, sharedTarget])),
+      });
+      const result = await run();
+      expect(result.exitCode).toBe(1);
+      targets.forEach((target, index) =>
+        expect(result.all).toContain(
+          violation(
+            'composition-imports-only-allowed-sources',
+            `composition/nested/a${index}.ts`,
+            target,
+          ),
+        ),
+      );
+      expect(result.all).toContain(
+        violation(
+          'composition-imports-only-allowed-sources',
+          'composition/deep/nested/a.ts',
+          'app/b.ts',
+        ),
+      );
+      expect(result.all).not.toContain('no-module-cycles');
+    },
+  );
+
   it.each(['unknown/a.ts', 'stray.ts', 'app-other/a.ts'])(
     'rejects unowned production file %s',
     async (file) => {
@@ -267,7 +403,7 @@ describe('dependency checking command', () => {
     expect(result.all).not.toContain('unowned-production-file: src/unknown/ignored.spec.ts');
   });
 
-  it('scans all twelve owners including disconnected files', async () => {
+  it('scans all thirteen owners including disconnected files', async () => {
     const owners = [...productionOwnersOutsideFailures, 'failures'];
     const { run } = await setup(
       Object.fromEntries(owners.map((owner) => [`${owner}/a.ts`, "import './missing.js';"])),
@@ -307,6 +443,46 @@ describe('dependency checking command', () => {
       await writeFile(target, source);
     }
     const script = fileURLToPath(new URL('./check-dependencies.mjs', import.meta.url));
-    return { run: () => execa(process.execPath, [script], { cwd, all: true, reject: false }) };
+    return { cwd, run: () => execa(process.execPath, [script], { cwd, all: true, reject: false }) };
   }
 });
+
+const sharedTarget = 'export const b = 1; export type B = string;';
+
+const importForms = {
+  'a value import': (specifier: string) => `import { b } from '${specifier}'; export const a = b;`,
+  'an erased type import': (specifier: string) =>
+    `import type { B } from '${specifier}'; export type A = B;`,
+  'a re-export': (specifier: string) => `export { b } from '${specifier}';`,
+  'a literal dynamic import': (specifier: string) =>
+    `export const a = () => import('${specifier}');`,
+};
+type ImportForm = keyof typeof importForms;
+const importFormNames = Object.keys(importForms) as ImportForm[];
+
+function everyImportForm(specifier: string) {
+  return [
+    `import { b as value } from '${specifier}';`,
+    `import type { B } from '${specifier}';`,
+    `export { b as reexported } from '${specifier}';`,
+    `export const lazy = () => import('${specifier}');`,
+    'export const imported = value;',
+    'export type Imported = B;',
+  ];
+}
+
+function importersUsing(form: ImportForm, importers: Record<string, string>) {
+  return Object.fromEntries(
+    Object.entries(importers).map(([file, specifier]) => [file, importForms[form](specifier)]),
+  );
+}
+
+function ownersOtherThan(...excluded: string[]) {
+  return [...productionOwnersOutsideFailures, 'failures'].filter(
+    (owner) => !excluded.includes(owner),
+  );
+}
+
+function violation(rule: string, from: string, to: string) {
+  return `error ${rule}: src/${from} → src/${to}`;
+}

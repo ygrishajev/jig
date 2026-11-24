@@ -3,11 +3,11 @@ import type { Command } from 'commander';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import type { CommandIo } from '../../cli/app-action.js';
-import { exitWhenDone } from '../../cli/exit-when-done.js';
-import { buildCli } from '../../cli/main.js';
-import { registerGithubCommands } from './command.js';
-import type { GithubPort } from './github-port.js';
+import type { CommandIo } from '../cli/app-action.js';
+import { exitWhenDone } from '../cli/exit-when-done.js';
+import { buildCli } from '../cli/main.js';
+import { registerGithubCommands } from '../integrations/github/command.js';
+import type { GithubPort } from '../integrations/github/github-port.js';
 
 export function buildJigCli(io?: CommandIo, githubFor?: (token: string) => GithubPort): Command {
   const program = buildCli();

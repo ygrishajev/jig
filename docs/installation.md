@@ -49,7 +49,7 @@ jig --help
 ```
 
 `install:local` builds, packs, and installs the package globally. You can also build with
-`npm run build` and invoke `node /path/to/jig/dist/integrations/github/cli.js` from the target repository.
+`npm run build` and invoke `node /path/to/jig/dist/composition/main.js` from the target repository.
 Contributor setup, including Git hooks, is in [Contributing](../CONTRIBUTING.md).
 
 Continue with the [quickstart](../README.md#quickstart).
