@@ -114,11 +114,7 @@ built-ins, and domain, ports, config and prompts cannot import it.
 CLI, bound to the same operations, and the module parses arguments only when it is the invoked
 script, so importing it starts nothing. `npm run lint:dependencies` holds every production owner
 to the owners `allowedOwners` in `.dependency-cruiser.mjs` lists for it, one
-`<owner>-imports-only-allowed-owners` rule each. The matrix follows the owner table in
-[`docs/specs/application-boundaries.md`](docs/specs/application-boundaries.md#target-responsibilities),
-except that config imports no port and adapters import no observer. So no production owner but
-composition imports `src/cli/`, no other production owner imports composition, and adapters cannot
-import app, flow, steps, cli, composition or observers.
+`<owner>-imports-only-allowed-owners` rule each.
 A file under any directory not listed in the code map fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
 Only cli and composition import `src/app/`. Everywhere outside app and composition, specs
 included, app is reached only through `src/app/api.ts`. Production app imports no adapter, observer
@@ -134,21 +130,16 @@ decides the order: repository root, environment, saved credentials, config, pres
 handlers in `src/cli/commands/status.ts` and `src/cli/commands/presets.ts` receive the bound
 operations as `JigOperations` and only parse input and format the result. Status reports its metrics
 and documents through the `RunRecords` contract in `src/ports/run-records.ts`, implemented by
-`src/adapters/local-store/local-run-records.ts`; the totals are summed in `src/domain/metrics.ts`
-and `readRunStatus` returns them with the status line formatted by `src/app/run-summary.ts`.
+`src/adapters/local-store/local-run-records.ts`.
 
 `jig run` calls `startOrResumeRun` from the same entry. The handler in `src/cli/commands/run.ts`
 parses its input and reads the request file or standard input through the `RequestInputs` it is
-given (`src/ports/request-inputs.ts`), so unusable input calls no operation. Composition hands
-the commands their `CommandIo` (`src/cli/command-io.ts`), including the default log format. The operation prepares the repository, applies the
+given, so unusable input calls no operation. The operation prepares the repository, applies the
 preset (asking through a supplied chooser; nobody picking refuses the run) and only then asks the
 supplied `openRuntime` for the run's capabilities. `runJig` in `src/app/run-jig.ts` owns the run
 policy over `RunCapabilities`: the lock, which stores to open (`openRunStore` in
 `src/app/run-stores.ts` adds required stores to the configured ones), start or resume by id, the
-ended-run report, credentials and image before any sandbox, and the invocation's records: the
-app decides the invocation's result and each document's text, pull request footer included
-(`src/app/invocation-record.ts`), and `src/adapters/local-store/run-artefacts.ts` only serializes
-them and writes, replaces or removes the files.
+ended-run report, credentials and image before any sandbox, and the invocation's records.
 `withResource`, `releaseInOrder` and `releasingOnPanic` in `src/app/lifecycle.ts` acquire, use
 and release: every release is attempted, a partial acquisition releases what it already holds even
 when it panics, the first panic propagates as thrown while a cleanup that fails or panics after it
@@ -211,8 +202,7 @@ publication in `src/ports/run-branches.ts`, publication receipts in
 `src/ports/publication-receipts.ts`; shared Git, run-state and local-state failures in `src/ports/git-failures.ts`, `src/ports/run-state-failures.ts` and
 `src/ports/local-state.ts`), configuration validation in `src/config/errors.ts`, and use-case and
 command input failures in `src/app/` and `src/cli/`. Import a class from its owner; there is no
-union of every class. The loggers log each failure under its own class through pino's own `err`
-serializer.
+union of every class.
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,

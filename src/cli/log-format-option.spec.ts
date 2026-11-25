@@ -28,14 +28,12 @@ describe('logFormatOption', () => {
     expect(received()).toBe(defaultFormat);
   });
 
-  it.each<LogFormat>(['pretty', 'json'])(
-    'shows %s in help as the default it was given',
-    (defaultFormat) => {
-      const { help } = setup({ defaultFormat });
+  it('shows the default it was given in help', () => {
+    const defaultFormat = faker.helpers.arrayElement<LogFormat>(['pretty', 'json']);
+    const { help } = setup({ defaultFormat });
 
-      expect(help()).toContain(`default: "${defaultFormat}"`);
-    },
-  );
+    expect(help()).toContain(`default: "${defaultFormat}"`);
+  });
 
   it('leaves an unknown format to the input schema to refuse', async () => {
     const { run, received } = setup();

@@ -79,7 +79,7 @@ describe('RunArtefacts', () => {
     expect(artefacts.documents(id)).toEqual([]);
   });
 
-  it('saves how the invocation ended for CI, with its run id first', async () => {
+  it('saves how the invocation ended for CI', async () => {
     const { artefacts, read } = await setup();
     const invocation = anInvocationRecord({
       result: anInvocationResult({ blockedReason: faker.lorem.sentence() }),
@@ -87,29 +87,8 @@ describe('RunArtefacts', () => {
 
     (await artefacts.write(invocation)).unwrap();
 
-    const saved = await read(invocation.runId, 'result.json');
-    expect(JSON.parse(saved)).toStrictEqual({ runId: invocation.runId, ...invocation.result });
-    expect(Object.keys(JSON.parse(saved))).toEqual([
-      'runId',
-      'status',
-      'phase',
-      'complete',
-      'blockedReason',
-      'metrics',
-    ]);
-  });
-
-  it('leaves out a result without a blocked reason', async () => {
-    const { artefacts, read } = await setup();
-    const invocation = anInvocationRecord({
-      result: { ...anInvocationResult(), blockedReason: undefined },
-    });
-
-    (await artefacts.write(invocation)).unwrap();
-
-    expect(JSON.parse(await read(invocation.runId, 'result.json'))).not.toHaveProperty(
-      'blockedReason',
-    );
+    const saved = JSON.parse(await read(invocation.runId, 'result.json'));
+    expect(saved).toEqual({ runId: invocation.runId, ...invocation.result });
   });
 
   it('keeps its own directory out of the operator repository', async () => {

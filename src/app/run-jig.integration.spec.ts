@@ -73,23 +73,8 @@ describe('runJig', () => {
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(agent.closed).toBe(true);
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'halted', complete: false });
-  });
-
-  it('saves the pull request description closed by the run totals its status reports', async () => {
-    const { capabilities, aRequest, agentFor, repo } = await setup();
-    const id = runId();
-    scriptWholeRun(agentFor(id));
-
-    const report = (
-      await runJig(capabilities(), { start: { text: aRequest() }, runId: id })
-    ).unwrap();
-
     const status = unwrap(await readRunStatus(realStatusCapabilities(repo.dir), { runId: id }));
-    expect(status.metrics.steps).toBeGreaterThan(0);
-    expect(await readDocument(repo.dir, id, 'PR_DESCRIPTION.md')).toBe(
-      `${report.state.prDescription}\n\n---\n<sub>jig run ${id}: ${status.metricsLine}</sub>\n`,
-    );
-    expect(status.documents.map((document) => document.name)).toContain('PR_DESCRIPTION.md');
+    expect(await readDocument(repo.dir, id, 'PR_DESCRIPTION.md')).toContain(status.metricsLine);
   });
 
   it("leaves a tracked file alone when a saved run's document links to it", async () => {

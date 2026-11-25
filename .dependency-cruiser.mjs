@@ -1,7 +1,6 @@
 /**
- * The production owners and the other owners each may import. It narrows the target table in
- * docs/specs/application-boundaries.md: config imports no port, and adapters import no observer.
- * Same-owner imports are always allowed.
+ * The production owners and the other owners each may import. Same-owner imports are always
+ * allowed.
  */
 const allowedOwners = {
   domain: [],

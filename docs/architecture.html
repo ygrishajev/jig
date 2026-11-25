@@ -210,15 +210,7 @@ svg text{font-family:var(--sans)}
   <ul>
     <li>Each production owner imports only the owners <code>allowedOwners</code> in
       <code>.dependency-cruiser.mjs</code> lists for it, under its own
-      <code>&lt;owner&gt;-imports-only-allowed-owners</code> rule. The matrix is the table above,
-      which narrows the <a href="specs/application-boundaries.md#target-responsibilities">owner
-      table</a>: config imports no port and adapters no observer. Domain and failures import no
-      other owner; ports and config only domain; prompts domain; flow and observers domain, ports
-      and failures; steps also flow and prompts; adapters domain, ports, config and failures; app
-      domain, ports, config, flow, steps, prompts and failures; cli app, domain, ports and failures;
-      composition app, cli, adapters, config, observers, ports, domain and failures. So only
-      composition imports cli, no other owner imports composition, and
-      production app imports no adapter, observer or CLI module in any form.</li>
+      <code>&lt;owner&gt;-imports-only-allowed-owners</code> rule, as the table above shows.</li>
     <li>Production config imports no package but <code>better-result</code> and <code>zod</code>: no
       Node built-in such as <code>node:fs</code>, <code>node:path</code> or
       <code>node:child_process</code>, or other package such as <code>execa</code>. Config specs are
