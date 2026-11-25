@@ -14,9 +14,9 @@ import {
 import {
   localRunRuntime,
   operationContextIn,
-  realRepositorySources,
+  repositorySourcesAt,
 } from '../../tests/support/repository-sources.js';
-import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { lockRun } from '../adapters/local-store/run-lock.js';
@@ -365,8 +365,8 @@ describe('application API', () => {
       runStores?: RunStoreCatalog;
     } = {},
   ) {
-    const repo = await createTempRepo();
-    const real = realRepositorySources();
+    const repo = { dir: await tempDirectory('jig-repo-') };
+    const real = repositorySourcesAt(repo.dir);
     const configSource = input.configSource ?? new InMemoryConfigSource({ json: {} });
     const sources = {
       ensureRepositoryRoot: real.ensureRepositoryRoot,
@@ -392,7 +392,12 @@ describe('application API', () => {
     const log = mock<RunLog>();
     const built: ReturnType<typeof localRunRuntime>[] = [];
     const openRuntime = vi.fn((request: RuntimeRequest) => {
-      const opened = localRunRuntime(request, { sandbox, log });
+      const opened = localRunRuntime(request, {
+        sandbox,
+        log,
+        startingPoint: async () =>
+          Result.ok({ baseBranch: 'main', startingCommit: faker.git.commitSha() }),
+      });
       built.push(opened);
       const { runtime } = opened;
       return input.runStores

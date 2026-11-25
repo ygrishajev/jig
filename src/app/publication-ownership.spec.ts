@@ -4,18 +4,17 @@ import type { Logger } from 'pino';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
-import { createRemote } from '../../tests/support/temp-repo.js';
+import { InMemoryPublicationReceipts } from '../../tests/support/fake-publication.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { GitOrchestrationStore } from '../adapters/git/orchestration-ref.js';
-import { RemoteRef } from '../adapters/git/remote-ref.js';
 import { claimPublication, OWNERSHIP_LEASE_MS } from '../domain/orchestration.js';
 import { GitCommandFailed } from '../ports/git-failures.js';
+import { OrchestrationStateInvalid } from '../ports/publication-receipts.js';
 import { withPublicationOwnership } from './publication-ownership.js';
 
 describe('withPublicationOwnership', () => {
   it('refuses a second owner while the first publishes, and releases however the work ends', async () => {
-    const { store, anotherJob, key, logger } = await setup();
-    const other = await anotherJob();
+    const { store, anotherJob, key, logger } = setup();
+    const other = anotherJob();
     const value = faker.lorem.word();
     const failure = aWorkFailure();
 
@@ -36,17 +35,20 @@ describe('withPublicationOwnership', () => {
   });
 
   it('takes over a lease a crashed owner left once it expires', async () => {
-    const { store, anotherJob, key, logger } = await setup();
+    const { store, anotherJob, key, logger } = setup();
     const now = faker.number.int({ min: 1, max: 1_000_000 });
     const crashed = { token: faker.string.uuid(), expiresAt: now + 1 };
     unwrap(await store.update((state) => claimPublication(state, key, crashed, now)));
     const value = faker.lorem.word();
 
-    const early = await withPublicationOwnership(await anotherJob(() => now), key, logger, () =>
-      Promise.resolve(Result.ok(value)),
+    const early = await withPublicationOwnership(
+      anotherJob(() => now),
+      key,
+      logger,
+      () => Promise.resolve(Result.ok(value)),
     );
     const late = await withPublicationOwnership(
-      await anotherJob(() => crashed.expiresAt),
+      anotherJob(() => crashed.expiresAt),
       key,
       logger,
       () => Promise.resolve(Result.ok(value)),
@@ -57,10 +59,10 @@ describe('withPublicationOwnership', () => {
   });
 
   it('stops a publisher whose lease another job took over before its next effect', async () => {
-    const { anotherJob, key, logger } = await setup();
+    const { anotherJob, key, logger } = setup();
     const clock = { now: faker.number.int({ min: 1, max: 1_000_000 }) };
-    const slow = await anotherJob(() => clock.now);
-    const other = await anotherJob(() => clock.now);
+    const slow = anotherJob(() => clock.now);
+    const other = anotherJob(() => clock.now);
     const effects: string[] = [];
 
     const stopped = await withPublicationOwnership(slow, key, logger, async (whileOwned) => {
@@ -77,10 +79,10 @@ describe('withPublicationOwnership', () => {
   });
 
   it('keeps a renewed lease past its first expiry, so no other job can take over', async () => {
-    const { anotherJob, key, logger } = await setup();
+    const { anotherJob, key, logger } = setup();
     const clock = { now: faker.number.int({ min: 1, max: 1_000_000 }) };
-    const slow = await anotherJob(() => clock.now);
-    const other = await anotherJob(() => clock.now);
+    const slow = anotherJob(() => clock.now);
+    const other = anotherJob(() => clock.now);
     const value = faker.lorem.word();
 
     const finished = await withPublicationOwnership(slow, key, logger, async (whileOwned) => {
@@ -95,11 +97,37 @@ describe('withPublicationOwnership', () => {
     expect(unwrap(finished)).toBe(value);
   });
 
+  it('returns a lease it could not claim without publishing', async () => {
+    const { store, key, logger, corruptReceipts } = setup();
+    corruptReceipts();
+    const effects: string[] = [];
+
+    const result = await withPublicationOwnership(store, key, logger, async () =>
+      Result.ok(effects.push('published')),
+    );
+
+    expect(result.isErr() && result.error._tag).toBe('OrchestrationStateInvalid');
+    expect(effects).toEqual([]);
+  });
+
+  it('returns a lease it could not renew without taking the next effect', async () => {
+    const { store, key, logger, corruptReceipts } = setup();
+    const effects: string[] = [];
+
+    const result = await withPublicationOwnership(store, key, logger, (whileOwned) => {
+      corruptReceipts();
+      return whileOwned(async () => Result.ok(effects.push('published')));
+    });
+
+    expect(result.isErr() && result.error._tag).toBe('OrchestrationStateInvalid');
+    expect(effects).toEqual([]);
+  });
+
   it('returns the failed release when the work succeeded', async () => {
-    const { store, key, logger, corruptReceipts } = await setup();
+    const { store, key, logger, corruptReceipts } = setup();
 
     const result = await withPublicationOwnership(store, key, logger, async () => {
-      await corruptReceipts();
+      corruptReceipts();
       return Result.ok(faker.lorem.word());
     });
 
@@ -108,11 +136,11 @@ describe('withPublicationOwnership', () => {
   });
 
   it('keeps the work failure and logs the failed release that followed it', async () => {
-    const { store, key, logger, corruptReceipts } = await setup();
+    const { store, key, logger, corruptReceipts } = setup();
     const failure = aWorkFailure();
 
     const result = await withPublicationOwnership(store, key, logger, async () => {
-      await corruptReceipts();
+      corruptReceipts();
       return Result.err(failure);
     });
 
@@ -123,7 +151,7 @@ describe('withPublicationOwnership', () => {
   });
 
   it('releases ownership when the publisher panics and rethrows the panic', async () => {
-    const { store, anotherJob, key, logger } = await setup();
+    const { store, anotherJob, key, logger } = setup();
     const message = faker.lorem.sentence();
     const value = faker.lorem.word();
 
@@ -133,31 +161,21 @@ describe('withPublicationOwnership', () => {
     await expect(failed).rejects.toThrow(message);
     expect(
       unwrap(
-        await withPublicationOwnership(await anotherJob(), key, logger, async () =>
-          Result.ok(value),
-        ),
+        await withPublicationOwnership(anotherJob(), key, logger, async () => Result.ok(value)),
       ),
     ).toBe(value);
   });
 
-  async function setup() {
-    const { cloneOf } = await createRemote();
-    const dir = await cloneOf();
-    const anotherJob = async (now?: () => number) =>
-      new GitOrchestrationStore(await cloneOf(), now);
-    const corruptReceipts = async () => {
-      const refs = new RemoteRef(dir);
-      const ref = 'refs/jig/_orchestration';
-      const expected = unwrap(await refs.list([ref])).get(ref);
-      const commit = unwrap(
-        await refs.commitFile(ref, 'orchestration.json', '{}', faker.git.commitMessage()),
-      );
-      unwrap(await refs.pushLeased([{ ref, source: commit, expected }]));
-    };
+  function setup() {
+    const store = new InMemoryPublicationReceipts();
     return {
-      store: new GitOrchestrationStore(dir),
-      anotherJob,
-      corruptReceipts,
+      store,
+      anotherJob: (now?: () => number) => store.anotherJob(now),
+      corruptReceipts: () =>
+        store.failOnceSaving(
+          () => true,
+          new OrchestrationStateInvalid({ message: faker.lorem.sentence() }),
+        ),
       key: faker.string.uuid(),
       logger: mock<Logger>(),
     };

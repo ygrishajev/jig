@@ -14,75 +14,10 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import { throwawayBranches } from '../adapters/git/throwaway-branches.js';
 import { runBranchFor, type RunIdentity } from '../domain/run-state.js';
 import { SandboxUnavailable, SetupCommandFailed } from '../ports/agent-session.js';
-import { GitCommandFailed } from '../ports/git-failures.js';
 import type { WarningLog } from '../ports/observability.js';
-import { MergeFailed } from '../ports/workspace.js';
 import { type ThrowawaySandboxes, withThrowawaySandbox } from './throwaway-sandbox.js';
 
-describe('withThrowawaySandbox', () => {
-  it('preserves a failed branch lookup before opening a sandbox', async () => {
-    const { sandboxes, opened } = await setup({ outsideRepository: await tempDirectory() });
-
-    const result = await withThrowawaySandbox(sandboxes, null, async () => Result.ok());
-
-    expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error).toBeInstanceOf(GitCommandFailed);
-    expect(result.isErr() && GitCommandFailed.is(result.error) && result.error.command).toBe(
-      'git status',
-    );
-    expect(opened()).toBe(0);
-  });
-
-  it('closes the sandbox and removes its branch when the work inside it fails', async () => {
-    const { sandboxes, session, branches, repoRoot } = await setup();
-    const failure = new Error(faker.lorem.sentence());
-
-    await expect(
-      withThrowawaySandbox(sandboxes, null, async (): Promise<Result<void, never>> => {
-        throw failure;
-      }),
-    ).rejects.toBe(failure);
-
-    expect(session.closed).toBe(true);
-    expect(branches.length).toBe(1);
-    expect((await simpleGit({ baseDir: repoRoot }).branchLocal()).all).not.toContain(branches[0]);
-  });
-
-  it('gives up at once when the setup command fails, so the caller gets the failure', async () => {
-    const failure = new SetupCommandFailed({
-      message: faker.lorem.sentence(),
-      output: faker.lorem.paragraph(),
-    });
-    const { sandboxes, opened } = await setup({ failWith: failure });
-
-    const result = await withThrowawaySandbox(sandboxes, `npm ${faker.word.verb()}`, async () =>
-      Result.ok(),
-    );
-
-    expect(result.isErr() && result.error).toBe(failure);
-    expect(opened()).toBe(1);
-  });
-
-  it("keeps the work's own failure when the sandbox does not close either", async () => {
-    const { sandboxes, session } = await setup();
-    session.failCloseWith = sandboxUnavailable();
-    const failure = new MergeFailed({ message: faker.lorem.sentence() });
-
-    const result = await withThrowawaySandbox(sandboxes, null, async () => Result.err(failure));
-
-    expect(result.isErr() && result.error).toBe(failure);
-  });
-
-  it('reports a sandbox that does not close after the work succeeded', async () => {
-    const { sandboxes, session } = await setup();
-    const closeFailure = sandboxUnavailable();
-    session.failCloseWith = closeFailure;
-
-    const result = await withThrowawaySandbox(sandboxes, null, async () => Result.ok());
-
-    expect(result.isErr() && result.error).toBe(closeFailure);
-  });
-
+describe('withThrowawaySandbox on real git', () => {
   it('removes the worktree the close preserved for uncommitted changes, with its branch', async () => {
     const { sandboxes, repoRoot, worktreeOf, branchOf, worktreeSession } = await setup({
       withWorktree: true,
@@ -160,10 +95,6 @@ describe('withThrowawaySandbox', () => {
     };
   }
 });
-
-function sandboxUnavailable() {
-  return new SandboxUnavailable({ message: faker.lorem.sentence() });
-}
 
 /**
  * Plays sandcastle 0.14.0's close contract (`createSandbox.doClose`): the container stops, a

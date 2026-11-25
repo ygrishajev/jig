@@ -53,7 +53,6 @@ import { runDiagnostics } from '../domain/run-diagnostics.js';
 import { enterPhase, type RunState, startRun } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import type { PlannedSlice } from '../domain/slice.js';
-import { finalStatus } from '../flow/define-flow.js';
 import { runEngine } from '../flow/engine.js';
 import { AgentRunFailed, type ExecResult, SandboxUnavailable } from '../ports/agent-session.js';
 import { RunStateConflict } from '../ports/run-state-failures.js';
@@ -149,12 +148,6 @@ describe('runFlow', () => {
     scriptDelivery(agent, [slice]);
     const resumed = await run(paused.state);
     expect(resumed.status).toBe('completed');
-  });
-
-  it('reads a run in the completed phase as finished as completed', () => {
-    const completed = aRunState({ phase: 'completed' });
-
-    expect(finalStatus(runFlow, completed)).toBe('completed');
   });
 
   it('sends a slice back with the reviewer feedback and gets it approved on the next attempt', async () => {

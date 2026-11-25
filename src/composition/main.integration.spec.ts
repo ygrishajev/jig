@@ -5,41 +5,11 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { mock } from 'vitest-mock-extended';
 
 import { tempDirectory } from '../../tests/support/temp-directory.js';
-import type { JigOperations } from '../app/api.js';
-import type { RunCommandIo } from '../cli/commands/run.js';
-import { buildCli, packageVersion } from '../cli/main.js';
-import { buildJigCli } from './main.js';
+import { packageVersion } from '../cli/main.js';
 
-describe('buildJigCli', () => {
-  it('includes every core command alongside the GitHub command', () => {
-    const coreCommandNames = buildCli(mock<JigOperations>(), mock<RunCommandIo>()).commands.map(
-      (command) => command.name(),
-    );
-
-    const composedCommandNames = buildJigCli().commands.map((command) => command.name());
-
-    expect(composedCommandNames).toEqual(expect.arrayContaining(coreCommandNames));
-    expect(composedCommandNames).toContain('github');
-  });
-
-  it('nests the implementation command under the GitHub command', () => {
-    const github = buildJigCli().commands.find((command) => command.name() === 'github');
-
-    expect(github?.commands.map((command) => command.name())).toEqual(['implement']);
-  });
-
-  it('prints the package version and terminates successfully', () => {
-    const { parse, printed } = setup();
-
-    expect(() => parse(['--version'])).toThrow(
-      expect.objectContaining({ code: 'commander.version', exitCode: 0 }),
-    );
-    expect(printed().trim()).toBe(packageVersion());
-  });
-
+describe('jig executable', () => {
   it('shows the GitHub command help outside a repository and without a token', async () => {
     const { runExecutable } = setup();
 
@@ -68,17 +38,7 @@ describe('buildJigCli', () => {
   }, 30_000);
 
   function setup() {
-    let output = '';
-    const program = buildJigCli()
-      .exitOverride()
-      .configureOutput({
-        writeOut: (text) => {
-          output += text;
-        },
-      });
     return {
-      parse: (args: string[]) => program.parse(args, { from: 'user' }),
-      printed: () => output,
       runExecutable: async (processArguments: string[]) =>
         execa(
           process.execPath,

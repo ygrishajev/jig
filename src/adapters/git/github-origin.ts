@@ -14,8 +14,12 @@ export async function githubOriginName(
     return Result.err(
       new GithubSetupInvalid({ message: 'Set GITHUB_REPOSITORY or configure a GitHub origin.' }),
     );
-  const name = GITHUB_REMOTE_URL.exec(origin.value?.trim() ?? '')?.[1];
-  return Result.ok(name?.replace(/\.git$/, ''));
+  return Result.ok(githubNameIn(origin.value?.trim() ?? ''));
+}
+
+/** The `owner/repository` a remote URL names, if it is on GitHub. */
+export function githubNameIn(remoteUrl: string): string | undefined {
+  return GITHUB_REMOTE_URL.exec(remoteUrl)?.[1]?.replace(/\.git$/, '');
 }
 
 /** The HTTPS, scp-style and SSH forms of a GitHub remote, capturing what follows the host. */

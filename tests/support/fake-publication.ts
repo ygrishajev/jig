@@ -32,11 +32,28 @@ import {
  * keeps them: saved as JSON and parsed back.
  */
 export class InMemoryPublicationReceipts implements ReceiptStore, PublicationOwnership {
-  state = emptyOrchestration();
   private refusal?: {
     rejects: (next: Orchestration) => boolean;
     failure: ReceiptStoreFailure;
   };
+
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly shared = { state: emptyOrchestration() },
+  ) {}
+
+  get state(): Orchestration {
+    return this.shared.state;
+  }
+
+  set state(state: Orchestration) {
+    this.shared.state = state;
+  }
+
+  /** Another job on the same receipts, reading its own clock. */
+  anotherJob(now = this.now): InMemoryPublicationReceipts {
+    return new InMemoryPublicationReceipts(now, this.shared);
+  }
 
   /** Fails, once, the first update whose outcome `rejects`, as a lost push would: nothing is saved. */
   failOnceSaving(rejects: (next: Orchestration) => boolean, failure: ReceiptStoreFailure): void {
@@ -62,7 +79,7 @@ export class InMemoryPublicationReceipts implements ReceiptStore, PublicationOwn
 
   async claim(key: string) {
     const token = faker.string.uuid();
-    const now = Date.now();
+    const now = this.now();
     const claimed = await this.update((state) =>
       claimPublication(state, key, publicationLease(token, now), now),
     );
@@ -73,7 +90,7 @@ export class InMemoryPublicationReceipts implements ReceiptStore, PublicationOwn
 
   async renew({ key, token }: HeldPublication) {
     const renewed = await this.update((state) =>
-      renewPublication(state, key, publicationLease(token, Date.now())),
+      renewPublication(state, key, publicationLease(token, this.now())),
     );
     return renewed.map((state) => ownsPublication(state, key, token));
   }

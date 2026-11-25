@@ -18,6 +18,7 @@ import { RepositoryAgentCredentials } from '../../src/adapters/sandcastle/agent-
 import type {
   OperationContext,
   RepositorySources,
+  RunCapabilities,
   RunLog,
   RunRuntime,
   RunSandbox,
@@ -27,6 +28,7 @@ import type {
   StatusCapabilities,
   ThrowawaySandboxes,
 } from '../../src/app/api.js';
+import { RepositoryInvalid } from '../../src/ports/git-failures.js';
 import type { OperationLog } from '../../src/ports/observability.js';
 import type { SandboxImages } from '../../src/ports/sandbox-images.js';
 import { InMemoryPresetSource } from './fakes.js';
@@ -46,6 +48,23 @@ export function realRepositorySources(
     presetSourceFor: () => new InMemoryPresetSource(),
     ...overrides,
   };
+}
+
+/**
+ * `realRepositorySources` over a plain directory that stands in for the repository rooted at
+ * `root`: any other directory is refused as one below it would be.
+ */
+export function repositorySourcesAt(
+  root: string,
+  overrides: Partial<RepositorySources> = {},
+): RepositorySources {
+  return realRepositorySources({
+    ensureRepositoryRoot: async (directory) =>
+      directory === root
+        ? Result.ok()
+        : Result.err(new RepositoryInvalid({ message: faker.lorem.sentence() })),
+    ...overrides,
+  });
 }
 
 /** A context started in `cwd` with nothing but `environment` set. */
@@ -76,7 +95,11 @@ export function realStatusCapabilities(
  */
 export function localRunRuntime(
   { repoRoot, config }: RuntimeRequest,
-  { sandbox, log }: { sandbox: RunSandbox; log: RunLog },
+  {
+    sandbox,
+    log,
+    startingPoint,
+  }: { sandbox: RunSandbox; log: RunLog; startingPoint?: RunCapabilities['startingPoint'] },
 ) {
   let disposed = false;
   const runtime: RunRuntime = {
@@ -85,15 +108,17 @@ export function localRunRuntime(
       log,
       lockRun: (runId) => lockRun(repoRoot, runId),
       runStores: new RepositoryRunStores(repoRoot),
-      startingPoint: async () => {
-        const baseBranch = await getCurrentBranch(repoRoot);
-        if (baseBranch.isErr()) return Result.err(baseBranch.error);
-        const startingCommit = await exactHead(repoRoot, 'HEAD');
-        return startingCommit.map((commit) => ({
-          baseBranch: baseBranch.value,
-          startingCommit: commit,
-        }));
-      },
+      startingPoint:
+        startingPoint ??
+        (async () => {
+          const baseBranch = await getCurrentBranch(repoRoot);
+          if (baseBranch.isErr()) return Result.err(baseBranch.error);
+          const startingCommit = await exactHead(repoRoot, 'HEAD');
+          return startingCommit.map((commit) => ({
+            baseBranch: baseBranch.value,
+            startingCommit: commit,
+          }));
+        }),
       records: new LocalRunRecords(repoRoot),
       sandbox,
     },
@@ -116,14 +141,18 @@ export function localSandboxRuntime(
     open: ThrowawaySandboxes['open'];
     log: OperationLog;
     latestVersions?: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
+    branches?: Omit<ThrowawaySandboxes, 'open' | 'log'>;
+    saveCredential?: RepositoryAgentCredentials['save'];
   },
 ) {
   let disposed = false;
   const settings: SandboxSettings[] = [];
+  const credentials = new RepositoryAgentCredentials(repoRoot);
+  if (sandbox.saveCredential) credentials.save = sandbox.saveCredential;
   const runtime: SandboxRuntime = {
     log: sandbox.log,
     starterFiles: new RepositoryStarterFiles(repoRoot, configDestination(repoRoot, configPath)),
-    credentials: new RepositoryAgentCredentials(repoRoot),
+    credentials,
     sandboxFor: (requested) => {
       settings.push(requested);
       return {
@@ -134,7 +163,11 @@ export function localSandboxRuntime(
           latestVersions: sandbox.latestVersions ?? (async () => ({})),
           log: sandbox.log,
         },
-        throwaway: { ...throwawayBranches(repoRoot), log: sandbox.log, open: sandbox.open },
+        throwaway: {
+          ...(sandbox.branches ?? throwawayBranches(repoRoot)),
+          log: sandbox.log,
+          open: sandbox.open,
+        },
       };
     },
     dispose: async () => {

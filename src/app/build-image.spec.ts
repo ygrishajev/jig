@@ -10,9 +10,9 @@ import { InMemoryPresetSource } from '../../tests/support/fakes.js';
 import {
   localSandboxRuntime,
   operationContextIn,
-  realRepositorySources,
+  repositorySourcesAt,
 } from '../../tests/support/repository-sources.js';
-import { createTempRepo } from '../../tests/support/temp-repo.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import {
   BASE_DOCKERFILE,
@@ -126,7 +126,7 @@ describe('buildSandboxImage', () => {
     presetSource?: InMemoryPresetSource;
     startInSubdirectory?: boolean;
   }) {
-    const repo = await createTempRepo();
+    const repo = { dir: await tempDirectory('jig-repo-') };
     const config = { ...everyStepOn(), ...input.config };
     await writeFile(path.join(repo.dir, 'jig.config.json'), JSON.stringify(config));
     await mkdir(path.join(repo.dir, SANDBOX_DIRECTORY));
@@ -152,7 +152,7 @@ describe('buildSandboxImage', () => {
       return runtime.runtime;
     });
     const askForPreset = vi.fn(async () => undefined);
-    const sources = realRepositorySources({
+    const sources = repositorySourcesAt(repo.dir, {
       presetSourceFor: () => input.presetSource ?? new InMemoryPresetSource(),
     });
     const cwd = input.startInSubdirectory ? path.join(repo.dir, faker.word.noun()) : repo.dir;
