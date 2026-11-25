@@ -520,9 +520,9 @@ describe('runFlow', () => {
     exec = (): ExecResult => ({ exitCode: 0, output: faker.lorem.sentence() }),
   }: { settings?: Partial<RunSettings>; exec?: () => ExecResult } = {}) {
     const sandboxPath = await tempDirectory();
-    const workspace = new FakeWorkspace(sandboxPath);
     const failures: ExecResult[] = [];
     const agent = new FakeAgentSession(sandboxPath, () => failures.shift() ?? exec());
+    const workspace = new FakeWorkspace(agent);
     const store = new InMemoryRunStore();
     const events = new RecordingEventSink();
     const dependencies = {

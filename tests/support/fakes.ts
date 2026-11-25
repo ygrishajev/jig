@@ -3,7 +3,6 @@ import { panic, Result } from 'better-result';
 import { execa } from 'execa';
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { simpleGit } from 'simple-git';
 import { vi } from 'vitest';
 import type { ZodType } from 'zod';
 
@@ -52,7 +51,6 @@ export type AgentScript =
   | {
       files: Record<string, string>;
       deletes?: string[];
-      commitMessage?: string;
       output?: unknown;
       takesSandboxDown?: SandboxUnavailable;
     }
@@ -79,10 +77,10 @@ export class FakeAgentSession implements AgentSession {
   private readonly queues = new Map<AgentRole, AgentScript[]>();
   private usageReport?: { events: EventSink; runId: RunId };
 
-  private sandboxDown?: SandboxUnavailable;
+  sandboxDown?: SandboxUnavailable;
 
   constructor(
-    private readonly sandboxPath: string,
+    readonly sandboxPath: string,
     /**
      * A `SandboxUnavailable` plays a sandbox that could not run the command at all; the session is
      * handed back so a command can take its own container down as it ends.
@@ -205,18 +203,9 @@ export class FakeAgentSession implements AgentSession {
     });
   }
 
-  private async work(turn: {
-    files: Record<string, string>;
-    deletes?: string[];
-    commitMessage?: string;
-  }) {
+  private async work(turn: { files: Record<string, string>; deletes?: string[] }) {
     await this.writeFiles(turn.files);
     await this.deleteFiles(turn.deletes ?? []);
-    if (turn.commitMessage) await this.commit(turn.commitMessage);
-  }
-
-  private async commit(message: string) {
-    await simpleGit({ baseDir: this.sandboxPath }).add('-A').commit(message);
   }
 
   private async writeFiles(files: Record<string, string>) {

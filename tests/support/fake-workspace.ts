@@ -5,13 +5,15 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ChangedFile } from '../../src/domain/protected-paths.js';
-import type { GitFacts } from '../../src/domain/work-facts.js';
+import type { GitFacts, WorkFacts } from '../../src/domain/work-facts.js';
+import type { SandboxUnavailable } from '../../src/ports/agent-session.js';
 import {
   CommitImportRefused,
   CommitRejected,
   MergeFailed,
   type Workspace,
 } from '../../src/ports/workspace.js';
+import type { FakeAgentSession } from './fakes.js';
 
 type Files = Record<string, string>;
 
@@ -22,7 +24,7 @@ interface FakeCommit {
 }
 
 /**
- * A run branch kept in memory, taking its work from the directory a fake agent writes to. A commit
+ * A run branch kept in memory, taking its work from the sandbox a fake agent writes to. A commit
  * is the files it holds, so the same files are the same tree, as they are in git.
  */
 export class FakeWorkspace implements Workspace {
@@ -33,10 +35,7 @@ export class FakeWorkspace implements Workspace {
   private base: Files = this.root.files;
   private readonly rejections: string[] = [];
 
-  constructor(
-    private readonly sandboxPath: string,
-    private readonly repoFiles: Files = {},
-  ) {}
+  constructor(private readonly sandbox: Pick<FakeAgentSession, 'sandboxPath' | 'sandboxDown'>) {}
 
   /** The commits the run made, oldest first, as anyone reading its branch sees them. */
   get history() {
@@ -98,7 +97,8 @@ export class FakeWorkspace implements Workspace {
     return Result.ok(this.changesSince(start));
   }
 
-  async collectFacts() {
+  async collectFacts(): Promise<Result<WorkFacts, SandboxUnavailable>> {
+    if (this.sandbox.sandboxDown) return Result.err(this.sandbox.sandboxDown);
     const clean = treeOf(await this.sandboxFiles()) === treeOf(this.sandboxHead.files);
     return Result.ok({
       host: factsOf(this.tip, true),
@@ -106,8 +106,8 @@ export class FakeWorkspace implements Workspace {
     });
   }
 
-  async readRepoFile(relativePath: string): Promise<string | undefined> {
-    return this.repoFiles[relativePath];
+  async readRepoFile(): Promise<string | undefined> {
+    return undefined;
   }
 
   async mergeRunBranch({ approved }: { approved: string | undefined }) {
@@ -139,12 +139,18 @@ export class FakeWorkspace implements Workspace {
   }
 
   private async sandboxFiles(): Promise<Files> {
-    const entries = await readdir(this.sandboxPath, { recursive: true, withFileTypes: true });
+    const entries = await readdir(this.sandbox.sandboxPath, {
+      recursive: true,
+      withFileTypes: true,
+    });
     const contents = entries
       .filter((entry) => entry.isFile())
       .map(async (entry) => {
         const file = path.join(entry.parentPath, entry.name);
-        return [path.relative(this.sandboxPath, file), await readFile(file, 'utf-8')] as const;
+        return [
+          path.relative(this.sandbox.sandboxPath, file),
+          await readFile(file, 'utf-8'),
+        ] as const;
       });
     return Object.fromEntries(await Promise.all(contents));
   }
