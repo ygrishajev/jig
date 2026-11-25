@@ -111,7 +111,17 @@
     "refactor-domain-assign-error-ownership-8ba14cb6:blocked:6e3d86459ac56af34bce7ea1719451089718a4c2": "https://github.com/ygrishajev/jig/issues/56#issuecomment-7103273553",
     "refactor-cli-public-application-api-and-4843ab3b:blocked:0730c317ea7894061d4ae8a638792d513b7c9557": "https://github.com/ygrishajev/jig/issues/58#issuecomment-7146227914"
   },
-  "refusals": {},
+  "refusals": {
+    "ygrishajev/jig#59@451ecbb1482615de2b63cd96047bf473d3af2252": {
+      "runId": "refactor-dx-replace-awilix-with-explicit-a3e5ee81",
+      "revision": "451ecbb1482615de2b63cd96047bf473d3af2252",
+      "paths": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/integration.yml",
+        ".github/workflows/publish.yml"
+      ]
+    }
+  },
   "refusalComments": {},
   "findingsComments": {
     "findings:ygrishajev/sdlc#64:refactor-config-read-settings-and-008e047e:stuck:ecc0cda2b8402e53324e61053edfb61212247a01": "https://github.com/ygrishajev/jig/pull/64#issuecomment-7086057379",
