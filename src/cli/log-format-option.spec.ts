@@ -12,8 +12,9 @@ describe('logFormatOption', () => {
     const format = faker.helpers.arrayElement<LogFormat>(['pretty', 'json']);
     const { run, received } = setup();
 
-    await run(['--log-format', format]);
+    const result = await run(['--log-format', format]);
 
+    expect(result.isOk()).toBe(true);
     expect(received()).toBe(format);
   });
 
@@ -21,8 +22,9 @@ describe('logFormatOption', () => {
     const defaultFormat = faker.helpers.arrayElement<LogFormat>(['pretty', 'json']);
     const { run, received } = setup({ defaultFormat });
 
-    await run([]);
+    const result = await run([]);
 
+    expect(result.isOk()).toBe(true);
     expect(received()).toBe(defaultFormat);
   });
 

@@ -292,8 +292,11 @@ const forbiddenEdges = [
   { from: 'failures', to: 'domain' },
   { from: 'ports', to: 'config' },
   { from: 'prompts', to: 'failures' },
+  { from: 'prompts', to: 'ports' },
   { from: 'flow', to: 'steps' },
+  { from: 'flow', to: 'config' },
   { from: 'steps', to: 'app' },
+  { from: 'steps', to: 'adapters' },
   { from: 'observers', to: 'adapters' },
   { from: 'composition', to: 'flow' },
 ];

@@ -18,29 +18,26 @@ import { RunArtefacts } from './run-artefacts.js';
 import { stateDirectory } from './run-paths.js';
 
 describe('RunArtefacts', () => {
-  it('writes each document it is handed, and lists only the documents it wrote', async () => {
+  it('writes each document it is handed, listed in order', async () => {
     const { artefacts, read, repoRoot } = await setup();
-    const documents = someRunDocuments({ 'design-review.md': undefined });
-    const invocation = anInvocationRecord({ documents });
+    const invocation = anInvocationRecord();
+    const { documents } = invocation;
 
     (await artefacts.write(invocation)).unwrap();
 
     const id = invocation.runId;
-    expect(await read(id, 'design.md')).toBe(documents['design.md']);
-    expect(await read(id, 'plan.md')).toBe(documents['plan.md']);
-    expect(await read(id, 'PR_DESCRIPTION.md')).toBe(documents['PR_DESCRIPTION.md']);
+    const names = ['design.md', 'plan.md', 'design-review.md', 'PR_DESCRIPTION.md'] as const;
+    for (const name of names) expect(await read(id, name)).toBe(documents[name]);
     const directory = stateDirectory(repoRoot, id);
-    expect(artefacts.documents(id)).toEqual([
-      { name: 'design.md', path: path.join(directory, 'design.md') },
-      { name: 'plan.md', path: path.join(directory, 'plan.md') },
-      { name: 'PR_DESCRIPTION.md', path: path.join(directory, 'PR_DESCRIPTION.md') },
-    ]);
+    expect(artefacts.documents(id)).toEqual(
+      names.map((name) => ({ name, path: path.join(directory, name) })),
+    );
   });
 
   it('replaces a document written by an earlier invocation', async () => {
     const { artefacts, read } = await setup();
     const id = runId();
-    await artefacts.write(anInvocationRecord({ runId: id }));
+    (await artefacts.write(anInvocationRecord({ runId: id }))).unwrap();
     const replaced = someRunDocuments();
 
     (await artefacts.write(anInvocationRecord({ runId: id, documents: replaced }))).unwrap();
@@ -51,9 +48,11 @@ describe('RunArtefacts', () => {
   it('keeps the pull request description when the run is saved again afterwards', async () => {
     const { artefacts, read, repoRoot } = await setup();
     const invocation = anInvocationRecord();
-    await artefacts.write(invocation);
+    (await artefacts.write(invocation)).unwrap();
 
-    await new LocalRunStore(repoRoot).save(aRunState({ runId: invocation.runId, phase: 'done' }));
+    (
+      await new LocalRunStore(repoRoot).save(aRunState({ runId: invocation.runId, phase: 'done' }))
+    ).unwrap();
 
     expect(await read(invocation.runId, 'PR_DESCRIPTION.md')).toBe(
       invocation.documents['PR_DESCRIPTION.md'],
@@ -63,7 +62,7 @@ describe('RunArtefacts', () => {
   it('removes a document the invocation no longer has', async () => {
     const { artefacts, repoRoot } = await setup();
     const id = runId();
-    await artefacts.write(anInvocationRecord({ runId: id }));
+    (await artefacts.write(anInvocationRecord({ runId: id }))).unwrap();
 
     const absent = {
       'design.md': undefined,

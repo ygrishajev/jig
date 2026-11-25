@@ -6,7 +6,7 @@ import { runBranchFor } from '../domain/run-state.js';
 import { pullRequestFor, refusalCommentBody, statusCommentBody } from './publication-content.js';
 
 describe('publication content', () => {
-  it('offers the run branch against the base the run started from, closing the issue', () => {
+  it('offers the run branch against its base with the bare description, closing the issue', () => {
     const state = aRunState({
       baseBranch: faker.git.branch(),
       prDescription: faker.lorem.paragraph(),
@@ -20,14 +20,13 @@ describe('publication content', () => {
       { title, issueNumber, draft },
     );
 
-    expect(pullRequest).toMatchObject({
+    expect(pullRequest).toStrictEqual({
       head: runBranchFor(state.runId),
       base: state.baseBranch,
       title,
+      body: `${state.prDescription}\n\nCloses #${issueNumber}`,
       draft,
     });
-    expect(pullRequest.body).toContain(state.prDescription);
-    expect(pullRequest.body).toContain(`#${issueNumber}`);
   });
 
   it('gives a blocked run the reason it blocked', () => {
