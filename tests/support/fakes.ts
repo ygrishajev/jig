@@ -40,7 +40,7 @@ import {
 } from '../../src/ports/agent-session.js';
 import type { GitCommandFailed } from '../../src/ports/git-failures.js';
 import type { Clock, EventSink } from '../../src/ports/observability.js';
-import type { RunStore } from '../../src/ports/run-store.js';
+import type { RunStore, RunStoreFailure } from '../../src/ports/run-store.js';
 import { aPresetLabel, tokenUsage } from './builders.js';
 
 /**
@@ -236,8 +236,11 @@ export class FakeAgentSession implements AgentSession {
 
 export class InMemoryRunStore implements RunStore {
   readonly saved: RunState[] = [];
+  /** Makes every read fail, as a store that cannot restore the run does. */
+  failure?: RunStoreFailure;
 
-  async load(runId: RunId) {
+  async load(runId: RunId): Promise<Result<RunState | undefined, RunStoreFailure>> {
+    if (this.failure) return Result.err(this.failure);
     return Result.ok([...this.saved].reverse().find((state) => state.runId === runId));
   }
 
