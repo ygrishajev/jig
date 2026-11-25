@@ -16,5 +16,5 @@
     "model": "haiku"
   },
   "setupCommand": "npm ci",
-  "verifyCommand": "npm run validate"
+  "verifyCommand": "npm run validate && npm run test:integration"
 }

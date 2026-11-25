@@ -60,6 +60,9 @@ CI runs `npm run validate` on every pull request and requires it. Integration sp
 their own workflow, which reports a failure without blocking the merge, and again before a release,
 which waits for them.
 
+A jig run on this repository verifies every slice with both, through `verifyCommand` in
+`jig.config.json`.
+
 A spec that starts a process or works on a real repository is named `*.integration.spec.ts`; lint
 rejects a unit spec that imports what it needs to do so. `vitest.workspace.ts` defines the named
 `unit`, `integration` and `e2e` projects. The root config loads `vitest.specs.workspace.ts`, the
