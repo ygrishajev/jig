@@ -1,8 +1,8 @@
 name: CI
 
-# Every routine check `npm run validate` runs, on a runner that has only the
-# repository, its lockfile and the pinned Node — the proof that nothing depends on a developer's
-# machine.
+# Every routine check `npm run validate` runs except the integration specs, on a runner that has only
+# the repository, its lockfile and the pinned Node — the proof that nothing depends on a developer's
+# machine. The Integration workflow runs those beside it, without blocking a merge.
 
 on:
   push:
@@ -26,4 +26,4 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run validate
+      - run: npm run validate -- --skip test:integration

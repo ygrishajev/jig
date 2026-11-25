@@ -47,7 +47,7 @@ jobs:
 
       - run: npm install --global npm@11.5.1
       - run: npm ci
-      - run: npm run validate
+      - run: npm run validate -- --skip test:integration
       - run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

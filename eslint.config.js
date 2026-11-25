@@ -56,6 +56,13 @@ const startsProcesses = ['simple-git', 'execa', 'child_process', 'node:child_pro
   }),
 );
 
+/** `.claude/rules/testing-conventions.md`: code that only decides is tested on fakes of its ports. */
+const noIntegrationSpec = {
+  selector: 'Program',
+  message:
+    'This layer reaches git and processes only through ports: test it in a unit spec on fakes.',
+};
+
 /** awilix wires the app in `src/app/`; everything else receives what it needs. */
 const awilixOnlyInApp = {
   name: 'awilix',
@@ -144,6 +151,10 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    files: ['src/{config,domain,flow,prompts,steps}/**/*.integration.spec.ts'],
+    rules: { 'no-restricted-syntax': ['error', noIntegrationSpec] },
   },
   {
     files: ['src/**/*.ts'],

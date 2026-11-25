@@ -14,10 +14,13 @@ const defaultChecks = [
   'lint:dependencies',
   'format:check',
   'test:coverage',
+  'test:integration',
   'secretlint',
 ] as const;
-/** Too slow to hold up a change; each runs only when named. */
-const optInChecks = ['test:integration', 'test:mutation'] as const;
+/** Too slow to hold up a change; runs only when named. */
+const optInChecks = ['test:mutation'] as const;
+/** Starts enough processes of its own that sharing the machine makes its specs time out. */
+const RUNS_ALONE = 'test:integration';
 const checkSchema = z.enum([...defaultChecks, ...optInChecks]);
 const validationInputSchema = z
   .object({ checks: z.array(checkSchema), skip: z.array(checkSchema).default([]) })
@@ -37,7 +40,7 @@ skipOption.argChoices = checkSchema.options;
 await new Command()
   .name('npm run validate --')
   .description(
-    'Run the fast validations in parallel with grouped output. Integration and mutation testing are opt-in.',
+    'Run validations in parallel, integration specs after the rest, with grouped output. Mutation testing is opt-in.',
   )
   .addArgument(checksArgument)
   .addOption(skipOption)
@@ -47,7 +50,9 @@ await new Command()
         console.log(`Running ${selected.length} checks: ${selected.join(', ')}`);
         const omitted = optInChecks.filter((check) => !selected.includes(check));
         if (omitted.length > 0) console.log(`Omitted (opt-in): ${omitted.join(', ')}`);
-        const results = await Promise.all(selected.map(runCheck));
+        const together = selected.filter((check) => check !== RUNS_ALONE);
+        const results = await Promise.all(together.map(runCheck));
+        if (selected.includes(RUNS_ALONE)) results.push(await runCheck(RUNS_ALONE));
         process.exitCode = results.some((result) => result.failed) ? 1 : 0;
         return Result.ok();
       }),

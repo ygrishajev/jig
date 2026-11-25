@@ -7,7 +7,7 @@ export const unitProject = defineProject({
     name: 'unit',
     include: ['src/**/*.spec.ts', 'scripts/**/*.spec.ts'],
     exclude: [...configDefaults.exclude, ...integrationSpecs],
-    testTimeout: 20_000,
+    testTimeout: 5_000,
     unstubEnvs: true,
   },
 });

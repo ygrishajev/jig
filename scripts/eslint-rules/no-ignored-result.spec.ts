@@ -8,6 +8,9 @@ RuleTester.describe = vitest.describe;
 RuleTester.it = vitest.it;
 RuleTester.itOnly = vitest.it.only;
 
+/** The first case loads the whole TypeScript project. */
+vitest.vi.setConfig({ testTimeout: 30_000 });
+
 const ruleTester = new RuleTester({
   languageOptions: {
     parserOptions: {

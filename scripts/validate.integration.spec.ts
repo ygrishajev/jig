@@ -48,24 +48,31 @@ describe('validation command', () => {
         'lint:dependencies',
         'format:check',
         'test:coverage',
+        'test:integration',
         'secretlint',
       ]) {
         expect(result.all).toContain(`${check}:end`);
       }
-      expect(result.all).not.toContain('test:integration:start');
       expect(result.all).not.toContain('test:mutation:start');
     },
   );
 
-  it.each(['test:integration', 'test:mutation'])(
-    'runs %s when explicitly selected',
-    async (check) => {
-      const { run } = await setup();
-      const result = await run(['build', 'lint', check]);
-      expect(result.exitCode).toBe(0);
-      expect(result.all).toContain(`${check}:end`);
-    },
-  );
+  it('runs integration specs once every other check has ended, a failed one included', async () => {
+    const { run } = await setup();
+    const result = await run([], 'lint');
+    expect(result.exitCode).toBe(1);
+    const others = result.all?.slice(0, result.all.indexOf('test:integration:start'));
+    expect(others).toContain('build:end');
+    expect(others).toContain('lint:end');
+    expect(result.all).toContain('test:integration:after:lint');
+  });
+
+  it('runs mutation testing when explicitly selected', async () => {
+    const { run } = await setup();
+    const result = await run(['build', 'lint', 'test:mutation']);
+    expect(result.exitCode).toBe(0);
+    expect(result.all).toContain('test:mutation:end');
+  });
 
   it('selects dependency checking and waits for other checks after its failure', async () => {
     const { run } = await setup();
@@ -116,9 +123,11 @@ describe('validation command', () => {
 const name = process.argv[2];
 fs.writeFileSync(name, 'started');
 console.log(name + ':start');
+if (name === 'test:integration' && fs.existsSync('lint.ended')) console.log(name + ':after:lint');
 const timer = setInterval(() => {
   if (!fs.existsSync(name === 'build' ? 'lint' : 'build')) return;
   clearInterval(timer);
+  fs.writeFileSync(name + '.ended', '');
   console.error(name + ':end');
   process.exit(name === process.env.FAIL_CHECK ? 1 : 0);
 }, 10);
