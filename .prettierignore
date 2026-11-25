@@ -5,3 +5,5 @@ reports/
 node_modules/
 .jig/
 docs/*.html
+.agents/
+.sandcastle/
