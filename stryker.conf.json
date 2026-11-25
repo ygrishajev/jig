@@ -3,6 +3,7 @@
   "packageManager": "npm",
   "testRunner": "vitest",
   "mutate": ["src/**/*.ts", "!src/**/*.spec.ts", "!src/composition/main.ts"],
+  "ignorePatterns": [".claude"],
   "reporters": ["html", "clear-text", "progress"],
   "coverageAnalysis": "perTest",
   "dryRunTimeoutMinutes": 20
