@@ -198,7 +198,6 @@ describe('resolveDesignReview', () => {
     const resolved = resolveDesignReview(progress);
 
     expect(resolved.isErr() && resolved.error).toBeInstanceOf(DesignUnresolved);
-    expect(resolved.isErr() && resolved.error.kind).toBe('block');
     expect(resolved.isErr() && resolved.error.findingIds).toEqual([decision.id, correction.id]);
     const lines = resolved.isErr() ? resolved.error.message.split('\n') : [];
     const lineOf = (id: string) => lines.find((line) => line.includes(id)) ?? '';

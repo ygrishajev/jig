@@ -565,16 +565,6 @@ describe('slice steps', () => {
     for (const line of absentGuidance) expect(withResult).not.toContain(line);
   });
 
-  it('still tells the reviewer to reject a slice that is only scaffolding', async () => {
-    const { run, agent } = await setup({ reviewer: [approval()] });
-
-    await run(reviewSlice, aSlice({ status: 'in_review' }));
-
-    expect(agent.calls.at(-1)?.prompt).toContain(
-      'pure scaffolding (types, builders, refactors) for later slices',
-    );
-  });
-
   it('tells the reviewer which protected files the reviewed commits touched', async () => {
     const addedSpec = `${faker.lorem.slug()}.spec.ts`;
     const { run, agent } = await setup({

@@ -13,9 +13,17 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { configDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { parseEnvironment } from '../config/environment.js';
+import { ConfigInvalid } from '../config/errors.js';
 import type { JigConfig } from '../config/load-config.js';
-import { SandboxUnavailable } from '../ports/agent-session.js';
+import {
+  SandboxCredentialsInvalid,
+  SandboxPreparationInvalid,
+  SandboxUnavailable,
+  SetupCommandFailed,
+} from '../ports/agent-session.js';
+import { LocalPreparationFailed } from '../ports/local-state.js';
 import { createAppContainer, openSandboxRuntime, runCapabilitiesOf } from './container.js';
+import type { SandboxOpenFailure } from './sandbox-runtime.js';
 
 describe('runCapabilitiesOf', () => {
   it("opens a scope whose engine works in the run's sandbox, and closes that sandbox when asked", async () => {
@@ -40,6 +48,18 @@ describe('runCapabilitiesOf', () => {
     expect(result.isErr() && result.error).toBeInstanceOf(SandboxUnavailable);
     expect(openAttempts()).toBe(3);
   });
+
+  it.each(Object.entries(startsAgainAfter))(
+    'starts the sandbox again only for a failure that may pass: %s',
+    async (_tag, { mayPass, failure }) => {
+      const { openScope, run, openAttempts } = await setup({ failWith: failure() });
+
+      const result = await openScope(run, new InMemoryRunStore(), undefined);
+
+      expect(result.isErr()).toBe(true);
+      expect(openAttempts()).toBe(mayPass ? 3 : 1);
+    },
+  );
 
   it("lets the run's telemetry hear the run's events", async () => {
     const { openScope, run } = await setup();
@@ -82,7 +102,7 @@ describe('runCapabilitiesOf', () => {
   });
 
   async function setup(
-    input: { failWith?: SandboxUnavailable; openPanic?: Error; workspacePanic?: Error } = {},
+    input: { failWith?: SandboxOpenFailure; openPanic?: Error; workspacePanic?: Error } = {},
   ) {
     const repoRoot = await tempDirectory('jig-run-scope-');
     const session = new FakeAgentSession(repoRoot);
@@ -155,6 +175,31 @@ describe('openSandboxRuntime', () => {
     return { runtime, repoRoot, environment };
   }
 });
+
+/** Every reason a sandbox may not start; one left out does not compile. */
+const startsAgainAfter: {
+  [Failure in SandboxOpenFailure as Failure['_tag']]: { mayPass: boolean; failure: () => Failure };
+} = {
+  SandboxUnavailable: { mayPass: true, failure: sandboxUnavailable },
+  SetupCommandFailed: {
+    mayPass: true,
+    failure: () => new SetupCommandFailed({ ...aMessage(), output: faker.lorem.sentence() }),
+  },
+  ConfigInvalid: { mayPass: false, failure: () => new ConfigInvalid(aMessage()) },
+  SandboxCredentialsInvalid: {
+    mayPass: false,
+    failure: () => new SandboxCredentialsInvalid(aMessage()),
+  },
+  SandboxPreparationInvalid: {
+    mayPass: false,
+    failure: () => new SandboxPreparationInvalid(aMessage()),
+  },
+  LocalPreparationFailed: { mayPass: false, failure: () => new LocalPreparationFailed(aMessage()) },
+};
+
+function aMessage() {
+  return { message: faker.lorem.sentence() };
+}
 
 function sandboxUnavailable() {
   return new SandboxUnavailable({ message: faker.lorem.sentence() });

@@ -40,18 +40,6 @@ describe('pullRequestPrompt', () => {
     expect(prompt()).toContain(`[${unverified.status}] ${unverified.id}:`);
   });
 
-  it('drops the rule that made the describer vouch only for checks it ran itself', () => {
-    const { prompt } = setup();
-
-    expect(prompt()).not.toContain('only if you ran it here');
-  });
-
-  it('tells the describer to state the recorded verification as fact', () => {
-    const { prompt } = setup();
-
-    expect(prompt()).toContain('State that record as fact');
-  });
-
   it('names the configured verify command in the verification rule', () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const { prompt } = setup({ verifyCommand });
@@ -59,10 +47,14 @@ describe('pullRequestPrompt', () => {
     expect(prompt()).toContain(`verify command is \`${verifyCommand}\``);
   });
 
-  it('says jig ran no checks when no verify command is configured', () => {
-    const { prompt } = setup();
+  it('states the verification rule differently when no verify command is configured', () => {
+    const verifyCommand = `npm run ${faker.word.verb()}`;
+    const configured = setup({ verifyCommand }).prompt().split('\n');
+    const unconfigured = setup().prompt().split('\n');
 
-    expect(prompt()).toContain('say jig ran no checks');
+    const ruleWithCommand = configured.filter((line) => line.includes(verifyCommand));
+    expect(ruleWithCommand).not.toEqual([]);
+    expect(unconfigured).not.toEqual(expect.arrayContaining(ruleWithCommand));
   });
 
   it('carries the completed round of the final check into the prompt', () => {

@@ -19,17 +19,29 @@ import {
 } from '../../tests/support/builders.js';
 import { InMemoryRunStore, RecordingEventSink, SteppingClock } from '../../tests/support/fakes.js';
 import { unwrap } from '../../tests/support/unwrap.js';
+import { DesignUnresolved, PlanNotCovered } from '../domain/errors.js';
 import type { Outcome } from '../domain/outcome.js';
 import { type RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
 import { RunEvents } from '../observers/run-events.js';
 import { TracingObserver } from '../observers/tracing-observer.js';
-import { AgentOutputInvalid, AgentRunFailed, type AgentSession } from '../ports/agent-session.js';
+import {
+  AgentOutputInvalid,
+  AgentRunFailed,
+  type AgentSession,
+  SandboxUnavailable,
+} from '../ports/agent-session.js';
+import { GitCommandFailed, RemoteUnavailable } from '../ports/git-failures.js';
 import { LocalStateUnwritable } from '../ports/local-state.js';
 import type { EventSink } from '../ports/observability.js';
 import { RunStateConflict } from '../ports/run-state-failures.js';
 import type { RunStore, RunStoreFailure } from '../ports/run-store.js';
-import { MergeFailed, type Workspace } from '../ports/workspace.js';
+import {
+  CommitImportRefused,
+  CommitRejected,
+  MergeFailed,
+  type Workspace,
+} from '../ports/workspace.js';
 import {
   defineRunFlow,
   defineSliceFlow,
@@ -38,6 +50,7 @@ import {
   type RunStep,
   type SliceFlow,
   type SliceStep,
+  type StepFailure,
 } from './define-flow.js';
 import { type EngineFailure, runEngine } from './engine.js';
 
@@ -474,6 +487,25 @@ describe('runEngine', () => {
     expect(events.ofType('stepFailed')).toHaveLength(3);
   });
 
+  it.each(Object.entries(reactionTo))(
+    'reacts to %s as its failure calls for',
+    async (_tag, expected) => {
+      const step = vi.fn<RunStep>(async () => Result.err(expected.failure()));
+      const { run } = setup({
+        settings: runSettings({ maxStepRetries: 1 }),
+        flow: linearFlow({ context: step }),
+      });
+
+      const result = await run(aDescribedRun({ phase: 'context' }));
+
+      expect(step).toHaveBeenCalledTimes(expected.reaction === 'retries' ? 2 : 1);
+      expect(result.isErr()).toBe(expected.reaction === 'aborts');
+      expect(result.isOk() && result.value.status).toBe(
+        expected.reaction === 'aborts' ? false : 'blocked',
+      );
+    },
+  );
+
   it('returns only fatal step failures and failures saving the run', () => {
     expectTypeOf<FatalStepFailure>().toEqualTypeOf<LocalStateUnwritable>();
     expectTypeOf<EngineFailure>().toEqualTypeOf<LocalStateUnwritable | RunStoreFailure>();
@@ -639,6 +671,47 @@ describe('runEngine', () => {
     return { run, settle, store, events };
   }
 });
+
+/** Every failure a step can return; one left out, or no longer a step failure, does not compile. */
+const reactionTo: {
+  [Failure in StepFailure as Failure['_tag']]: {
+    reaction: 'retries' | 'blocks' | 'aborts';
+    failure: () => Failure;
+  };
+} = {
+  AgentRunFailed: { reaction: 'retries', failure: () => new AgentRunFailed(aMessage()) },
+  AgentOutputInvalid: { reaction: 'retries', failure: () => new AgentOutputInvalid(aMessage()) },
+  SandboxUnavailable: { reaction: 'retries', failure: () => new SandboxUnavailable(aMessage()) },
+  RemoteUnavailable: { reaction: 'retries', failure: () => new RemoteUnavailable(aMessage()) },
+  PlanNotCovered: { reaction: 'retries', failure: () => new PlanNotCovered(aMessage()) },
+  DesignUnresolved: {
+    reaction: 'blocks',
+    failure: () => new DesignUnresolved({ ...aMessage(), findingIds: [faker.lorem.slug()] }),
+  },
+  MergeFailed: { reaction: 'blocks', failure: () => new MergeFailed(aMessage()) },
+  CommitImportRefused: { reaction: 'blocks', failure: () => new CommitImportRefused(aMessage()) },
+  CommitRejected: {
+    reaction: 'blocks',
+    failure: () => new CommitRejected({ ...aMessage(), output: faker.lorem.sentence() }),
+  },
+  GitCommandFailed: {
+    reaction: 'blocks',
+    failure: () =>
+      new GitCommandFailed({
+        ...aMessage(),
+        command: 'git status',
+        output: faker.lorem.sentence(),
+      }),
+  },
+  LocalStateUnwritable: {
+    reaction: 'aborts',
+    failure: () => new LocalStateUnwritable({ ...aMessage(), path: faker.system.filePath() }),
+  },
+};
+
+function aMessage() {
+  return { message: faker.lorem.sentence() };
+}
 
 /**
  * The test flows jump between phases freely, so their runs carry everything every phase

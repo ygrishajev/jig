@@ -115,7 +115,6 @@ describe('RepositoryRunStores', () => {
     const saved = await store.save(aRunState());
 
     expect(saved.isErr() && saved.error).toBeInstanceOf(RunStoreOperationFailed);
-    expect(saved.isErr() && saved.error.kind).toBe('fatal');
     expect(saved.isErr() && saved.error.message).toBe(
       `Run store "unsaving-store.mjs" failed: ${reason}`,
     );
@@ -133,7 +132,6 @@ describe('RepositoryRunStores', () => {
     const opened = await new RepositoryRunStores(repoRoot).storeNamed(name);
 
     expect(opened.isErr() && opened.error).toBeInstanceOf(RunStoreSetupInvalid);
-    expect(opened.isErr() && opened.error.kind).toBe('fatal');
     expect(opened.isErr() && opened.error.message).toBe(
       `Run store "exploding-store.mjs" failed: ${reason}`,
     );

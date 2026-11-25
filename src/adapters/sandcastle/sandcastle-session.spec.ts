@@ -213,7 +213,6 @@ describe('SandcastleSession', () => {
       const error = await failure();
 
       expect(error).toBeInstanceOf(SandboxUnavailable);
-      expect(error).toMatchObject({ kind: 'retry' });
     },
   );
 
