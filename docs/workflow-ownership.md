@@ -331,7 +331,7 @@ init, image-build and issue operations from `app/api.ts`; see
 [Public application entry](#public-application-entry).
 
 `.dependency-cruiser.mjs` owns the production-owner list; a file under any other directory, such
-as a reintroduced `src/integrations/`, fails as an unowned production file. Its
+as a reintroduced `src/integrations/`, fails an `unowned-file-*` rule. Its
 `composition-imports-only-allowed-sources` rule lets production composition import only
 composition, cli, app, adapters, config, observers, ports, domain and failures; flow, steps and
 prompts stay out of reach. `cli-is-imported-only-by-composition` lets no other production owner
@@ -342,27 +342,23 @@ CLI helpers.
 `adapters-do-not-import-flow` keeps adapters beneath everything that uses them: production
 adapters import neither the workflow (app, flow, steps) nor the executable (cli, composition).
 
-Five rules hold the public application entry. `app-is-imported-only-by-cli-and-composition` lets
+Four rules hold the public application entry. `app-is-imported-only-by-cli-and-composition` lets
 no other production owner import app. `app-internals-are-private-to-app-and-composition` lets
 every file outside app and composition, specs included, import app only through `src/app/api.ts`;
 app and composition, and their specs, may import any app module, and tooling and helpers outside
 `src/` (`scripts/`, `tests/support/`, `tests/e2e/`) are not scanned. `app-public-entry-exposes-no-infrastructure` keeps
 `src/app/api.ts` from importing adapters or observers in any form, and
 `app-contracts-name-no-infrastructure-types` rejects a type-only import from production app into
-adapters or observers. A value import can carry a type too, as `export type Contract = Adapter`
-after constructing `Adapter` would, so `app-public-types-reach-no-infrastructure` checks what
-callers compile against: `scripts/check-dependencies.mjs` emits the declarations of
-`src/app/api.ts` and everything it imports into a temporary directory and cruises them from
-`api.d.ts`. Declaration emit keeps an import a public type needs and drops one only the runtime
-uses, so an operation may construct an adapter while no declaration reachable from the entry may
-import adapters or observers. `scripts/check-dependencies.mjs` cruises production sources against
-every rule and, in a separate pass over the specs under `src/`, applies the rules
-`.dependency-cruiser.mjs` lists in `specRules`: today only the private-app rule. It reports an unowned production file
-from the scanned file list.
+adapters or observers. A type that app takes from a value import is not checked.
+
+`npm run lint:dependencies` runs
+dependency-cruiser on production sources against every rule in `.dependency-cruiser.mjs`, then on
+the specs under `src/` against the rules it lists in `specRules`, today only the private-app rule
+(`.dependency-cruiser.specs.mjs`). The second pass runs only when the first succeeds.
 
 Every one of these rules covers type imports, re-exports and literal dynamic imports through
-nested paths, and `scripts/check-dependencies.spec.ts` rejects each without an incidental cycle to
-carry the failure.
+nested paths. `scripts/lint-dependencies.integration.spec.ts` breaks each error rule once and fails when a rule
+has no broken example.
 
 ### Shared failure helpers
 
@@ -876,7 +872,7 @@ enforces that. Keeping or removing Awilix and its lint rule stay gated on that d
 does a rule that keeps app from importing adapters and observers at all: `app/container.ts`
 constructs them, `app/observed-events.ts` connects the observers, and `app/sandbox-image.ts` reads
 the image recipe and agent list from the sandbox adapters. Until then app's type-only imports of
-those owners are rejected, and so is any adapter or observer type the public entry's declarations reach.
+those owners are rejected.
 
 ### Sequencing conflict
 

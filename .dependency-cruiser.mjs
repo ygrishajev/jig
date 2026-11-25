@@ -1,4 +1,4 @@
-export const productionModules = [
+const productionModules = [
   'adapters',
   'app',
   'cli',
@@ -12,8 +12,11 @@ export const productionModules = [
   'prompts',
   'steps',
 ];
-export const testFilePattern = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-export const ownedProductionPath = `^src/(${productionModules.join('|')})/`;
+const testFilePattern = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
+const ownedProductionPath = `^src/(${productionModules.join('|')})/`;
+/** Three rules share it: a dependency rule cannot see a file without imports, nor an orphan rule one with them. */
+const unownedComment =
+  'A production file belongs to one of the owners in productionModules. Move it, or add its owner.';
 /** The one app module callers outside app and composition may import. */
 const publicApplicationEntry = '^src/app/api[.]ts$';
 const configAllowlist = [
@@ -49,26 +52,6 @@ const appInternalsArePrivate = {
 /** The rules specs are held to as well; every other rule covers production sources only. */
 export const specRules = [appInternalsArePrivate];
 
-/** The module whose emitted declarations are the types every caller of the application compiles against. */
-export const publicApplicationSource = 'src/app/api.ts';
-
-/**
- * Held against the declarations TypeScript emits from the public entry. Declaration emit keeps
- * every import a public type needs and drops the ones only the runtime uses, so construction
- * stays allowed while a contract that names an adapter or observer, however it imports it, fails.
- */
-export const publicDeclarationRules = [
-  {
-    name: 'app-public-types-reach-no-infrastructure',
-    comment:
-      'A type reachable from the public entry names an adapter or observer, so every caller ' +
-      'compiles against an implementation type. Name the port, config or domain type instead.',
-    severity: 'error',
-    from: { path: '^src/' },
-    to: { path: '^src/(adapters|observers)/' },
-  },
-];
-
 /** @type {import('dependency-cruiser').IConfiguration} */
 export default {
   forbidden: [
@@ -78,6 +61,39 @@ export default {
       scope: 'folder',
       from: { path: '^src/[^/]+$' },
       to: { circular: true },
+    },
+    {
+      name: 'no-runtime-file-cycles',
+      comment:
+        'Files import each other at runtime. A cycle broken by a type import, or by an import ' +
+        'TypeScript drops because only its types are used, is allowed within one owner.',
+      severity: 'error',
+      from: {},
+      to: {
+        circular: true,
+        viaOnly: { dependencyTypesNot: ['type-only', 'pre-compilation-only'] },
+      },
+    },
+    {
+      name: 'unowned-file-is-disconnected',
+      comment: unownedComment,
+      severity: 'error',
+      from: { orphan: true, path: '^src/', pathNot: ownedProductionPath },
+      to: {},
+    },
+    {
+      name: 'unowned-file-imports',
+      comment: unownedComment,
+      severity: 'error',
+      from: { path: '^src/', pathNot: ownedProductionPath },
+      to: {},
+    },
+    {
+      name: 'unowned-file-is-imported',
+      comment: unownedComment,
+      severity: 'error',
+      from: {},
+      to: { path: '^src/', pathNot: ownedProductionPath },
     },
     {
       name: 'domain-is-independent',
@@ -187,9 +203,8 @@ export default {
       name: 'app-contracts-name-no-infrastructure-types',
       comment:
         'A type-only import from app names an adapter or observer type in an app contract. App ' +
-        'names the port or its own type instead. A type reached through a value import is ' +
-        'caught by app-public-types-reach-no-infrastructure on the emitted declarations; value ' +
-        'imports in src/app/container.ts remain the construction that spike #49 decides.',
+        'names the port or its own type instead. Value imports in src/app/container.ts remain ' +
+        'the construction that spike #49 decides.',
       severity: 'error',
       from: { path: '^src/app/', pathNot: testFilePattern },
       to: { path: '^src/(adapters|observers)/', dependencyTypes: ['type-only'] },

@@ -30,7 +30,7 @@
     "dev": "tsx src/composition/main.ts",
     "lint": "eslint .",
     "lint:duplication": "jscpd",
-    "lint:dependencies": "node scripts/check-dependencies.mjs",
+    "lint:dependencies": "depcruise src --config .dependency-cruiser.mjs --output-type err-long && depcruise 'src/**/*.{spec,test}.?(c|m)[jt]s?(x)' --config .dependency-cruiser.specs.mjs --output-type err-long ",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run --project unit",

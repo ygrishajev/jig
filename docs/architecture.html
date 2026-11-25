@@ -197,8 +197,8 @@ svg text{font-family:var(--sans)}
     scans every production source file, including disconnected files. Each must have exactly one
     of these owners. Specs under <code>src/</code> are scanned in a separate pass against the
     public-entry rule only. Native dependency-cruiser folder analysis enforces aggregate acyclicity,
-    including erased type imports and nested paths. A separate graph after type erasure rejects
-    runtime file cycles; intra-module type cycles and mixed cycles broken by erasure pass.</p>
+    including erased type imports and nested paths. A rule over runtime imports only
+    rejects runtime file cycles; intra-module type cycles and mixed cycles broken by erasure pass.</p>
   <ul>
     <li>Domain imports no other source owner; ports import only domain or ports.</li>
     <li>Production config imports only <code>src/config</code>, <code>src/domain</code>,
@@ -215,13 +215,11 @@ svg text{font-family:var(--sans)}
     <li>Only cli and composition import app across owners. Outside app and composition, specs
       included, app is reached only through <code>src/app/api.ts</code>; app and composition and
       their specs may import any app module. The public entry imports no adapter or observer,
-      production app has no type-only import of either, and the declarations TypeScript emits from
-      the public entry reach neither, so a public type cannot name an implementation type however
-      app imports it. App's value imports of adapters and observers, the container
+      and production app has no type-only import of either. App's value imports of adapters and observers, the container
       construction in <code>src/app/container.ts</code>, wait for spike #49.</li>
     <li>Layer restrictions include type imports, re-exports and literal dynamic imports, through nested paths. Resolution, package dependency and production-to-spec checks remain enabled.</li>
   </ul>
-  <p>The checker reports cycle paths and the source imports involved.
+  <p>The checker reports the path of each cycle.
     Select it with <code>npm run validate -- lint:dependencies</code>, or exclude it with
     <code>npm run validate -- --skip lint:dependencies</code>.
     See the <a href="workflow-ownership.md">ownership baseline and refactors</a>.</p>

@@ -107,8 +107,8 @@ composition. Adapters cannot import app, flow, steps, cli or composition.
 A file under any directory not listed in the code map fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
 Only cli and composition import `src/app/`. Everywhere outside app and composition, specs
 included, app is reached only through `src/app/api.ts`; the public entry imports no adapter or
-observer, production app has no type-only import of either, and the declarations emitted from
-the public entry reach neither, so an app contract names a port or an app type instead. Tooling and helpers outside `src/` may import any app module.
+observer, and production app has no type-only import of either, so an app contract names a port or
+an app type instead. Tooling and helpers outside `src/` may import any app module.
 
 `src/app/api.ts` is the application's public entry. `jig status` and `jig presets` call its
 operations: `readRunStatus` and `listPresets` take the context composition captured and narrow
