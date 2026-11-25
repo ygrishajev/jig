@@ -29,24 +29,33 @@ import type { RunSession } from '../ports/run-session.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
 import { observedEvents } from './observed-events.js';
 
-/**
- * The implementations a runtime is built with. Production uses `productionWiring`; a spec swaps
- * the sandbox, the images, the logs or the retry settings for its own.
- */
-export interface RuntimeWiring {
+/** The console log a runtime shares with every sandbox and run it opens. */
+export interface ConsoleWiring {
   /** The level the console and every run's log write at. */
   readonly logLevel: string;
   consoleLog(format: LogFormat, level: string): Logger;
+}
+
+/** What a sandbox image is built and checked with. */
+export interface ImageWiring {
   images(log: Logger, environment: JigEnvironment): SandboxImages;
   latestVersions(npmPackages: string[]): Promise<Record<string, string | undefined>>;
+}
+
+/** How a sandbox session is opened. */
+export interface SessionWiring {
   openSession(
     context: SessionContext,
     input: OpenSessionInput,
   ): Promise<Result<RunSession, SandboxOpenFailure>>;
-  runSettings(config: JigConfig): RunSettings;
 }
 
 export type SessionContext = SandcastleContext & { logger: Logger };
+
+/** The settings, retries included, a run's engine works under. */
+export interface SettingsWiring {
+  runSettings(config: JigConfig): RunSettings;
+}
 
 /** The repository, and the config and environment one sandbox is started with. */
 export interface SandboxSetting {
@@ -56,25 +65,26 @@ export interface SandboxSetting {
   log: Logger;
 }
 
-export function wiredWith(overrides: Partial<RuntimeWiring>): RuntimeWiring {
-  return { ...productionWiring, ...overrides };
-}
-
-export const productionWiring: RuntimeWiring = {
+export const productionConsole: ConsoleWiring = {
   logLevel: 'info',
   consoleLog: (format, level) => createConsoleLogger(format, level),
+};
+
+export const productionImages: ImageWiring = {
   images: (log, environment) =>
     new DockerImages({
       cache: environment.imageCache,
       onOutput: (line) => log.debug(line.trimEnd()),
     }),
   latestVersions: latestAgentVersions,
-  openSession: openSandcastleSession,
-  runSettings: runSettingsFrom,
 };
 
+export const productionSessions: SessionWiring = { openSession: openSandcastleSession };
+
+export const productionSettings: SettingsWiring = { runSettings: runSettingsFrom };
+
 export function sandboxCapabilities(
-  wiring: RuntimeWiring,
+  wiring: ImageWiring & SessionWiring,
   setting: SandboxSetting,
 ): SandboxCapabilities {
   return {
@@ -84,27 +94,29 @@ export function sandboxCapabilities(
 }
 
 export function imageDependencies(
-  wiring: RuntimeWiring,
-  setting: SandboxSetting,
+  { images, latestVersions }: ImageWiring,
+  { repoRoot, config, environment, log }: SandboxSetting,
 ): EnsureImageDependencies {
-  const { repoRoot, config, environment, log } = setting;
   return {
     config,
-    images: wiring.images(log, environment),
+    images: images(log, environment),
     recipe: new RepositoryImageRecipe(repoRoot, config),
-    latestVersions: wiring.latestVersions,
+    latestVersions,
     log,
   };
 }
 
 /** A throwaway sandbox's events are logged to the console. */
-function throwawaySandboxes(wiring: RuntimeWiring, setting: SandboxSetting): ThrowawaySandboxes {
+function throwawaySandboxes(
+  { openSession }: SessionWiring,
+  setting: SandboxSetting,
+): ThrowawaySandboxes {
   const { repoRoot, log } = setting;
   return {
     ...throwawayBranches(repoRoot),
     log,
     open: (run, setupCommand) =>
-      wiring.openSession(sessionContext(setting), {
+      openSession(sessionContext(setting), {
         run,
         events: observedEvents(log, [new LoggingObserver(log)]),
         setupCommand,

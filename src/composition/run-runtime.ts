@@ -22,26 +22,43 @@ import type { GitCommandFailed, RepositoryInvalid } from '../ports/git-failures.
 import type { Clock, LogFormat, RunTelemetry } from '../ports/observability.js';
 import { observedEvents } from './observed-events.js';
 import {
+  type ConsoleWiring,
   imageDependencies,
-  type RuntimeWiring,
+  type ImageWiring,
+  productionConsole,
+  productionImages,
+  productionSessions,
+  productionSettings,
   type SandboxSetting,
   sessionContext,
-  wiredWith,
+  type SessionWiring,
+  type SettingsWiring,
 } from './runtime-wiring.js';
+
+export type RunRuntimeWiring = ConsoleWiring & ImageWiring & SessionWiring & SettingsWiring;
+
+/** What a run's scope is opened with: the run log's level, the session opener and the settings. */
+type ScopeWiring = Pick<ConsoleWiring, 'logLevel'> & SessionWiring & SettingsWiring;
 
 /**
  * Opens what a run works with over `wiring`. Opening it builds nothing that needs releasing: the
  * image, the sandbox and the run's log are only made when the run asks for them.
  */
 export function runRuntimeFactory(
-  overrides: Partial<RuntimeWiring> = {},
+  overrides: Partial<RunRuntimeWiring> = {},
 ): (request: RuntimeRequest) => RunRuntime {
-  const wiring = wiredWith(overrides);
+  const wiring: RunRuntimeWiring = {
+    ...productionConsole,
+    ...productionImages,
+    ...productionSessions,
+    ...productionSettings,
+    ...overrides,
+  };
   return (request) => openRunRuntime(wiring, request);
 }
 
 function openRunRuntime(
-  wiring: RuntimeWiring,
+  wiring: RunRuntimeWiring,
   { repoRoot, config, environment, logFormat }: RuntimeRequest,
 ): RunRuntime {
   const log = wiring.consoleLog(logFormat, wiring.logLevel);
@@ -71,7 +88,7 @@ async function startingPointOf(
 }
 
 function runSandbox(
-  wiring: RuntimeWiring,
+  wiring: ImageWiring & ScopeWiring,
   setting: SandboxSetting,
   logFormat: LogFormat,
 ): RunSandbox {
@@ -92,18 +109,18 @@ function tracingTelemetry(telemetry: Telemetry | undefined): RunTelemetry | unde
 }
 
 function runScopeParts(
-  wiring: RuntimeWiring,
+  { logLevel, openSession, runSettings }: ScopeWiring,
   setting: SandboxSetting,
   logFormat: LogFormat,
 ): RunScopeParts {
   const { repoRoot, config, log } = setting;
   return {
-    settings: wiring.runSettings(config),
+    settings: runSettings(config),
     clock: systemClock,
     log,
     reportingFor: (run, telemetry) =>
-      runReporting({ repoRoot, logFormat, logLevel: wiring.logLevel }, run, telemetry),
-    openSession: (run, events) => wiring.openSession(sessionContext(setting), { run, events }),
+      runReporting({ repoRoot, logFormat, logLevel }, run, telemetry),
+    openSession: (run, events) => openSession(sessionContext(setting), { run, events }),
     workspaceFor: (run, session) =>
       new GitWorkspace({
         repoRoot,

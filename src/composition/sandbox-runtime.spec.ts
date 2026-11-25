@@ -14,8 +14,7 @@ import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { unwrap } from '../../tests/support/unwrap.js';
 import { parseEnvironment } from '../config/environment.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
-import type { RuntimeWiring } from './runtime-wiring.js';
-import { sandboxRuntimeFactory } from './sandbox-runtime.js';
+import { sandboxRuntimeFactory, type SandboxRuntimeWiring } from './sandbox-runtime.js';
 
 describe('sandboxRuntimeFactory', () => {
   it('builds each sandbox over the config it is given, not the one the runtime opened with', async () => {
@@ -69,7 +68,7 @@ describe('sandboxRuntimeFactory', () => {
 
   async function setup() {
     const repoRoot = await tempDirectory('jig-sandbox-runtime-');
-    const openSession = vi.fn<RuntimeWiring['openSession']>(async () =>
+    const openSession = vi.fn<SandboxRuntimeWiring['openSession']>(async () =>
       Result.ok(new FakeAgentSession(repoRoot)),
     );
     const images = mock<SandboxImages>();

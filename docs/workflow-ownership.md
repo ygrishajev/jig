@@ -856,10 +856,14 @@ drain after `parseAsync` returns, so it runs after every operation has released 
 
 Composition constructs every runtime with explicit factories; jig uses no dependency-injection
 container. `runRuntimeFactory` in `src/composition/run-runtime.ts` and `sandboxRuntimeFactory` in
-`src/composition/sandbox-runtime.ts` build the adapters over `RuntimeWiring` in
-`src/composition/runtime-wiring.ts`: the console log, the Docker images, the latest agent
-versions, the sandcastle session opener and the resolved run settings. Production uses
-`productionWiring`; the application integration specs pass typed replacements for the session
+`src/composition/sandbox-runtime.ts` build the adapters over the narrow wiring in
+`src/composition/runtime-wiring.ts`: `ConsoleWiring` (the console log and its level),
+`ImageWiring` (the Docker images and the latest agent versions), `SessionWiring` (the sandcastle
+session opener) and `SettingsWiring` (the resolved run settings, retries included). Each factory
+takes only what it reads: `RunRuntimeWiring` takes all four, `SandboxRuntimeWiring` no settings,
+image dependencies only `ImageWiring` and a throwaway sandbox only `SessionWiring`. Production uses
+`productionConsole`, `productionImages`, `productionSessions` and `productionSettings`; the
+application integration specs pass typed replacements for the session
 opener, the images, the console log and the retry settings, and keep the real workflow over a fake
 agent session. Opening a runtime opens no sandbox, image or run log, and disposing one releases
 nothing beyond what its operation already released.

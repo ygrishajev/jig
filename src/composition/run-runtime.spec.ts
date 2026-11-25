@@ -18,10 +18,10 @@ import { unwrap } from '../../tests/support/unwrap.js';
 import { parseEnvironment } from '../config/environment.js';
 import type { JigConfig } from '../config/load-config.js';
 import type { RunEvent } from '../domain/events.js';
-import type { RunTelemetry } from '../ports/observability.js';
+import type { RunId } from '../domain/run-id.js';
+import type { EventSink, RunTelemetry } from '../ports/observability.js';
 import type { SandboxImages } from '../ports/sandbox-images.js';
-import { runRuntimeFactory } from './run-runtime.js';
-import type { RuntimeWiring } from './runtime-wiring.js';
+import { runRuntimeFactory, type RunRuntimeWiring } from './run-runtime.js';
 
 describe('runRuntimeFactory', () => {
   it('opens no sandbox, image or run log until the run asks for one', async () => {
@@ -76,17 +76,25 @@ describe('runRuntimeFactory', () => {
     expect(scope.engineDependencies.settings).toBe(settings);
   });
 
-  it('gives every run its own events and workspace', async () => {
-    const { openRuntime } = await setup({});
-    const { sandbox } = openRuntime().run;
+  it('gives every run its own events, metrics and workspace over the shared console log', async () => {
+    const { openRuntime, openSession } = await setup({});
+    const { sandbox, records, log } = openRuntime().run;
+    const firstRun = aRun();
+    const secondRun = aRun();
+    const firstRetries = faker.number.int({ min: 1, max: 3 });
+    const secondRetries = firstRetries + faker.number.int({ min: 1, max: 3 });
 
-    const first = unwrap(await sandbox.openScope(aRun(), new InMemoryRunStore(), undefined));
-    const second = unwrap(await sandbox.openScope(aRun(), new InMemoryRunStore(), undefined));
+    const first = unwrap(await sandbox.openScope(firstRun, new InMemoryRunStore(), undefined));
+    const second = unwrap(await sandbox.openScope(secondRun, new InMemoryRunStore(), undefined));
+    publishRetries(first.engineDependencies.events, firstRun.runId, firstRetries);
+    publishRetries(second.engineDependencies.events, secondRun.runId, secondRetries);
 
-    expect(second.engineDependencies.events).not.toBe(first.engineDependencies.events);
+    expect(unwrap(records.metricsSummary(firstRun.runId)).retries).toBe(firstRetries);
+    expect(unwrap(records.metricsSummary(secondRun.runId)).retries).toBe(secondRetries);
     expect(second.engineDependencies.ports.workspace).not.toBe(
       first.engineDependencies.ports.workspace,
     );
+    expect(openSession.mock.calls.map(([context]) => context.logger)).toEqual([log, log]);
   });
 
   it("lets the run's telemetry hear the run's events until the scope is disposed", async () => {
@@ -109,11 +117,11 @@ describe('runRuntimeFactory', () => {
   async function setup(input: {
     config?: Partial<JigConfig>;
     environment?: NodeJS.ProcessEnv;
-    runSettings?: RuntimeWiring['runSettings'];
+    runSettings?: RunRuntimeWiring['runSettings'];
   }) {
     const repoRoot = await tempDirectory('jig-run-runtime-');
     const session = () => new FakeAgentSession(repoRoot);
-    const openSession = vi.fn<RuntimeWiring['openSession']>(async () => Result.ok(session()));
+    const openSession = vi.fn<RunRuntimeWiring['openSession']>(async () => Result.ok(session()));
     const images = vi.fn((): SandboxImages => mock<SandboxImages>());
     const consoleLog = vi.fn((): Logger => mock<Logger>());
     const request = {
@@ -139,6 +147,18 @@ describe('runRuntimeFactory', () => {
     return { openRuntime: () => open(request), openSession, images, consoleLog, request, repoRoot };
   }
 });
+
+function publishRetries(events: EventSink, runId: RunId, count: number) {
+  for (let attempt = 1; attempt <= count; attempt++) {
+    events.publish({
+      type: 'stepRetried',
+      runId,
+      at: { phase: 'slices', sliceId: undefined, sliceStatus: undefined },
+      attempt,
+      reason: faker.lorem.sentence(),
+    });
+  }
+}
 
 function aRun() {
   return { runId: runId(), baseBranch: faker.git.branch() };
