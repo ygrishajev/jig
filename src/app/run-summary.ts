@@ -1,21 +1,11 @@
-import type { MetricsSummary } from '../domain/metrics.js';
-
-/** The summary line of a run that has taken a step; a run that has not taken one has none. */
-export function progressSummary(summary: MetricsSummary): string | undefined {
-  return summary.steps > 0 ? formatSummary(summary) : undefined;
-}
+import { type MetricsSummary, totalTokens } from '../domain/metrics.js';
 
 /** One line for a PR footer or a status line, e.g. "2 slices · 1 review round · 412k tokens · $1.84 · 18m 3s". */
 export function formatSummary(summary: MetricsSummary): string {
-  const tokens =
-    summary.tokens.input +
-    summary.tokens.output +
-    summary.tokens.cacheRead +
-    summary.tokens.cacheWrite;
   return [
     plural(summary.slicesCommitted, 'slice'),
     plural(summary.reviewRounds, 'review round'),
-    `${compact(tokens)} tokens`,
+    `${compact(totalTokens(summary.tokens))} tokens`,
     `$${summary.costUsd.toFixed(2)}`,
     duration(summary.durationMs),
     ...(summary.retries > 0 ? [plural(summary.retries, 'retry', 'retries')] : []),

@@ -135,18 +135,22 @@ describe('describeRun', () => {
     expect(shown).toContain(path);
   });
 
-  it('sums up the run so far when the run has progress to show', () => {
-    const progress = faker.lorem.sentence();
+  it('sums up the run so far once a step has run', () => {
+    const metricsLine = faker.lorem.sentence();
+    const metrics = aMetricsSummary({ steps: faker.number.int({ min: 1, max: 30 }) });
 
-    const lines = describeRun(aStatus({ state: aRunState(), progress })).split('\n');
+    const lines = describeRun(aStatus({ state: aRunState(), metrics, metricsLine })).split('\n');
 
-    expect(lines.at(-1)).toBe(`So far: ${progress}`);
+    expect(lines.at(-1)).toBe(`So far: ${metricsLine}`);
   });
 
-  it('shows no summary when the run has no progress to show', () => {
-    const shown = describeRun(aStatus({ state: aRunState(), progress: undefined }));
+  it('shows no summary before any step has run', () => {
+    const metricsLine = faker.lorem.sentence();
+    const metrics = aMetricsSummary({ steps: 0 });
 
-    expect(shown).not.toContain('So far');
+    const shown = describeRun(aStatus({ state: aRunState(), metrics, metricsLine }));
+
+    expect(shown).not.toContain(metricsLine);
   });
 
   it('shows no slice list for a run that has none yet', () => {
@@ -160,11 +164,8 @@ describe('describeRun', () => {
 function aStatus({
   state,
   documents = [],
-  progress,
-}: {
-  state: RunState;
-  documents?: RunStatus['documents'];
-  progress?: string;
-}): RunStatus {
-  return { state, documents, metrics: aMetricsSummary(), progress };
+  metrics = aMetricsSummary(),
+  metricsLine = faker.lorem.sentence(),
+}: Partial<RunStatus> & { state: RunState }): RunStatus {
+  return { state, documents, metrics, metricsLine };
 }

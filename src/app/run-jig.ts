@@ -34,8 +34,8 @@ import type {
 } from '../ports/run-store.js';
 import type { ImageBuildFailed } from '../ports/sandbox-images.js';
 import { RunRequestInvalid } from './errors.js';
+import { invocationRecord } from './invocation-record.js';
 import { type Lifetime, releaseInOrder, withResource } from './lifecycle.js';
-import { runDocumentContents } from './run-documents.js';
 import { runFlow } from './run-flow.js';
 import { openRunStore } from './run-stores.js';
 import type { SandboxOpenFailure } from './sandbox-runtime.js';
@@ -297,10 +297,5 @@ async function recordInvocation(
   const { state, status } = report;
   const metrics = records.metricsSummary(state.runId);
   if (metrics.isErr()) return Result.err(metrics.error);
-  return records.recordInvocation({
-    state,
-    status,
-    metrics: metrics.value,
-    documents: runDocumentContents(state, metrics.value),
-  });
+  return records.recordInvocation(invocationRecord(state, status, metrics.value));
 }

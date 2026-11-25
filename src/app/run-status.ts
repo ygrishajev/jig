@@ -14,7 +14,7 @@ import {
   type RepositorySources,
 } from './repository-preparation.js';
 import { openRunStore } from './run-stores.js';
-import { progressSummary } from './run-summary.js';
+import { formatSummary } from './run-summary.js';
 
 export interface StatusInput {
   runId: RunId;
@@ -26,8 +26,8 @@ export interface RunStatus {
   state: RunState;
   documents: RunDocumentFile[];
   metrics: MetricsSummary;
-  /** The run's totals as one line, once it has taken a step. */
-  progress: string | undefined;
+  /** The run's totals as one line, as a PR footer shows them. */
+  metricsLine: string;
 }
 
 /** Why `readRunStatus` has no status to show. */
@@ -68,7 +68,7 @@ export function readRunStatus(
       state,
       documents: records.documents(runId),
       metrics,
-      progress: progressSummary(metrics),
+      metricsLine: formatSummary(metrics),
     });
   });
 }

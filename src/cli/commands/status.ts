@@ -33,7 +33,7 @@ export function registerStatusCommand(
 
 const statusInputSchema = configInputSchema.extend({ id: runIdSchema });
 
-export function describeRun({ state, documents, progress }: RunStatus): string {
+export function describeRun({ state, documents, metrics, metricsLine }: RunStatus): string {
   const slices = slicesInOrder(state.slices).map((slice) => {
     const line = `  [${slice.status}] ${slice.id} — ${slice.title}`;
     return slice.lastFeedback ? `${line}\n      feedback: ${slice.lastFeedback}` : line;
@@ -47,6 +47,6 @@ export function describeRun({ state, documents, progress }: RunStatus): string {
     `${'branch'.padEnd(18)} ${runBranchFor(state.runId)}`,
     ...documents.map((document) => `${document.name.padEnd(18)} ${document.path}`),
     ...(slices.length > 0 ? ['Slices:', ...slices] : []),
-    ...(progress === undefined ? [] : [`So far: ${progress}`]),
+    ...(metrics.steps > 0 ? [`So far: ${metricsLine}`] : []),
   ].join('\n');
 }

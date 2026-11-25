@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { aCommit, runId, sliceId } from '../../tests/support/builders.js';
-import { type MetricRecord, summarizeMetrics } from './metrics.js';
+import { type MetricRecord, summarizeMetrics, totalTokens } from './metrics.js';
 import type { TokenUsage } from './usage.js';
 
 describe('summarizeMetrics', () => {
@@ -54,6 +54,14 @@ describe('summarizeMetrics', () => {
     ]);
 
     expect(summary.reviewRounds).toBe(2);
+  });
+});
+
+describe('totalTokens', () => {
+  it('adds input, output and cache tokens, leaving reasoning out', () => {
+    const tokens = { input: 1000, output: 200, cacheRead: 30, cacheWrite: 4, reasoning: 500 };
+
+    expect(totalTokens(tokens)).toBe(1234);
   });
 });
 

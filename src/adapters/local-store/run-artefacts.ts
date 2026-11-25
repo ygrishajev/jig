@@ -4,27 +4,16 @@ import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
-import { type InvocationStatus, outcomeIsComplete } from '../../domain/invocation-status.js';
-import type { MetricsSummary } from '../../domain/metrics.js';
 import type { RunId } from '../../domain/run-id.js';
-import { type RunPhase, runStopReason } from '../../domain/run-state.js';
 import type { LocalStateUnwritable } from '../../ports/local-state.js';
 import {
   type InvocationRecord,
+  type InvocationResult,
   RUN_DOCUMENTS,
   type RunDocumentFile,
 } from '../../ports/run-records.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
-
-interface RunResult {
-  runId: RunId;
-  status: InvocationStatus;
-  phase: RunPhase;
-  complete: boolean;
-  blockedReason: string | undefined;
-  metrics: MetricsSummary;
-}
 
 /**
  * This machine's record of how an invocation of a run ended, written once at its end and only
@@ -35,13 +24,13 @@ export class RunArtefacts {
   constructor(private readonly repoRoot: string) {}
 
   async write(invocation: InvocationRecord): Promise<Result<void, LocalStateUnwritable>> {
-    const { runId } = invocation.state;
+    const { runId } = invocation;
     const directory = stateDirectory(this.repoRoot, runId);
     return onLocalState(directory, async () => {
       await this.makeStateDirectory(runId);
       const write = (name: string, contents: string | undefined): Promise<void> =>
         writeOrRemove(path.join(directory, name), contents);
-      await write('result.json', `${JSON.stringify(resultFor(invocation), null, 2)}\n`);
+      await write('result.json', `${JSON.stringify(resultFile(invocation), null, 2)}\n`);
       for (const name of RUN_DOCUMENTS) await write(name, invocation.documents[name]);
     });
   }
@@ -65,17 +54,8 @@ async function writeOrRemove(file: string, contents: string | undefined): Promis
   else await writeFileAtomic(file, contents);
 }
 
-/**
- * A small, stable summary for CI to read instead of parsing output that also carries whatever
- * an agent printed. `complete` and `blockedReason` keep the shape earlier workflows read.
- */
-function resultFor({ state, status, metrics }: InvocationRecord): RunResult {
-  return {
-    runId: state.runId,
-    status,
-    phase: state.phase,
-    complete: outcomeIsComplete(status),
-    blockedReason: state.blockedReason ?? runStopReason(state),
-    metrics,
-  };
+/** The fields of `result.json`, in the order earlier workflows read them. */
+function resultFile({ runId, result }: InvocationRecord): { runId: RunId } & InvocationResult {
+  const { status, phase, complete, blockedReason, metrics } = result;
+  return { runId, status, phase, complete, blockedReason, metrics };
 }

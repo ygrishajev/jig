@@ -85,9 +85,9 @@ describe('runJig', () => {
     ).unwrap();
 
     const status = unwrap(await readRunStatus(realStatusCapabilities(repo.dir), { runId: id }));
-    expect(status.progress).toBeDefined();
+    expect(status.metrics.steps).toBeGreaterThan(0);
     expect(await readDocument(repo.dir, id, 'PR_DESCRIPTION.md')).toBe(
-      `${report.state.prDescription}\n\n---\n<sub>jig run ${id}: ${status.progress}</sub>\n`,
+      `${report.state.prDescription}\n\n---\n<sub>jig run ${id}: ${status.metricsLine}</sub>\n`,
     );
     expect(status.documents.map((document) => document.name)).toContain('PR_DESCRIPTION.md');
   });

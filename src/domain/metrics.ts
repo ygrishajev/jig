@@ -73,3 +73,8 @@ const REVIEW_REJECTIONS: ReadonlySet<OutcomeType> = new Set([
   'changesRequested',
   'rulesFixRequested',
 ]);
+
+/** The tokens a run is charged for; reasoning tokens are already counted in its output. */
+export function totalTokens({ input, output, cacheRead, cacheWrite }: TokenUsage): number {
+  return input + output + cacheRead + cacheWrite;
+}

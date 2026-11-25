@@ -7,6 +7,7 @@ import { mock } from 'vitest-mock-extended';
 import { presetName } from '../../../tests/support/builders.js';
 import type { JigOperations } from '../../app/api.js';
 import { GithubRefused } from '../../ports/github.js';
+import type { LogFormat } from '../../ports/observability.js';
 import type { FailureOutput } from '../with-error-handling.js';
 import { describeIssueOutcome, registerGithubCommands } from './github.js';
 
@@ -88,6 +89,15 @@ describe('github implement command', () => {
     expect(output.setExitCode).not.toHaveBeenCalled();
   });
 
+  it.each(['pretty', 'json'] as const)(
+    'shows %s in help as the default log format it was given',
+    (defaultLogFormat) => {
+      const { implementHelp } = setup({ defaultLogFormat });
+
+      expect(implementHelp()).toContain(`default: "${defaultLogFormat}"`);
+    },
+  );
+
   it.each(['0', '-1', 'text', '1.5'])(
     'refuses invalid issue %s without asking to implement it',
     async (issue) => {
@@ -112,12 +122,20 @@ describe('github implement command', () => {
 
   function setup({
     published = Result.ok({ kind: 'pullRequest', url: faker.internet.url(), reused: false }),
-  }: { published?: Awaited<ReturnType<JigOperations['implementIssue']>> } = {}) {
+    defaultLogFormat = faker.helpers.arrayElement(['pretty', 'json'] as const),
+  }: {
+    published?: Awaited<ReturnType<JigOperations['implementIssue']>>;
+    defaultLogFormat?: LogFormat;
+  } = {}) {
     const implementIssue = vi.fn<JigOperations['implementIssue']>(async () => published);
     const output = mock<FailureOutput>();
     const program = new Command();
-    registerGithubCommands(program, implementIssue, { defaultLogFormat: 'json' }, output);
+    registerGithubCommands(program, implementIssue, { defaultLogFormat }, output);
+    const implement = program.commands
+      .find((command) => command.name() === 'github')
+      ?.commands.find((command) => command.name() === 'implement');
     return {
+      implementHelp: () => implement?.helpInformation(),
       implementIssue,
       output,
       run: (args: string[]) =>

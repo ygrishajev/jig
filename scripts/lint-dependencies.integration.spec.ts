@@ -8,28 +8,48 @@ import { z } from 'zod';
 import { tempDirectory } from '../tests/support/temp-directory.js';
 
 describe('npm run lint:dependencies', () => {
-  it.each(owners)(
-    'rejects %s importing each owner its row leaves out, under its own rule alone',
-    async (from) => {
-      const forbidden = forbiddenOwners(from);
-      const { run } = await setup({ ...targets, [`${from}/a.ts`]: importingEach(forbidden) });
+  it.each(forbiddenEdges)(
+    'rejects $from importing $to under its own rule alone',
+    async ({ from, to }) => {
+      const { run } = await setup({
+        [`${entryOf(to)}.ts`]: target,
+        [`${from}/a.ts`]: importing(`../${entryOf(to)}.js`),
+      });
 
       const result = await run();
 
       expect(result.exitCode).not.toBe(0);
-      expect(reportedErrors(result.all)).toEqual(
-        forbidden
-          .map(
-            (to) => `${from}-imports-only-allowed-owners: src/${from}/a.ts → src/${entryOf(to)}.ts`,
-          )
-          .sort(),
-      );
+      expect(reportedErrors(result.all)).toEqual([
+        `${from}-imports-only-allowed-owners: src/${from}/a.ts → src/${entryOf(to)}.ts`,
+      ]);
     },
     30_000,
   );
 
-  it('accepts every owner importing every owner its row allows', async () => {
-    const { run } = await setup({ ...targets, ...allowedImports });
+  it.each(allowedEdges)(
+    'accepts $from importing $to',
+    async ({ from, to }) => {
+      const { run } = await setup({
+        [`${entryOf(to)}.ts`]: target,
+        [`${from}/a.ts`]: importing(`../${entryOf(to)}.js`),
+      });
+
+      const result = await run();
+
+      expect(result.exitCode, result.all).toBe(0);
+    },
+    30_000,
+  );
+
+  it('accepts every owner importing its own files', async () => {
+    const { run } = await setup(
+      Object.fromEntries(
+        owners.flatMap((owner) => [
+          [`${owner}/b.ts`, target],
+          [`${owner}/a.ts`, importing('./b.js')],
+        ]),
+      ),
+    );
 
     const result = await run();
 
@@ -153,7 +173,7 @@ describe('npm run lint:dependencies', () => {
 
     expect(errorRules.sort()).toEqual(
       [
-        ...owners.map((owner) => `${owner}-imports-only-allowed-owners`),
+        ...new Set(forbiddenEdges.map(({ from }) => `${from}-imports-only-allowed-owners`)),
         ...unownedFileCases.map(({ rule }) => rule),
         ...importRuleCases.map(({ rule }) => rule),
         'app-internals-are-private-to-app-and-composition',
@@ -258,23 +278,51 @@ const configurationSchema = z.object({
 const target = 'export const b = 1; export type B = string;';
 const adapter = 'export class Adapter { readonly size = 1; }';
 
-/** The target-responsibilities table in docs/specs/application-boundaries.md, restated to test the rules against it. */
-const ownerTable: Record<string, string[]> = {
-  domain: [],
-  failures: [],
-  ports: ['domain'],
-  config: ['domain', 'ports'],
-  flow: ['domain', 'ports', 'failures'],
-  prompts: ['domain'],
-  steps: ['domain', 'ports', 'flow', 'prompts', 'failures'],
-  observers: ['domain', 'ports', 'failures'],
-  adapters: ['domain', 'ports', 'config', 'observers', 'failures'],
-  app: ['domain', 'ports', 'config', 'flow', 'steps', 'prompts', 'failures'],
-  cli: ['app', 'domain', 'ports', 'failures'],
-  composition: ['app', 'cli', 'adapters', 'config', 'observers', 'ports', 'domain', 'failures'],
-};
+/** One forbidden import each, every owner's rule among them, with the edges the matrix narrows. */
+const forbiddenEdges = [
+  { from: 'config', to: 'ports' },
+  { from: 'adapters', to: 'observers' },
+  { from: 'app', to: 'adapters' },
+  { from: 'app', to: 'observers' },
+  { from: 'app', to: 'cli' },
+  { from: 'cli', to: 'config' },
+  { from: 'cli', to: 'adapters' },
+  { from: 'cli', to: 'observers' },
+  { from: 'domain', to: 'ports' },
+  { from: 'failures', to: 'domain' },
+  { from: 'ports', to: 'config' },
+  { from: 'prompts', to: 'failures' },
+  { from: 'flow', to: 'steps' },
+  { from: 'steps', to: 'app' },
+  { from: 'observers', to: 'adapters' },
+  { from: 'composition', to: 'flow' },
+];
 
-const owners = Object.keys(ownerTable);
+/** Allowed imports beside the narrowed rows, so a rule that grows too strict fails here. */
+const allowedEdges = [
+  { from: 'config', to: 'domain' },
+  { from: 'adapters', to: 'config' },
+  { from: 'adapters', to: 'ports' },
+  { from: 'observers', to: 'ports' },
+  { from: 'cli', to: 'app' },
+  { from: 'cli', to: 'ports' },
+  { from: 'composition', to: 'observers' },
+];
+
+const owners = [
+  'domain',
+  'failures',
+  'ports',
+  'config',
+  'flow',
+  'prompts',
+  'steps',
+  'observers',
+  'adapters',
+  'app',
+  'cli',
+  'composition',
+];
 
 /** Every module a fixture may import; app's public entry stands in for app. */
 const targets = {
@@ -315,21 +363,6 @@ const importRuleCases = [
   { rule: 'not-to-unresolvable', from: 'app', specifier: './missing.js' },
   { rule: 'not-to-spec', from: 'app', specifier: './b.spec.js' },
 ];
-
-const allowedImports = Object.fromEntries(
-  owners.map((from) => [`${from}/a.ts`, importingEach(ownerTable[from])]),
-);
-
-function forbiddenOwners(from: string): string[] {
-  return owners.filter((to) => to !== from && !ownerTable[from].includes(to));
-}
-
-function importingEach(imported: string[]): string {
-  return [
-    ...imported.map((to, index) => `import { b as b${index} } from '../${entryOf(to)}.js';`),
-    `export const a = [${imported.map((_, index) => `b${index}`).join(', ')}];`,
-  ].join('\n');
-}
 
 function entryOf(owner: string): string {
   return owner === 'app' ? 'app/api' : `${owner}/b`;

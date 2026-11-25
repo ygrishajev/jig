@@ -3,7 +3,7 @@ import type { Result } from 'better-result';
 import type { InvocationStatus } from '../domain/invocation-status.js';
 import type { MetricsSummary } from '../domain/metrics.js';
 import type { RunId } from '../domain/run-id.js';
-import type { RunState } from '../domain/run-state.js';
+import type { RunPhase } from '../domain/run-state.js';
 import type { LocalStateUnwritable } from './local-state.js';
 import type { MetricsLogCorrupt } from './run-state-failures.js';
 
@@ -28,10 +28,18 @@ export interface RunDocumentFile {
 
 /** How an invocation ended, and the text of each document; a document without text is removed. */
 export interface InvocationRecord {
-  state: RunState;
-  status: InvocationStatus;
-  metrics: MetricsSummary;
+  runId: RunId;
+  result: InvocationResult;
   documents: RunDocumentContents;
+}
+
+/** How an invocation ended, as CI reads it instead of output that also carries what an agent printed. */
+export interface InvocationResult {
+  status: InvocationStatus;
+  phase: RunPhase;
+  complete: boolean;
+  blockedReason: string | undefined;
+  metrics: MetricsSummary;
 }
 
 export type RunDocumentContents = Record<RunDocument, string | undefined>;

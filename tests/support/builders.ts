@@ -42,7 +42,11 @@ import type {
   WorkFacts,
   WorkObservations,
 } from '../../src/domain/work-facts.js';
-import type { InvocationRecord, RunDocumentContents } from '../../src/ports/run-records.js';
+import type {
+  InvocationRecord,
+  InvocationResult,
+  RunDocumentContents,
+} from '../../src/ports/run-records.js';
 import { InMemoryConfigSource } from './fakes.js';
 import { unwrap } from './unwrap.js';
 
@@ -434,29 +438,44 @@ export function aMetricsSummary({
   };
 }
 
-/** The contents of a Codex `auth.json` holding a full ChatGPT login. */
-/** Takes overrides by spread, so an override of `undefined` leaves that document out. */
-export function someRunDocuments(
-  overrides: Partial<RunDocumentContents> = {},
-): RunDocumentContents {
+/** Spreads what it is given last, so an override of `undefined` leaves that document out. */
+export function someRunDocuments({
+  ...given
+}: Partial<RunDocumentContents> = {}): RunDocumentContents {
+  const {
+    'design.md': design = faker.lorem.paragraphs(),
+    'plan.md': plan = faker.lorem.paragraphs(),
+    'design-review.md': designReview = faker.lorem.paragraphs(),
+    'PR_DESCRIPTION.md': pullRequestDescription = faker.lorem.paragraphs(),
+  } = given;
   return {
-    'design.md': faker.lorem.paragraphs(),
-    'plan.md': faker.lorem.paragraphs(),
-    'design-review.md': faker.lorem.paragraphs(),
-    'PR_DESCRIPTION.md': faker.lorem.paragraphs(),
-    ...overrides,
+    'design.md': design,
+    'plan.md': plan,
+    'design-review.md': designReview,
+    'PR_DESCRIPTION.md': pullRequestDescription,
+    ...given,
   };
 }
 
-export function anInvocationRecord({
-  state = aRunState(),
+export function anInvocationResult({
   status = faker.helpers.arrayElement(INVOCATION_STATUSES),
+  phase = faker.helpers.arrayElement(runPhaseSchema.options),
+  complete = faker.datatype.boolean(),
+  blockedReason = faker.helpers.maybe(() => faker.lorem.sentence()),
   metrics = aMetricsSummary(),
-  documents = someRunDocuments(),
-}: Partial<InvocationRecord> = {}): InvocationRecord {
-  return { state, status, metrics, documents };
+}: Partial<InvocationResult> = {}): InvocationResult {
+  return { status, phase, complete, blockedReason, metrics };
 }
 
+export function anInvocationRecord({
+  runId: id = runId(),
+  result = anInvocationResult(),
+  documents = someRunDocuments(),
+}: Partial<InvocationRecord> = {}): InvocationRecord {
+  return { runId: id, result, documents };
+}
+
+/** The contents of a Codex `auth.json` holding a full ChatGPT login. */
 export function codexLogin(): string {
   return JSON.stringify({
     auth_mode: 'chatgpt',

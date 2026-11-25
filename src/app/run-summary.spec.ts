@@ -2,7 +2,7 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import { aMetricsSummary, tokenUsage } from '../../tests/support/builders.js';
-import { formatSummary, progressSummary } from './run-summary.js';
+import { formatSummary } from './run-summary.js';
 
 describe('formatSummary', () => {
   it('reads as one line', () => {
@@ -24,17 +24,5 @@ describe('formatSummary', () => {
     expect(formatSummary(aMetricsSummary({ retries }))).toMatch(
       new RegExp(` · ${retries} retries$`),
     );
-  });
-});
-
-describe('progressSummary', () => {
-  it('sums up a run that has taken a step', () => {
-    const summary = aMetricsSummary({ steps: faker.number.int({ min: 1, max: 30 }) });
-
-    expect(progressSummary(summary)).toBe(formatSummary(summary));
-  });
-
-  it('has nothing to say about a run that has taken no step', () => {
-    expect(progressSummary(aMetricsSummary({ steps: 0 }))).toBeUndefined();
   });
 });

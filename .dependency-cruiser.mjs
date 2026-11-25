@@ -1,17 +1,18 @@
 /**
- * The production owners and the other owners each may import: the target-responsibilities table
- * in docs/specs/application-boundaries.md. Same-owner imports are always allowed.
+ * The production owners and the other owners each may import. It narrows the target table in
+ * docs/specs/application-boundaries.md: config imports no port, and adapters import no observer.
+ * Same-owner imports are always allowed.
  */
 const allowedOwners = {
   domain: [],
   failures: [],
   ports: ['domain'],
-  config: ['domain', 'ports'],
+  config: ['domain'],
   flow: ['domain', 'ports', 'failures'],
   prompts: ['domain'],
   steps: ['domain', 'ports', 'flow', 'prompts', 'failures'],
   observers: ['domain', 'ports', 'failures'],
-  adapters: ['domain', 'ports', 'config', 'observers', 'failures'],
+  adapters: ['domain', 'ports', 'config', 'failures'],
   app: ['domain', 'ports', 'config', 'flow', 'steps', 'prompts', 'failures'],
   cli: ['app', 'domain', 'ports', 'failures'],
   composition: ['app', 'cli', 'adapters', 'config', 'observers', 'ports', 'domain', 'failures'],
@@ -43,7 +44,7 @@ const ownerRules = Object.entries(allowedOwners).map(([owner, allowed]) => ({
   comment:
     `Production ${owner} may import ` +
     (allowed.length > 0 ? `only ${allowed.join(', ')} and itself` : 'no other owner') +
-    ' (docs/specs/application-boundaries.md). Name a port or move the code to its owner instead.',
+    '. Name a port or move the code to its owner instead.',
   severity: 'error',
   from: { path: `^src/${owner}/`, pathNot: testFilePattern },
   to: { path: '^src/', pathNot: `^src/(${[owner, ...allowed].join('|')})/` },

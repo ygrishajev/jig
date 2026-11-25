@@ -42,7 +42,7 @@ import {
   type RuntimeRequest,
   startOrResumeRun,
 } from './api.js';
-import { progressSummary } from './run-summary.js';
+import { formatSummary } from './run-summary.js';
 
 describe('application API', () => {
   describe('readRunStatus', () => {
@@ -56,7 +56,7 @@ describe('application API', () => {
 
       const result = unwrap(await status({ runId: state.runId }));
 
-      expect(result).toEqual({ state, metrics, documents, progress: progressSummary(metrics) });
+      expect(result).toEqual({ state, metrics, documents, metricsLine: formatSummary(metrics) });
       expect(records.metricsSummary).toHaveBeenCalledWith(state.runId);
       expect(records.documents).toHaveBeenCalledWith(state.runId);
     });

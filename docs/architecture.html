@@ -208,14 +208,16 @@ svg text{font-family:var(--sans)}
     including erased type imports and nested paths. A rule over runtime imports only
     rejects runtime file cycles; intra-module type cycles and mixed cycles broken by erasure pass.</p>
   <ul>
-    <li>Each production owner imports only the owners its row of the
-      <a href="specs/application-boundaries.md#target-responsibilities">owner table</a> allows, under
-      its own <code>&lt;owner&gt;-imports-only-allowed-owners</code> rule: domain and failures import
-      no other owner; ports only domain; config domain and ports; prompts domain; flow and observers
-      domain, ports and failures; steps also flow and prompts; adapters domain, ports, config,
-      observers and failures; app domain, ports, config, flow, steps, prompts and failures; cli app,
-      domain, ports and failures; composition app, cli, adapters, config, observers, ports, domain
-      and failures. So only composition imports cli, no other owner imports composition, and
+    <li>Each production owner imports only the owners <code>allowedOwners</code> in
+      <code>.dependency-cruiser.mjs</code> lists for it, under its own
+      <code>&lt;owner&gt;-imports-only-allowed-owners</code> rule. The matrix is the table above,
+      which narrows the <a href="specs/application-boundaries.md#target-responsibilities">owner
+      table</a>: config imports no port and adapters no observer. Domain and failures import no
+      other owner; ports and config only domain; prompts domain; flow and observers domain, ports
+      and failures; steps also flow and prompts; adapters domain, ports, config and failures; app
+      domain, ports, config, flow, steps, prompts and failures; cli app, domain, ports and failures;
+      composition app, cli, adapters, config, observers, ports, domain and failures. So only
+      composition imports cli, no other owner imports composition, and
       production app imports no adapter, observer or CLI module in any form.</li>
     <li>Production config imports no package but <code>better-result</code> and <code>zod</code>: no
       Node built-in such as <code>node:fs</code>, <code>node:path</code> or
@@ -341,7 +343,7 @@ svg text{font-family:var(--sans)}
     ["Make sure the image is current", "ensureSandboxImage rebuilds only what changed.", "domain"],
     ["Open the run scope", "telemetry, then the sandbox (retried if it fails to start), run.log, metrics.jsonl and the observers.", "infra"],
     ["runEngine(runFlow)", "until the run is done, halted, blocked or stuck.", "domain"],
-    ["Write the result", "runDocumentContents (src/app/run-documents.ts) decides each document's text, PR footer included; RunArtefacts writes result.json with metrics and replaces or removes design.md, plan.md, design-review.md and PR_DESCRIPTION.md.", "infra"],
+    ["Write the result", "invocationRecord (src/app/invocation-record.ts) decides the result and each document's text, PR footer included; RunArtefacts serializes result.json with metrics and replaces or removes design.md, plan.md, design-review.md and PR_DESCRIPTION.md.", "infra"],
     ["Close", "withResource: sandbox closed, scope disposed, traces flushed, lock released, runtime disposed; each release attempted.", "step"]
   ], { h: 54, gap: 12 });
   var cTResume = flowCv("tr", "Resume a run", "jig run --id <id>, or the same request file with the same id.", [
@@ -354,7 +356,7 @@ svg text{font-family:var(--sans)}
     ["Peek at the run", "the freshest copy in every configured store; no branch or ref moves.", "infra"],
     ["Documents", "design.md, plan.md, design-review.md and PR_DESCRIPTION.md, when written.", "step"],
     ["Slices", "status of each, with the last reviewer feedback.", "domain"],
-    ["So far", "RunRecords (src/ports/run-records.ts): MetricsLog's summary of metrics.jsonl, as one line from src/app/run-summary.ts once a step has run: slices, review rounds, tokens, cost, time.", "domain"]
+    ["So far", "RunRecords (src/ports/run-records.ts): MetricsLog's summary of metrics.jsonl, and its line from src/app/run-summary.ts, shown once a step has run: slices, review rounds, tokens, cost, time.", "domain"]
   ]);
   var cTInitAgent = flowCv("ia", "jig init", "initRepository in src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
     ["Write the starter files", ".sandcastle/Dockerfile, its .gitignore, jig.config.json — only those missing.", "step"],

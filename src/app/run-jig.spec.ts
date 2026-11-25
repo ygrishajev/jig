@@ -27,7 +27,7 @@ import {
 import { ImageBuildFailed } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { RunRequestInvalid } from './errors.js';
-import { runDocumentContents } from './run-documents.js';
+import { invocationRecord } from './invocation-record.js';
 import {
   type RunCapabilities,
   runJig,
@@ -106,12 +106,9 @@ describe('runJig over supplied capabilities', () => {
       expect(capabilities.sandbox.checkCredentials).not.toHaveBeenCalled();
       expect(capabilities.sandbox.ensureImage).not.toHaveBeenCalled();
       expect(capabilities.sandbox.openScope).not.toHaveBeenCalled();
-      expect(capabilities.records.recordInvocation).toHaveBeenCalledWith({
-        state,
-        status: phase,
-        metrics,
-        documents: runDocumentContents(state, metrics),
-      });
+      expect(capabilities.records.recordInvocation).toHaveBeenCalledWith(
+        invocationRecord(state, phase, metrics),
+      );
     },
   );
 
