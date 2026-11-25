@@ -1,9 +1,9 @@
 import { Result } from 'better-result';
 import path from 'node:path';
 
-import type { RequestInputs, StandardInput } from '../adapters/terminal/standard-input.js';
 import { RunRequestInvalid, type StartRequest } from '../app/api.js';
 import { messageOf } from '../failures/messages.js';
+import type { RequestInputs, StandardInput } from '../ports/request-inputs.js';
 
 /** Where a request comes from: a file, or text piped to standard input. */
 export type RequestSource = { file: string } | { stdin: true };

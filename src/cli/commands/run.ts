@@ -2,11 +2,11 @@ import { Result } from 'better-result';
 import { Command } from 'commander';
 import { z } from 'zod';
 
-import type { RequestInputs } from '../../adapters/terminal/standard-input.js';
 import type { JigOperations, RunReport, RunRequest, RunRequestInvalid } from '../../app/api.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor, type RunState, runStopReason } from '../../domain/run-state.js';
-import type { LogFormat } from '../../ports/observability.js';
+import type { RequestInputs } from '../../ports/request-inputs.js';
+import type { CommandIo } from '../command-io.js';
 import {
   configInputSchema,
   configOption,
@@ -18,22 +18,12 @@ import { readRequest, type RequestSource } from '../read-request.js';
 import { type FailureOutput, withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
 
-/** Where the run command reads its request from and tells the operator what to do next. */
-export interface RunCommandIo {
-  requestInputs: RequestInputs;
-  outcomeLog(format: LogFormat): OutcomeLog;
-}
-
-export interface OutcomeLog {
-  info(details: object, message: string): void;
-}
-
 type RunToDo = { start: RequestSource; runId?: RunId; merge: boolean } | { resume: RunId };
 
 export function registerRunCommand(
   program: Command,
   run: JigOperations['run'],
-  { requestInputs, outcomeLog }: RunCommandIo,
+  { requestInputs, outcomeLog, defaultLogFormat }: CommandIo,
   failureOutput?: FailureOutput,
 ): void {
   program
@@ -52,7 +42,7 @@ export function registerRunCommand(
     )
     .addOption(configOption())
     .addOption(presetOption())
-    .addOption(logFormatOption())
+    .addOption(logFormatOption(defaultLogFormat))
     .action(
       withErrorHandling(
         withInput(runInputSchema, async ({ run: toDo, config, preset, logFormat }) => {

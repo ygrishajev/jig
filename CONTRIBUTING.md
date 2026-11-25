@@ -87,10 +87,11 @@ and run flows. Download and open it in a browser; GitHub displays HTML as source
 | `src/cli/`         | Commands and input parsing.                                             |
 | `src/app/`         | Public operations, lifecycle, acquisition order, workflow assembly.     |
 | `src/config/`      | Configuration schemas, defaults, presets, and policy.                   |
-| `src/domain/`      | State, validation, domain decisions, and business failures.             |
+| `src/domain/`      | State, validation, domain decisions, metrics, and business failures.    |
 | `src/failures/`    | Failure messages, panic unwrapping, and retry of `Result`s.             |
 | `src/flow/`        | Generic flow contracts, execution, and the step retry policy.           |
 | `src/steps/`       | Individual pipeline steps.                                              |
+| `src/observers/`   | Event subscriptions: logging, tracing, and metric records.              |
 | `src/ports/`       | Interfaces for external operations and their failures.                  |
 | `src/adapters/`    | Git, sandbox containers, storage, config files, terminals, telemetry.   |
 | `src/prompts/`     | Inputs sent to agents.                                                  |
@@ -105,16 +106,19 @@ lazily, while config skips invalid names, lets the first candidate of a name win
 merges whole roles. The process environment, working directory and home directory are captured at
 the process edge before config parses them, by composition for every command.
 `npm run lint:dependencies` allows production config to import only
-`src/config`, `src/domain`, `better-result` and `zod`; config specs and their test packages are
-exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
+`src/config`, `src/domain`, `src/ports`, `better-result` and `zod`; config specs and their test
+packages are exempt. It also keeps `src/failures/` a leaf: it imports only itself, `better-result` and Node
 built-ins, and domain, ports, config and prompts cannot import it.
 
 `src/composition/main.ts` is the executable. `buildJigCli()` adds the GitHub commands to the core
 CLI, bound to the same operations, and the module parses arguments only when it is the invoked
-script, so importing it starts nothing. `npm run lint:dependencies` lets no production owner but
-composition import `src/cli/`. Production composition may import only composition, cli, app,
-adapters, config, observers, ports, domain and failures, and no other production owner may import
-composition. Adapters cannot import app, flow, steps, cli or composition.
+script, so importing it starts nothing. `npm run lint:dependencies` holds every production owner
+to its row of the owner table in
+[`docs/specs/application-boundaries.md`](docs/specs/application-boundaries.md#target-responsibilities),
+one `<owner>-imports-only-allowed-owners` rule each, built from `allowedOwners` in
+`.dependency-cruiser.mjs`. So no production owner but composition imports `src/cli/`, no other
+production owner imports composition, and adapters cannot import app, flow, steps, cli or
+composition.
 A file under any directory not listed in the code map fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
 Only cli and composition import `src/app/`. Everywhere outside app and composition, specs
 included, app is reached only through `src/app/api.ts`. Production app imports no adapter, observer
@@ -130,16 +134,20 @@ decides the order: repository root, environment, saved credentials, config, pres
 handlers in `src/cli/commands/status.ts` and `src/cli/commands/presets.ts` receive the bound
 operations as `JigOperations` and only parse input and format the result. Status reports its metrics
 and documents through the `RunRecords` contract in `src/ports/run-records.ts`, implemented by
-`src/adapters/local-store/local-run-records.ts`.
+`src/adapters/local-store/local-run-records.ts`; the totals are summed in `src/domain/metrics.ts`
+and the status line comes formatted from `src/app/run-summary.ts`.
 
 `jig run` calls `startOrResumeRun` from the same entry. The handler in `src/cli/commands/run.ts`
 parses its input and reads the request file or standard input through the `RequestInputs` it is
-given, so unusable input calls no operation. The operation prepares the repository, applies the
+given (`src/ports/request-inputs.ts`), so unusable input calls no operation. Composition hands
+the commands their `CommandIo` (`src/cli/command-io.ts`), including the default log format. The operation prepares the repository, applies the
 preset (asking through a supplied chooser; nobody picking refuses the run) and only then asks the
 supplied `openRuntime` for the run's capabilities. `runJig` in `src/app/run-jig.ts` owns the run
 policy over `RunCapabilities`: the lock, which stores to open (`openRunStore` in
 `src/app/run-stores.ts` adds required stores to the configured ones), start or resume by id, the
-ended-run report, credentials and image before any sandbox, and the invocation's records.
+ended-run report, credentials and image before any sandbox, and the invocation's records: the
+app decides each document's text, pull request footer included (`src/app/run-documents.ts`), and
+`src/adapters/local-store/run-artefacts.ts` only writes, replaces or removes the files.
 `withResource`, `releaseInOrder` and `releasingOnPanic` in `src/app/lifecycle.ts` acquire, use
 and release: every release is attempted, a partial acquisition releases what it already holds even
 when it panics, the first panic propagates as thrown while a cleanup that fails or panics after it
@@ -202,8 +210,8 @@ publication in `src/ports/run-branches.ts`, publication receipts in
 `src/ports/publication-receipts.ts`; shared Git, run-state and local-state failures in `src/ports/git-failures.ts`, `src/ports/run-state-failures.ts` and
 `src/ports/local-state.ts`), configuration validation in `src/config/errors.ts`, and use-case and
 command input failures in `src/app/` and `src/cli/`. Import a class from its owner; there is no
-union of every class. `src/adapters/logging/error-serializer.ts` logs a class split out of
-`ConfigInvalid` under that old identity, so run logs stay comparable.
+union of every class. The loggers log each failure under its own class through pino's own `err`
+serializer.
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,

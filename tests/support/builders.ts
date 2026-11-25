@@ -14,6 +14,8 @@ import {
   resolveDesignReview,
 } from '../../src/domain/design-review.js';
 import type { CapturedOutput, RejectedReview } from '../../src/domain/diagnostics.js';
+import { INVOCATION_STATUSES } from '../../src/domain/invocation-status.js';
+import type { MetricsSummary } from '../../src/domain/metrics.js';
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import {
@@ -40,7 +42,7 @@ import type {
   WorkFacts,
   WorkObservations,
 } from '../../src/domain/work-facts.js';
-import type { MetricsSummary } from '../../src/ports/run-records.js';
+import type { InvocationRecord, RunDocumentContents } from '../../src/ports/run-records.js';
 import { InMemoryConfigSource } from './fakes.js';
 import { unwrap } from './unwrap.js';
 
@@ -433,6 +435,28 @@ export function aMetricsSummary({
 }
 
 /** The contents of a Codex `auth.json` holding a full ChatGPT login. */
+/** Takes overrides by spread, so an override of `undefined` leaves that document out. */
+export function someRunDocuments(
+  overrides: Partial<RunDocumentContents> = {},
+): RunDocumentContents {
+  return {
+    'design.md': faker.lorem.paragraphs(),
+    'plan.md': faker.lorem.paragraphs(),
+    'design-review.md': faker.lorem.paragraphs(),
+    'PR_DESCRIPTION.md': faker.lorem.paragraphs(),
+    ...overrides,
+  };
+}
+
+export function anInvocationRecord({
+  state = aRunState(),
+  status = faker.helpers.arrayElement(INVOCATION_STATUSES),
+  metrics = aMetricsSummary(),
+  documents = someRunDocuments(),
+}: Partial<InvocationRecord> = {}): InvocationRecord {
+  return { state, status, metrics, documents };
+}
+
 export function codexLogin(): string {
   return JSON.stringify({
     auth_mode: 'chatgpt',

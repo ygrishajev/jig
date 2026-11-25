@@ -331,27 +331,26 @@ scope is acquired in; composition constructs the runtimes in `composition/run-ru
 init, image-build and issue operations from `app/api.ts`; see
 [Public application entry](#public-application-entry).
 
-`.dependency-cruiser.mjs` owns the production-owner list; a file under any other directory, such
-as a reintroduced `src/integrations/`, fails an `unowned-file-*` rule. Its
-`composition-imports-only-allowed-sources` rule lets production composition import only
-composition, cli, app, adapters, config, observers, ports, domain and failures; flow, steps and
-prompts stay out of reach. `cli-is-imported-only-by-composition` lets no other production owner
-import cli, and `composition-is-imported-by-no-other-owner` keeps every other production owner from
-importing composition. Specs and tooling outside `src/`, such as `scripts/validate.ts`, may import
-CLI helpers.
+`.dependency-cruiser.mjs` owns the production-owner matrix, `allowedOwners`: each owner and the
+other owners its row of the
+[target table](specs/application-boundaries.md#target-responsibilities) lets it import. A file
+under any other directory, such as a reintroduced `src/integrations/`, fails an `unowned-file-*`
+rule. Each owner gets its own `<owner>-imports-only-allowed-owners` rule over production files,
+covering value, type-only, re-export and literal dynamic imports: composition imports only
+composition, cli, app, adapters, config, observers, ports, domain and failures; no other owner
+imports cli or composition; adapters import neither the workflow (app, flow, steps) nor the
+executable (cli, composition); and production app imports no adapter, observer or CLI module, so
+no app contract can name or infer an infrastructure type. Specs and tooling outside `src/`, such
+as `scripts/validate.ts`, may import CLI helpers.
 
-`adapters-do-not-import-flow` keeps adapters beneath everything that uses them: production
-adapters import neither the workflow (app, flow, steps) nor the executable (cli, composition).
+`app-internals-are-private-to-app-and-composition` lets every file outside app and composition,
+specs included, import app only through `src/app/api.ts`; app and composition, and their specs,
+may import any app module, and tooling and helpers outside `src/` (`scripts/`, `tests/support/`,
+`tests/e2e/`) are not scanned.
 
-Four rules hold the public application entry and the app's boundary. `app-is-imported-only-by-cli-and-composition` lets
-no other production owner import app. `app-internals-are-private-to-app-and-composition` lets
-every file outside app and composition, specs included, import app only through `src/app/api.ts`;
-app and composition, and their specs, may import any app module, and tooling and helpers outside
-`src/` (`scripts/`, `tests/support/`, `tests/e2e/`) are not scanned. `app-public-entry-exposes-no-infrastructure` keeps
-`src/app/api.ts` from importing adapters or observers in any form, and
-`app-imports-no-infrastructure` rejects any import from production app into adapters, observers
-or the CLI — value, type-only, re-export or literal dynamic — so no app contract can name or infer
-an infrastructure type.
+`scripts/lint-dependencies.integration.spec.ts` runs each owner's forbidden imports in a tree of
+its own and expects exactly that owner's rule to report each one, accepts every import the matrix
+allows, and checks that every error rule has a fixture.
 
 `npm run lint:dependencies` runs
 dependency-cruiser on production sources against every rule in `.dependency-cruiser.mjs`, then on
@@ -398,9 +397,10 @@ the shared helpers and the retry policy:
   import it.
 
 Dependency-cruiser's `failures-imports-only-better-result-and-node` rule allows production
-`failures` to import only itself, `better-result` and Node built-ins, and
-`failures-is-imported-only-by-listed-owners` lets only adapters, app, cli, composition, flow,
-observers and steps import it; domain, ports, config and prompts cannot.
+`failures` no package but `better-result` and Node built-ins, and
+`failures-imports-only-allowed-owners` no other project source. Only adapters, app, cli,
+composition, flow, observers and steps list failures in their row; domain, ports, config and
+prompts fail their own owner rule if they import it.
 
 `failures` is a one-off owner, not a home for shared utilities. A new helper belongs with the rule
 it expresses: a business rule in domain, a capability contract in its port, a configuration policy
@@ -618,39 +618,35 @@ failure outside `StepFailure` does not compile. `flow/engine.spec.ts` pins `Fata
 
 ### Where failures are read, shown and stored
 
-| Use   | Location                                                                                                                                                                                                                                        | What it relies on                                                                                                                 |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| read  | `flow/engine.ts:222`, `flow/retry-policy.ts`                                                                                                                                                                                                    | `kind` through `isTransient`                                                                                                      |
-| read  | `flow/engine.ts:233-234`                                                                                                                                                                                                                        | `kind === 'fatal'` returns the error as a `FatalStepFailure`, anything else blocks with its `message`                             |
-| read  | `app/run-scope.ts`                                                                                                                                                                                                                              | `kind` of `SessionOpenFailure` through `transientRetryPolicy`                                                                     |
-| read  | `adapters/git/remote-ref.ts:58`                                                                                                                                                                                                                 | `_tag === 'RemoteUnavailable'`                                                                                                    |
-| read  | `adapters/git/orchestration-ref.ts`                                                                                                                                                                                                             | `_tag === 'RunStateConflict'`                                                                                                     |
-| read  | `steps/planning.ts:59`, `:61`, `:65`                                                                                                                                                                                                            | `instanceof PlanNotCovered`, re-raised as `AgentOutputInvalid` with the same message                                              |
-| read  | `steps/slice.ts:53`, `:82`                                                                                                                                                                                                                      | `CommitRejected.is`, `AgentOutputInvalid.is`                                                                                      |
-| read  | `adapters/git/merge.ts:136`                                                                                                                                                                                                                     | `GitCommandFailed.is`; a `RepositoryInvalid` from `getCurrentBranch` becomes `MergeFailed` with its message                       |
-| read  | `app/init-sandbox.ts:231`                                                                                                                                                                                                                       | `instanceof SetupCommandFailed`, its message becomes the check's output                                                           |
-| read  | `adapters/sandcastle/sandcastle-session.ts:316-325`                                                                                                                                                                                             | sandcastle's own Effect failure `_tag`: `CwdError` becomes `SandboxPreparationInvalid`, the rest `SandboxUnavailable`             |
-| show  | `cli/with-error-handling.ts`                                                                                                                                                                                                                    | `message` only, exit 1                                                                                                            |
-| show  | `flow/engine.ts` `stepRetried`, `stepFailed`, `runFailed` → `observers/logging-observer.ts:23`, `:28`, `:63`, `observers/tracing-observer.ts:31`, `:36`                                                                                         | the failure's `message` as `reason`; no tag or kind                                                                               |
-| show  | console `{ err }` fields at `app/report-cleanup.ts:12` (from `app/run-scope.ts`, `app/throwaway-sandbox.ts:70`, `app/publication-ownership.ts`), `app/throwaway-sandbox.ts:65`, `adapters/sandcastle/sandcastle-session.ts:264`, `:354`, `:382` | the console logger built by `createConsoleLogger` (`composition/runtime-wiring.ts`), whose `err` serializer is `serializeError`   |
-| show  | `cli/commands/status.ts:42`                                                                                                                                                                                                                     | the stored `blockedReason` text                                                                                                   |
-| store | `run.log`: `{ err }` at `app/run-scope.ts` (sandbox start failures) and `composition/observed-events.ts` (observer failures), through `createRunLogger` (`composition/run-runtime.ts`) into `.jig/<id>/state/run.log`                           | `serializeError` writes `type`, `message`, `stack` and own enumerable fields — `_tag`, `name`, `kind` and fields such as `output` |
-| store | `run.log`: `stepRetried`, `stepFailed`, `runBlocked` and `runFailed` lines from `observers/logging-observer.ts`                                                                                                                                 | the failure's `message` as `reason`; no tag or kind                                                                               |
-| store | `blockedReason` in run state, written at `flow/engine.ts:321`                                                                                                                                                                                   | the failure's `message`                                                                                                           |
-| store | `adapters/local-store/run-artefacts.ts:26`                                                                                                                                                                                                      | `blockedReason` in the run's result file                                                                                          |
-| store | `observers/metrics.ts:27`, `:86`                                                                                                                                                                                                                | a `retry` record in `metrics.jsonl` with the `message` as `reason`                                                                |
+| Use   | Location                                                                                                                                                                                                                                        | What it relies on                                                                                                               |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| read  | `flow/engine.ts:222`, `flow/retry-policy.ts`                                                                                                                                                                                                    | `kind` through `isTransient`                                                                                                    |
+| read  | `flow/engine.ts:233-234`                                                                                                                                                                                                                        | `kind === 'fatal'` returns the error as a `FatalStepFailure`, anything else blocks with its `message`                           |
+| read  | `app/run-scope.ts`                                                                                                                                                                                                                              | `kind` of `SessionOpenFailure` through `transientRetryPolicy`                                                                   |
+| read  | `adapters/git/remote-ref.ts:58`                                                                                                                                                                                                                 | `_tag === 'RemoteUnavailable'`                                                                                                  |
+| read  | `adapters/git/orchestration-ref.ts`                                                                                                                                                                                                             | `_tag === 'RunStateConflict'`                                                                                                   |
+| read  | `steps/planning.ts:59`, `:61`, `:65`                                                                                                                                                                                                            | `instanceof PlanNotCovered`, re-raised as `AgentOutputInvalid` with the same message                                            |
+| read  | `steps/slice.ts:53`, `:82`                                                                                                                                                                                                                      | `CommitRejected.is`, `AgentOutputInvalid.is`                                                                                    |
+| read  | `adapters/git/merge.ts:136`                                                                                                                                                                                                                     | `GitCommandFailed.is`; a `RepositoryInvalid` from `getCurrentBranch` becomes `MergeFailed` with its message                     |
+| read  | `app/init-sandbox.ts:231`                                                                                                                                                                                                                       | `instanceof SetupCommandFailed`, its message becomes the check's output                                                         |
+| read  | `adapters/sandcastle/sandcastle-session.ts:316-325`                                                                                                                                                                                             | sandcastle's own Effect failure `_tag`: `CwdError` becomes `SandboxPreparationInvalid`, the rest `SandboxUnavailable`           |
+| show  | `cli/with-error-handling.ts`                                                                                                                                                                                                                    | `message` only, exit 1                                                                                                          |
+| show  | `flow/engine.ts` `stepRetried`, `stepFailed`, `runFailed` → `observers/logging-observer.ts:23`, `:28`, `:63`, `observers/tracing-observer.ts:31`, `:36`                                                                                         | the failure's `message` as `reason`; no tag or kind                                                                             |
+| show  | console `{ err }` fields at `app/report-cleanup.ts:12` (from `app/run-scope.ts`, `app/throwaway-sandbox.ts:70`, `app/publication-ownership.ts`), `app/throwaway-sandbox.ts:65`, `adapters/sandcastle/sandcastle-session.ts:264`, `:354`, `:382` | the console logger built by `createConsoleLogger` (`composition/runtime-wiring.ts`), with pino's own `err` serializer           |
+| show  | `cli/commands/status.ts:42`                                                                                                                                                                                                                     | the stored `blockedReason` text                                                                                                 |
+| store | `run.log`: `{ err }` at `app/run-scope.ts` (sandbox start failures) and `composition/observed-events.ts` (observer failures), through `createRunLogger` (`composition/run-runtime.ts`) into `.jig/<id>/state/run.log`                           | pino's `err` serializer writes `type`, `message`, `stack` and own enumerable fields — `_tag`, `name`, `kind`, `output` and more |
+| store | `run.log`: `stepRetried`, `stepFailed`, `runBlocked` and `runFailed` lines from `observers/logging-observer.ts`                                                                                                                                 | the failure's `message` as `reason`; no tag or kind                                                                             |
+| store | `blockedReason` in run state, written at `flow/engine.ts:321`                                                                                                                                                                                   | the failure's `message`                                                                                                         |
+| store | `adapters/local-store/run-artefacts.ts:26`                                                                                                                                                                                                      | `blockedReason` in the run's result file                                                                                        |
+| store | `observers/metrics.ts` (`MetricsObserver`), record type in `domain/metrics.ts`                                                                                                                                                                  | a `retry` record in `metrics.jsonl` with the `message` as `reason`                                                              |
 
 Run state, run artefacts and metrics store only the message, so the split changes nothing there.
 The logged `err` field is the one surface that shows or stores a tag and class name, and the kind of a
-failure that has one. Its sole
-translation boundary is `serializeError` in `adapters/logging/error-serializer.ts`, installed as
-pino's `err` serializer by both `createConsoleLogger` and `createRunLogger`
-(`adapters/logging/create-logger.ts`). For a serialized error whose `type` and `_tag` are one of the
-seven split tags above it writes `type`, `_tag` and `name` as `ConfigInvalid` and replaces the
-class name that heads the stack, keeping the message, kind, other fields and stack frames. It
-works on pino's serialized copy, so the runtime error keeps its own tag; it matches tag strings and
-imports no class; every other error, `ConfigInvalid` itself included, is serialized by pino
-unchanged. `adapters/logging/create-logger.spec.ts` checks both destinations.
+failure that has one. Both `createConsoleLogger` and `createRunLogger`
+(`adapters/logging/create-logger.ts`) log it with pino's own `err` serializer, so every failure,
+each of the seven split classes above included, is logged under its own class name and `_tag`, and
+no logging code lists another owner's classes. `adapters/logging/create-logger.spec.ts` checks both
+destinations.
 
 ### Spec assertions on classes and tags
 
@@ -772,10 +768,15 @@ signature, and a change that did alter it fails the typecheck.
 | Preparation order: repository, environment, credentials                                  | `cli/with-app.ts` (`openApp`)                                                  | `app/repository-preparation.ts` (`prepareRepository`)                                               |
 | Status use case                                                                          | `app/run-status.ts`, given the container                                       | `app/run-status.ts`, given `StatusCapabilities`                                                     |
 | Preset listing                                                                           | `cli/commands/presets.ts`, reading the cradle                                  | `app/list-presets.ts`                                                                               |
-| `MetricsSummary`, `RunDocument`, `RunDocumentFile`                                       | `observers/metrics.ts`, `adapters/local-store/run-artefacts.ts`                | `ports/run-records.ts`, with the `RunRecords` contract                                              |
+| `MetricsSummary`, `MetricRecord` and `summarizeMetrics`                                  | `observers/metrics.ts`                                                         | `domain/metrics.ts`                                                                                 |
+| `RunDocument`, `RunDocumentFile`, `InvocationRecord`                                     | `adapters/local-store/run-artefacts.ts`                                        | `ports/run-records.ts`, with the `RunRecords` contract                                              |
+| Each document's text and the PR footer                                                   | `adapters/local-store/run-artefacts.ts`                                        | `app/run-documents.ts` (`runDocumentContents`); the adapter writes, replaces or removes the files   |
+| The one-line run summary and when status shows it                                        | `observers/metrics.ts` (`formatSummary`), `cli/commands/status.ts`             | `app/run-summary.ts` (`formatSummary`, `progressSummary`), as `RunStatus.progress`                  |
 | Run records for status                                                                   | `MetricsLog` and `RunArtefacts` built inside app                               | `adapters/local-store/local-run-records.ts`, supplied by composition                                |
 | Run command preparation and preset choice                                                | `cli/with-app.ts` (`openApp`, `selectedPreset`)                                | `app/run-operation.ts`, `app/preset-selection.ts`                                                   |
-| Request file and standard-input reads                                                    | `cli/read-request.ts` over `node:fs` and the process stdin                     | `cli/read-request.ts` over supplied `RequestInputs`                                                 |
+| Request file and standard-input reads                                                    | `cli/read-request.ts` over `node:fs` and the process stdin                     | `cli/read-request.ts` over supplied `RequestInputs` (`ports/request-inputs.ts`)                     |
+| Default `--log-format`                                                                   | `cli/log-format-option.ts` calling `adapters/logging/create-logger.ts`         | `CommandIo.defaultLogFormat` (`cli/command-io.ts`), supplied by composition                         |
+| Preset-name schema the CLI parses `--preset` with                                        | `config/presets.ts`, imported by `cli/config-option.ts`                        | `config/presets.ts`, reached through `app/api.ts`                                                   |
 | Run lock, store choice, start/resume, ended-run report                                   | `app/run-jig.ts`, given the container                                          | `app/run-jig.ts`, given `RunCapabilities`                                                           |
 | Built-in and custom store construction, module checks                                    | `app/run-stores.ts`                                                            | `adapters/run-store/repository-run-stores.ts` (`RunStoreCatalog`)                                   |
 | Store selection: configured plus required, each once                                     | `app/run-stores.ts`                                                            | `app/run-stores.ts` (`openRunStore` over a `RunStoreCatalog`)                                       |
@@ -882,7 +883,7 @@ environment it is given and shares the runtime's console log. `ensureSandboxImag
 `SandboxImages` ports; `src/adapters/sandbox-image/repository-image-recipe.ts` owns the Dockerfile,
 the host user, the agents' packages, the image names and the label format.
 
-Dependency lint enforces the boundary: `app-imports-no-infrastructure` rejects any production app
+Dependency lint enforces the boundary: `app-imports-only-allowed-owners` rejects any production app
 import of an adapter, observer or CLI module, whether value, type-only, re-export or dynamic, and
 `logging-and-tracing-libraries-stay-in-reporting-and-wiring` lets only adapters, observers and
 composition import Pino or OpenTelemetry. App specs may import adapters and composition wiring.

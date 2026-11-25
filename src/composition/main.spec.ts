@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import type { JigOperations } from '../app/api.js';
-import type { RunCommandIo } from '../cli/commands/run.js';
+import type { CommandIo } from '../cli/command-io.js';
 import { buildCli, packageVersion } from '../cli/main.js';
 import { buildJigCli, runJigExecutable } from './main.js';
 
 describe('buildJigCli', () => {
   it('includes every core command alongside the GitHub command', () => {
-    const coreCommandNames = buildCli(mock<JigOperations>(), mock<RunCommandIo>()).commands.map(
+    const coreCommandNames = buildCli(mock<JigOperations>(), mock<CommandIo>()).commands.map(
       (command) => command.name(),
     );
 

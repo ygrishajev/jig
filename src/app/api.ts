@@ -22,8 +22,14 @@ export interface JigOperations {
   implementIssue(input: IssueInput): Promise<Result<IssueOutcome, IssueFailure>>;
 }
 
-export type { Preset, PresetPick, PresetSelection } from '../config/presets.js';
-export type { MetricsSummary, RunDocumentFile } from '../ports/run-records.js';
+export {
+  type Preset,
+  presetNameSchema,
+  type PresetPick,
+  type PresetSelection,
+} from '../config/presets.js';
+export type { MetricsSummary } from '../domain/metrics.js';
+export type { RunDocumentFile } from '../ports/run-records.js';
 export {
   type BuildImageCapabilities,
   type BuildImageFailure,

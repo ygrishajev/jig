@@ -1,12 +1,11 @@
 import type { Result } from 'better-result';
 
-import type { InvocationStatus } from '../../domain/invocation-status.js';
+import type { MetricsSummary } from '../../domain/metrics.js';
 import type { RunId } from '../../domain/run-id.js';
-import type { RunState } from '../../domain/run-state.js';
 import type { LocalStateUnwritable } from '../../ports/local-state.js';
 import type {
+  InvocationRecord,
   InvocationRecords,
-  MetricsSummary,
   RunDocumentFile,
 } from '../../ports/run-records.js';
 import type { MetricsLogCorrupt } from '../../ports/run-state-failures.js';
@@ -29,11 +28,7 @@ export class LocalRunRecords implements InvocationRecords {
     return this.artefacts.documents(runId);
   }
 
-  recordInvocation(
-    state: RunState,
-    status: InvocationStatus,
-    metrics: MetricsSummary,
-  ): Promise<Result<void, LocalStateUnwritable>> {
-    return this.artefacts.write(state, status, metrics);
+  recordInvocation(invocation: InvocationRecord): Promise<Result<void, LocalStateUnwritable>> {
+    return this.artefacts.write(invocation);
   }
 }

@@ -4,7 +4,6 @@ import type { JigOperations, RunStatus } from '../../app/api.js';
 import { runIdSchema } from '../../domain/run-id.js';
 import { runBranchFor } from '../../domain/run-state.js';
 import { slicesInOrder } from '../../domain/slice.js';
-import { formatSummary } from '../../observers/metrics.js';
 import { configInputSchema, configOption } from '../config-option.js';
 import { type FailureOutput, withErrorHandling } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
@@ -34,7 +33,7 @@ export function registerStatusCommand(
 
 const statusInputSchema = configInputSchema.extend({ id: runIdSchema });
 
-export function describeRun({ state, documents, metrics }: RunStatus): string {
+export function describeRun({ state, documents, progress }: RunStatus): string {
   const slices = slicesInOrder(state.slices).map((slice) => {
     const line = `  [${slice.status}] ${slice.id} — ${slice.title}`;
     return slice.lastFeedback ? `${line}\n      feedback: ${slice.lastFeedback}` : line;
@@ -48,6 +47,6 @@ export function describeRun({ state, documents, metrics }: RunStatus): string {
     `${'branch'.padEnd(18)} ${runBranchFor(state.runId)}`,
     ...documents.map((document) => `${document.name.padEnd(18)} ${document.path}`),
     ...(slices.length > 0 ? ['Slices:', ...slices] : []),
-    ...(metrics.steps > 0 ? [`So far: ${formatSummary(metrics)}`] : []),
+    ...(progress === undefined ? [] : [`So far: ${progress}`]),
   ].join('\n');
 }

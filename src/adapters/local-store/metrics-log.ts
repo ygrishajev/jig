@@ -5,10 +5,9 @@ import { z } from 'zod';
 
 import { agentRoleSchema } from '../../domain/agent-role.js';
 import { stepLocationSchema } from '../../domain/events.js';
+import { type MetricRecord, type MetricsSummary, summarizeMetrics } from '../../domain/metrics.js';
 import { outcomeTypeSchema } from '../../domain/outcome.js';
 import { type RunId, runIdSchema } from '../../domain/run-id.js';
-import { type MetricRecord, summarizeMetrics } from '../../observers/metrics.js';
-import type { MetricsSummary } from '../../ports/run-records.js';
 import { MetricsLogCorrupt } from '../../ports/run-state-failures.js';
 import { stateDirectory } from './run-paths.js';
 
