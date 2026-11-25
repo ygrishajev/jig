@@ -20,7 +20,7 @@ paths:
 
 ## Target and current layout
 
-`startOrResumeRun`, `readRunStatus`, `listPresets`, `initRepository`, `buildSandboxImage` and `implementGithubIssue` in `src/app/api.ts` are container-free and take typed input (`{ runId: RunId }`, `{ run: { resume: RunId } }`, `{ useAgent: boolean }`, `{ issueNumber: number }`); the run command reads its request file or standard input through supplied `RequestInputs` before calling the operation. Composition captures the environment; the operation that needs a value parses it with the owner's schema, as `implementGithubIssue` does the GitHub settings through `src/config/github-settings.ts`. The examples follow [`docs/specs/application-boundaries.md`](../../docs/specs/application-boundaries.md).
+`startOrResumeRun`, `readRunStatus`, `listPresets`, `initRepository`, `buildSandboxImage` and `implementGithubIssue` in `src/app/api.ts` take typed input (`{ runId: RunId }`, `{ run: { resume: RunId } }`, `{ useAgent: boolean }`, `{ issueNumber: number }`); the run command reads its request file or standard input through supplied `RequestInputs` before calling the operation. Composition captures the environment; the operation that needs a value parses it with the owner's schema, as `implementGithubIssue` does the GitHub settings through `src/config/github-settings.ts`. The examples follow [`docs/specs/application-boundaries.md`](../../docs/specs/application-boundaries.md).
 
 ## Examples
 

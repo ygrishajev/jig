@@ -81,19 +81,19 @@ agent calls; it is excluded from `npm test`, `npm run test:integration` and `npm
 Explore the [interactive architecture map](docs/architecture.html) for module relationships
 and run flows. Download and open it in a browser; GitHub displays HTML as source.
 
-| Directory          | Responsibility                                                      |
-| ------------------ | ------------------------------------------------------------------- |
-| `src/composition/` | The `jig` executable: composes the CLI and starts it.               |
-| `src/cli/`         | Commands and input parsing.                                         |
-| `src/app/`         | Public operations, lifecycle, workflow assembly, and the container. |
-| `src/config/`      | Configuration schemas, defaults, presets, and policy.               |
-| `src/domain/`      | State, validation, domain decisions, and business failures.         |
-| `src/failures/`    | Failure messages, panic unwrapping, and retry of `Result`s.         |
-| `src/flow/`        | Generic flow contracts, execution, and the step retry policy.       |
-| `src/steps/`       | Individual pipeline steps.                                          |
-| `src/ports/`       | Interfaces for external operations and their failures.              |
-| `src/adapters/`    | Git, containers, storage, config files, terminals, and telemetry.   |
-| `src/prompts/`     | Inputs sent to agents.                                              |
+| Directory          | Responsibility                                                          |
+| ------------------ | ----------------------------------------------------------------------- |
+| `src/composition/` | The `jig` executable: builds the runtimes, composes the CLI, starts it. |
+| `src/cli/`         | Commands and input parsing.                                             |
+| `src/app/`         | Public operations, lifecycle, acquisition order, workflow assembly.     |
+| `src/config/`      | Configuration schemas, defaults, presets, and policy.                   |
+| `src/domain/`      | State, validation, domain decisions, and business failures.             |
+| `src/failures/`    | Failure messages, panic unwrapping, and retry of `Result`s.             |
+| `src/flow/`        | Generic flow contracts, execution, and the step retry policy.           |
+| `src/steps/`       | Individual pipeline steps.                                              |
+| `src/ports/`       | Interfaces for external operations and their failures.                  |
+| `src/adapters/`    | Git, sandbox containers, storage, config files, terminals, telemetry.   |
+| `src/prompts/`     | Inputs sent to agents.                                                  |
 
 Config owns policy and defaults, including the step retry count and delay that resolve into
 `RunSettings`; domain owns `RunSettings` and the rules and stopping caps that read it. Settings
@@ -117,9 +117,11 @@ adapters, config, observers, ports, domain and failures, and no other production
 composition. Adapters cannot import app, flow, steps, cli or composition.
 A file under any directory not listed in the code map fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
 Only cli and composition import `src/app/`. Everywhere outside app and composition, specs
-included, app is reached only through `src/app/api.ts`; the public entry imports no adapter or
-observer, and production app has no type-only import of either, so an app contract names a port or
-an app type instead. Tooling and helpers outside `src/` may import any app module.
+included, app is reached only through `src/app/api.ts`. Production app imports no adapter, observer
+or CLI module in any form — value, type-only, re-export or dynamic import — so an app contract
+names a port or an app type and composition hands the implementation in; app specs may import
+adapters and composition wiring. Only adapters, observers and composition import Pino or
+OpenTelemetry. Tooling and helpers outside `src/` may import any app module.
 
 `src/app/api.ts` is the application's public entry. `jig status` and `jig presets` call its
 operations: `readRunStatus` and `listPresets` take the context composition captured and narrow
@@ -144,9 +146,15 @@ when it panics, the first panic propagates as thrown while a cleanup that fails 
 is logged, and the cleanup rule of `reportCleanup` applies. A run
 releases its sandbox session, then its scope, then telemetry, then the lock. Stores are built by
 `src/adapters/run-store/repository-run-stores.ts` behind `RunStoreCatalog` in
-`src/ports/run-store.ts`, which also loads and checks a custom store module. Composition binds the
-run's runtime to `openRunRuntime` in `src/app/container.ts`, which still builds it with Awilix until
-spike #49 records the construction mechanism.
+`src/ports/run-store.ts`, which also loads and checks a custom store module. Composition builds the
+run's runtime with explicit factories: `runRuntimeFactory` in `src/composition/run-runtime.ts`
+constructs the adapters, and opening a runtime opens no sandbox, image or run log. When the run asks
+for its scope, `acquireRunScope` in `src/app/run-scope.ts` decides the order over parts composition
+supplies: the run's reporting (its log, metrics and observed events, wired in
+`src/composition/observed-events.ts`), the sandbox start retried under `transientRetryPolicy`,
+then the workspace, and the `EngineDependencies` built from them; a panic part-way releases what
+was opened. Each run gets its own events, metrics and workspace, while the console log is shared;
+a run's log file stays open for the life of the process.
 
 `jig init` and `jig build` call `initRepository` and `buildSandboxImage` from the same entry; the
 handler in `src/cli/commands/sandbox.ts` only parses input and prints the summary or image name.
@@ -157,8 +165,12 @@ whether to save it, through the `InitInteraction` composition supplies from
 `src/adapters/terminal/`; the starter files sit behind `StarterFiles` in
 `src/ports/starter-files.ts`, and agent credentials and the owner-only `.jig/.env` behind
 `AgentCredentials`. Agents run only on a session `withThrowawaySandbox` opens on its own branch,
-closes and removes. Composition binds `openSandboxRuntime` in `src/app/container.ts`, which still
-builds it with Awilix until #49.
+closes and removes. Composition builds it with `sandboxRuntimeFactory` in
+`src/composition/sandbox-runtime.ts`: each `sandboxFor` captures the config and environment it is
+given and shares the runtime's console log. `ensureSandboxImage` in `src/app/sandbox-image.ts`
+decides what to rebuild over the `SandboxImageRecipe` and `SandboxImages` ports in
+`src/ports/sandbox-images.ts`; `src/adapters/sandbox-image/repository-image-recipe.ts` reads the
+Dockerfile, the host user, the agents' packages, the image names and the labels.
 
 `jig github implement` calls `implementGithubIssue` from the same entry. The handler in
 `src/cli/commands/github.ts` only parses the issue number and options and describes the outcome.

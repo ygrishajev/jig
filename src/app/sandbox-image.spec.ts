@@ -7,22 +7,26 @@ import { describe, expect, it } from 'vitest';
 
 import { aJigConfig, everyStepOn } from '../../tests/support/builders.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
-import { DOCKERFILE, LABELS, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
+import { unwrap } from '../../tests/support/unwrap.js';
+import { DOCKERFILE, SANDBOX_DIRECTORY } from '../adapters/sandbox-image/image-recipe.js';
+import {
+  baseImageName,
+  RepositoryImageRecipe,
+} from '../adapters/sandbox-image/repository-image-recipe.js';
 import { ConfigInvalid } from '../config/errors.js';
 import { SandboxPreparationInvalid } from '../ports/agent-session.js';
 import {
   ImageBuildFailed,
   type ImageBuildSpec,
+  type ImageStamp,
   type SandboxImages,
 } from '../ports/sandbox-images.js';
 import {
   type AgentNeeded,
   type AgentUpdatePolicy,
   agentVersion,
-  baseImageName,
   ensureSandboxImage,
   planImageBuild,
-  sandboxImageName,
 } from './sandbox-image.js';
 
 class FakeSandboxImages implements SandboxImages {
@@ -116,13 +120,13 @@ describe('ensureSandboxImage', () => {
     expect(images.built.map((spec) => spec.tag)).toEqual([baseImageName(image), image]);
   });
 
-  it('builds both layers for the host user', async () => {
-    const { ensure, images } = await setup({});
+  it("builds both layers with the recipe's build arguments", async () => {
+    const { ensure, images, recipe } = await setup({});
 
     await ensure();
 
-    const hostUser = { AGENT_UID: process.getuid?.(), AGENT_GID: process.getgid?.() };
-    expect(images.built.map((spec) => spec.buildArgs)).toEqual([hostUser, hostUser]);
+    const { buildArgs } = unwrap(await recipe.base());
+    expect(images.built.map((spec) => spec.buildArgs)).toEqual([buildArgs, buildArgs]);
   });
 
   it('does not ask the registry when agent updates are off, unless asked to pull agents', async () => {
@@ -135,7 +139,7 @@ describe('ensureSandboxImage', () => {
     expect(lookups()).toBe(1);
   });
 
-  it('asks for jig init when the repository has no sandbox Dockerfile', async () => {
+  it('builds nothing when the repository has no sandbox Dockerfile', async () => {
     const { ensure, images, removeDockerfile } = await setup({});
     await removeDockerfile();
 
@@ -189,13 +193,14 @@ describe('ensureSandboxImage', () => {
     const fixedLatest = faker.system.semver();
     const latestVersion = input.latest ?? (() => fixedLatest);
     const images = new FakeSandboxImages();
+    const recipe = new RepositoryImageRecipe(repoRoot, config);
     let lookups = 0;
     const ensure = (options: { pullAgents?: boolean } = {}) =>
       ensureSandboxImage(
         {
-          repoRoot,
           config,
           images,
+          recipe,
           latestVersions: async (packages) => {
             lookups++;
             return Object.fromEntries(packages.map((npmPackage) => [npmPackage, latestVersion()]));
@@ -207,7 +212,8 @@ describe('ensureSandboxImage', () => {
     return {
       ensure,
       images,
-      image: sandboxImageName(repoRoot, config),
+      recipe,
+      image: recipe.image,
       writeDockerfile,
       removeDockerfile,
       lookups: () => lookups,
@@ -217,14 +223,14 @@ describe('ensureSandboxImage', () => {
 
 describe('planImageBuild', () => {
   it('builds everything when there is no image yet', () => {
-    expect(plan({ labels: undefined }).action).toBe('all');
+    expect(plan({ installed: undefined }).action).toBe('all');
   });
 
   it('builds everything when the Dockerfile changed', () => {
-    const { labels } = installed({ claude: version() });
+    const { stamp } = installed({ claude: version() });
 
     expect(
-      plan({ labels, dockerfileHash: faker.string.hexadecimal({ length: 16 }) }),
+      plan({ installed: stamp, dockerfileHash: faker.string.hexadecimal({ length: 16 }) }),
     ).toMatchObject({
       action: 'all',
       reason: 'the sandbox Dockerfile changed',
@@ -233,20 +239,21 @@ describe('planImageBuild', () => {
 
   it('builds nothing when the Dockerfile, agents and versions all match', () => {
     const current = version();
-    const { labels, hash } = installed({ claude: current });
+    const { stamp, hash } = installed({ claude: current });
 
     expect(
-      plan({ labels, dockerfileHash: hash, agents: [claude({ latest: current })] }).action,
+      plan({ installed: stamp, dockerfileHash: hash, agents: [claude({ latest: current })] })
+        .action,
     ).toBe('none');
   });
 
   it('rebuilds only the agent layer when a newer release is out and updates are automatic', () => {
     const current = version();
     const newer = version();
-    const { labels, hash } = installed({ claude: current });
+    const { stamp, hash } = installed({ claude: current });
 
     const result = plan({
-      labels,
+      installed: stamp,
       dockerfileHash: hash,
       agents: [claude({ latest: newer })],
       policy: 'auto',
@@ -261,10 +268,10 @@ describe('planImageBuild', () => {
   it('keeps the installed agent and warns when updates are only reported', () => {
     const current = version();
     const newer = version();
-    const { labels, hash } = installed({ claude: current });
+    const { stamp, hash } = installed({ claude: current });
 
     const result = plan({
-      labels,
+      installed: stamp,
       dockerfileHash: hash,
       agents: [claude({ latest: newer })],
       policy: 'warn',
@@ -288,10 +295,10 @@ describe('planImageBuild', () => {
     { case: 'nothing installed', pinned: false, policy: 'warn', latest: true, installed: false },
   ])('does not warn about a newer release for $case', (input) => {
     const current = version();
-    const { labels, hash } = installed(input.installed ? { claude: current } : {});
+    const { stamp, hash } = installed(input.installed ? { claude: current } : {});
 
     const result = plan({
-      labels: input.installed ? labels : undefined,
+      installed: input.installed ? stamp : undefined,
       dockerfileHash: hash,
       agents: [
         claude({
@@ -307,10 +314,10 @@ describe('planImageBuild', () => {
 
   it('does not warn when the latest release is the one installed', () => {
     const current = version();
-    const { labels, hash } = installed({ claude: current });
+    const { stamp, hash } = installed({ claude: current });
 
     const result = plan({
-      labels,
+      installed: stamp,
       dockerfileHash: hash,
       agents: [claude({ latest: current })],
       policy: 'warn',
@@ -323,10 +330,10 @@ describe('planImageBuild', () => {
     const claudeVersion = version();
     const opencodeVersion = version();
     const newer = `${claudeVersion}-next`;
-    const { labels, hash } = installed({ claude: claudeVersion, opencode: opencodeVersion });
+    const { stamp, hash } = installed({ claude: claudeVersion, opencode: opencodeVersion });
 
     const result = plan({
-      labels,
+      installed: stamp,
       dockerfileHash: hash,
       agents: [
         claude({ latest: newer }),
@@ -342,10 +349,10 @@ describe('planImageBuild', () => {
 
   it('installs a pinned version whatever the latest release is', () => {
     const pinned = version();
-    const { labels, hash } = installed({ claude: version() });
+    const { stamp, hash } = installed({ claude: version() });
 
     const result = plan({
-      labels,
+      installed: stamp,
       dockerfileHash: hash,
       agents: [claude({ pinned, latest: version() })],
       policy: 'auto',
@@ -356,10 +363,10 @@ describe('planImageBuild', () => {
 
   it('rebuilds the agent layer when the config starts using another agent', () => {
     const current = version();
-    const { labels, hash } = installed({ claude: current });
+    const { stamp, hash } = installed({ claude: current });
 
     const result = plan({
-      labels,
+      installed: stamp,
       dockerfileHash: hash,
       agents: [
         claude({ latest: current }),
@@ -372,32 +379,33 @@ describe('planImageBuild', () => {
 
   it('keeps what is installed when the registry could not be reached', () => {
     const current = version();
-    const { labels, hash } = installed({ claude: current });
+    const { stamp, hash } = installed({ claude: current });
 
     expect(
-      plan({ labels, dockerfileHash: hash, agents: [claude({ latest: undefined })] }).action,
+      plan({ installed: stamp, dockerfileHash: hash, agents: [claude({ latest: undefined })] })
+        .action,
     ).toBe('none');
   });
 
-  it('labels the image so that planning again against it builds nothing', () => {
+  it('stamps the image so that planning again against it builds nothing', () => {
     const dockerfileHash = faker.string.hexadecimal({ length: 16 });
     const agents = [
       claude({ latest: version() }),
       { name: 'opencode', npmPackage: 'opencode-ai', latest: version() },
     ];
-    const first = plan({ labels: undefined, dockerfileHash, agents });
+    const first = plan({ installed: undefined, dockerfileHash, agents });
 
-    expect(plan({ labels: first.labels, dockerfileHash, agents }).action).toBe('none');
+    expect(plan({ installed: first.stamp, dockerfileHash, agents }).action).toBe('none');
   });
 
   function plan(input: {
-    labels: Record<string, string> | undefined;
+    installed: ImageStamp | undefined;
     dockerfileHash?: string;
     agents?: AgentNeeded[];
     policy?: AgentUpdatePolicy;
   }) {
     return planImageBuild({
-      labels: input.labels,
+      installed: input.installed,
       dockerfileHash: input.dockerfileHash ?? faker.string.hexadecimal({ length: 16 }),
       agentsNeeded: input.agents ?? [claude({ latest: version() })],
       policy: input.policy ?? 'auto',
@@ -439,16 +447,6 @@ describe('agentVersion', () => {
   });
 });
 
-describe('baseImageName', () => {
-  it('derives the agent-free image from the sandbox image name', () => {
-    const repo = faker.word.noun();
-
-    expect(baseImageName(`sandcastle:${repo}`)).toBe(`sandcastle:${repo}-base`);
-    expect(baseImageName(`localhost:5000/${repo}`)).toBe(`localhost:5000/${repo}:base`);
-    expect(baseImageName(repo)).toBe(`${repo}:base`);
-  });
-});
-
 interface QuietCase {
   case: string;
   pinned: boolean;
@@ -465,14 +463,12 @@ function claude(input: { pinned?: string; latest?: string }): AgentNeeded {
   return { name: 'claude', npmPackage: '@anthropic-ai/claude-code', ...input };
 }
 
-function installed(versions: Record<string, string>) {
+function installed(agentVersions: Record<string, string>) {
   const hash = faker.string.hexadecimal({ length: 16 });
-  const labels = {
-    [LABELS.dockerfileHash]: hash,
-    [LABELS.agents]: Object.keys(versions).sort().join(','),
-    [LABELS.agentVersions]: Object.entries(versions)
-      .map(([name, value]) => `${name}=${value}`)
-      .join(','),
+  const stamp: ImageStamp = {
+    dockerfileHash: hash,
+    agents: Object.keys(agentVersions),
+    agentVersions,
   };
-  return { labels, hash };
+  return { stamp, hash };
 }

@@ -63,13 +63,6 @@ const noIntegrationSpec = {
     'This layer reaches git and processes only through ports: test it in a unit spec on fakes.',
 };
 
-/** awilix wires the app in `src/app/`; everything else receives what it needs. */
-const awilixOnlyInApp = {
-  name: 'awilix',
-  allowTypeImports: true,
-  message: 'awilix is used only in src/app/.',
-};
-
 /** `.claude/rules/testing-conventions.md`: every external call lives in an adapter. */
 const externalCallsInAdapters = [
   'fs',
@@ -167,18 +160,13 @@ export default tseslint.config(
     rules: { 'no-restricted-syntax': ['error', noDoubleCast, noThrow, noCommanderParsing] },
   },
   {
-    files: ['src/**/*.ts'],
-    ignores: ['src/app/**', 'src/**/*.spec.ts'],
-    rules: { '@typescript-eslint/no-restricted-imports': ['error', { paths: [awilixOnlyInApp] }] },
-  },
-  {
     files: ['src/domain/**/*.ts', 'src/flow/**/*.ts', 'src/steps/**/*.ts'],
     ignores: ['src/**/*.spec.ts'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
-          paths: [awilixOnlyInApp, ...externalCallsInAdapters],
+          paths: externalCallsInAdapters,
           patterns: [
             {
               group: ['@ai-hero/sandcastle/*'],

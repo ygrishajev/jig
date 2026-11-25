@@ -5,8 +5,8 @@ import { SandboxPreparationInvalid } from '../../ports/agent-session.js';
 import {
   agentLayerDockerfile,
   BASE_DOCKERFILE,
-  formatAgentVersions,
   imageLabels,
+  imageStamp,
   LABELS,
   parseAgentVersions,
   recipeHash,
@@ -83,29 +83,34 @@ describe('image recipe', () => {
   });
 
   it('labels the image the same whatever order the agents come in', () => {
-    const agents = someAgents();
-    const hash = faker.string.hexadecimal({ length: 16, casing: 'lower', prefix: '' });
+    const [opencode, claude] = someAgents();
+    const dockerfileHash = faker.string.hexadecimal({ length: 16, casing: 'lower', prefix: '' });
+    const agentVersions = { opencode: opencode.version, claude: claude.version };
 
-    const labels = imageLabels(hash, agents);
+    const labels = imageLabels({ dockerfileHash, agents: ['opencode', 'claude'], agentVersions });
 
-    expect(imageLabels(hash, [...agents].reverse())).toEqual(labels);
+    expect(imageLabels({ dockerfileHash, agents: ['claude', 'opencode'], agentVersions })).toEqual(
+      labels,
+    );
     expect(labels).toEqual({
-      [LABELS.dockerfileHash]: hash,
+      [LABELS.dockerfileHash]: dockerfileHash,
       [LABELS.agents]: 'claude,opencode',
-      [LABELS.agentVersions]: `claude=${agents[1].version},opencode=${agents[0].version}`,
+      [LABELS.agentVersions]: `claude=${claude.version},opencode=${opencode.version}`,
     });
   });
 
-  it('reads back the agent versions it wrote into the label', () => {
-    const agents = [
-      { name: 'opencode', npmPackage: 'opencode-ai', version: faker.system.semver() },
-      { name: 'claude', npmPackage: '@anthropic-ai/claude-code', version: faker.system.semver() },
-    ];
+  it('reads back what it labelled the image with', () => {
+    const stamp = {
+      dockerfileHash: faker.string.hexadecimal({ length: 16 }),
+      agents: ['claude', 'opencode'],
+      agentVersions: { claude: faker.system.semver(), opencode: faker.system.semver() },
+    };
 
-    expect(parseAgentVersions(formatAgentVersions(agents))).toEqual({
-      claude: agents[1].version,
-      opencode: agents[0].version,
-    });
+    expect(imageStamp(imageLabels(stamp))).toEqual(stamp);
+  });
+
+  it('reads an image without labels as one that installs no agents', () => {
+    expect(imageStamp({})).toEqual({ dockerfileHash: undefined, agents: [], agentVersions: {} });
   });
 
   it('ignores an agent-versions entry without a name or a version', () => {

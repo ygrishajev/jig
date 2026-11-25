@@ -1,10 +1,11 @@
+import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 
 import type { JigOperations } from '../app/api.js';
 import type { RunCommandIo } from '../cli/commands/run.js';
 import { buildCli, packageVersion } from '../cli/main.js';
-import { buildJigCli } from './main.js';
+import { buildJigCli, runJigExecutable } from './main.js';
 
 describe('buildJigCli', () => {
   it('includes every core command alongside the GitHub command', () => {
@@ -31,6 +32,20 @@ describe('buildJigCli', () => {
       expect.objectContaining({ code: 'commander.version', exitCode: 0 }),
     );
     expect(printed().trim()).toBe(packageVersion());
+  });
+
+  it('flushes the output only after the command has released what it built', async () => {
+    const order: string[] = [];
+    const program = new Command().action(async () => {
+      await Promise.resolve();
+      order.push('released');
+    });
+
+    await runJigExecutable(['node', 'jig'], program, async () => {
+      order.push('flushed');
+    });
+
+    expect(order).toEqual(['released', 'flushed']);
   });
 
   function setup() {

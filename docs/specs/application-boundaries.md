@@ -4,8 +4,9 @@ Date: 2026-11-21
 
 Status: Finalized for implementation planning after specification review. This document specifies
 the target architecture; it does not describe the currently implemented layout. The construction
-mechanism remains deferred to spike #49. Its recorded outcome gates container-specific planning,
-not the architectural boundaries or unrelated ownership work.
+mechanism is decided: composition builds dependencies with explicit factories and app-owned
+lifecycle wrappers, without a dependency-injection container (see
+[Composition](#composition)).
 
 ## Intent
 
@@ -127,8 +128,8 @@ a reduction in caller complexity. Simplicity and correct boundaries are both acc
   owning behavior adds navigation without reducing what callers must understand.
 - Preserve real resource lifetimes and deferred construction where needed, without introducing
   generalized scope management for hypothetical future transports.
-- Do not treat dependency injection as synonymous with a dependency injection container. The
-  construction mechanism is evaluated separately from the architectural boundaries in spike #49.
+- Do not treat dependency injection as synonymous with a dependency injection container. jig
+  injects its dependencies through explicit factories; it uses no container.
 - Each new abstraction should make actual dependencies, policy or lifecycle behavior easier to
   understand. Reducing file or line counts alone is not sufficient evidence of lower complexity.
 
@@ -212,7 +213,7 @@ Every existing operation is reachable through this surface: start/resume a run, 
 initialize a repository, build its sandbox image, list presets, and implement a GitHub issue.
 Use cases need not all share identical preparation or a single interface.
 
-Inputs and outputs expose no Awilix types, cradles, concrete stores, Pino logger, OpenTelemetry tracer,
+Inputs and outputs expose no runtime factory or wiring, concrete stores, Pino logger, OpenTelemetry tracer,
 Commander command, Node process/environment object, or terminal-adapter implementation. Public
 contracts may name domain and portable port types. Do not infer exported API types from concrete
 factories when doing so leaks their implementation types.
@@ -293,21 +294,14 @@ for resources whose lifetime is controlled by app. It does not implement resume,
 required-store, credential-consent or publication decisions. Those remain with their owning
 application, domain or capability policy even when composition installs the implementation.
 
-The construction mechanism is unresolved pending spike #49, which compares current Awilix usage,
-Awilix confined to composition, and explicit factories/lifecycle wrappers on equivalent behavior.
-Explicit wiring is a working hypothesis to evaluate, not a condition for accepting the architecture.
-Both alternatives must be compared on equivalent boundaries and actual resource lifetimes.
-Do not remove or retain the dependency solely to satisfy this specification.
-If retained, restrict it to composition, replacing the app-only rule. If removed, do not build a
-replacement registry or resolver. In either case, application wrappers own lifecycle policy through
-supplied capabilities; domain, steps, flow, and use cases do not receive a container or learn
-registration keys, resolution or scope APIs.
-
-Spike #49 does not block finalizing this spec or planning mechanism-independent work. Complete the
-spike before planning container-specific implementation details or removing/rewriting container
-management. Record its decision and rationale in the affected implementation issue. If its evidence
-conflicts with an architectural requirement, propose a focused spec revision instead of silently
-changing the boundary. Apply equivalent release-order requirements when there is no container scope.
+Composition constructs dependencies with explicit factories; Awilix is removed and no replacement
+registry or resolver exists. The wiring is a handful of constructors, and the container's scopes
+registered no disposers, so every lifetime that matters was already owned by the application's
+lifecycle wrappers; the container added resolution indirection and cradle types without managing a
+lifetime. Application wrappers own lifecycle policy through supplied capabilities: app decides the
+order a run's scope is acquired and released in over parts composition supplies, and domain, steps,
+flow and use cases receive no factory or wiring. Building a runtime opens no sandbox, image or run
+log; the release-order requirements apply without a container scope.
 
 Update package `bin.jig`, `main`, `scripts.dev`, built-executable references, and path-sensitive tests.
 Keep custom run-store module loading supported: adapter code validates the module and its returned
@@ -444,7 +438,7 @@ Enforce public app access by path: CLI may import operations/types/schemas from 
 other app paths remain private to app and composition. Public entries may export the real operation
 implementations; do not force a declaration-only API or a parallel forwarding layer. Exported types
 and schemas must still avoid concrete infrastructure and container details. Check external-package
-restrictions as well as source paths: if Awilix is retained it belongs only in composition;
+restrictions as well as source paths: no dependency-injection container is used;
 Pino/OpenTelemetry belong in concrete reporting/wiring areas; application and workflow code use
 ports. Keep terminal process interaction in CLI/adapters/startup.
 
@@ -461,7 +455,7 @@ and package restrictions; do not build another dependency analyzer.
 ### House rules and review
 
 Update the existing applicable rules, including the composition and error rules. Use concrete
-examples: CLI does not receive a cradle; defaults are not domain rules; capability failures do not
+examples: CLI does not receive the wiring; defaults are not domain rules; capability failures do not
 belong in domain merely because multiple modules return them; composition only wires.
 
 Require PRs changing ownership to state the owner, why the concept belongs there, and whether the
@@ -476,7 +470,7 @@ as `DEFAULT_*` or prose presence tests.
    including type-only, re-export, literal dynamic, nested and disconnected examples. Reintroduced
    integrations fail ownership. An app/CLI leak must fail even without an incidental cycle.
 2. Each operation can be exercised through the application API with supplied ports and without
-   importing CLI, constructing Awilix, or reaching an adapter implementation. Existing behavior
+   importing CLI, constructing a runtime factory, or reaching an adapter implementation. Existing behavior
    tests continue to exercise real domain/step logic through fakes; Git tests use temporary repos.
 3. Exercise preparation failure before sandbox start, preset cancellation, invalid file/stdin input,
    init cancellation/save consent, run-lock refusal, work failure with cleanup failure, successful
@@ -495,9 +489,9 @@ as `DEFAULT_*` or prose presence tests.
    application-operation signatures; a new operation requires only layers with distinct work to do.
    Assess these through existing behavior tests and review examples rather than speculative
    frameworks, source-text assertions or creating unused implementations.
-8. The container decision may remain deferred while the architecture is approved. Before any
-   container-specific implementation slice is planned, #49 has a recorded decision grounded in
-   the same boundaries and lifecycle guarantees. Test those guarantees independently of the choice.
+8. Construction uses explicit factories, grounded in the same boundaries and lifecycle
+   guarantees; those guarantees are tested in the app's acquisition specs, independently of the
+   factories that supply the parts.
 
 From the repository root with the pinned Node runtime, implementation slices run the relevant
 behavior tests and required validation. The final integrated change passes:
@@ -533,8 +527,8 @@ must contain its own context, acceptance checks, verification commands and safet
 Sequence shared-file changes explicitly; do not run competing issues over the same container,
 error registry or dependency configuration. Reconcile #47 and #48 with the plan and identify which
 parts are superseded, retained or deferred. Do not close either issue merely because the spec exists.
-Keep #49 as the construction-mechanism spike. Its outcome gates container-specific implementation
-planning, not approval of this architecture or unrelated ownership work. Review the error/helper
+The construction mechanism is explicit factories in composition; no container-specific work
+remains. Review the error/helper
 inventory during planning before prescribing a new shared module or distributing error refactors
 across issues with conflicting contracts.
 
@@ -544,10 +538,6 @@ constraints are not. Generic flow extraction and new retry overrides do not bloc
 
 ## Out of scope
 
-- **Construction mechanism:** Spike #49 decides whether composition uses Awilix or explicit
-  factories. Both must meet the boundaries and lifecycle guarantees in this spec. Its recorded
-  outcome gates container-specific implementation planning, not architecture review or unrelated
-  ownership work.
 - **New retry settings:** Operator overrides tracked in #48 remain separate behavior work.
   This refactor moves default ownership and preserves existing values and retry behavior.
 - **Generic flow extraction:** Flow remains jig-specific. This refactor does not remove its

@@ -41,16 +41,52 @@ describe('npm run lint:dependencies', () => {
     );
   }, 30_000);
 
-  it('accepts app constructing an adapter, and specs reaching app through its entry', async () => {
+  it('rejects production app reaching an adapter, observer or the CLI in any form', async () => {
     const { run } = await setup({
+      'app/api.ts': 'export const api = 1;',
+      'app/direct.ts': importing('../adapters/b.js'),
+      'app/nested/deeper.ts': importing('../../observers/b.js'),
+      'app/type-only.ts': "import type { B } from '../adapters/b.js'; export type A = B;",
+      'app/re-export.ts': "export { b } from '../observers/b.js';",
+      'app/dynamic.ts': "export const a = () => import('../adapters/b.js');",
+      'app/command.ts': importing('../cli/b.js'),
+      'adapters/b.ts': target,
+      'observers/b.ts': target,
+      'cli/b.ts': target,
+    });
+
+    const result = await run();
+
+    expect(result.exitCode).not.toBe(0);
+    for (const from of ['direct', 'nested/deeper', 'type-only', 're-export', 'dynamic', 'command'])
+      expect(result.all).toContain(`error app-imports-no-infrastructure: src/app/${from}.ts`);
+    for (const rule of cycleRules) expect(result.all).not.toContain(`error ${rule}`);
+  }, 30_000);
+
+  it('accepts composition wiring adapters, observers and logging into app, and app specs reaching them', async () => {
+    const { run } = await setup({
+      'ports/b.ts': 'export interface Port { readonly size: number }',
       'app/api.ts': "export { size } from './operation.js';",
       'app/operation.ts': [
-        "import { Adapter } from '../adapters/b.js';",
-        'export function size(): number { return new Adapter().size; }',
+        "import type { Port } from '../ports/b.js';",
+        'export function size(port: Port): number { return port.size; }',
       ].join('\n'),
-      'app/operation.spec.ts': "import { size } from './operation.js'; export const a = size;",
-      'cli/a.spec.ts': "import { size } from '../app/api.js'; export const a = size;",
       'adapters/b.ts': adapter,
+      'observers/b.ts': target,
+      'composition/main.ts': [
+        "import { pino } from 'pino';",
+        "import { size } from '../app/api.js';",
+        "import { Adapter } from '../adapters/b.js';",
+        "import { b } from '../observers/b.js';",
+        'export const wired = () => [size(new Adapter()), b, pino];',
+      ].join('\n'),
+      'app/operation.spec.ts': [
+        "import { Adapter } from '../adapters/b.js';",
+        "import { wired } from '../composition/main.js';",
+        "import { size } from './operation.js';",
+        'export const a = [size(new Adapter()), wired];',
+      ].join('\n'),
+      'cli/a.spec.ts': "import { size } from '../app/api.js'; export const a = size;",
     });
 
     const result = await run();
@@ -81,7 +117,12 @@ describe('npm run lint:dependencies', () => {
     );
     await writeFile(
       path.join(cwd, 'package.json'),
-      JSON.stringify({ type: 'module', scripts, devDependencies: { vitest: '*' } }),
+      JSON.stringify({
+        type: 'module',
+        scripts,
+        dependencies: { pino: '*' },
+        devDependencies: { vitest: '*' },
+      }),
     );
     await writeFile(
       path.join(cwd, 'tsconfig.json'),
@@ -133,10 +174,11 @@ const brokenRules = [
   broken('app-internals-are-private-to-app-and-composition', 'cli/a.ts', '../app/b.js'),
   broken('app-public-entry-exposes-no-infrastructure', 'app/api.ts', '../adapters/b.js'),
   {
-    rule: 'app-contracts-name-no-infrastructure-types',
+    rule: 'app-imports-no-infrastructure',
     from: 'app/a.ts',
     source: "import type { B } from '../observers/b.js'; export type A = B;",
   },
+  broken('logging-and-tracing-libraries-stay-in-reporting-and-wiring', 'steps/c.ts', 'pino'),
   { rule: 'unowned-file-is-disconnected', from: 'unknown/alone.ts', source: target },
   broken('unowned-file-imports', 'unknown/a.ts', '../domain/b.js'),
   broken('unowned-file-is-imported', 'domain/c.ts', '../unknown/b.js'),

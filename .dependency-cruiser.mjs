@@ -34,6 +34,8 @@ const failuresImporters = [
   'observers',
   'steps',
 ];
+/** The logging and tracing libraries only concrete reporting and wiring may import. */
+const reportingLibraries = '(^|/)node_modules/(pino|pino-pretty|@opentelemetry/[^/]+)/';
 const compositionSourceAllowlist =
   '^src/(composition|cli|app|adapters|config|observers|ports|domain|failures)/';
 
@@ -200,14 +202,23 @@ export default {
       to: { path: '^src/(adapters|observers)/' },
     },
     {
-      name: 'app-contracts-name-no-infrastructure-types',
+      name: 'app-imports-no-infrastructure',
       comment:
-        'A type-only import from app names an adapter or observer type in an app contract. App ' +
-        'names the port or its own type instead. Value imports in src/app/container.ts remain ' +
-        'the construction that spike #49 decides.',
+        'App decides; composition builds. Production app imports no adapter, observer or CLI ' +
+        'module in any form (value, type-only, re-export or dynamic import) and names the port ' +
+        'or its own type instead. Composition constructs the implementations and hands them in.',
       severity: 'error',
       from: { path: '^src/app/', pathNot: testFilePattern },
-      to: { path: '^src/(adapters|observers)/', dependencyTypes: ['type-only'] },
+      to: { path: '^src/(adapters|observers|cli)/' },
+    },
+    {
+      name: 'logging-and-tracing-libraries-stay-in-reporting-and-wiring',
+      comment:
+        'Pino and OpenTelemetry are concrete reporting: only adapters, observers and composition ' +
+        'import them. Every other owner reports through the logs and telemetry ports.',
+      severity: 'error',
+      from: { path: '^src/', pathNot: ['^src/(adapters|observers|composition)/', testFilePattern] },
+      to: { path: reportingLibraries },
     },
     {
       name: 'no-orphans',

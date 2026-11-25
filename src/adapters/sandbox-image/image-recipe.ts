@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 import { createHash } from 'node:crypto';
 
 import { SandboxPreparationInvalid } from '../../ports/agent-session.js';
-import type { AgentInstall } from '../../ports/sandbox-images.js';
+import type { AgentInstall, ImageStamp } from '../../ports/sandbox-images.js';
 
 export const SANDBOX_DIRECTORY = '.sandcastle';
 
@@ -36,7 +36,7 @@ export const BASE_DOCKERFILE = [
 ].join('\n');
 
 /** The layer jig owns: the agent CLIs the config uses, at exact versions, on top of the base image. */
-export function agentLayerDockerfile(baseImage: string, agents: AgentInstall[]): string {
+export function agentLayerDockerfile(baseImage: string, agents: readonly AgentInstall[]): string {
   const packages = agents.map((agent) => `${agent.npmPackage}@${agent.version}`).join(' ');
   return [
     `FROM ${baseImage}`,
@@ -79,18 +79,12 @@ export function recipeHash(dockerfile: string, uid: number, gid: number): string
   return createHash('sha256').update(`${uid}:${gid}\n${dockerfile}`).digest('hex').slice(0, 16);
 }
 
-/** What the sandbox image is labelled with, and what a later run compares against to decide what to rebuild. */
-export function imageLabels(
-  dockerfileHash: string,
-  agents: AgentInstall[],
-): Record<string, string> {
+/** What the sandbox image is labelled with, and what a later run reads back to decide what to rebuild. */
+export function imageLabels(stamp: ImageStamp): Record<string, string> {
   return {
-    [LABELS.dockerfileHash]: dockerfileHash,
-    [LABELS.agents]: agents
-      .map((agent) => agent.name)
-      .sort()
-      .join(','),
-    [LABELS.agentVersions]: formatAgentVersions(agents),
+    ...(stamp.dockerfileHash !== undefined && { [LABELS.dockerfileHash]: stamp.dockerfileHash }),
+    [LABELS.agents]: [...stamp.agents].sort().join(','),
+    [LABELS.agentVersions]: formatAgentVersions(stamp.agentVersions),
   };
 }
 
@@ -100,11 +94,21 @@ export const LABELS = {
   agentVersions: 'jig.agent-versions',
 } as const;
 
-export function formatAgentVersions(agents: AgentInstall[]): string {
-  return [...agents]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((agent) => `${agent.name}=${agent.version}`)
+function formatAgentVersions(versions: Readonly<Record<string, string>>): string {
+  return Object.entries(versions)
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([name, version]) => `${name}=${version}`)
     .join(',');
+}
+
+/** Reads back what `imageLabels` wrote; an image without them installs nothing jig knows of. */
+export function imageStamp(labels: Record<string, string>): ImageStamp {
+  const agents = labels[LABELS.agents];
+  return {
+    dockerfileHash: labels[LABELS.dockerfileHash],
+    agents: agents ? agents.split(',') : [],
+    agentVersions: parseAgentVersions(labels[LABELS.agentVersions]),
+  };
 }
 
 /** Reads the label `formatAgentVersions` wrote; an entry without a version counts as not installed. */

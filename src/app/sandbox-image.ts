@@ -1,34 +1,24 @@
-import { defaultImageName } from '@ai-hero/sandcastle/sandboxes/docker';
 import { Result } from 'better-result';
-import path from 'node:path';
 
-import {
-  agentLayerDockerfile,
-  imageLabels,
-  LABELS,
-  parseAgentVersions,
-  recipeHash,
-  SANDBOX_DIRECTORY,
-} from '../adapters/sandbox-image/image-recipe.js';
-import { readSandboxDockerfile } from '../adapters/sandbox-image/starter-files.js';
-import { AGENTS } from '../adapters/sandcastle/agents.js';
 import type { ConfigInvalid } from '../config/errors.js';
 import { configuredSteps, type JigConfig, type StepConfig } from '../config/load-config.js';
 import type { SandboxPreparationInvalid } from '../ports/agent-session.js';
 import type { OperationLog } from '../ports/observability.js';
-import type { AgentInstall, ImageBuildFailed, SandboxImages } from '../ports/sandbox-images.js';
+import type {
+  AgentInstall,
+  BaseImageRecipe,
+  ImageBuildFailed,
+  ImageStamp,
+  SandboxImageRecipe,
+  SandboxImages,
+} from '../ports/sandbox-images.js';
 
 export interface EnsureImageDependencies {
-  repoRoot: string;
   config: JigConfig;
   images: SandboxImages;
+  recipe: SandboxImageRecipe;
   latestVersions: (npmPackages: string[]) => Promise<Record<string, string | undefined>>;
   log: OperationLog;
-}
-
-interface ImageRecipe {
-  dockerfileHash: string;
-  buildArgs: Record<string, number>;
 }
 
 export type AgentUpdatePolicy = 'auto' | 'warn' | 'off';
@@ -44,8 +34,8 @@ export interface ImageBuildPlan {
   action: 'none' | 'agents' | 'all';
   reason: string;
   agents: AgentInstall[];
-  /** The labels the rebuilt image carries; the next plan compares an image's labels with these. */
-  labels: Record<string, string>;
+  /** What the rebuilt image records; the next plan compares an image's stamp with this one. */
+  stamp: ImageStamp;
   warnings: string[];
 }
 
@@ -58,57 +48,37 @@ export async function ensureSandboxImage(
   d: EnsureImageDependencies,
   options: { pullAgents?: boolean } = {},
 ): Promise<Result<string, ConfigInvalid | SandboxPreparationInvalid | ImageBuildFailed>> {
-  const image = sandboxImageName(d.repoRoot, d.config);
+  const { image } = d.recipe;
   if (d.config.sandboxImage) return Result.ok(image);
 
   return Result.gen(async function* () {
     const steps = yield* configuredSteps(d.config);
-    const recipe = yield* Result.await(readRecipe(d.repoRoot));
+    const base = yield* Result.await(d.recipe.base());
     const policy = options.pullAgents ? 'auto' : d.config.agentUpdates;
     const plan = planImageBuild({
-      labels: yield* Result.await(d.images.labels(image)),
-      dockerfileHash: recipe.dockerfileHash,
+      installed: yield* Result.await(installedStamp(d, image)),
+      dockerfileHash: base.dockerfileHash,
       agentsNeeded: await agentsNeeded(d, Object.values(steps), policy),
       policy,
     });
     for (const warning of plan.warnings) d.log.warn(warning);
-    if (plan.action !== 'none') {
-      yield* Result.await(buildImage(d, image, plan, recipe.buildArgs));
-    }
+    if (plan.action !== 'none') yield* Result.await(buildImage(d, plan, base));
     return Result.ok(image);
   });
 }
 
-export function sandboxImageName(repoRoot: string, config: JigConfig): string {
-  return config.sandboxImage ?? defaultImageName(repoRoot);
-}
-
-/** The image is built for the host user, so files the agent writes in the worktree stay the operator's. */
-async function readRecipe(
-  repoRoot: string,
-): Promise<Result<ImageRecipe, SandboxPreparationInvalid>> {
-  const dockerfile = await readSandboxDockerfile(repoRoot);
-  if (dockerfile.isErr()) return Result.err(dockerfile.error);
-  const uid = process.getuid?.() ?? 1000;
-  const gid = process.getgid?.() ?? 1000;
-  return Result.ok({
-    dockerfileHash: recipeHash(dockerfile.value, uid, gid),
-    buildArgs: { AGENT_UID: uid, AGENT_GID: gid },
-  });
-}
-
 /**
- * Decides what to rebuild from the image's labels: everything when the Dockerfile changed or
- * there is no image, only the agent layer when the agents or their versions changed, nothing
- * otherwise.
+ * Decides what to rebuild from what the image was built from: everything when the Dockerfile
+ * changed or there is no image, only the agent layer when the agents or their versions changed,
+ * nothing otherwise.
  */
 export function planImageBuild(input: {
-  labels: Record<string, string> | undefined;
+  installed: ImageStamp | undefined;
   dockerfileHash: string;
   agentsNeeded: AgentNeeded[];
   policy: AgentUpdatePolicy;
 }): ImageBuildPlan {
-  const installed = parseAgentVersions(input.labels?.[LABELS.agentVersions]);
+  const installed = input.installed?.agentVersions ?? {};
   const agents = input.agentsNeeded.map((agent) => ({
     name: agent.name,
     npmPackage: agent.npmPackage,
@@ -117,9 +87,9 @@ export function planImageBuild(input: {
   const warnings = input.agentsNeeded.flatMap((agent) =>
     newerReleaseWarning(agent, installed[agent.name], input.policy),
   );
-  const labels = imageLabels(input.dockerfileHash, agents);
-  const decision = rebuildDecision(input.labels, labels, versionChanges(installed, agents));
-  return { ...decision, agents, labels, warnings };
+  const stamp = stampOf(input.dockerfileHash, agents);
+  const decision = rebuildDecision(input.installed, stamp, versionChanges(installed, agents));
+  return { ...decision, agents, stamp, warnings };
 }
 
 /**
@@ -148,19 +118,38 @@ function newerReleaseWarning(
   ];
 }
 
+function stampOf(dockerfileHash: string, agents: AgentInstall[]): ImageStamp {
+  return {
+    dockerfileHash,
+    agents: agents.map((agent) => agent.name),
+    agentVersions: Object.fromEntries(agents.map((agent) => [agent.name, agent.version])),
+  };
+}
+
 function rebuildDecision(
-  installed: Record<string, string> | undefined,
-  wanted: Record<string, string>,
+  installed: ImageStamp | undefined,
+  wanted: ImageStamp,
   changedVersions: string,
 ): Pick<ImageBuildPlan, 'action' | 'reason'> {
   if (!installed) return { action: 'all', reason: 'no sandbox image yet' };
-  if (installed[LABELS.dockerfileHash] !== wanted[LABELS.dockerfileHash])
+  if (installed.dockerfileHash !== wanted.dockerfileHash)
     return { action: 'all', reason: 'the sandbox Dockerfile changed' };
-  if (installed[LABELS.agents] !== wanted[LABELS.agents])
-    return { action: 'agents', reason: `agents changed to ${wanted[LABELS.agents]}` };
-  if (installed[LABELS.agentVersions] !== wanted[LABELS.agentVersions])
+  if (agentNames(installed) !== agentNames(wanted))
+    return { action: 'agents', reason: `agents changed to ${agentNames(wanted)}` };
+  if (agentVersions(installed) !== agentVersions(wanted))
     return { action: 'agents', reason: changedVersions };
   return { action: 'none', reason: 'the sandbox image is up to date' };
+}
+
+function agentNames({ agents }: ImageStamp): string {
+  return [...agents].sort().join(',');
+}
+
+function agentVersions(stamp: ImageStamp): string {
+  return Object.entries(stamp.agentVersions)
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([name, version]) => `${name}=${version}`)
+    .join(',');
 }
 
 function versionChanges(installed: Record<string, string>, agents: AgentInstall[]): string {
@@ -170,53 +159,48 @@ function versionChanges(installed: Record<string, string>, agents: AgentInstall[
     .join(', ');
 }
 
+async function installedStamp(
+  { images, recipe }: EnsureImageDependencies,
+  image: string,
+): Promise<Result<ImageStamp | undefined, ImageBuildFailed>> {
+  const labels = await images.labels(image);
+  return labels.map((found) => found && recipe.stampOf(found));
+}
+
 async function agentsNeeded(
   d: EnsureImageDependencies,
   steps: StepConfig[],
   policy: AgentUpdatePolicy,
 ): Promise<AgentNeeded[]> {
-  const names = [...new Set(steps.map((step) => step.provider))];
-  const packages = names.map((name) => AGENTS[name].npmPackage);
-  const latest = policy === 'off' ? {} : await d.latestVersions(packages);
-  return names.map((name) => ({
+  const agents = [...new Set(steps.map((step) => step.provider))].map((name) => ({
     name,
-    npmPackage: AGENTS[name].npmPackage,
+    npmPackage: d.recipe.agentPackage(name),
     pinned: d.config.agents[name],
-    latest: latest[AGENTS[name].npmPackage],
   }));
+  const packages = agents.map((agent) => agent.npmPackage);
+  const latest = policy === 'off' ? {} : await d.latestVersions(packages);
+  return agents.map((agent) => ({ ...agent, latest: latest[agent.npmPackage] }));
 }
 
 async function buildImage(
-  d: EnsureImageDependencies,
-  image: string,
+  { images, recipe, log }: EnsureImageDependencies,
   plan: ImageBuildPlan,
-  buildArgs: Record<string, number>,
+  base: BaseImageRecipe,
 ): Promise<Result<void, ImageBuildFailed>> {
   return Result.gen(async function* () {
-    d.log.info(`building the sandbox image ${image}: ${plan.reason}`);
-    const base = baseImageName(image);
-    if (plan.action === 'all' || !(yield* Result.await(d.images.labels(base)))) {
-      yield* Result.await(
-        d.images.build({ tag: base, contextDirectory: sandboxDirectory(d.repoRoot), buildArgs }),
-      );
+    log.info(`building the sandbox image ${recipe.image}: ${plan.reason}`);
+    const { buildArgs, contextDirectory } = base;
+    if (plan.action === 'all' || !(yield* Result.await(images.labels(recipe.baseImage)))) {
+      yield* Result.await(images.build({ tag: recipe.baseImage, contextDirectory, buildArgs }));
     }
     yield* Result.await(
-      d.images.build({
-        tag: image,
-        dockerfile: agentLayerDockerfile(base, plan.agents),
+      images.build({
+        tag: recipe.image,
+        dockerfile: recipe.agentLayer(plan.agents),
         buildArgs,
-        labels: plan.labels,
+        labels: recipe.labelsFor(plan.stamp),
       }),
     );
     return Result.ok();
   });
-}
-
-export function baseImageName(image: string): string {
-  const lastSlash = image.lastIndexOf('/');
-  return image.lastIndexOf(':') > lastSlash ? `${image}-base` : `${image}:base`;
-}
-
-function sandboxDirectory(repoRoot: string): string {
-  return path.join(repoRoot, SANDBOX_DIRECTORY);
 }

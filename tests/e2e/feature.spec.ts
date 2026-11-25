@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { simpleGit } from 'simple-git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { sandboxImageName } from '../../src/app/sandbox-image.js';
+import { sandboxImageName } from '../../src/adapters/sandbox-image/repository-image-recipe.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import { runBranchFor } from '../../src/domain/run-state.js';
 import { repositoryConfig } from '../support/repository-config.js';

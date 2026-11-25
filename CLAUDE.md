@@ -42,8 +42,9 @@ Before writing a utility, check whether a commonly used package already does it 
 events, atomic writes, DI, logging, validation, parsing. Use it, and keep any wrapper thin
 enough that the library's own docs still explain the behaviour. A hand-rolled version needs a
 reason in the PR (the library does not fit, or costs more than the code it replaces).
-Current picks: awilix (DI, `src/app/` only), Node `EventEmitter`, better-result (errors, retries),
-write-file-atomic, pino, zod, simple-git, execa, commander.
+Current picks: Node `EventEmitter`, better-result (errors, retries), write-file-atomic, pino, zod,
+simple-git, execa, commander. Dependencies are wired by explicit factories in `src/composition/`;
+jig uses no DI container.
 
 ## Things that catch people out
 

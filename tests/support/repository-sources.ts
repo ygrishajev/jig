@@ -13,6 +13,7 @@ import { readCredentialsFile } from '../../src/adapters/local-store/credentials-
 import { LocalRunRecords } from '../../src/adapters/local-store/local-run-records.js';
 import { lockRun } from '../../src/adapters/local-store/run-lock.js';
 import { RepositoryRunStores } from '../../src/adapters/run-store/repository-run-stores.js';
+import { RepositoryImageRecipe } from '../../src/adapters/sandbox-image/repository-image-recipe.js';
 import { RepositoryStarterFiles } from '../../src/adapters/sandbox-image/starter-files.js';
 import { RepositoryAgentCredentials } from '../../src/adapters/sandcastle/agent-credentials.js';
 import type {
@@ -157,9 +158,9 @@ export function localSandboxRuntime(
       settings.push(requested);
       return {
         image: {
-          repoRoot,
           config: requested.config,
           images: sandbox.images,
+          recipe: new RepositoryImageRecipe(repoRoot, requested.config),
           latestVersions: sandbox.latestVersions ?? (async () => ({})),
           log: sandbox.log,
         },

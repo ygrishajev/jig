@@ -19,12 +19,12 @@ import {
   DOCKERFILE,
   SANDBOX_DIRECTORY,
 } from '../adapters/sandbox-image/image-recipe.js';
+import { sandboxImageName } from '../adapters/sandbox-image/repository-image-recipe.js';
 import { ConfigInvalid } from '../config/errors.js';
 import { RepositoryInvalid } from '../ports/git-failures.js';
 import type { OperationLog } from '../ports/observability.js';
 import { ImageBuildFailed, type SandboxImages } from '../ports/sandbox-images.js';
 import { type BuildImageInput, buildSandboxImage, type RuntimeRequest } from './api.js';
-import { sandboxImageName } from './sandbox-image.js';
 
 describe('buildSandboxImage', () => {
   it('builds the image the config names and reports it, releasing what it built', async () => {

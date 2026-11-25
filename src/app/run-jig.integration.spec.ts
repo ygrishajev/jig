@@ -1,5 +1,4 @@
 import { faker } from '@faker-js/faker';
-import { asValue } from 'awilix';
 import { panic, Result } from 'better-result';
 import { mkdir, readFile, symlink } from 'node:fs/promises';
 import path from 'node:path';
@@ -24,18 +23,22 @@ import {
   everyStepOn,
   runId,
 } from '../../tests/support/builders.js';
-import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
+import {
+  type AgentScript,
+  FakeAgentSession,
+  InMemoryPresetSource,
+} from '../../tests/support/fakes.js';
 import { openRunWorktree, sandboxCloneOf } from '../../tests/support/open-run-worktree.js';
 import { realStatusCapabilities } from '../../tests/support/repository-sources.js';
 import { createTempRepo } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { configDestination } from '../adapters/filesystem/config-source.js';
+import { configDestination, configFileSource } from '../adapters/filesystem/config-source.js';
 import { LocalRunStore } from '../adapters/local-store/local-run-store.js';
 import { MetricsLog } from '../adapters/local-store/metrics-log.js';
 import { stateDirectory } from '../adapters/local-store/run-paths.js';
-import type { OpenSessionInput } from '../adapters/sandcastle/open-session.js';
+import { runRuntimeFactory } from '../composition/run-runtime.js';
 import { parseEnvironment } from '../config/environment.js';
-import { type JigConfig } from '../config/load-config.js';
+import { type JigConfig, runSettingsFrom } from '../config/load-config.js';
 import { designReviewStage } from '../domain/design-review.js';
 import { designReviewReport } from '../domain/design-review-report.js';
 import { type RunId, runIdSchema } from '../domain/run-id.js';
@@ -48,8 +51,8 @@ import {
 import { LocalStateUnwritable } from '../ports/local-state.js';
 import { RunInProgress } from '../ports/run-state-failures.js';
 import { type SandboxImages } from '../ports/sandbox-images.js';
-import { createAppContainer, runCapabilitiesOf } from './container.js';
 import { runJig } from './run-jig.js';
+import type { RuntimeRequest } from './run-operation.js';
 import { readRunStatus } from './run-status.js';
 import type { SandboxOpenFailure } from './sandbox-runtime.js';
 
@@ -58,13 +61,13 @@ const UNREACHABLE_COLLECTOR = 'http://192.0.2.1:4318';
 
 describe('runJig', () => {
   it('starts a run from a request and stops once the work waits to be merged', async () => {
-    const { app, aRequest, agentFor, repo } = await setup();
+    const { capabilities, aRequest, agentFor, repo } = await setup();
     const id = runId();
     const agent = agentFor(id);
     scriptWholeRun(agent);
 
     const report = (
-      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+      await runJig(capabilities(), { start: { text: aRequest() }, runId: id })
     ).unwrap();
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
@@ -73,7 +76,7 @@ describe('runJig', () => {
   });
 
   it("leaves a tracked file alone when a saved run's document links to it", async () => {
-    const { app, repo } = await setup();
+    const { capabilities, repo } = await setup();
     const id = runId();
     const stateDir = stateDirectory(repo.dir, id);
     const tracked = path.join(repo.dir, 'README.md');
@@ -82,7 +85,7 @@ describe('runJig', () => {
     await new LocalRunStore(repo.dir).save(aRunState({ runId: id, phase: 'done' }));
     await symlink(tracked, path.join(stateDir, 'design.md'));
 
-    const refusal = await runJig(runCapabilitiesOf(app), { resume: id });
+    const refusal = await runJig(capabilities(), { resume: id });
 
     expect(await readFile(tracked, 'utf-8')).toBe(original);
     expect(refusal.isErr() && refusal.error).toBeInstanceOf(LocalStateUnwritable);
@@ -90,43 +93,39 @@ describe('runJig', () => {
 
   it("ignores telemetry settings in the process environment that the app wasn't given", async () => {
     vi.stubEnv('OTEL_EXPORTER_OTLP_ENDPOINT', UNREACHABLE_COLLECTOR);
-    const { app, aRequest, agentFor } = await setup();
+    const { capabilities, aRequest, agentFor } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
 
     const report = (
-      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+      await runJig(capabilities(), { start: { text: aRequest() }, runId: id })
     ).unwrap();
 
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
   });
 
   it('resumes by id and finishes once a person has merged the run branch', async () => {
-    const { app, aRequest, agentFor, repo } = await setup();
+    const { capabilities, aRequest, agentFor, repo } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
-    (await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })).unwrap();
+    (await runJig(capabilities(), { start: { text: aRequest() }, runId: id })).unwrap();
     await simpleGit({ baseDir: repo.dir }).merge([runBranchFor(id), '--no-edit']);
 
-    const report = (await runJig(runCapabilitiesOf(app), { resume: id })).unwrap();
+    const report = (await runJig(capabilities(), { resume: id })).unwrap();
 
     expect(report.status).toBe('done');
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'done', complete: true });
   });
 
   it('resumes instead of starting over when given the same request and id again', async () => {
-    const { app, aRequest, agentFor, repo } = await setup();
+    const { capabilities, aRequest, agentFor, repo } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
     const request = aRequest();
-    const first = (
-      await runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id })
-    ).unwrap();
+    const first = (await runJig(capabilities(), { start: { text: request }, runId: id })).unwrap();
     const commitsAfterFirst = await runBranchCommits(repo.dir, id);
 
-    const second = (
-      await runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id })
-    ).unwrap();
+    const second = (await runJig(capabilities(), { start: { text: request }, runId: id })).unwrap();
 
     expect(second).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(second.state.runId).toBe(id);
@@ -139,27 +138,27 @@ describe('runJig', () => {
   });
 
   it('refuses a second run of the same id while the first is going, and runs it once that one stops', async () => {
-    const { app, aRequest, agentFor, holdNextSession } = await setup();
+    const { capabilities, aRequest, agentFor, holdNextSession } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
     const request = aRequest();
     const held = holdNextSession();
-    const first = runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id });
+    const first = runJig(capabilities(), { start: { text: request }, runId: id });
     await held.opened;
 
-    const refused = await runJig(runCapabilitiesOf(app), { start: { text: request }, runId: id });
+    const refused = await runJig(capabilities(), { start: { text: request }, runId: id });
 
     expect(refused.isErr() && refused.error).toBeInstanceOf(RunInProgress);
 
     held.release();
     await first;
-    expect((await runJig(runCapabilitiesOf(app), { resume: id })).unwrap()).toMatchObject({
+    expect((await runJig(capabilities(), { resume: id })).unwrap()).toMatchObject({
       state: { phase: 'awaitingMerge' },
     });
   });
 
   it('starts the sandbox again when it failed for a reason that may pass', async () => {
-    const { app, aRequest, agentFor, failNextSessions } = await setup();
+    const { capabilities, aRequest, agentFor, failNextSessions } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
     const opened = failNextSessions(
@@ -171,7 +170,7 @@ describe('runJig', () => {
     );
 
     const report = (
-      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+      await runJig(capabilities(), { start: { text: aRequest() }, runId: id })
     ).unwrap();
 
     expect(report.state.phase).toBe('awaitingMerge');
@@ -179,26 +178,26 @@ describe('runJig', () => {
   });
 
   it('stops at once when the sandbox cannot start because of its configuration', async () => {
-    const { app, aRequest, agentFor, failNextSessions } = await setup();
+    const { capabilities, aRequest, agentFor, failNextSessions } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
     const opened = failNextSessions(
       new SandboxPreparationInvalid({ message: faker.lorem.sentence() }),
     );
 
-    const result = await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id });
+    const result = await runJig(capabilities(), { start: { text: aRequest() }, runId: id });
 
     expect(result.isErr() && result.error).toBeInstanceOf(SandboxPreparationInvalid);
     expect(opened()).toBe(1);
   });
 
   it('exports the approved design review beside the design and plan it approved', async () => {
-    const { app, aRequest, agentFor, repo } = await setup();
+    const { capabilities, aRequest, agentFor, repo } = await setup();
     const id = runId();
     scriptWholeRun(agentFor(id));
 
     const { state } = (
-      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+      await runJig(capabilities(), { start: { text: aRequest() }, runId: id })
     ).unwrap();
 
     expect(designReviewStage(state)).toBe('approved');
@@ -207,13 +206,13 @@ describe('runJig', () => {
   });
 
   it('blocks on findings left after the revision, naming them in the result, the report and the status', async () => {
-    const { app, aRequest, agentFor, repo } = await setup();
+    const { capabilities, aRequest, agentFor, repo } = await setup();
     const id = runId();
     const outstanding = aDesignFinding({ resolution: 'operatorDecision' });
     scriptRevisedDesign(agentFor(id), designFindings(outstanding));
 
     const report = (
-      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+      await runJig(capabilities(), { start: { text: aRequest() }, runId: id })
     ).unwrap();
 
     expect(report).toMatchObject({ status: 'blocked', state: { phase: 'resolvingDesign' } });
@@ -227,13 +226,13 @@ describe('runJig', () => {
   });
 
   it('keeps the review done so far when the re-review reply is invalid, without reading as approved', async () => {
-    const { app, aRequest, agentFor, repo } = await setup();
+    const { capabilities, aRequest, agentFor, repo } = await setup();
     const id = runId();
     const malformed = { output: { verdict: faker.lorem.word() } };
     const { finding, revised } = scriptRevisedDesign(agentFor(id), malformed, malformed, malformed);
 
     const report = (
-      await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })
+      await runJig(capabilities(), { start: { text: aRequest() }, runId: id })
     ).unwrap();
 
     expect(report).toMatchObject({ status: 'blocked', state: { phase: 'reviewingDesign' } });
@@ -245,12 +244,12 @@ describe('runJig', () => {
   });
 
   it("counts the design reviewer's and planner's calls and steps in the run's metrics", async () => {
-    const { app, aRequest, agentFor, repo } = await setup();
+    const { capabilities, aRequest, agentFor, repo } = await setup();
     const id = runId();
     const agent = agentFor(id);
     scriptRevisedDesign(agent, designFindings(aDesignFinding()));
 
-    (await runJig(runCapabilitiesOf(app), { start: { text: aRequest() }, runId: id })).unwrap();
+    (await runJig(capabilities(), { start: { text: aRequest() }, runId: id })).unwrap();
 
     const records = unwrap(new MetricsLog(repo.dir, id).readAll());
     const rolesCalledIn = (phase: RunPhase) =>
@@ -284,19 +283,6 @@ describe('runJig', () => {
   ) {
     const repo = await createTempRepo();
 
-    const app = createAppContainer({
-      repoRoot: repo.dir,
-      configDestination: configDestination(repo.dir),
-      logFormat: 'json',
-      logLevel: 'silent',
-      environment: unwrap(
-        parseEnvironment(
-          options.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
-          faker.system.directoryPath(),
-        ),
-      ),
-      config: aJigConfig(),
-    });
     const agents = new Map<string, FakeAgentSession>();
     const agentFor = (id: string) => {
       const agent = new FakeAgentSession(
@@ -323,16 +309,14 @@ describe('runJig', () => {
       return () => sessionsOpened;
     };
     const sandboxImage = options.managedImage ? undefined : `sandcastle:${faker.word.noun()}`;
-    app.register({
-      config: asValue(aJigConfig({ ...everyStepOn(), sandboxImage, ...options.config })),
-    });
     const logger = mock<Logger>();
     const images = mock<SandboxImages>();
-    app.register({
-      settings: asValue({ ...app.cradle.settings, retryDelayMs: 0 }),
-      logger: asValue(logger),
-      images: asValue(images),
-      openSession: asValue(async ({ run, events }: OpenSessionInput) => {
+    const openRuntime = runRuntimeFactory({
+      logLevel: 'silent',
+      consoleLog: () => logger,
+      images: () => images,
+      runSettings: (config) => ({ ...runSettingsFrom(config), retryDelayMs: 0 }),
+      openSession: async (_context, { run, events }) => {
         sessionsOpened++;
         const failure = sessionFailures.shift();
         if (failure) return Result.err(failure);
@@ -344,11 +328,25 @@ describe('runJig', () => {
         await holding?.released;
         await openRunWorktree({ repoRoot: repo.dir, ...run });
         return Result.ok(agent.reportUsageTo(events, run.runId));
-      }),
+      },
     });
+    const request: RuntimeRequest = {
+      repoRoot: repo.dir,
+      logFormat: 'json',
+      environment: unwrap(
+        parseEnvironment(
+          options.environment ?? { ANTHROPIC_API_KEY: faker.string.alphanumeric(20) },
+          faker.system.directoryPath(),
+        ),
+      ),
+      configSource: configFileSource(configDestination(repo.dir)),
+      config: aJigConfig({ ...everyStepOn(), sandboxImage, ...options.config }),
+      presetSource: new InMemoryPresetSource(),
+    };
+    const capabilities = () => openRuntime(request).run;
     const aRequest = () => `# ${faker.lorem.sentence()}\n\n${faker.lorem.paragraph()}`;
     return {
-      app,
+      capabilities,
       repo,
       aRequest,
       agentFor,

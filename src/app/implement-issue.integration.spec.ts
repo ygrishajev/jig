@@ -1,5 +1,4 @@
 import { faker } from '@faker-js/faker';
-import { asValue } from 'awilix';
 import { Result } from 'better-result';
 import path from 'node:path';
 import type { Logger } from 'pino';
@@ -24,12 +23,13 @@ import {
 } from '../../tests/support/repository-sources.js';
 import { createRemote } from '../../tests/support/temp-repo.js';
 import { unwrap } from '../../tests/support/unwrap.js';
-import { configDestination } from '../adapters/filesystem/config-source.js';
 import { githubOriginName } from '../adapters/git/github-origin.js';
 import { GitOrchestrationStore } from '../adapters/git/orchestration-ref.js';
 import { GitRunBranches } from '../adapters/git/run-branches.js';
 import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js';
 import { sandcastleSessionOptions } from '../adapters/sandcastle/open-session.js';
+import { runRuntimeFactory } from '../composition/run-runtime.js';
+import { runSettingsFrom } from '../config/load-config.js';
 import { type RunId, runIdFor } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
 import {
@@ -38,7 +38,6 @@ import {
   type RunRuntime,
   type RuntimeRequest,
 } from './api.js';
-import { createAppContainer, runCapabilitiesOf } from './container.js';
 
 describe('implementGithubIssue on real git', () => {
   it('publishes a completed run once, from any clone, without merging it or showing the sandbox a GitHub token', async () => {
@@ -132,38 +131,34 @@ describe('implementGithubIssue on real git', () => {
       agent.script('describer', aDescription());
     } else scriptWholeRun(agent);
     const sessionCredentials: Record<string, string>[] = [];
-    const openRuntime = ({ configPath, ...request }: RuntimeRequest): RunRuntime => {
-      const { repoRoot } = request;
-      const app = createAppContainer({
+    const openSandboxedRuntime = runRuntimeFactory({
+      logLevel: 'silent',
+      consoleLog: () => logger,
+      runSettings: (config) => ({
+        ...runSettingsFrom(config),
+        maxStepRetries: 0,
+        retryDelayMs: 0,
+      }),
+      openSession: async (context, input) => {
+        const { run, events } = input;
+        const options = unwrap(sandcastleSessionOptions({ ...context, imageName }, input));
+        sessionCredentials.push(options.credentials);
+        await openRunWorktree({ repoRoot: context.repoRoot, ...run });
+        return Result.ok(agent.reportUsageTo(events, run.runId));
+      },
+    });
+    const openRuntime = (request: RuntimeRequest): RunRuntime =>
+      openSandboxedRuntime({
         ...request,
-        logLevel: 'silent',
-        configDestination: configDestination(repoRoot, configPath),
-      });
-      app.register({ logger: asValue(logger) });
-      app.register({
-        config: asValue({
-          ...app.cradle.config,
+        config: {
+          ...request.config,
           ...everyStepOn(),
           sandboxImage: imageName,
           mergeMode: auto ? 'auto' : 'manual',
           designGate: 'auto',
           reviewCycleCap: 1,
-        }),
+        },
       });
-      app.register({
-        settings: asValue({ ...app.cradle.settings, maxStepRetries: 0, retryDelayMs: 0 }),
-      });
-      app.register({
-        openSession: asValue(async (input: Parameters<typeof app.cradle.openSession>[0]) => {
-          const { run, events } = input;
-          const options = unwrap(sandcastleSessionOptions({ ...app.cradle, imageName }, input));
-          sessionCredentials.push(options.credentials);
-          await openRunWorktree({ repoRoot, ...run });
-          return Result.ok(agent.reportUsageTo(events, run.runId));
-        }),
-      });
-      return { run: runCapabilitiesOf(app), dispose: () => app.dispose() };
-    };
     const environment = {
       GITHUB_TOKEN: faker.string.alphanumeric(20),
       GH_TOKEN: faker.string.alphanumeric(20),

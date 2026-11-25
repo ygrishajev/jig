@@ -30,12 +30,13 @@ import {
   type RepositorySources,
   startOrResumeRun,
 } from '../app/api.js';
-import { openRunRuntime, openSandboxRuntime } from '../app/container.js';
 import { registerGithubCommands } from '../cli/commands/github.js';
 import type { RunCommandIo } from '../cli/commands/run.js';
 import { exitWhenDone } from '../cli/exit-when-done.js';
 import { buildCli } from '../cli/main.js';
 import type { FailureOutput } from '../cli/with-error-handling.js';
+import { runRuntimeFactory } from './run-runtime.js';
+import { sandboxRuntimeFactory } from './sandbox-runtime.js';
 
 export function buildJigCli(failureOutput?: FailureOutput): Command {
   const program = buildCli(operations, runIo, failureOutput);
@@ -57,6 +58,10 @@ const processContext = (): OperationContext => ({
   environment: process.env,
   fallbackHomeDirectory: homedir(),
 });
+
+const openRunRuntime = runRuntimeFactory();
+
+const openSandboxRuntime = sandboxRuntimeFactory();
 
 const operations: JigOperations = {
   run: (input) =>
@@ -121,7 +126,17 @@ const runIo: RunCommandIo = {
 const isMainModule =
   process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
-if (isMainModule) {
-  await buildJigCli().parseAsync(process.argv);
-  await exitWhenDone();
+/**
+ * Every operation releases what it built before its command resolves, so the output is flushed
+ * and the process ends only once the application has closed.
+ */
+export async function runJigExecutable(
+  processArguments: string[],
+  program: Pick<Command, 'parseAsync'> = buildJigCli(),
+  exit: () => Promise<void> = exitWhenDone,
+): Promise<void> {
+  await program.parseAsync(processArguments);
+  await exit();
 }
+
+if (isMainModule) await runJigExecutable(process.argv);

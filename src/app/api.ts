@@ -84,6 +84,7 @@ export {
 export type {
   AgentCredentials,
   SandboxCapabilities,
+  SandboxOpenFailure,
   SandboxOperationCapabilities,
   SandboxRuntime,
   SandboxSettings,

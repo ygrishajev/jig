@@ -143,9 +143,9 @@ svg text{font-family:var(--sans)}
       <tr><td>flow</td><td>Generic flow contracts, engine and step retry policy</td><td>domain, failures, ports</td></tr>
       <tr><td>prompts</td><td>Agent request construction</td><td>domain</td></tr>
       <tr><td>steps</td><td>Individual workflow operations</td><td>domain, failures, flow, ports, prompts</td></tr>
-      <tr><td>app</td><td>Public operations in <code>src/app/api.ts</code>, repository preparation, container construction and scopes, run lifecycle, concrete workflow assembly and GitHub issue implementation</td><td>adapters, config, domain, failures, flow, observers, ports, prompts, steps</td></tr>
+      <tr><td>app</td><td>Public operations in <code>src/app/api.ts</code>, repository preparation, the order a run's scope is acquired and released in, sandbox image policy, run lifecycle, concrete workflow assembly and GitHub issue implementation</td><td>config, domain, failures, flow, ports, prompts, steps</td></tr>
       <tr><td>cli</td><td>Commands, including <code>github implement</code>, input parsing and output</td><td>adapters, app, config, domain, failures, observers, ports</td></tr>
-      <tr><td>composition</td><td>The executable: captures the process context, binds the public operations and composes the CLI with its concrete dependencies, parses arguments when invoked and shuts down</td><td>adapters, app, cli</td></tr>
+      <tr><td>composition</td><td>The executable: captures the process context, builds the run and sandbox runtimes with explicit factories, attaches the observers, binds the public operations and composes the CLI with its concrete dependencies, parses arguments when invoked and shuts down</td><td>adapters, app, cli, config, domain, observers, ports</td></tr>
     </tbody>
   </table>
   <p><code>src/app/run-flow.ts</code> imports steps and flow contracts; steps import flow contracts.
@@ -173,26 +173,34 @@ svg text{font-family:var(--sans)}
     <code>parseEnvironment</code> after checking the repository root and before reading saved
     credentials and config. <code>jig status</code> and <code>jig presets</code> call
     <code>readRunStatus</code> and <code>listPresets</code> from <code>src/app/api.ts</code>, bound by
-    composition to the captured context and lazily built sources; they build no container.
+    composition to the captured context and lazily built sources; they build no runtime.
     <code>jig run</code> calls <code>startOrResumeRun</code> from the same entry after the CLI has read the
     request through supplied input capabilities; the operation prepares, selects the preset and then
     asks composition's <code>openRuntime</code> for the run's capabilities, which
-    <code>openRunRuntime</code> in <code>src/app/container.ts</code> still builds with Awilix. <code>runJig</code>
+    <code>runRuntimeFactory</code> in <code>src/composition/run-runtime.ts</code> builds with explicit
+    factories; opening it opens no sandbox, image or run log. When the run asks for its scope,
+    <code>acquireRunScope</code> in <code>src/app/run-scope.ts</code> opens the run's reporting, its sandbox
+    and its workspace from the parts composition supplies and releases what it holds on a panic. <code>runJig</code>
     owns the lock, store selection, start or resume and the release order through the wrappers in
     <code>src/app/lifecycle.ts</code>. <code>jig init</code> and <code>jig build</code> call
     <code>initRepository</code> and <code>buildSandboxImage</code> the same way: each prepares, then asks
     composition's <code>openSandboxRuntime</code> for its runtime; init decides when to ask the
     terminal for agents, credentials and save consent, and runs agents only in throwaway sandboxes it
-    closes. <code>src/app/container.ts</code> still builds both runtimes with Awilix until spike #49
-    records the construction mechanism. <code>jig github implement</code> calls
+    closes. <code>sandboxRuntimeFactory</code> in <code>src/composition/sandbox-runtime.ts</code> builds
+    each sandbox over the config and environment it is asked for, sharing one console log.
+    <code>ensureSandboxImage</code> in <code>src/app/sandbox-image.ts</code> decides what to rebuild over the
+    <code>SandboxImageRecipe</code> and <code>SandboxImages</code> ports; the Dockerfile, host user, agent
+    packages, image names and labels belong to <code>src/adapters/sandbox-image/</code>.
+    <code>jig github implement</code> calls
     <code>implementGithubIssue</code> the same way: it refuses the GitHub token and repository
     settings before anything is prepared or built, then runs through the same preparation, runtime
     and release as <code>jig run</code> and hands <code>runJig</code> the accepted request; every Git
-    and GitHub operation it uses arrives as a capability. No command handler receives a container.
+    and GitHub operation it uses arrives as a capability. No command handler receives a runtime factory.
     <code>src/composition/main.ts</code> owns the executable: it composes the CLI, binds the run,
     status, preset-listing, init, image-build and issue operations with their concrete
-    dependencies, built lazily, and starts it only when it is the invoked script. Container
-    construction still runs in app.</p>
+    dependencies, built lazily, and starts it only when it is the invoked script. Every operation
+    releases what it built before its command resolves, and only then is the output flushed and the
+    process ended. jig uses no dependency-injection container; the sandbox container is Docker's.</p>
   <p><code>npm run lint:dependencies</code>, included in default <code>npm run validate</code>,
     scans every production source file, including disconnected files. Each must have exactly one
     of these owners. Specs under <code>src/</code> are scanned in a separate pass against the
@@ -214,9 +222,9 @@ svg text{font-family:var(--sans)}
       domain and failures. Specs and tooling outside <code>src/</code> may import CLI helpers.</li>
     <li>Only cli and composition import app across owners. Outside app and composition, specs
       included, app is reached only through <code>src/app/api.ts</code>; app and composition and
-      their specs may import any app module. The public entry imports no adapter or observer,
-      and production app has no type-only import of either. App's value imports of adapters and observers, the container
-      construction in <code>src/app/container.ts</code>, wait for spike #49.</li>
+      their specs may import any app module, and app specs may import adapters and composition
+      wiring. Production app imports no adapter, observer or CLI module in any form.</li>
+    <li>Only adapters, observers and composition import Pino or OpenTelemetry.</li>
     <li>Layer restrictions include type imports, re-exports and literal dynamic imports, through nested paths. Resolution, package dependency and production-to-spec checks remain enabled.</li>
   </ul>
   <p>The checker reports the path of each cycle.
@@ -324,7 +332,7 @@ svg text{font-family:var(--sans)}
   /* ---------- level 3: the flow inside each box ---------- */
   var cTNew = flowCv("tn", "Start a run", "jig run request.md [--id <id>]. src/cli/commands/run.ts → startOrResumeRun (src/app/api.ts) → src/app/run-jig.ts.", [
     ["Parse and read the request", "commander and zod; then the file or standard input through supplied input capabilities. Unusable input calls no operation.", "iface"],
-    ["Prepare and build", "startOrResumeRun: repository, environment, credentials, config, preset; then openRunRuntime (awilix, src/app/container.ts).", "step"],
+    ["Prepare and build", "startOrResumeRun: repository, environment, credentials, config, preset; then openRuntime (runRuntimeFactory, src/composition/run-runtime.ts), which opens nothing yet.", "step"],
     ["Lock the run", "a second process for the same id fails with RunInProgress; a stale lock expires.", "infra"],
     ["Open the run stores", "openRunStore picks configured and required stores; RepositoryRunStores builds local, git-remote or a module path.", "infra"],
     ["Start the run", "a new id or --id; the base branch is the current branch. A finished run is returned as it is.", "domain"],
@@ -332,7 +340,7 @@ svg text{font-family:var(--sans)}
     ["Open the run scope", "telemetry, then the sandbox (retried if it fails to start), run.log, metrics.jsonl and the observers.", "infra"],
     ["runEngine(runFlow)", "until the run is done, halted, blocked or stuck.", "domain"],
     ["Write the result", "RunArtefacts: result.json with metrics, design.md, plan.md, design-review.md, PR_DESCRIPTION.md.", "infra"],
-    ["Close", "withResource: sandbox closed, scope disposed, traces flushed, lock released, container disposed; each release attempted.", "step"]
+    ["Close", "withResource: sandbox closed, scope disposed, traces flushed, lock released, runtime disposed; each release attempted.", "step"]
   ], { h: 54, gap: 12 });
   var cTResume = flowCv("tr", "Resume a run", "jig run --id <id>, or the same request file with the same id.", [
     ["Load the run", "the freshest saved state; git-remote updates a stale local run branch.", "infra"],
@@ -361,7 +369,7 @@ svg text{font-family:var(--sans)}
     ["It fails", "exit code 1, with the output.", "fail"]
   ]);
   var cTBuild = flowCv("tb", "jig build [--pull-agents]", "Also run at the start of every jig run.", [
-    ["Decide what to build", "planImageBuild compares the image labels with the Dockerfile and agent versions.", "domain"],
+    ["Decide what to build", "planImageBuild compares what the image was built from, read from its labels, with the Dockerfile and agent versions.", "domain"],
     ["--pull-agents", "refresh unpinned agent releases even when agentUpdates is off.", "step"],
     ["Build", "the base image, then the agent layer.", "infra"],
     ["Nothing changed", "reuse the current image.", "step"]
@@ -384,7 +392,7 @@ svg text{font-family:var(--sans)}
     ["block — MergeFailed, DesignUnresolved, retries used up", "also GitCommandFailed, CommitImportRefused, CommitRejected: the reason is saved and the run stops; resume runs the step again.", "fail"],
     ["fatal — LocalStateUnwritable from a step", "the engine returns it as an EngineFailure Err; no blocked reason is saved.", "fail"],
     ["A save fails", "RunStore.save's RunStoreFailure — RunStateConflict, RemoteUnavailable, RunStateInvalid and the rest — is returned as an EngineFailure Err; it is never retried as a step or saved as a blocked reason.", "fail"],
-    ["Around the engine", "opening the sandbox retries SandboxUnavailable and SetupCommandFailed under transientRetryPolicy (src/app/container.ts); ConfigInvalid, SandboxCredentialsInvalid and the other fatal ones are not, and every other use-case failure, such as RunRequestInvalid or RunInProgress, returns an Err and prints its message.", "fail"],
+    ["Around the engine", "opening the sandbox retries SandboxUnavailable and SetupCommandFailed under transientRetryPolicy (acquireRunScope, src/app/run-scope.ts); ConfigInvalid, SandboxCredentialsInvalid and the other fatal ones are not, and every other use-case failure, such as RunRequestInvalid or RunInProgress, returns an Err and prints its message.", "fail"],
     ["Anything else", "a bug: panic; the CLI prints the original cause and stack.", "fail"]
   ], { h: 60, gap: 14 });
   var cFSlices = flowCv("es", "Slice loop", "sliceFlow in src/app/run-flow.ts; slices run in order.", [
@@ -451,11 +459,11 @@ svg text{font-family:var(--sans)}
     ["Merge failure", "Block for the operator; abort an in-progress merge when necessary.", "fail"]
   ], { h: 70, gap: 20 });
 
-  var cFPlanBuild = flowCv("ib", "Decide what to build", "planImageBuild in src/app/sandbox-image.ts — a pure function.", [
-    ["Read .sandcastle/Dockerfile", "missing → run jig init first.", "step"],
-    ["Hash it with your UID", "the image is built for the user that runs it.", "domain"],
+  var cFPlanBuild = flowCv("ib", "Decide what to build", "planImageBuild in src/app/sandbox-image.ts — a pure function over the SandboxImageRecipe port.", [
+    ["Read .sandcastle/Dockerfile", "RepositoryImageRecipe in src/adapters/sandbox-image; missing → run jig init first.", "step"],
+    ["Hash it with your UID", "the image is built for the user that runs it.", "infra"],
     ["Agent versions", "pinned in agents, else npm latest (3 s timeout, never blocks).", "infra"],
-    ["Compare the image labels", "all, agents only, or nothing; agentUpdates auto, warn or off.", "domain"]
+    ["Compare the image stamp", "all, agents only, or nothing; agentUpdates auto, warn or off.", "domain"]
   ]);
   var cFBuild = flowCv("bb", "Build", "DockerImages in src/adapters/sandbox-image.", [
     ["Base image", "docker build .sandcastle with AGENT_UID/GID → <image>-base (or <image>:base).", "infra"],
@@ -538,7 +546,7 @@ svg text{font-family:var(--sans)}
   ]);
 
   /* ---------- level 2: commands, core modules, the sandbox ---------- */
-  var runCmd = ifaceCanvas("jig run", "Command. Starts or resumes a run. The awilix container builds a scope per run and disposes it when the run stops.", [
+  var runCmd = ifaceCanvas("jig run", "Command. Starts or resumes a run. Composition's run runtime acquires a scope per run, with its own events, metrics and workspace, and the run releases it when it stops.", [
     box("t-new", "Start a run", ["A request file, optional --id."], cTNew),
     box("t-resume", "Resume a run", ["--id of a saved run."], cTResume)
   ], [
