@@ -27,7 +27,7 @@ paths:
 
 ## Fakes over stubs
 
-- **Fake the boundary, not the layer above it.** The agent is faked at `AgentSession` — the prompt building, output parsing and state transitions under test are the ones production runs. Git itself is never faked: a spec that touches git is an integration spec against a real temporary repository (`tests/support/temp-repo.ts`). A unit spec fakes the port above it.
+- **Fake the boundary, not the layer above it.** The agent is faked at `AgentSession` — the prompt building, output parsing and state transitions under test are the ones production runs. Fake our ports, not git commands: code that decides gets a fake `Workspace`, `RunStore` or receipts, and only the adapter that runs git is tested on real git, in an integration spec with a temporary repository (`tests/support/temp-repo.ts`).
 - **A fake agent does what a real one would.** When a step expects the agent to change files or emit structured output, the fake writes those files into the worktree or returns that output — it doesn't just return `{ success: true }`.
 - **Real sandcastle and real agents stay out of the unit suite.** They belong in the opt-in `e2e` project, never in `npm test` or `npm run test:integration`.
 
@@ -54,8 +54,8 @@ paths:
 
 ## End-to-end
 
-- **A whole run, through the engine, against a real temporary repository and a fake agent.** Plan, implement, review, verify and merge, asserting on the run branch's commits and the saved run state — not on log output.
-- **Crash and resume are part of end-to-end.** Stop a run between steps, start it again from saved state, and assert it finishes with the same commits it would have produced uninterrupted.
+- **One whole run on real git per path to it, not one per decision.** Plan, implement, review, verify and merge with a fake agent, asserting on the run branch's commits and the saved run state — not on log output. Which step follows which is a unit spec of `runFlow` on fake ports.
+- **Crash and resume are part of the flow.** Stop a run between steps, start it again from saved state, and assert it finishes with the same commits it would have produced uninterrupted.
 
 ## Examples
 
