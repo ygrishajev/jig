@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { describeIssues } from './describe-issues.js';
 
 describe('describeIssues', () => {
-  it('names the field of each issue and separates them with semicolons', () => {
+  it('separates the issues with semicolons', () => {
     const fieldMessage = faker.lorem.sentence();
     const rootMessage = faker.lorem.sentence();
     const error = new z.ZodError([

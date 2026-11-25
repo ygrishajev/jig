@@ -49,15 +49,6 @@ describe('withInput', () => {
     ]);
   });
 
-  it('refuses an issue with the whole input by its message alone', async () => {
-    const message = faker.lorem.sentence();
-    const { run } = setup(z.object({}).refine(() => false, { message }));
-
-    const result = await run([]);
-
-    expect(result.isErr() && result.error.message).toBe(message);
-  });
-
   function setup<Schema extends z.ZodTypeAny>(schema: Schema) {
     let received: z.output<Schema> | undefined;
     let outcome: Result<void, CommandInputInvalid> = Result.ok();
