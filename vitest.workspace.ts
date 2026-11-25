@@ -18,8 +18,18 @@ export const integrationProject = defineProject({
     include: integrationSpecs,
     testTimeout: 60_000,
     unstubEnvs: true,
-    /** Temp repositories must not pick up the developer's git config: hooks, signing, templates. */
-    env: { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    /**
+     * Temp repositories must not pick up the developer's git config: hooks, signing, templates.
+     * Nor may git's automatic maintenance detach from a command and keep writing to a temp
+     * repository after the test that made it has removed it.
+     */
+    env: {
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'maintenance.auto',
+      GIT_CONFIG_VALUE_0: 'false',
+    },
   },
 });
 
