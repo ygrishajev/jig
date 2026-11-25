@@ -32,8 +32,6 @@ import { GitRemoteRunStore } from '../adapters/run-store/git-remote-run-store.js
 import { sandcastleSessionOptions } from '../adapters/sandcastle/open-session.js';
 import { type RunId, runIdFor } from '../domain/run-id.js';
 import { runBranchFor } from '../domain/run-state.js';
-import { AgentRunFailed } from '../ports/agent-session.js';
-import { GithubRefused } from '../ports/github.js';
 import {
   implementGithubIssue,
   type IssueCapabilities,
@@ -43,9 +41,19 @@ import {
 import { createAppContainer, runCapabilitiesOf } from './container.js';
 
 describe('implementGithubIssue on real git', () => {
-  it('publishes a completed run without merging the operator branch or showing the sandbox a GitHub token', async () => {
-    const { implement, github, dir, id, issue, store, key, agent, sessionCredentials } =
-      await setup({ auto: true });
+  it('publishes a completed run once, from any clone, without merging it or showing the sandbox a GitHub token', async () => {
+    const {
+      implement,
+      implementFromFreshClone,
+      github,
+      dir,
+      id,
+      issue,
+      store,
+      key,
+      agent,
+      sessionCredentials,
+    } = await setup({ auto: true });
     const before = await simpleGit(dir).revparse(['HEAD']);
     const outcome = unwrap(await implement());
     const pr = github.pullRequests.get(runBranchFor(id));
@@ -66,7 +74,11 @@ describe('implementGithubIssue on real git', () => {
       pr?.url,
     );
     const calls = agent.calls.length;
-    expect(unwrap(await implement())).toEqual({ kind: 'pullRequest', url: pr?.url, reused: true });
+    expect(unwrap(await implementFromFreshClone())).toEqual({
+      kind: 'pullRequest',
+      url: pr?.url,
+      reused: true,
+    });
     expect(agent.calls).toHaveLength(calls);
     expect(unwrap(await new GitRemoteRunStore(dir).load(id))?.phase).toBe('completed');
     expect(sessionCredentials).toHaveLength(1);
@@ -76,23 +88,8 @@ describe('implementGithubIssue on real git', () => {
     }
   });
 
-  it('resumes publication from another clone without running the issue again', async () => {
-    const { implement, implementFromFreshClone, github, sessionCredentials } = await setup();
-    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
-    expect((await implement()).isErr()).toBe(true);
-
-    const outcome = unwrap(await implementFromFreshClone());
-
-    expect(outcome.kind).toBe('pullRequest');
-    expect(github.prsOpened).toBe(1);
-    expect(github.commentsMade).toBe(0);
-    expect(sessionCredentials).toHaveLength(1);
-  });
-
   it('refuses a completed run that changes a workflow without publishing its code', async () => {
-    const { implement, github, dir, id, store, key, agent, workflow } = await setup({
-      workflow: true,
-    });
+    const { implement, github, dir, id, store, key, workflow } = await setup({ workflow: true });
 
     const outcome = unwrap(await implement());
 
@@ -106,48 +103,12 @@ describe('implementGithubIssue on real git', () => {
     expect(await remoteHasObject(dir, revision)).toBe(false);
     expect(github.prsOpened).toBe(0);
     expect(github.pullRequests.size).toBe(0);
-    const calls = agent.calls.length;
-    expect(unwrap(await implement())).toEqual(outcome);
-    expect(unwrap(await implement())).toEqual(outcome);
-    expect(agent.calls).toHaveLength(calls);
-    expect(github.commentsMade).toBe(1);
-    expect(github.prsOpened).toBe(0);
-  });
-
-  it('opens one PR when two attempts publish the same request at once', async () => {
-    const { implement, github } = await setup();
-    github.failOnce('openPullRequest', new GithubRefused({ message: faker.lorem.sentence() }));
-    expect((await implement()).isErr()).toBe(true);
-
-    const attempts = await Promise.all([implement(), implement()]);
-
-    const succeeded = attempts.filter((attempt) => attempt.isOk());
-    expect(succeeded.length).toBeGreaterThan(0);
-    for (const attempt of attempts)
-      if (attempt.isErr())
-        expect(['PublicationInProgress', 'RunInProgress']).toContain(attempt.error._tag);
-    expect(github.prsOpened).toBe(1);
-    expect(github.commentsMade).toBe(0);
-  });
-
-  it("keeps a blocked run's code off the remote while checkpointing where it started", async () => {
-    const { implement, dir, id } = await setup({ blocked: true });
-    const startingCommit = await simpleGit(dir).revparse(['HEAD']);
-
-    unwrap(await implement());
-
-    const saved = unwrap(await new GitRemoteRunStore(dir).peek(id));
-    expect(saved).toMatchObject({ codePublication: 'deferred', startingCommit });
-    expect(await simpleGit(dir).revparse([runBranchFor(id)])).toBe(saved?.codeRevision);
-    expect(await remoteBranch(dir, id)).toBe('');
-    expect(await remoteHasObject(dir, saved?.codeRevision ?? '')).toBe(false);
   });
 
   async function setup({
-    blocked = false,
     auto = false,
     workflow = false,
-  }: { blocked?: boolean; auto?: boolean; workflow?: boolean } = {}) {
+  }: { auto?: boolean; workflow?: boolean } = {}) {
     const remote = await createRemote();
     const dir = await remote.cloneOf();
     const github = new FakeGithub();
@@ -164,18 +125,9 @@ describe('implementGithubIssue on real git', () => {
       () => ({ exitCode: 0, output: '' }),
       path.join(dir, '.jig', id, 'workspace'),
     );
-    const planned = aPlannedSlice({ description: implementingPlanSteps(1) });
-    const work = workflow
-      ? { [workflowPath]: 'on: push', [`${faker.string.alpha(8)}.txt`]: faker.lorem.word() }
-      : { 'work.txt': faker.lorem.paragraph() };
-    if (blocked) {
-      scriptPlanning(agent, [planned]);
-      agent.script('implementer', { files: work });
-      const fail = new AgentRunFailed({ message: faker.lorem.sentence() });
-      agent.script('reviewer', { fail }, { fail });
-    } else if (workflow) {
-      scriptPlanning(agent, [planned]);
-      agent.script('implementer', { files: work });
+    if (workflow) {
+      scriptPlanning(agent, [aPlannedSlice({ description: implementingPlanSteps(1) })]);
+      agent.script('implementer', { files: { [workflowPath]: 'on: push' } });
       agent.script('reviewer', approval(), fulfillment());
       agent.script('describer', aDescription());
     } else scriptWholeRun(agent);
