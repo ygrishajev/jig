@@ -6,6 +6,7 @@ import {
   aFeaturePlan,
   aFinalCheckResult,
   aSlice,
+  aVerification,
 } from '../../tests/support/builders.js';
 import type { CompletionEvidence } from '../domain/completion-reuse.js';
 import type { FinalCheckResult } from '../domain/run-state.js';
@@ -15,7 +16,7 @@ import { pullRequestPrompt } from './pull-request.js';
 describe('pullRequestPrompt', () => {
   it('marks a slice line with the command jig recorded for it', () => {
     const command = `npm run ${faker.word.verb()}`;
-    const verified = aSlice({ status: 'approved', verification: { command } });
+    const verified = aSlice({ status: 'approved', verification: aVerification({ command }) });
     const { prompt } = setup({
       slices: [verified, aSlice({ status: 'stuck' })],
     });
@@ -31,7 +32,7 @@ describe('pullRequestPrompt', () => {
       slices: [
         aSlice({
           status: 'approved',
-          verification: { command: `npm run ${faker.word.verb()}` },
+          verification: aVerification({ command: `npm run ${faker.word.verb()}` }),
         }),
         unverified,
       ],
@@ -83,7 +84,7 @@ describe('pullRequestPrompt', () => {
   it('states the verification a reused completion rests on in place of a final check', () => {
     const command = `npm run ${faker.word.verb()}`;
     const { prompt } = setup({
-      reusedCompletion: aCompletionEvidence({ verification: { command } }),
+      reusedCompletion: aCompletionEvidence({ verification: aVerification({ command }) }),
     });
 
     expect(prompt()).toContain(`\`${command}\``);

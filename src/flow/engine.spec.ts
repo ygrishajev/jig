@@ -11,6 +11,7 @@ import { mock } from 'vitest-mock-extended';
 import {
   aContext,
   aFeaturePlan,
+  anApprovedDesignReview,
   anImplementation,
   aRunState,
   aSlice,
@@ -722,6 +723,7 @@ function aDescribedRun(overrides: Parameters<typeof aRunState>[0] = {}) {
     context: aContext(),
     plan: aFeaturePlan(),
     docs: designDocs(),
+    designReview: anApprovedDesignReview(),
     prDescription: faker.lorem.paragraph(),
     ...overrides,
   });

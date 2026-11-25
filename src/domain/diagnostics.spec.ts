@@ -2,26 +2,18 @@ import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
 import {
-  aFailedVerification,
-  aFinalCheckResult,
   aRejectedReview,
   aRunState,
   aSlice,
+  aVerification,
   failureOutput,
   workObservations,
 } from '../../tests/support/builders.js';
 import { applyOutcome } from './apply-outcome.js';
-import {
-  captureOutput,
-  DIAGNOSTIC_OUTPUT_TAIL,
-  failedFinalVerificationSchema,
-  rejectedReviewSchema,
-  retainedFinalVerificationFailure,
-} from './diagnostics.js';
+import { captureOutput, DIAGNOSTIC_OUTPUT_TAIL } from './diagnostics.js';
 import type { Outcome } from './outcome.js';
 import { runDiagnostics } from './run-diagnostics.js';
 import { type RunState, runStateSchema } from './run-state.js';
-import { failedVerificationSchema } from './slice.js';
 
 describe('run diagnostics', () => {
   it('keeps a rejected review unresolved through the implementation and verification failures after it', () => {
@@ -77,8 +69,7 @@ describe('run diagnostics', () => {
 
     const state = apply(verificationFailure(command, output), {
       type: 'verified',
-      command,
-      observed: workObservations(),
+      verification: aVerification({ command }),
     });
 
     expect(runDiagnostics(state).lastVerificationFailure).toMatchObject({
@@ -190,68 +181,6 @@ describe('run diagnostics', () => {
     expect(reloaded.diagnosticSequence).toBe(2);
   });
 
-  it('represents the output of a final check saved before output was kept as unavailable', () => {
-    const command = `npm run ${faker.word.verb()}`;
-    const { diagnosticSequence: _unordered, ...legacy } = aRunState({
-      phase: 'finalCheck',
-      finalCheck: aFinalCheckResult({ verified: false, command, round: 1 }),
-    });
-
-    const loaded = runStateSchema.parse(legacy);
-
-    expect(loaded.diagnosticSequence).toBe(0);
-    expect(runDiagnostics(loaded).lastVerificationFailure).toEqual({
-      scope: { kind: 'finalCheck', round: 1 },
-      command,
-      output: { captured: false },
-      at: 0,
-      current: true,
-    });
-  });
-
-  it('keeps the failed verification of a final check saved before output was kept as history once the repaired check passes', () => {
-    const command = `npm run ${faker.word.verb()}`;
-    const round = 1;
-    const { diagnosticSequence: _unordered, ...legacy } = aRunState({
-      phase: 'finalCheck',
-      finalCheck: aFinalCheckResult({ verified: false, command, round }),
-    });
-    const loaded = runStateSchema.parse(legacy);
-
-    const repaired = applyOutcome(loaded, finalCheck({ command, gaps: [] }));
-    const reloaded = runStateSchema.parse(JSON.parse(JSON.stringify(repaired)));
-
-    expect(reloaded.failedFinalVerification).toEqual({
-      command,
-      output: { captured: false },
-      round,
-      at: 0,
-      passedSince: true,
-    });
-    expect(runDiagnostics(reloaded).lastVerificationFailure).toEqual({
-      scope: { kind: 'finalCheck', round },
-      command,
-      output: { captured: false },
-      at: 0,
-      current: false,
-    });
-  });
-
-  it('places every ordered failure after one saved before failures were ordered', () => {
-    const legacy = aSlice({ order: 0, failedVerification: aFailedVerification({ at: 0 }) });
-    const later = aSlice({
-      order: 1,
-      failedVerification: aFailedVerification({ at: faker.number.int({ min: 1, max: 9 }) }),
-    });
-
-    const state = aRunState({ slices: [later, legacy] });
-
-    expect(runDiagnostics(state).lastVerificationFailure?.scope).toEqual({
-      kind: 'slice',
-      sliceId: later.id,
-    });
-  });
-
   it('reports a review left on a stuck slice as unresolved', () => {
     const rejectedReview = aRejectedReview();
     const stuck = aSlice({ status: 'stuck', rejectedReview });
@@ -261,46 +190,6 @@ describe('run diagnostics', () => {
     expect(runDiagnostics(state).unresolvedReviews).toEqual([
       { sliceId: stuck.id, ...rejectedReview },
     ]);
-  });
-
-  it.each([false, true])(
-    'prefers saved history when the latest check verified is %s',
-    (verified) => {
-      const failed = { ...aFailedVerification(), round: 1, passedSince: true };
-      const state = aRunState({
-        failedFinalVerification: failed,
-        finalCheck: aFinalCheckResult({ verified, round: 2 }),
-      });
-
-      expect(retainedFinalVerificationFailure(state)).toBe(state.failedFinalVerification);
-    },
-  );
-
-  it('finds no retained failure when the final check is missing or verified', () => {
-    expect(retainedFinalVerificationFailure({})).toBeUndefined();
-    expect(
-      retainedFinalVerificationFailure({ finalCheck: aFinalCheckResult({ verified: true }) }),
-    ).toBeUndefined();
-  });
-
-  it('defaults legacy diagnostic ordering and slice failure capture fields', () => {
-    const feedback = faker.lorem.sentence();
-    const {
-      at: _at,
-      output: _output,
-      passedSince: _passedSince,
-      ...legacy
-    } = aFailedVerification();
-    const { at: _finalAt, ...finalFailure } = { ...aFailedVerification(), round: 1 };
-
-    expect(rejectedReviewSchema.parse({ feedback })).toEqual({ feedback, at: 0 });
-    expect(failedVerificationSchema.parse(legacy)).toEqual({
-      ...legacy,
-      at: 0,
-      output: { captured: false },
-      passedSince: false,
-    });
-    expect(failedFinalVerificationSchema.parse(finalFailure)).toMatchObject({ at: 0 });
   });
 
   it('marks undefined output unavailable', () => {

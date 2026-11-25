@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aSlice } from '../../tests/support/builders.js';
+import { aSlice, aVerification } from '../../tests/support/builders.js';
 import {
   combinedReviewPrompt,
   commitRejectedFeedback,
@@ -130,7 +130,7 @@ describe('reviewPrompt', () => {
   it('reports the recorded verification for the reviewed range', () => {
     const command = `npm run ${faker.lorem.slug()}`;
     const reviewedRange = range();
-    const slice = aSlice({ verification: { command } });
+    const slice = aSlice({ verification: aVerification({ command }) });
 
     const prompt = reviewPrompt(slice, reviewedRange, []);
 
@@ -147,7 +147,11 @@ describe('reviewPrompt', () => {
     const reviewedRange = range();
     const command = `npm run ${faker.lorem.slug()}`;
     const withoutResult = reviewPrompt(slice, reviewedRange, []);
-    const withResult = reviewPrompt({ ...slice, verification: { command } }, reviewedRange, []);
+    const withResult = reviewPrompt(
+      { ...slice, verification: aVerification({ command }) },
+      reviewedRange,
+      [],
+    );
     const absentGuidance = withoutResult.split('\n').filter((line) => !withResult.includes(line));
 
     expect(absentGuidance.length).toBeGreaterThan(0);
@@ -191,7 +195,7 @@ describe('combinedReviewPrompt', () => {
     const reviewedRange = range();
 
     const prompt = combinedReviewPrompt({
-      slice: aSlice({ verification: { command } }),
+      slice: aSlice({ verification: aVerification({ command }) }),
       range: reviewedRange,
       protectedChanges: [],
       request: faker.lorem.paragraph(),

@@ -20,7 +20,7 @@ export function findingsCommentBody(state: RunState, revision: string): string {
   ].join('\n\n');
 }
 
-/** Why a stuck run stopped, for a run saved before the reason could be told. */
+/** Why a stuck run stopped. */
 export function stuckReason(state: RunState): string {
   return runStopReason(state) ?? 'The run exhausted its attempts.';
 }
@@ -52,7 +52,7 @@ function scopeOf({ scope }: VerificationFailureDiagnostic): string {
 }
 
 function outputOf(output: CapturedOutput): string {
-  if (!output.captured) return 'Its output was not kept by the version of jig that ran it.';
+  if (!output.captured) return 'It kept no output.';
   const lead = output.truncated ? 'The end of its output:' : 'Its output:';
   return `${lead}\n\n${fenced(output.tail)}`;
 }

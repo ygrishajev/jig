@@ -6,6 +6,7 @@ import {
   aFinalCheckResult,
   aRunStateIn,
   aSlice,
+  aVerification,
   workObservations,
 } from '../../tests/support/builders.js';
 import type { RunState } from '../domain/run-state.js';
@@ -17,7 +18,7 @@ describe('renderPullRequest', () => {
     const passed = `npm run ${faker.word.verb()}`;
     const { render } = setup({
       slices: [
-        aSlice({ order: 0, status: 'approved', verification: { command: passed } }),
+        aSlice({ order: 0, status: 'approved', verification: aVerification({ command: passed }) }),
         aSlice({ order: 1, status: 'stuck' }),
       ],
     });
@@ -46,9 +47,21 @@ describe('renderPullRequest', () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const { render } = setup({
       slices: [
-        aSlice({ order: 0, status: 'approved', verification: { command: verifyCommand } }),
-        aSlice({ order: 1, status: 'approved', verification: { command: verifyCommand } }),
-        aSlice({ order: 2, status: 'approved', verification: { command: verifyCommand } }),
+        aSlice({
+          order: 0,
+          status: 'approved',
+          verification: aVerification({ command: verifyCommand }),
+        }),
+        aSlice({
+          order: 1,
+          status: 'approved',
+          verification: aVerification({ command: verifyCommand }),
+        }),
+        aSlice({
+          order: 2,
+          status: 'approved',
+          verification: aVerification({ command: verifyCommand }),
+        }),
       ],
     });
 
@@ -64,13 +77,13 @@ describe('renderPullRequest', () => {
     const passedFirst = aSlice({
       order: 0,
       status: 'approved',
-      verification: { command: firstCommand },
+      verification: aVerification({ command: firstCommand }),
     });
     const stuck = aSlice({ order: 1, status: 'stuck' });
     const passedLast = aSlice({
       order: 2,
       status: 'approved',
-      verification: { command: lastCommand },
+      verification: aVerification({ command: lastCommand }),
     });
     const { render } = setup({ slices: [passedLast, passedFirst, stuck] });
 
@@ -94,7 +107,11 @@ describe('renderPullRequest', () => {
     const { render } = setup({
       slices: [
         unverified,
-        aSlice({ order: 1, status: 'approved', verification: { command: verifyCommand } }),
+        aSlice({
+          order: 1,
+          status: 'approved',
+          verification: aVerification({ command: verifyCommand }),
+        }),
       ],
     });
 
@@ -124,7 +141,13 @@ describe('renderPullRequest', () => {
     const template = `## ${faker.word.noun()}\n\n<!-- ${faker.lorem.sentence()} -->`;
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const { render, state } = setup({
-      slices: [aSlice({ order: 0, status: 'approved', verification: { command: verifyCommand } })],
+      slices: [
+        aSlice({
+          order: 0,
+          status: 'approved',
+          verification: aVerification({ command: verifyCommand }),
+        }),
+      ],
     });
 
     const bodies = [

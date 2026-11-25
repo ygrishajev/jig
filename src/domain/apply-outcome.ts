@@ -61,10 +61,7 @@ export function updateCurrentSlice(state: RunState, update: (slice: Slice) => Sl
   };
 }
 
-/**
- * The facts of the verification that just failed, beside the counter it spent; a failure that
- * recorded none leaves whatever earlier failure the slice already holds.
- */
+/** The facts of the verification that just failed, or of the last one that did. */
 function failedVerificationOf(
   outcome: SendBack,
   slice: Slice,
@@ -72,9 +69,7 @@ function failedVerificationOf(
 ): Slice['failedVerification'] {
   if (outcome.type !== 'verificationFailed') return slice.failedVerification;
   const { command, observed, output } = outcome;
-  return command !== undefined && observed !== undefined
-    ? { command, observed, output: captureOutput(output), at, passedSince: false }
-    : slice.failedVerification;
+  return { command, observed, output: captureOutput(output), at, passedSince: false };
 }
 
 /**
@@ -168,8 +163,6 @@ function verifiedSlice(slice: Slice, outcome: Extract<Outcome, { type: 'verified
       ...slice.failedVerification,
       passedSince: true,
     },
-    verification: outcome.command
-      ? { command: outcome.command, observed: outcome.observed }
-      : undefined,
+    verification: outcome.verification,
   };
 }

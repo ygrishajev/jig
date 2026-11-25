@@ -4,7 +4,7 @@ import type { CompletionEvidence } from './completion-reuse.js';
 import type { DesignDocs } from './design-docs.js';
 import type { DesignReview, DesignRevision } from './design-review.js';
 import type { FeaturePlan, RunContext } from './run-state.js';
-import type { PlannedSlice } from './slice.js';
+import type { PlannedSlice, VerificationRecord } from './slice.js';
 import type { CommitSummary } from './usage.js';
 import type { WorkObservations } from './work-facts.js';
 
@@ -27,13 +27,13 @@ export type Outcome = OfKnownType<
   | {
       type: 'verificationFailed';
       feedback: string;
-      command?: string;
-      output?: string;
-      observed?: WorkObservations;
+      command: string;
+      output: string;
+      observed: WorkObservations;
     }
   | { type: 'nothingChanged'; feedback: string }
   | { type: 'rulesFixRequested'; feedback: string; completion?: CompletionEvidence }
-  | { type: 'verified'; command?: string; observed?: WorkObservations }
+  | { type: 'verified'; verification?: VerificationRecord }
   | {
       type: 'finalChecked';
       verified: boolean;

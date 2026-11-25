@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aFailedVerification, aSlice, workObservations } from '../../tests/support/builders.js';
+import { aFailedVerification, aSlice } from '../../tests/support/builders.js';
 import { earlierFeedback, sliceSchema, slicesInOrder } from './slice.js';
 
 describe('slicesInOrder', () => {
@@ -21,37 +21,6 @@ describe('slicesInOrder', () => {
 });
 
 describe('sliceSchema', () => {
-  it('loads a slice saved before empty attempts and rule fixes were counted as having none', () => {
-    const {
-      emptyAttempts: _empty,
-      ruleFixCycles: _ruleFixes,
-      hookFailures: _hooks,
-      verificationFailures: _verification,
-      ...saved
-    } = aSlice();
-
-    expect(sliceSchema.parse(saved)).toMatchObject({
-      emptyAttempts: 0,
-      ruleFixCycles: 0,
-      hookFailures: 0,
-      verificationFailures: 0,
-    });
-  });
-
-  it('loads a slice saved before feedback was kept as a history with none', () => {
-    const { saved } = setup();
-
-    expect(sliceSchema.parse(saved)).toMatchObject({ feedbackHistory: [] });
-  });
-
-  it('loads a verification saved before observations were recorded as one without them', () => {
-    const command = `npm run ${faker.word.verb()}`;
-
-    expect(sliceSchema.parse({ ...aSlice(), verification: { command } }).verification).toEqual({
-      command,
-    });
-  });
-
   it('loads the failed verification a slice recorded with its output and the work around it', () => {
     const failedVerification = aFailedVerification();
 
@@ -59,24 +28,6 @@ describe('sliceSchema', () => {
 
     expect(parsed.failedVerification).toEqual(failedVerification);
   });
-
-  it('loads a failed verification saved before output was kept as unordered, with its output unavailable', () => {
-    const legacy = { command: `npm run ${faker.word.verb()}`, observed: workObservations() };
-
-    const parsed = sliceSchema.parse({ ...aSlice(), failedVerification: legacy });
-
-    expect(parsed.failedVerification).toEqual({
-      ...legacy,
-      output: { captured: false },
-      at: 0,
-      passedSince: false,
-    });
-  });
-
-  function setup() {
-    const { feedbackHistory: _neverSaved, ...saved } = aSlice();
-    return { saved };
-  }
 });
 
 describe('earlierFeedback', () => {

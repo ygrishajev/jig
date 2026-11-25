@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import { aSlice, runSettings } from '../../tests/support/builders.js';
+import { aSlice, aVerification, runSettings } from '../../tests/support/builders.js';
 import {
   hookFailureCapReached,
   reviewCapReached,
@@ -9,6 +9,7 @@ import {
   sliceStopReason,
   verificationFailureCapReached,
 } from './settings.js';
+import type { VerificationRecord } from './slice.js';
 
 describe('sliceNeedsVerification', () => {
   it('does not hold a slice back when no verify command is configured', () => {
@@ -20,7 +21,10 @@ describe('sliceNeedsVerification', () => {
 
   it('does not hold a slice back that already has a verification record', () => {
     const command = `npm run ${faker.word.verb()}`;
-    const { slice, settings } = setup({ verifyCommand: command, verification: { command } });
+    const { slice, settings } = setup({
+      verifyCommand: command,
+      verification: aVerification({ command }),
+    });
 
     expect(sliceNeedsVerification(slice, settings)).toBe(false);
   });
@@ -31,7 +35,7 @@ describe('sliceNeedsVerification', () => {
     expect(sliceNeedsVerification(slice, settings)).toBe(true);
   });
 
-  function setup(input: { verifyCommand?: string; verification?: { command: string } }) {
+  function setup(input: { verifyCommand?: string; verification?: VerificationRecord }) {
     const slice = aSlice({ verification: input.verification });
     const settings = runSettings({
       verifyCommand: input.verifyCommand ?? `npm run ${faker.word.verb()}`,

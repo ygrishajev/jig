@@ -27,7 +27,12 @@ import {
   runStateSchema,
 } from '../../src/domain/run-state.js';
 import type { RunSettings } from '../../src/domain/settings.js';
-import type { FailedVerification, PlannedSlice, Slice } from '../../src/domain/slice.js';
+import type {
+  FailedVerification,
+  PlannedSlice,
+  Slice,
+  VerificationRecord,
+} from '../../src/domain/slice.js';
 import type { CommitSummary, TokenUsage } from '../../src/domain/usage.js';
 import type {
   CheckedWork,
@@ -103,6 +108,13 @@ export function aSlice({
     failedVerification,
     rejectedReview,
   };
+}
+
+export function aVerification({
+  command = `npm run ${faker.word.verb()}`,
+  observed = workObservations(),
+}: Partial<VerificationRecord> = {}): VerificationRecord {
+  return { command, observed };
 }
 
 export function aFailedVerification({
@@ -232,6 +244,8 @@ export function aRunState({
   request = `# ${faker.lorem.sentence()}\n\n${faker.lorem.paragraph()}`,
   phase = 'context',
   slices = [],
+  merge = true,
+  diagnosticSequence = 0,
   ...rest
 }: Partial<Omit<RunState, 'phase'>> & { phase?: RunPhase } = {}): RunState {
   return runStateSchema.parse({
@@ -241,6 +255,8 @@ export function aRunState({
     request,
     phase,
     slices,
+    merge,
+    diagnosticSequence,
     ...producedBefore(phase),
     ...rest,
   });
@@ -275,7 +291,9 @@ function producedBefore(phase: RunPhase) {
 function designReviewProducedBefore(phase: RunPhase) {
   if (phase === 'revisingDesign') return { designReview: aFirstDesignReview() };
   if (phase === 'resolvingDesign') return { designReview: aRevisedDesignReview() };
-  return {};
+  const settled =
+    runPhaseSchema.options.indexOf(phase) >= runPhaseSchema.options.indexOf('slicing');
+  return settled ? { designReview: anApprovedDesignReview() } : {};
 }
 
 export function aDesignFinding({

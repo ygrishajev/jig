@@ -87,8 +87,8 @@ function verificationReport(slices: Slice[], verifyCommand?: string): string {
 
 /**
  * What the whole-run final check decided, from the recorded result; a run that finished on its
- * combined review's evidence reports that evidence instead, and a run with neither — a legacy save
- * or a slice that got stuck before the check — reports the check as not run.
+ * combined review's evidence reports that evidence instead, and a run with neither — one
+ * whose slice got stuck before the check — reports the check as not run.
  */
 function wholeRunBlock(state: RunStateIn<'describing'>): string {
   const reused = reusedCompletion(state);
@@ -114,8 +114,8 @@ function reusedCompletionBlock(evidence: CompletionEvidence): string {
 }
 
 function verificationSource(verification: CompletionEvidence['verification']): string[] {
-  const at = verification?.observed?.after.host.commit;
-  if (verification === undefined || at === undefined) return [];
+  if (verification === undefined) return [];
+  const at = verification.observed.after.host.commit;
   return [`- Verification: \`${verification.command}\` passed at commit ${at}`];
 }
 

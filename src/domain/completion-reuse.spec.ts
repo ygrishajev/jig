@@ -7,6 +7,7 @@ import {
   aFinalCheckResult,
   aRunState,
   aSlice,
+  aVerification,
   designDocs,
   gitFacts,
   runSettings,
@@ -126,19 +127,6 @@ describe('completionEvidenceSchema', () => {
     expect(completionEvidenceSchema.parse(JSON.parse(JSON.stringify(evidence)))).toEqual(evidence);
   });
 
-  it('parses a verification record saved before observations were recorded', () => {
-    const evidence = completionEvidenceOf({
-      reviewed: { request: faker.lorem.paragraph(), plan: designDocs().plan },
-      settings: runSettings({ verifyCommand: 'npm test' }),
-      verification: { command: 'npm test' },
-      verdict: { fulfilled: true, gaps: [] },
-      observed: { before: workFacts(), after: workFacts() },
-      range: { start: faker.git.commitSha(), end: faker.git.commitSha() },
-    });
-
-    expect(completionEvidenceSchema.parse(JSON.parse(JSON.stringify(evidence)))).toEqual(evidence);
-  });
-
   it('rides along in a saved run the store loads back', () => {
     const state = aRunState({
       phase: 'slices',
@@ -234,15 +222,6 @@ describe('completionStillReusable', () => {
     const { state, settings, observed, forkPoint } = setup({
       work,
       verification: { command: 'npm test', observed: { before: work, after: work } },
-    });
-
-    expect(completionStillReusable(state, observed, settings, forkPoint)).toBe(false);
-  });
-
-  it('falls when the recorded verification predates recorded observations', () => {
-    const { state, settings, observed, forkPoint } = setup({
-      settings: runSettings({ verifyCommand: 'npm test' }),
-      verification: { command: 'npm test' },
     });
 
     expect(completionStillReusable(state, observed, settings, forkPoint)).toBe(false);
@@ -500,7 +479,9 @@ describe('reusedCompletionReport', () => {
   it('names the verification the reused review relied on', () => {
     const command = `npm run ${faker.word.verb()}`;
 
-    const report = reusedCompletionReport(aCompletionEvidence({ verification: { command } }));
+    const report = reusedCompletionReport(
+      aCompletionEvidence({ verification: aVerification({ command }) }),
+    );
 
     expect(report.join('\n')).toContain(`\`${command}\``);
   });

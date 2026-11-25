@@ -1,10 +1,6 @@
 import { z } from 'zod';
 
-import {
-  captureOutput,
-  type FailedFinalVerification,
-  retainedFinalVerificationFailure,
-} from './diagnostics.js';
+import { captureOutput, type FailedFinalVerification } from './diagnostics.js';
 import type { Outcome } from './outcome.js';
 import type { FinalCheckResult, RunState } from './run-state.js';
 import { type PlannedSlice, type Slice, sliceFromPlan } from './slice.js';
@@ -138,7 +134,7 @@ function lastFailedVerification(
   checked: FinalCheckCompletion,
   { round, at }: { round: number; at: number },
 ): FailedFinalVerification | undefined {
-  const earlier = retainedFinalVerificationFailure(state);
+  const earlier = state.failedFinalVerification;
   if (checked.verified) return earlier && { ...earlier, passedSince: true };
   return {
     command: checked.command,

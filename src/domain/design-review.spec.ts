@@ -239,8 +239,7 @@ describe('designReviewStage', () => {
     expect(stageOf(aRevisedDesignReview({ outstanding: [] }))).toBe('approved');
   });
 
-  it('has no stage for a run before its design, or one saved before design reviews existed', () => {
+  it('has no stage for a run before its design', () => {
     expect(designReviewStage(aRunState({ phase: 'designing' }))).toBeUndefined();
-    expect(designReviewStage(aRunState({ phase: 'slices' }))).toBeUndefined();
   });
 });

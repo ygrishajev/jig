@@ -79,13 +79,13 @@ const runFields = z.object({
   /**
    * How many times the run has been saved. When several stores hold a copy, the highest revision
    * is the freshest: a counter rather than a timestamp, because the machines saving it do not
-   * share a clock. A run saved before revisions were counted loads as revision 0.
+   * share a clock.
    */
-  revision: z.number().int().nonnegative().default(0),
+  revision: z.number().int().nonnegative(),
   baseBranch: z.string().min(1),
   request: z.string(),
-  /** Whether the run merges its branch when it finishes; a run saved before the choice existed merges. */
-  merge: z.boolean().default(true),
+  /** Whether the run merges its branch when it finishes. */
+  merge: z.boolean(),
   /**
    * `deferred` keeps the run's code off the remote: saves publish state only, recording the
    * commit the run branch held as `codeRevision`, and the code is published by whoever owns it.
@@ -103,12 +103,9 @@ const runFields = z.object({
   finalCheck: finalCheckResultSchema.optional(),
   failedFinalVerification: failedFinalVerificationSchema.optional(),
   /** Counts the send-backs and final checks the run recorded; each failure takes its count as `at`. */
-  diagnosticSequence: z.number().int().nonnegative().default(0),
-  /**
-   * What an eligible slice review recorded about the whole request, bound to the work it saw.
-   * Evidence saved before it carried its review scope loads as none, so the run declines reuse.
-   */
-  completionReuse: completionEvidenceSchema.optional().catch(undefined),
+  diagnosticSequence: z.number().int().nonnegative(),
+  /** What an eligible slice review recorded about the whole request, bound to the work it saw. */
+  completionReuse: completionEvidenceSchema.optional(),
   /**
    * Set once the run was found fit to finish on `completionReuse` instead of a final check;
    * cleared when finishing finds that evidence no longer holds.
@@ -148,9 +145,7 @@ const withPlan = withContext.extend({ plan: featurePlanSchema });
 
 const withDocs = withPlan.extend({ docs: designDocsSchema });
 
-const withSettledDesign = withDocs.extend({
-  designReview: designReviewProgressAt.settled.optional(),
-});
+const withSettledDesign = withDocs.extend({ designReview: designReviewProgressAt.settled });
 
 const withDescription = withSettledDesign.extend({ prDescription: z.string() });
 

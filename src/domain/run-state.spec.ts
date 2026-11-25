@@ -25,12 +25,13 @@ import {
 } from './run-state.js';
 import { sliceStatusSchema } from './slice.js';
 
-/** The phases a run reaches once its design review is settled, or saved before there was one. */
+/** The phases a run reaches once its design review is settled. */
 const PHASES_PAST_DESIGN_REVIEW = [
   'slicing',
   'gate',
   'paused',
   'slices',
+  'checkingReuse',
   'finalCheck',
   'describing',
   'merging',
@@ -53,6 +54,8 @@ describe('runStateSchema', () => {
     ['reviewingDesign', 'docs'],
     ['revisingDesign', 'designReview'],
     ['resolvingDesign', 'designReview'],
+    ['slicing', 'designReview'],
+    ['stuck', 'designReview'],
     ['describing', 'docs'],
     ['done', 'prDescription'],
     ['completed', 'prDescription'],
@@ -61,15 +64,6 @@ describe('runStateSchema', () => {
 
     expect(runStateSchema.safeParse(saved).success).toBe(false);
   });
-
-  it.each(PHASES_PAST_DESIGN_REVIEW)(
-    'loads a run saved in %s before design reviews were recorded',
-    (phase) => {
-      const { designReview: _neverSaved, ...saved } = aRunState({ phase });
-
-      expect(runStateSchema.parse(saved)).toEqual(saved);
-    },
-  );
 
   it.each(PHASES_PAST_DESIGN_REVIEW)(
     'loads a run saved in %s with its approved design review',
@@ -125,12 +119,6 @@ describe('runStateSchema', () => {
     expect(parsed.error?.issues.map((issue) => issue.path)).toEqual([['designReview']]);
   });
 
-  it('loads a run saved before the merge choice as one that merges', () => {
-    const { merge: _neverSaved, ...legacy } = aRunState();
-
-    expect(runStateSchema.parse(legacy).merge).toBe(true);
-  });
-
   it('starts a run that merges unless told otherwise', () => {
     const started = startRun(aStart());
 
@@ -178,16 +166,6 @@ describe('runStateSchema', () => {
     });
 
     expect(runStateSchema.parse(JSON.parse(JSON.stringify(state)))).toEqual(state);
-  });
-
-  it('loads a run saved before combined reviews recorded any completion evidence', () => {
-    const { completionReuse: _neverSaved, ...legacy } = aRunState({
-      phase: 'slices',
-      slices: [aSlice()],
-      completionReuse: aCompletionEvidence(),
-    });
-
-    expect(runStateSchema.parse(legacy)).toEqual(legacy);
   });
 });
 

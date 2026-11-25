@@ -3,7 +3,6 @@ import { z } from 'zod';
 import {
   capturedOutputSchema,
   diagnosticOrderSchema,
-  OUTPUT_UNAVAILABLE,
   rejectedReviewSchema,
 } from './diagnostics.js';
 import { workObservationsSchema } from './work-facts.js';
@@ -28,20 +27,22 @@ export type SliceStatus = z.infer<typeof sliceStatusSchema>;
 /** What a slice's verification recorded: the command that passed, and where the work stood around it. */
 export const verificationRecordSchema = z.object({
   command: z.string().min(1),
-  observed: workObservationsSchema.optional(),
+  observed: workObservationsSchema,
 });
+
+export type VerificationRecord = z.infer<typeof verificationRecordSchema>;
 
 /**
  * What a slice's last failed verification ran, reported and left behind: a failing command can
  * change the work it failed on, so the facts around it are recorded for the audit. It stays after
- * a later verification passes, marked `passedSince`; one saved before output was kept has none.
+ * a later verification passes, marked `passedSince`.
  */
 export const failedVerificationSchema = z.object({
   command: z.string().min(1),
   observed: workObservationsSchema,
-  output: capturedOutputSchema.default(OUTPUT_UNAVAILABLE),
+  output: capturedOutputSchema,
   at: diagnosticOrderSchema,
-  passedSince: z.boolean().default(false),
+  passedSince: z.boolean(),
 });
 
 export type FailedVerification = z.infer<typeof failedVerificationSchema>;
@@ -50,12 +51,12 @@ export const sliceSchema = plannedSliceSchema.extend({
   order: z.number().int().nonnegative(),
   status: sliceStatusSchema,
   reviewCycles: z.number().int().nonnegative(),
-  hookFailures: z.number().int().nonnegative().default(0),
-  verificationFailures: z.number().int().nonnegative().default(0),
-  emptyAttempts: z.number().int().nonnegative().default(0),
-  ruleFixCycles: z.number().int().nonnegative().default(0),
+  hookFailures: z.number().int().nonnegative(),
+  verificationFailures: z.number().int().nonnegative(),
+  emptyAttempts: z.number().int().nonnegative(),
+  ruleFixCycles: z.number().int().nonnegative(),
   lastFeedback: z.string().optional(),
-  feedbackHistory: z.array(z.string()).default([]),
+  feedbackHistory: z.array(z.string()),
   commit: z.string().optional(),
   verification: verificationRecordSchema.optional(),
   failedVerification: failedVerificationSchema.optional(),

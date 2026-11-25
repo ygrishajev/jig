@@ -132,8 +132,7 @@ export type DesignReviewProgress = z.infer<typeof designReviewProgressSchema>;
 
 /**
  * What each stage of the design review requires of the saved progress, so a stale or hand-edited
- * run fails when it is loaded rather than panicking in the step it resumes. A run saved past the
- * review may have none — it predates design reviews — but any it has must have approved the design.
+ * run fails when it is loaded rather than panicking in the step it resumes.
  */
 export const designReviewProgressAt = {
   reReview: designReviewProgressSchema.refine(
@@ -201,7 +200,7 @@ export function designApproved(state: RunState): boolean {
   return progress !== undefined && outstandingFindings(progress).length === 0;
 }
 
-/** Undefined for a run saved before design reviews existed, which must still load and report. */
+/** Undefined until the run has a design to review. */
 export function designReviewStage(state: RunState): DesignReviewStage | undefined {
   const progress = state.designReview;
   if (!progress) return state.phase === 'reviewingDesign' ? 'awaitingReview' : undefined;

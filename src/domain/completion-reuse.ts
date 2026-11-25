@@ -181,7 +181,6 @@ function verificationStillHolds(evidence: CompletionEvidence, settings: RunSetti
   return (
     verification !== undefined &&
     verification.command === settings.verifyCommand &&
-    verification.observed !== undefined &&
     observationsVouchFor(verification.observed, evidence.checked)
   );
 }

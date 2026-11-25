@@ -17,7 +17,6 @@ import type { RunPhase } from './run-state.js';
 describe('designReviewReport', () => {
   it('leaves no report for a run without a design review', () => {
     expect(designReviewReport(aRunState({ phase: 'designing' }))).toBeUndefined();
-    expect(designReviewReport(aRunState({ phase: 'slices' }))).toBeUndefined();
   });
 
   it('gives each stage its own status, and none of the pending ones reads as approved', () => {

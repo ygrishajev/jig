@@ -14,13 +14,13 @@ import {
   aPlannedSlice,
   aRunState,
   aSlice,
+  aVerification,
   designDocs,
   failureOutput,
   workObservations,
 } from '../../tests/support/builders.js';
 import { applyOutcome } from './apply-outcome.js';
 import type { Outcome } from './outcome.js';
-import { sliceSchema } from './slice.js';
 
 describe('applyOutcome', () => {
   it.each(['continue', 'pause', 'merged', 'awaitingManualMerge'] as const)(
@@ -114,29 +114,38 @@ describe('applyOutcome', () => {
   });
 
   it.each([
-    ['hookRejected', 'hookFailures'],
-    ['verificationFailed', 'verificationFailures'],
+    ['hookFailures', (feedback: string): Outcome => ({ type: 'hookRejected', feedback })],
+    [
+      'verificationFailures',
+      (feedback: string): Outcome => ({
+        type: 'verificationFailed',
+        feedback,
+        ...aVerification(),
+        output: failureOutput(),
+      }),
+    ],
   ] as const)(
     'counts %s independently and records feedback while invalidating verification',
-    (type, counter) => {
+    (counter, sentBack) => {
       const slice = aSlice({
         reviewCycles: 2,
         hookFailures: 1,
         verificationFailures: 1,
         emptyAttempts: 1,
         ruleFixCycles: 1,
-        verification: { command: faker.lorem.word() },
+        verification: aVerification({ command: faker.lorem.word() }),
       });
       const feedback = faker.lorem.sentence();
 
-      const state = applyOutcome(aRunState({ slices: [slice] }), { type, feedback });
+      const state = applyOutcome(aRunState({ slices: [slice] }), sentBack(feedback));
 
-      expect(state.slices[0]).toEqual({
+      expect(state.slices[0]).toMatchObject({
         ...slice,
         [counter]: 2,
         lastFeedback: feedback,
         feedbackHistory: [...slice.feedbackHistory, feedback],
         verification: undefined,
+        failedVerification: counter === 'verificationFailures' ? expect.anything() : undefined,
       });
     },
   );
@@ -207,27 +216,16 @@ describe('applyOutcome', () => {
     expect(state.slices[0].feedbackHistory).toEqual([first, second, third]);
   });
 
-  it('records the verify command the current slice passed once it is verified', () => {
-    const command = `npm run ${faker.word.verb()}`;
-    const slice = aSlice({ order: 0, status: 'verifying' });
-
-    const { slices } = applyOutcome(aRunState({ slices: [slice] }), { type: 'verified', command });
-
-    expect(slices[0].verification).toEqual({ command });
-  });
-
   it('records where the work stood around the verification a slice passed', () => {
-    const command = `npm run ${faker.word.verb()}`;
-    const observed = workObservations();
+    const verification = aVerification();
     const slice = aSlice({ order: 0, status: 'verifying' });
 
     const { slices } = applyOutcome(aRunState({ slices: [slice] }), {
       type: 'verified',
-      command,
-      observed,
+      verification,
     });
 
-    expect(slices[0].verification).toEqual({ command, observed });
+    expect(slices[0].verification).toEqual(verification);
   });
 
   it('records the command, its output and the work around a verification that failed, beside its counter', () => {
@@ -316,7 +314,7 @@ describe('applyOutcome', () => {
     const slice = aSlice({
       order: 0,
       status: 'verifying',
-      verification: { command: `npm run ${faker.word.verb()}` },
+      verification: aVerification({ command: `npm run ${faker.word.verb()}` }),
     });
 
     const { slices } = applyOutcome(aRunState({ slices: [slice] }), {
@@ -325,12 +323,6 @@ describe('applyOutcome', () => {
     });
 
     expect(slices[0].verification).toBeUndefined();
-  });
-
-  it('still parses a slice saved before slices recorded their verification', () => {
-    const { verification: _neverSaved, ...old } = aSlice();
-
-    expect(sliceSchema.parse(old)).toEqual(old);
   });
 
   it('skips approved slices when picking the slice an outcome belongs to', () => {

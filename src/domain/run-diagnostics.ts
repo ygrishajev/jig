@@ -1,4 +1,4 @@
-import { type CapturedOutput, retainedFinalVerificationFailure } from './diagnostics.js';
+import type { CapturedOutput } from './diagnostics.js';
 import type { RunState } from './run-state.js';
 import type { Slice } from './slice.js';
 
@@ -34,12 +34,12 @@ export function runDiagnostics(state: RunState): RunDiagnostics {
   };
 }
 
-/** The failure recorded last; among failures saved before they were ordered, the later listed. */
+/** The failure recorded last. */
 function latest(
   failures: VerificationFailureDiagnostic[],
 ): VerificationFailureDiagnostic | undefined {
   return failures.reduce<VerificationFailureDiagnostic | undefined>(
-    (found, failure) => (found === undefined || failure.at >= found.at ? failure : found),
+    (found, failure) => (found === undefined || failure.at > found.at ? failure : found),
     undefined,
   );
 }
@@ -59,7 +59,7 @@ function sliceVerificationFailure(slice: Slice): VerificationFailureDiagnostic[]
 }
 
 function finalVerificationFailure(state: RunState): VerificationFailureDiagnostic[] {
-  const failed = retainedFinalVerificationFailure(state);
+  const failed = state.failedFinalVerification;
   if (!failed) return [];
   return [
     {

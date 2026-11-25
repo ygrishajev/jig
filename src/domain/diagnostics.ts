@@ -1,10 +1,5 @@
 import { z } from 'zod';
 
-interface RetainedFinalVerificationInput {
-  failedFinalVerification?: FailedFinalVerification;
-  finalCheck?: { verified: boolean; command?: string; round: number };
-}
-
 export function captureOutput(output: string | undefined): CapturedOutput {
   if (output === undefined) return OUTPUT_UNAVAILABLE;
   const truncated = output.length > DIAGNOSTIC_OUTPUT_TAIL;
@@ -22,9 +17,9 @@ export const DIAGNOSTIC_OUTPUT_TAIL = 3000;
 
 /**
  * Where a recorded failure falls among the run's others: the run's failure count when it was
- * recorded. A failure saved before failures were counted loads as 0, earlier than any counted one.
+ * recorded.
  */
-export const diagnosticOrderSchema = z.number().int().nonnegative().default(0);
+export const diagnosticOrderSchema = z.number().int().nonnegative();
 
 /** A review's requested changes, kept until a later review of the same slice approves it. */
 export const rejectedReviewSchema = z.object({
@@ -36,7 +31,7 @@ export type RejectedReview = z.infer<typeof rejectedReviewSchema>;
 
 /**
  * The tail of a failed command's output as a run keeps it, verbatim so the file and line
- * references in it survive, or the admission that a run saved before output was kept has none.
+ * references in it survive, or the admission that there was none.
  */
 export const capturedOutputSchema = z.discriminatedUnion('captured', [
   z.object({ captured: z.literal(true), tail: z.string(), truncated: z.boolean() }),
@@ -58,23 +53,3 @@ export const failedFinalVerificationSchema = z.object({
 });
 
 export type FailedFinalVerification = z.infer<typeof failedFinalVerificationSchema>;
-
-/**
- * The run's last whole-run verification failure. A run saved before these were kept still
- * records that its latest check failed verification, so that one stands in, unordered and with
- * no output, until a later check replaces it.
- */
-export function retainedFinalVerificationFailure(
-  state: RetainedFinalVerificationInput,
-): FailedFinalVerification | undefined {
-  if (state.failedFinalVerification) return state.failedFinalVerification;
-  const check = state.finalCheck;
-  if (!check || check.verified) return undefined;
-  return {
-    command: check.command,
-    output: OUTPUT_UNAVAILABLE,
-    round: check.round,
-    at: 0,
-    passedSince: false,
-  };
-}

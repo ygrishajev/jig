@@ -7,6 +7,7 @@ import {
   aFinalCheckResult,
   aRunStateIn,
   aSlice,
+  aVerification,
   runSettings,
 } from '../../tests/support/builders.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
@@ -49,7 +50,11 @@ describe('describePullRequest', () => {
       settings: runSettings({ verifyCommand }),
       state: {
         slices: [
-          aSlice({ order: 0, status: 'approved', verification: { command: verifyCommand } }),
+          aSlice({
+            order: 0,
+            status: 'approved',
+            verification: aVerification({ command: verifyCommand }),
+          }),
         ],
       },
     });
@@ -69,7 +74,11 @@ describe('describePullRequest', () => {
       settings: runSettings({ verifyCommand }),
       state: {
         slices: [
-          aSlice({ order: 0, status: 'approved', verification: { command: verifyCommand } }),
+          aSlice({
+            order: 0,
+            status: 'approved',
+            verification: aVerification({ command: verifyCommand }),
+          }),
         ],
       },
     });

@@ -45,25 +45,6 @@ describe('LocalRunStore', () => {
     expect((await store.load(state.runId)).unwrap()).toEqual(state);
   });
 
-  it('loads zero implementation failure counts from a legacy snapshot', async () => {
-    const { store, repoRoot } = await setup();
-    const state = aRunState({ slices: [aSlice({ hookFailures: 2, verificationFailures: 1 })] });
-    (await store.save(state)).unwrap();
-    const {
-      hookFailures: _hooks,
-      verificationFailures: _verification,
-      ...legacySlice
-    } = state.slices[0];
-    await writeFile(
-      path.join(stateDirectory(repoRoot, state.runId), 'run.json'),
-      JSON.stringify({ ...state, slices: [legacySlice] }),
-    );
-
-    const loaded = (await store.load(state.runId)).unwrap();
-
-    expect(loaded?.slices[0]).toEqual({ ...legacySlice, hookFailures: 0, verificationFailures: 0 });
-  });
-
   it('loads back the completion evidence of a combined slice review and the work it observed', async () => {
     const { store } = await setup();
     const state = aRunState({
@@ -83,25 +64,6 @@ describe('LocalRunStore', () => {
     await store.save(state);
 
     expect((await store.load(state.runId)).unwrap()).toEqual(state);
-  });
-
-  it('loads a run saved before combined reviews recorded any completion evidence', async () => {
-    const { store, repoRoot } = await setup();
-    const state = aRunState({
-      phase: 'slices',
-      slices: [aSlice()],
-      completionReuse: aCompletionEvidence(),
-    });
-    (await store.save(state)).unwrap();
-    const { completionReuse: _neverSaved, ...legacy } = state;
-    await writeFile(
-      path.join(stateDirectory(repoRoot, state.runId), 'run.json'),
-      JSON.stringify(legacy),
-    );
-
-    const loaded = (await store.load(state.runId)).unwrap();
-
-    expect(loaded).toEqual(legacy);
   });
 
   it('peeks at the run it saved', async () => {

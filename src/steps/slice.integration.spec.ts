@@ -10,6 +10,7 @@ import {
   aFinalCheckResult,
   aRunState,
   aSlice,
+  aVerification,
   designDocs,
   runId,
   runSettings,
@@ -539,7 +540,10 @@ describe('slice steps', () => {
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const { run, agent, git, runBranch } = await setup({ reviewer: [approval()] });
     const forkPoint = await git.revparse([runBranch]);
-    const slice = aSlice({ status: 'in_review', verification: { command: verifyCommand } });
+    const slice = aSlice({
+      status: 'in_review',
+      verification: aVerification({ command: verifyCommand }),
+    });
 
     await run(reviewSlice, slice);
 
@@ -555,7 +559,7 @@ describe('slice steps', () => {
 
     await run(reviewSlice, slice);
     const withoutResult = agent.calls.at(-1)?.prompt ?? '';
-    await run(reviewSlice, { ...slice, verification: { command } });
+    await run(reviewSlice, { ...slice, verification: aVerification({ command }) });
     const withResult = agent.calls.at(-1)?.prompt ?? '';
     const absentGuidance = withoutResult.split('\n').filter((line) => !withResult.includes(line));
 
@@ -710,8 +714,9 @@ describe('slice steps', () => {
 
     const outcome = await run(verifySlice, aSlice());
 
-    expect(outcome).toMatchObject({ type: 'verified', command: verifyCommand });
-    const observed = outcome.type === 'verified' ? outcome.observed : undefined;
+    const verification = outcome.type === 'verified' ? outcome.verification : undefined;
+    expect(verification?.command).toBe(verifyCommand);
+    const observed = verification?.observed;
     expect(observed).toEqual({
       before: {
         host: { commit: head, tree: await git.revparse([`${runBranch}^{tree}`]), clean: true },

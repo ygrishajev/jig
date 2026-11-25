@@ -204,6 +204,6 @@ export const verifySlice: SliceStep = ({ settings, ports }) => {
         observed,
       });
     }
-    return Result.ok<Outcome>({ type: 'verified', command, observed });
+    return Result.ok<Outcome>({ type: 'verified', verification: { command, observed } });
   });
 };
