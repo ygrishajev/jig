@@ -83,7 +83,6 @@ describe('logged failures', () => {
           type: 'ConfigInvalid',
           _tag: 'ConfigInvalid',
           name: 'ConfigInvalid',
-          kind: 'fatal',
           message: failure.message,
           stack: `ConfigInvalid${failure.stack?.slice(Failure.name.length)}`,
         });

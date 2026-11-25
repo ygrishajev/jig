@@ -41,11 +41,9 @@ export type RunStoreFailure =
 /** The operator's own run store module threw while loading, peeking or saving a run. */
 export class RunStoreOperationFailed extends TaggedError('RunStoreOperationFailed')<{
   message: string;
-}> {
-  readonly kind = 'fatal' as const;
-}
+}> {}
 
 /** A store named in `runStores` cannot be used: its module would not load, or is not a store. */
-export class RunStoreSetupInvalid extends TaggedError('RunStoreSetupInvalid')<{ message: string }> {
-  readonly kind = 'fatal' as const;
-}
+export class RunStoreSetupInvalid extends TaggedError('RunStoreSetupInvalid')<{
+  message: string;
+}> {}

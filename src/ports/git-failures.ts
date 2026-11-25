@@ -18,6 +18,4 @@ export class GitCommandFailed extends TaggedError('GitCommandFailed')<{
 }
 
 /** The repository jig runs in is not one a run can start from: not its root, or no branch checked out. */
-export class RepositoryInvalid extends TaggedError('RepositoryInvalid')<{ message: string }> {
-  readonly kind = 'fatal' as const;
-}
+export class RepositoryInvalid extends TaggedError('RepositoryInvalid')<{ message: string }> {}

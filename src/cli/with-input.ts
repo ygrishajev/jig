@@ -32,6 +32,4 @@ function inputOf(command: Command): Record<string, unknown> {
 }
 
 /** What the operator typed does not fit the command. */
-export class CommandInputInvalid extends TaggedError('CommandInputInvalid')<{ message: string }> {
-  readonly kind = 'fatal' as const;
-}
+export class CommandInputInvalid extends TaggedError('CommandInputInvalid')<{ message: string }> {}

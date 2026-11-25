@@ -27,6 +27,4 @@ export interface AgentInstall {
 export class ImageBuildFailed extends TaggedError('ImageBuildFailed')<{
   message: string;
   output: string;
-}> {
-  readonly kind = 'fatal' as const;
-}
+}> {}

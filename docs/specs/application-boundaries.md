@@ -167,8 +167,8 @@ not ports, have no adapter implementation, and are not injected. Domain stays in
 not import `failures`.
 
 `failures` holds no error classes and no classification. Each class lives with the condition it
-describes (see below), carries its literal `kind`, and the owner of a decision says which kinds it
-retries. Flow makes the step retry decision, so flow assembles the step `RetryPolicy` (see
+describes (see below). A class a step or a sandbox start can fail with carries its literal `kind`,
+and the owner of a decision says which kinds it retries; no other class carries one. Flow makes the step retry decision, so flow assembles the step `RetryPolicy` (see
 Configuration and defaults). Any further shared technical owner must name its cohesive
 responsibility and specific consumers, explain why existing libraries/owners do not fit, and propose
 its allowed dependency edges before the corresponding issue is implemented. Do not grant every
@@ -356,8 +356,8 @@ architecture refactor. #48's proposed retry keys, zero semantics and documentati
 separate behavior work after ownership is settled. Agent presets currently override role
 configurations only; this refactor must not broaden presets to arbitrary run settings.
 
-Step retry has three owners. Config owns the default count and delay. Each error class owns its
-literal `kind`, and domain keeps `FailureKind` and `isTransient` as a plain rule over it. Flow owns
+Step retry has three owners. Config owns the default count and delay. Each class a step or a sandbox
+start can fail with owns its literal `kind`, and domain keeps `FailureKind` and `isTransient` as a plain rule over it. Flow owns
 assembling the step `RetryPolicy` from the resolved `RunSettings` and `isTransient`, because flow
 makes the retry decision: a builder such as `src/flow/retry-policy.ts` imports `RetryPolicy` from
 `src/failures/retry.ts` and returns that type. App may import the builder from flow. Domain exports
@@ -385,10 +385,12 @@ Use the following ownership decisions to avoid recreating a global domain error 
 - CLI owns transport-specific input failures. App owns failures specific to application use cases.
 - Adapters translate raw third-party exceptions to the declared capability failures.
 
-Preserve error tags, important fields, messages, retry/block/fatal classifications and CLI behavior.
+Preserve error tags, important fields, messages, CLI behavior, and the retry/block/fatal
+classification of every failure a step or a sandbox start can end with. A class nothing classifies
+carries no `kind`.
 A class split out of a broader one is the exception for tags: it gets its own `_tag`, equal to its
 class name, so no two classes share a tag and the tag stays a usable discriminant for exhaustive
-matches, logs and metrics. Its message text, `kind` and exit behavior stay as they were, so users
+matches, logs and metrics. Its message text and exit behavior stay as they were, so users
 see no change. Where an existing surface shows or stores the old tag string, keep compatibility at
 that surface with an explicit translation; do not freeze the old tag in every new class. Use narrow
 unions where decisions are exhaustive. Aggregate unions may live at the application boundary that
