@@ -1,0 +1,30 @@
+name: Integration
+
+# Specs on real git and processes. Reports on a pull request without blocking it: only `validate` is
+# a required check, and the publish workflow runs these again before a release.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - run: npm ci
+      - run: npm run test:integration

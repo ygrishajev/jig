@@ -26,14 +26,15 @@ Use the development Node version pinned in `package.json` through Volta.
 
 Run routine validations concurrently, with each check's stdout and stderr printed together
 when it finishes. Failed checks do not cancel the others; any failure makes the command fail.
-The default includes build, typecheck, lint, duplication, formatting, coverage (which runs
-the test suite), and secret scanning. Mutation testing is omitted and reported as such;
-run `npm run test:mutation` separately when needed. The legacy `--skip test:mutation`
-option remains accepted, but is unnecessary. Explicit check names can opt into mutation testing.
+The default includes build, typecheck, lint, duplication, dependencies, formatting, unit specs with
+coverage, and secret scanning. Integration and mutation testing are omitted and reported as such;
+name them to run them. The legacy `--skip test:mutation` option remains accepted, but is
+unnecessary.
 
 ```bash
 npm run validate
 npm run validate -- lint typecheck
+npm run validate -- test:integration
 npm run validate -- --skip test:coverage
 npm run validate -- --help
 ```
@@ -43,7 +44,7 @@ npm test                 # unit specs, starts no process
 npm run test:integration # specs on real git and processes, slow
 npm run lint
 npm run lint:duplication # jscpd, production source only
-npm run test:coverage    # unit and integration, Vitest V8, text + HTML + LCOV
+npm run test:coverage    # unit specs, Vitest V8, text + HTML + LCOV
 npm run format:check
 npm run test:mutation # StrykerJS, slow (~30 min)
 npm run secretlint
@@ -55,11 +56,15 @@ Duplication checks fail when jscpd finds duplicated production code with its def
 size settings; specs are excluded. Reports go to `reports/duplication/`, and coverage reports
 go to `coverage/`. Stryker remains the mutation-testing tool.
 
+CI runs `npm run validate` on every pull request and requires it. Integration specs run beside it in
+their own workflow, which reports a failure without blocking the merge, and again before a release,
+which waits for them.
+
 A spec that starts a process or works on a real repository is named `*.integration.spec.ts`; lint
 rejects a unit spec that imports what it needs to do so. `vitest.workspace.ts` defines the named
 `unit`, `integration` and `e2e` projects. The root config loads `vitest.specs.workspace.ts`, the
-unit and integration projects, by default, including for coverage and mutation testing. `npm test`
-and watch select `unit`. The E2E script selects the full workspace with `--workspace vitest.workspace.ts --project e2e`.
+unit and integration projects, by default, including for mutation testing. `npm test`, coverage and watch
+select `unit`. The E2E script selects the full workspace with `--workspace vitest.workspace.ts --project e2e`.
 
 ## Live E2E
 
@@ -190,8 +195,8 @@ commits, and pull requests, follow [commit-pr](.claude/skills/commit-pr/SKILL.md
 
 ## Releases
 
-The [publish workflow](.github/workflows/publish.yml) validates each push to `main`, then
-semantic-release calculates the next version from conventional commits since the last release.
+The [publish workflow](.github/workflows/publish.yml) runs the integration specs and then
+validates each push to `main`; once both pass, semantic-release calculates the next version from conventional commits since the last release.
 Breaking changes release a major version, features release a minor version, and other conventional
 commits release a patch version. The workflow publishes to npmjs.org with provenance and creates
 the release tag and GitHub Release. The checked-in package version is a development placeholder;

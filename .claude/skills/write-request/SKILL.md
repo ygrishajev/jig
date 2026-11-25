@@ -70,7 +70,7 @@ so in the PR.
 
 - [ ] the run above reports 0 survived, 0 no-coverage — or each exception is named in the PR
       with why it is not worth killing
-- [ ] `npm test`, `npm run test:integration`, `npm run lint`, `npm run format:check` pass from the repo root
+- [ ] `npm test`, `npm run lint`, `npm run format:check` pass from the repo root
 ````
 
 ### Bad

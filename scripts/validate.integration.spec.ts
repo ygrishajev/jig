@@ -52,16 +52,20 @@ describe('validation command', () => {
       ]) {
         expect(result.all).toContain(`${check}:end`);
       }
+      expect(result.all).not.toContain('test:integration:start');
       expect(result.all).not.toContain('test:mutation:start');
     },
   );
 
-  it('runs mutation testing when explicitly selected', async () => {
-    const { run } = await setup();
-    const result = await run(['build', 'lint', 'test:mutation']);
-    expect(result.exitCode).toBe(0);
-    expect(result.all).toContain('test:mutation:end');
-  });
+  it.each(['test:integration', 'test:mutation'])(
+    'runs %s when explicitly selected',
+    async (check) => {
+      const { run } = await setup();
+      const result = await run(['build', 'lint', check]);
+      expect(result.exitCode).toBe(0);
+      expect(result.all).toContain(`${check}:end`);
+    },
+  );
 
   it('selects dependency checking and waits for other checks after its failure', async () => {
     const { run } = await setup();
@@ -100,6 +104,7 @@ describe('validation command', () => {
         'lint:dependencies',
         'format:check',
         'test:coverage',
+        'test:integration',
         'test:mutation',
         'secretlint',
       ].map((name) => [name, `node check.cjs ${name}`]),

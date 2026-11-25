@@ -36,7 +36,7 @@
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:e2e": "npm run build && node --env-file-if-exists=tests/e2e/.env node_modules/vitest/vitest.mjs run --workspace vitest.workspace.ts --project e2e --reporter verbose",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --project unit --coverage",
     "test:watch": "vitest --project unit",
     "test:mutation": "stryker run",
     "secretlint": "secretlint '**/*'",

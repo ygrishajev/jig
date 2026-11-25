@@ -62,7 +62,7 @@ write-file-atomic, pino, zod, simple-git, execa, commander.
   login cache; valid refreshed credentials are written back when the sandbox closes. See
   [Codex authentication](docs/authentication.md#codex-authentication). Every `.env` is git-ignored;
   keep it that way.
-- **Main publishes.** Each push to `main` runs `.github/workflows/publish.yml`, which validates,
-  calculates the next version from conventional commits, and publishes the package publicly to npm
-  with provenance via trusted publishing. Semantic-release owns release tags and GitHub Releases;
+- **Main publishes.** Each push to `main` runs `.github/workflows/publish.yml`, which runs the
+  integration specs, validates, calculates the next version from conventional commits, and publishes
+  the package publicly to npm with provenance via trusted publishing. Semantic-release owns release tags and GitHub Releases;
   the checked-in package version is a development placeholder. Do not create release tags manually.
