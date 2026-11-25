@@ -38,6 +38,17 @@ describe('withInput', () => {
     expect(received()).toBeUndefined();
   });
 
+  it('refuses every issue on its own line', async () => {
+    const { run } = setup(z.object({ name: z.string(), count: z.coerce.number() }));
+
+    const result = await run([]);
+
+    expect(result.isErr() && result.error.message.split('\n')).toEqual([
+      expect.stringMatching(/^name: /),
+      expect.stringMatching(/^count: /),
+    ]);
+  });
+
   function setup<Schema extends z.ZodTypeAny>(schema: Schema) {
     let received: z.output<Schema> | undefined;
     let outcome: Result<void, CommandInputInvalid> = Result.ok();

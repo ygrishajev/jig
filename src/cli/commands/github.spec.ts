@@ -116,7 +116,7 @@ describe('github implement command', () => {
     const implementIssue = vi.fn<JigOperations['implementIssue']>(async () => published);
     const output = mock<FailureOutput>();
     const program = new Command();
-    registerGithubCommands(program, implementIssue, output);
+    registerGithubCommands(program, implementIssue, { defaultLogFormat: 'json' }, output);
     return {
       implementIssue,
       output,

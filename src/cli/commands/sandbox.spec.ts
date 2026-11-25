@@ -7,8 +7,8 @@ import { mock } from 'vitest-mock-extended';
 import { presetName } from '../../../tests/support/builders.js';
 import { LocalPreparationFailed } from '../../ports/local-state.js';
 import { ImageBuildFailed } from '../../ports/sandbox-images.js';
+import type { OutcomeLog } from '../command-io.js';
 import type { FailureOutput } from '../with-error-handling.js';
-import type { OutcomeLog } from './run.js';
 import {
   buildInputSchema,
   initSummary,
@@ -166,7 +166,7 @@ describe('sandbox commands', () => {
     registerSandboxCommands(
       program,
       { init, buildImage },
-      { outcomeLog: () => outcomeLog },
+      { outcomeLog: () => outcomeLog, defaultLogFormat: 'json' },
       output,
     );
     return {

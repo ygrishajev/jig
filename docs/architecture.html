@@ -134,17 +134,17 @@ svg text{font-family:var(--sans)}
   <table>
     <thead><tr><th>Module</th><th>Owns</th><th>Imports other owners</th></tr></thead>
     <tbody>
-      <tr><td>domain</td><td>State, outcomes, business failures and pure rules</td><td>None</td></tr>
+      <tr><td>domain</td><td>State, outcomes, business failures, metric totals and pure rules</td><td>None</td></tr>
       <tr><td>failures</td><td>Failure presentation, panic unwrapping and retry of operations that return a <code>Result</code></td><td>None</td></tr>
       <tr><td>ports</td><td>External capability contracts and their failures</td><td>domain</td></tr>
       <tr><td>config</td><td>Configuration and environment schemas and defaults, run settings, provider policy, presets and scratch naming</td><td>domain</td></tr>
-      <tr><td>observers</td><td>Events, metrics, logging and tracing observers</td><td>domain, failures, ports</td></tr>
-      <tr><td>adapters</td><td>Git, GitHub, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, failures, observers, ports</td></tr>
+      <tr><td>observers</td><td>Events, metric records, logging and tracing observers</td><td>domain, failures, ports</td></tr>
+      <tr><td>adapters</td><td>Git, GitHub, persistence, configuration and preset files, sandbox, terminal and telemetry I/O</td><td>config, domain, failures, ports</td></tr>
       <tr><td>flow</td><td>Generic flow contracts, engine and step retry policy</td><td>domain, failures, ports</td></tr>
       <tr><td>prompts</td><td>Agent request construction</td><td>domain</td></tr>
       <tr><td>steps</td><td>Individual workflow operations</td><td>domain, failures, flow, ports, prompts</td></tr>
-      <tr><td>app</td><td>Public operations in <code>src/app/api.ts</code>, repository preparation, the order a run's scope is acquired and released in, sandbox image policy, run lifecycle, concrete workflow assembly and GitHub issue implementation</td><td>config, domain, failures, flow, ports, prompts, steps</td></tr>
-      <tr><td>cli</td><td>Commands, including <code>github implement</code>, input parsing and output</td><td>adapters, app, config, domain, failures, observers, ports</td></tr>
+      <tr><td>app</td><td>Public operations in <code>src/app/api.ts</code>, repository preparation, the order a run's scope is acquired and released in, sandbox image policy, run lifecycle, concrete workflow assembly, GitHub issue implementation, and the documents and summary line a run leaves for a person</td><td>config, domain, failures, flow, ports, prompts, steps</td></tr>
+      <tr><td>cli</td><td>Commands, including <code>github implement</code>, input parsing and output</td><td>app, domain, failures, ports</td></tr>
       <tr><td>composition</td><td>The executable: captures the process context, builds the run and sandbox runtimes with explicit factories, attaches the observers, binds the public operations and composes the CLI with its concrete dependencies, parses arguments when invoked and shuts down</td><td>adapters, app, cli, config, domain, observers, ports</td></tr>
     </tbody>
   </table>
@@ -208,22 +208,18 @@ svg text{font-family:var(--sans)}
     including erased type imports and nested paths. A rule over runtime imports only
     rejects runtime file cycles; intra-module type cycles and mixed cycles broken by erasure pass.</p>
   <ul>
-    <li>Domain imports no other source owner; ports import only domain or ports.</li>
-    <li>Production config imports only <code>src/config</code>, <code>src/domain</code>,
-      <code>better-result</code> and <code>zod</code>: no adapter, port, Node built-in such as
-      <code>node:fs</code>, <code>node:path</code> or <code>node:child_process</code>, or other package
-      such as <code>execa</code>. Config specs are exempt; adapters may import config.</li>
-    <li>Production failures imports only <code>src/failures</code>, <code>better-result</code> and Node
-      built-ins. Only adapters, app, cli, composition, flow, observers and steps import it; domain,
-      ports, config and prompts cannot.</li>
-    <li>Adapters cannot import app, flow, steps, cli or composition; flow cannot import app or steps.</li>
-    <li>Only composition imports cli across owners. No other owner imports composition.</li>
-    <li>Production composition imports only composition, cli, app, adapters, config, observers, ports,
-      domain and failures. Specs and tooling outside <code>src/</code> may import CLI helpers.</li>
-    <li>Only cli and composition import app across owners. Outside app and composition, specs
-      included, app is reached only through <code>src/app/api.ts</code>; app and composition and
-      their specs may import any app module, and app specs may import adapters and composition
-      wiring. Production app imports no adapter, observer or CLI module in any form.</li>
+    <li>Each production owner imports only the owners <code>allowedOwners</code> in
+      <code>.dependency-cruiser.mjs</code> lists for it, under its own
+      <code>&lt;owner&gt;-imports-only-allowed-owners</code> rule, as the table above shows.</li>
+    <li>Production config imports no package but <code>better-result</code> and <code>zod</code>: no
+      Node built-in such as <code>node:fs</code>, <code>node:path</code> or
+      <code>node:child_process</code>, or other package such as <code>execa</code>. Config specs are
+      exempt.</li>
+    <li>Production failures imports no package but <code>better-result</code> and Node built-ins.</li>
+    <li>Outside app and composition, specs included, app is reached only through
+      <code>src/app/api.ts</code>; app and composition and their specs may import any app module, and
+      app specs may import adapters and composition wiring. Specs and tooling outside
+      <code>src/</code> may import CLI helpers.</li>
     <li>Only adapters, observers and composition import Pino or OpenTelemetry.</li>
     <li>Layer restrictions include type imports, re-exports and literal dynamic imports, through nested paths. Resolution, package dependency and production-to-spec checks remain enabled.</li>
   </ul>
@@ -339,7 +335,7 @@ svg text{font-family:var(--sans)}
     ["Make sure the image is current", "ensureSandboxImage rebuilds only what changed.", "domain"],
     ["Open the run scope", "telemetry, then the sandbox (retried if it fails to start), run.log, metrics.jsonl and the observers.", "infra"],
     ["runEngine(runFlow)", "until the run is done, halted, blocked or stuck.", "domain"],
-    ["Write the result", "RunArtefacts: result.json with metrics, design.md, plan.md, design-review.md, PR_DESCRIPTION.md.", "infra"],
+    ["Write the result", "invocationRecord (src/app/invocation-record.ts) decides the result and each document's text, PR footer included; RunArtefacts serializes result.json with metrics and replaces or removes design.md, plan.md, design-review.md and PR_DESCRIPTION.md.", "infra"],
     ["Close", "withResource: sandbox closed, scope disposed, traces flushed, lock released, runtime disposed; each release attempted.", "step"]
   ], { h: 54, gap: 12 });
   var cTResume = flowCv("tr", "Resume a run", "jig run --id <id>, or the same request file with the same id.", [
@@ -352,7 +348,7 @@ svg text{font-family:var(--sans)}
     ["Peek at the run", "the freshest copy in every configured store; no branch or ref moves.", "infra"],
     ["Documents", "design.md, plan.md, design-review.md and PR_DESCRIPTION.md, when written.", "step"],
     ["Slices", "status of each, with the last reviewer feedback.", "domain"],
-    ["So far", "RunRecords (src/ports/run-records.ts): MetricsLog's summary of metrics.jsonl: slices, review rounds, tokens, cost, time.", "domain"]
+    ["So far", "RunRecords (src/ports/run-records.ts): MetricsLog's summary of metrics.jsonl, and its line from src/app/run-summary.ts, shown once a step has run: slices, review rounds, tokens, cost, time.", "domain"]
   ]);
   var cTInitAgent = flowCv("ia", "jig init", "initRepository in src/app/init-sandbox.ts. The planner sets up the toolchain; the sandbox proves it.", [
     ["Write the starter files", ".sandcastle/Dockerfile, its .gitignore, jig.config.json — only those missing.", "step"],
@@ -488,7 +484,7 @@ svg text{font-family:var(--sans)}
     ["agentUsage events", "cost and tokens from each agent's own raw stream.", "infra"],
     ["MetricsObserver", "attributes each agent call to the step it ran in.", "domain"],
     ["metrics.jsonl", "one line per step, agent call and retry, across every invocation.", "infra"],
-    ["MetricsLog.summary", "summarizeMetrics over the log, for result.json, the PR footer and jig status.", "domain"]
+    ["MetricsLog.summary", "summarizeMetrics (src/domain/metrics.ts) over the log, for result.json, the PR footer and jig status.", "domain"]
   ]);
   var cFTrace = flowCv("ot", "Tracing", "src/observers/tracing-observer.ts, src/adapters/telemetry.", [
     ["OTEL endpoint set?", "otherwise the SDK is never loaded.", "step"],

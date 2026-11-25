@@ -2,7 +2,7 @@ import { panic, Result, TaggedError } from 'better-result';
 import { Command } from 'commander';
 import type { z } from 'zod';
 
-import { describeIssues } from '../config/describe-issues.js';
+import { describeIssue } from '../domain/validation-issue.js';
 
 /**
  * A commander action that receives the command's arguments and options as one object, parsed
@@ -17,7 +17,7 @@ export function withInput<Schema extends z.ZodTypeAny, E extends { message: stri
     if (!(command instanceof Command)) panic('withInput must wrap a commander action');
     const parsed = schema.safeParse(inputOf(command));
     if (!parsed.success) {
-      return Result.err(new CommandInputInvalid({ message: describeIssues(parsed.error, '\n') }));
+      return Result.err(new CommandInputInvalid({ message: describeInputIssues(parsed.error) }));
     }
     return run(parsed.data);
   };
@@ -33,3 +33,8 @@ function inputOf(command: Command): Record<string, unknown> {
 
 /** What the operator typed does not fit the command. */
 export class CommandInputInvalid extends TaggedError('CommandInputInvalid')<{ message: string }> {}
+
+/** One line per issue, so a terminal shows each on its own. */
+function describeInputIssues(error: z.ZodError): string {
+  return error.issues.map(describeIssue).join('\n');
+}

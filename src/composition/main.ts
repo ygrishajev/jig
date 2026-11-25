@@ -13,7 +13,7 @@ import { GitRunBranches } from '../adapters/git/run-branches.js';
 import { OctokitGithub } from '../adapters/github/octokit-github.js';
 import { readCredentialsFile } from '../adapters/local-store/credentials-file.js';
 import { LocalRunRecords } from '../adapters/local-store/local-run-records.js';
-import { createConsoleLogger } from '../adapters/logging/create-logger.js';
+import { createConsoleLogger, defaultLogFormat } from '../adapters/logging/create-logger.js';
 import { RepositoryRunStores } from '../adapters/run-store/repository-run-stores.js';
 import { askForAgents } from '../adapters/terminal/ask-for-agents.js';
 import { askForCredential } from '../adapters/terminal/ask-for-credential.js';
@@ -30,8 +30,8 @@ import {
   type RepositorySources,
   startOrResumeRun,
 } from '../app/api.js';
+import type { CommandIo } from '../cli/command-io.js';
 import { registerGithubCommands } from '../cli/commands/github.js';
-import type { RunCommandIo } from '../cli/commands/run.js';
 import { exitWhenDone } from '../cli/exit-when-done.js';
 import { buildCli } from '../cli/main.js';
 import type { FailureOutput } from '../cli/with-error-handling.js';
@@ -39,8 +39,8 @@ import { runRuntimeFactory } from './run-runtime.js';
 import { sandboxRuntimeFactory } from './sandbox-runtime.js';
 
 export function buildJigCli(failureOutput?: FailureOutput): Command {
-  const program = buildCli(operations, runIo, failureOutput);
-  registerGithubCommands(program, operations.implementIssue, failureOutput);
+  const program = buildCli(operations, commandIo, failureOutput);
+  registerGithubCommands(program, operations.implementIssue, commandIo, failureOutput);
   return program;
 }
 
@@ -114,9 +114,10 @@ const operations: JigOperations = {
     ),
 };
 
-const runIo: RunCommandIo = {
+const commandIo: CommandIo = {
   requestInputs: processRequestInputs(),
   outcomeLog: (format) => createConsoleLogger(format),
+  defaultLogFormat: defaultLogFormat(),
 };
 
 /**

@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import { z } from 'zod';
 
 import type { IssueOutcome, JigOperations } from '../../app/api.js';
+import type { CommandIo } from '../command-io.js';
 import {
   configInputSchema,
   configOption,
@@ -15,6 +16,7 @@ import { withInput } from '../with-input.js';
 export function registerGithubCommands(
   program: Command,
   implementIssue: JigOperations['implementIssue'],
+  { defaultLogFormat }: Pick<CommandIo, 'defaultLogFormat'>,
   failureOutput?: FailureOutput,
 ): void {
   program
@@ -25,7 +27,7 @@ export function registerGithubCommands(
     .option('--issue <number>', 'issue number')
     .addOption(configOption())
     .addOption(presetOption())
-    .addOption(logFormatOption())
+    .addOption(logFormatOption(defaultLogFormat))
     .action(
       withErrorHandling(
         withInput(githubInputSchema, async ({ issue, config, preset, logFormat }) => {

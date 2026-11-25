@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { z } from 'zod';
 
 import type { InitResult, JigOperations } from '../../app/api.js';
+import type { CommandIo } from '../command-io.js';
 import {
   configInputSchema,
   configOption,
@@ -15,7 +16,6 @@ import {
   withErrorHandling,
 } from '../with-error-handling.js';
 import { withInput } from '../with-input.js';
-import type { RunCommandIo } from './run.js';
 
 /** The operations the sandbox commands call. */
 export type SandboxOperations = Pick<JigOperations, 'init' | 'buildImage'>;
@@ -23,7 +23,7 @@ export type SandboxOperations = Pick<JigOperations, 'init' | 'buildImage'>;
 export function registerSandboxCommands(
   program: Command,
   { init, buildImage }: SandboxOperations,
-  { outcomeLog }: Pick<RunCommandIo, 'outcomeLog'>,
+  { outcomeLog, defaultLogFormat }: Pick<CommandIo, 'outcomeLog' | 'defaultLogFormat'>,
   failureOutput: FailureOutput = processFailureOutput,
 ): void {
   program
@@ -31,7 +31,7 @@ export function registerSandboxCommands(
     .description("Set up this repository's sandbox and check its setup and verify commands in it")
     .option('--no-agent', 'only write the starter files and check what is already configured')
     .addOption(configOption())
-    .addOption(logFormatOption())
+    .addOption(logFormatOption(defaultLogFormat))
     .action(
       withErrorHandling(
         withInput(initInputSchema, async ({ agent, config, logFormat }) => {
@@ -54,7 +54,7 @@ export function registerSandboxCommands(
     .option('--pull-agents', 'install the latest agent releases even if updates are off')
     .addOption(configOption())
     .addOption(presetOption())
-    .addOption(logFormatOption())
+    .addOption(logFormatOption(defaultLogFormat))
     .action(
       withErrorHandling(
         withInput(buildInputSchema, async ({ pullAgents, config, preset, logFormat }) => {

@@ -6,7 +6,6 @@ import path from 'node:path';
 import { vi } from 'vitest';
 import type { ZodType } from 'zod';
 
-import type { StandardInput } from '../../src/adapters/terminal/standard-input.js';
 import {
   type ConfigContents,
   ConfigNotJson,
@@ -39,6 +38,7 @@ import {
 } from '../../src/ports/agent-session.js';
 import type { GitCommandFailed } from '../../src/ports/git-failures.js';
 import type { Clock, EventSink } from '../../src/ports/observability.js';
+import type { StandardInput } from '../../src/ports/request-inputs.js';
 import type { RunStore, RunStoreFailure } from '../../src/ports/run-store.js';
 import { aPresetLabel, tokenUsage } from './builders.js';
 

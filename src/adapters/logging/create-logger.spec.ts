@@ -1,5 +1,4 @@
 import { faker } from '@faker-js/faker';
-import { TaggedError } from 'better-result';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { DestinationStream } from 'pino';
@@ -7,16 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
 import { ConfigInvalid } from '../../config/errors.js';
-import {
-  SandboxCredentialsInvalid,
-  SandboxPreparationInvalid,
-  SandboxUnavailable,
-} from '../../ports/agent-session.js';
-import { RepositoryInvalid } from '../../ports/git-failures.js';
-import { LocalPreparationFailed } from '../../ports/local-state.js';
+import { SandboxUnavailable } from '../../ports/agent-session.js';
 import { RunStateInvalid } from '../../ports/run-state-failures.js';
-import { RunStoreSetupInvalid } from '../../ports/run-store.js';
-import { RunStoreOperationFailed } from '../../ports/run-store.js';
 import { createConsoleLogger, createRunLogger, defaultLogFormat } from './create-logger.js';
 
 describe('defaultLogFormat', () => {
@@ -58,59 +49,26 @@ describe('createRunLogger', () => {
   }
 });
 
-/** Another module's failure that happens to carry a split class's tag under its own name. */
-class ForeignFailure extends TaggedError('RunStateInvalid')<{ message: string }> {}
-
 describe('logged failures', () => {
-  const splitFromConfigInvalid = [
-    RunStateInvalid,
-    RunStoreOperationFailed,
-    RunStoreSetupInvalid,
-    SandboxCredentialsInvalid,
-    SandboxPreparationInvalid,
-    RepositoryInvalid,
-    LocalPreparationFailed,
-  ];
-
-  it.each(splitFromConfigInvalid.map((Failure) => [Failure.name, Failure] as const))(
-    'logs %s under ConfigInvalid on the console and in the run log',
-    async (_name, Failure) => {
-      const failure = new Failure({ message: faker.lorem.sentence() });
-      const { logged } = await setup({ failure });
-
-      for (const line of logged()) {
-        expect(line.err).toMatchObject({
-          type: 'ConfigInvalid',
-          _tag: 'ConfigInvalid',
-          name: 'ConfigInvalid',
-          message: failure.message,
-          stack: `ConfigInvalid${failure.stack?.slice(Failure.name.length)}`,
-        });
-      }
-      expect(logged()).toHaveLength(3);
-      expect(failure._tag).toBe(Failure.name);
-      expect(failure.name).toBe(Failure.name);
-    },
-  );
-
   it.each([
     ['a configuration failure', () => new ConfigInvalid({ message: faker.lorem.sentence() })],
+    [
+      'a failure split out of ConfigInvalid',
+      () => new RunStateInvalid({ message: faker.lorem.sentence() }),
+    ],
     [
       'a sandbox that did not start',
       () => new SandboxUnavailable({ message: faker.lorem.sentence() }),
     ],
     ['a plain error', () => new Error(faker.lorem.sentence())],
-    [
-      'a foreign failure sharing a split name only as its tag',
-      () => new ForeignFailure({ message: faker.lorem.sentence() }),
-    ],
-  ])('logs %s under its own identity', async (_case, create) => {
+  ])('logs %s under its own identity on the console and in the run log', async (_case, create) => {
     const failure = create();
     const { logged } = await setup({ failure });
 
     for (const line of logged()) {
       expect(line.err).toMatchObject({ message: failure.message, stack: failure.stack });
       expect(line.err.type).toBe(failure.constructor.name);
+      if ('_tag' in failure) expect(line.err._tag).toBe(failure._tag);
     }
     expect(logged()).toHaveLength(3);
   });

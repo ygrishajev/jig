@@ -4,20 +4,21 @@ import { z } from 'zod';
 
 import type { JigOperations } from '../app/api.js';
 import { registerPresetsCommand } from './commands/presets.js';
-import { registerRunCommand, type RunCommandIo } from './commands/run.js';
+import { registerRunCommand } from './commands/run.js';
 import { registerSandboxCommands } from './commands/sandbox.js';
 import { registerStatusCommand } from './commands/status.js';
+import type { CommandIo } from './command-io.js';
 import type { FailureOutput } from './with-error-handling.js';
 
 export function buildCli(
   operations: JigOperations,
-  runIo: RunCommandIo,
+  io: CommandIo,
   failureOutput?: FailureOutput,
 ): Command {
   const program = new Command();
   program.name('jig').description('Agentic SDLC pipeline orchestrator').version(packageVersion());
-  registerSandboxCommands(program, operations, runIo, failureOutput);
-  registerRunCommand(program, operations.run, runIo, failureOutput);
+  registerSandboxCommands(program, operations, io, failureOutput);
+  registerRunCommand(program, operations.run, io, failureOutput);
   registerStatusCommand(program, operations.status, failureOutput);
   registerPresetsCommand(program, operations.listPresets, failureOutput);
   return program;

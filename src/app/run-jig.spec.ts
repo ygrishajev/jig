@@ -27,6 +27,7 @@ import {
 import { ImageBuildFailed } from '../ports/sandbox-images.js';
 import type { Workspace } from '../ports/workspace.js';
 import { RunRequestInvalid } from './errors.js';
+import { invocationRecord } from './invocation-record.js';
 import {
   type RunCapabilities,
   runJig,
@@ -97,7 +98,7 @@ describe('runJig over supplied capabilities', () => {
   it.each(['done', 'stuck', 'completed'] as const)(
     'reports a %s run as it is and records it, without preparing or starting a sandbox',
     async (phase) => {
-      const { run, capabilities, state } = setup({ phase });
+      const { run, capabilities, state, metrics } = setup({ phase });
 
       const report = unwrap(await run());
 
@@ -106,9 +107,7 @@ describe('runJig over supplied capabilities', () => {
       expect(capabilities.sandbox.ensureImage).not.toHaveBeenCalled();
       expect(capabilities.sandbox.openScope).not.toHaveBeenCalled();
       expect(capabilities.records.recordInvocation).toHaveBeenCalledWith(
-        state,
-        phase,
-        expect.anything(),
+        invocationRecord(state, phase, metrics),
       );
     },
   );
@@ -327,6 +326,7 @@ describe('runJig over supplied capabilities', () => {
       merge: input.merge,
       codePublication: input.codePublication,
     });
+    const metrics = aMetricsSummary();
     const savedStates: RunState[] = [];
     const released: string[] = [];
     const store = mock<RunStore>({
@@ -380,9 +380,7 @@ describe('runJig over supplied capabilities', () => {
         Result.ok({ baseBranch: 'main', startingCommit: faker.git.commitSha() }),
       ),
       records: mock<InvocationRecords>({
-        metricsSummary: vi.fn<InvocationRecords['metricsSummary']>(() =>
-          Result.ok(aMetricsSummary()),
-        ),
+        metricsSummary: vi.fn<InvocationRecords['metricsSummary']>(() => Result.ok(metrics)),
         recordInvocation: vi.fn(async () => Result.ok()),
       }),
       sandbox: mock<RunSandbox>({
@@ -401,6 +399,7 @@ describe('runJig over supplied capabilities', () => {
     } satisfies RunCapabilities;
     return {
       state,
+      metrics,
       log,
       capabilities,
       releases: () => released,

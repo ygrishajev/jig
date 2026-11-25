@@ -5,225 +5,104 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
-  aDesignFinding,
-  aMetricsSummary,
-  aRevisionAwaitingReReview,
-  aRunBlockedByDesignReview,
+  anInvocationRecord,
+  anInvocationResult,
   aRunState,
-  aSlice,
-  designDocs,
+  runId,
+  someRunDocuments,
 } from '../../../tests/support/builders.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import { designReviewReport } from '../../domain/design-review-report.js';
-import type { InvocationStatus } from '../../domain/invocation-status.js';
 import type { RunId } from '../../domain/run-id.js';
-import { runStopReason } from '../../domain/run-state.js';
-import { formatSummary } from '../../observers/metrics.js';
 import { LocalRunStore } from './local-run-store.js';
 import { RunArtefacts } from './run-artefacts.js';
 import { stateDirectory } from './run-paths.js';
 
 describe('RunArtefacts', () => {
-  it('writes the design and plan for a person to read, and lists only the documents it wrote', async () => {
+  it('writes each document it is handed, listed in order', async () => {
     const { artefacts, read, repoRoot } = await setup();
-    const docs = designDocs();
-    const state = aRunState({ docs });
+    const invocation = anInvocationRecord();
+    const { documents } = invocation;
 
-    await artefacts.write(state, 'halted', aMetricsSummary());
+    (await artefacts.write(invocation)).unwrap();
 
-    expect(await read(state.runId, 'design.md')).toBe(docs.design);
-    expect(await read(state.runId, 'plan.md')).toBe(docs.plan);
-    const directory = stateDirectory(repoRoot, state.runId);
-    expect(artefacts.documents(state.runId)).toEqual([
-      { name: 'design.md', path: path.join(directory, 'design.md') },
-      { name: 'plan.md', path: path.join(directory, 'plan.md') },
-    ]);
-  });
-
-  it.each([
-    'hookFailures',
-    'verificationFailures',
-    'emptyAttempts',
-    'ruleFixCycles',
-    'reviewCycles',
-  ] as const)('saves the exhausted %s budget as the terminal reason', async (counter) => {
-    const { artefacts, read } = await setup();
-    const state = aRunState({
-      phase: 'stuck',
-      slices: [aSlice({ status: 'stuck', [counter]: 3 })],
-    });
-
-    (await artefacts.write(state, 'stuck', aMetricsSummary())).unwrap();
-
-    expect(JSON.parse(await read(state.runId, 'result.json')).blockedReason).toBe(
-      runStopReason(state),
+    const id = invocation.runId;
+    const names = ['design.md', 'plan.md', 'design-review.md', 'PR_DESCRIPTION.md'] as const;
+    for (const name of names) expect(await read(id, name)).toBe(documents[name]);
+    const directory = stateDirectory(repoRoot, id);
+    expect(artefacts.documents(id)).toEqual(
+      names.map((name) => ({ name, path: path.join(directory, name) })),
     );
   });
 
-  it('closes the pull request description with the run so far', async () => {
+  it('replaces a document written by an earlier invocation', async () => {
     const { artefacts, read } = await setup();
-    const prDescription = faker.lorem.paragraphs();
-    const metrics = aMetricsSummary();
-    const state = aRunState({ prDescription });
+    const id = runId();
+    (await artefacts.write(anInvocationRecord({ runId: id }))).unwrap();
+    const replaced = someRunDocuments();
 
-    await artefacts.write(state, 'halted', metrics);
+    (await artefacts.write(anInvocationRecord({ runId: id, documents: replaced }))).unwrap();
 
-    const written = await read(state.runId, 'PR_DESCRIPTION.md');
-    expect(written.startsWith(prDescription)).toBe(true);
-    expect(written).toContain(formatSummary(metrics));
+    expect(await read(id, 'plan.md')).toBe(replaced['plan.md']);
   });
 
-  it('keeps the footer when the run is saved again afterwards', async () => {
+  it('keeps the pull request description when the run is saved again afterwards', async () => {
     const { artefacts, read, repoRoot } = await setup();
-    const metrics = aMetricsSummary();
-    const state = aRunState({ prDescription: faker.lorem.paragraphs() });
-    await artefacts.write(state, 'halted', metrics);
+    const invocation = anInvocationRecord();
+    (await artefacts.write(invocation)).unwrap();
 
-    await new LocalRunStore(repoRoot).save(aRunState({ ...state, phase: 'done' }));
+    (
+      await new LocalRunStore(repoRoot).save(aRunState({ runId: invocation.runId, phase: 'done' }))
+    ).unwrap();
 
-    expect(await read(state.runId, 'PR_DESCRIPTION.md')).toContain(formatSummary(metrics));
+    expect(await read(invocation.runId, 'PR_DESCRIPTION.md')).toBe(
+      invocation.documents['PR_DESCRIPTION.md'],
+    );
   });
 
-  it('removes a document the run no longer has', async () => {
+  it('removes a document the invocation no longer has', async () => {
     const { artefacts, repoRoot } = await setup();
-    const state = aRunState({
-      phase: 'reviewingDesign',
-      designReview: aRevisionAwaitingReReview(),
-      prDescription: faker.lorem.paragraph(),
-    });
-    await artefacts.write(state, 'halted', aMetricsSummary());
+    const id = runId();
+    (await artefacts.write(anInvocationRecord({ runId: id }))).unwrap();
 
-    await artefacts.write(aRunState({ runId: state.runId }), 'halted', aMetricsSummary());
+    const absent = {
+      'design.md': undefined,
+      'plan.md': undefined,
+      'design-review.md': undefined,
+      'PR_DESCRIPTION.md': undefined,
+    };
+    (await artefacts.write(anInvocationRecord({ runId: id, documents: absent }))).unwrap();
 
-    const directory = stateDirectory(repoRoot, state.runId);
-    for (const name of ['design.md', 'plan.md', 'design-review.md', 'PR_DESCRIPTION.md']) {
+    const directory = stateDirectory(repoRoot, id);
+    for (const name of Object.keys(absent)) {
       expect(existsSync(path.join(directory, name))).toBe(false);
     }
+    expect(artefacts.documents(id)).toEqual([]);
   });
 
-  it('exports a design review in progress with the revised documents, listed after the plan', async () => {
-    const { artefacts, read, repoRoot } = await setup();
-    const state = aRunState({
-      phase: 'reviewingDesign',
-      designReview: aRevisionAwaitingReReview(),
-      blockedReason: faker.lorem.sentence(),
-    });
-
-    await artefacts.write(state, 'blocked', aMetricsSummary());
-
-    expect(await read(state.runId, 'design-review.md')).toBe(designReviewReport(state));
-    expect(await read(state.runId, 'design.md')).toBe(state.docs?.design);
-    const directory = stateDirectory(repoRoot, state.runId);
-    expect(artefacts.documents(state.runId)).toEqual([
-      { name: 'design.md', path: path.join(directory, 'design.md') },
-      { name: 'plan.md', path: path.join(directory, 'plan.md') },
-      { name: 'design-review.md', path: path.join(directory, 'design-review.md') },
-    ]);
-  });
-
-  it('tells CI which design findings block the run', async () => {
+  it('saves how the invocation ended for CI', async () => {
     const { artefacts, read } = await setup();
-    const outstanding = [aDesignFinding(), aDesignFinding()];
-    const state = aRunBlockedByDesignReview({ outstanding });
-
-    await artefacts.write(state, 'blocked', aMetricsSummary());
-
-    const result = JSON.parse(await read(state.runId, 'result.json'));
-    expect(result).toMatchObject({
-      status: 'blocked',
-      phase: 'resolvingDesign',
-      blockedReason: state.blockedReason,
+    const invocation = anInvocationRecord({
+      result: anInvocationResult({ blockedReason: faker.lorem.sentence() }),
     });
-    for (const finding of outstanding) expect(result.blockedReason).toContain(finding.id);
+
+    (await artefacts.write(invocation)).unwrap();
+
+    const saved = JSON.parse(await read(invocation.runId, 'result.json'));
+    expect(saved).toEqual({ runId: invocation.runId, ...invocation.result });
   });
-
-  it('summarises how a run ended for CI, naming a stuck slice', async () => {
-    const { artefacts, read } = await setup();
-    const stuck = aSlice({ status: 'stuck' });
-    const state = aRunState({ phase: 'stuck', slices: [stuck] });
-    const metrics = aMetricsSummary();
-
-    await artefacts.write(state, 'stuck', metrics);
-
-    expect(JSON.parse(await read(state.runId, 'result.json'))).toEqual({
-      runId: state.runId,
-      status: 'stuck',
-      phase: 'stuck',
-      complete: false,
-      blockedReason: runStopReason(state),
-      metrics,
-    });
-  });
-
-  it.each<{ status: InvocationStatus; complete: boolean }>([
-    { status: 'done', complete: true },
-    { status: 'completed', complete: true },
-    { status: 'stuck', complete: false },
-    { status: 'halted', complete: false },
-    { status: 'blocked', complete: false },
-  ])(
-    'saves $status with complete=$complete and omits an absent reason',
-    async ({ status, complete }) => {
-      const { artefacts, read } = await setup();
-      const state = aRunState({ phase: 'context' });
-      const metrics = aMetricsSummary();
-
-      (await artefacts.write(state, status, metrics)).unwrap();
-
-      expect(JSON.parse(await read(state.runId, 'result.json'))).toStrictEqual({
-        runId: state.runId,
-        status,
-        phase: state.phase,
-        complete,
-        metrics,
-      });
-    },
-  );
-
-  it('summarises a run that finished without merging as complete', async () => {
-    const { artefacts, read } = await setup();
-    const state = aRunState({ phase: 'completed', merge: false });
-    const metrics = aMetricsSummary();
-
-    (await artefacts.write(state, 'completed', metrics)).unwrap();
-
-    expect(JSON.parse(await read(state.runId, 'result.json'))).toStrictEqual({
-      runId: state.runId,
-      status: 'completed',
-      phase: state.phase,
-      complete: true,
-      metrics,
-    });
-  });
-
-  it.each([faker.lorem.sentence(), ''])(
-    'prefers the saved blocked reason %j over the terminal reason',
-    async (blockedReason) => {
-      const { artefacts, read } = await setup();
-      const state = aRunState({
-        phase: 'stuck',
-        slices: [aSlice({ status: 'stuck' })],
-        blockedReason,
-      });
-
-      (await artefacts.write(state, 'blocked', aMetricsSummary())).unwrap();
-
-      expect(JSON.parse(await read(state.runId, 'result.json')).blockedReason).toBe(blockedReason);
-    },
-  );
 
   it('keeps its own directory out of the operator repository', async () => {
     const { artefacts, repoRoot } = await setup();
 
-    await artefacts.write(aRunState(), 'done', aMetricsSummary());
+    (await artefacts.write(anInvocationRecord())).unwrap();
 
     expect(await readFile(path.join(repoRoot, '.jig', '.gitignore'), 'utf-8')).toBe('*\n');
   });
 
   async function setup() {
     const repoRoot = await tempDirectory('jig-artefacts-');
-    const read = (runId: RunId, name: string) =>
-      readFile(path.join(stateDirectory(repoRoot, runId), name), 'utf-8');
+    const read = (id: RunId, name: string) =>
+      readFile(path.join(stateDirectory(repoRoot, id), name), 'utf-8');
     return { artefacts: new RunArtefacts(repoRoot), read, repoRoot };
   }
 });

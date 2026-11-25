@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { describeIssues } from './describe-issues.js';
 
 describe('describeIssues', () => {
-  it('separates field and root issues with the requested separator', () => {
+  it('separates the issues with semicolons', () => {
     const fieldMessage = faker.lorem.sentence();
     const rootMessage = faker.lorem.sentence();
     const error = new z.ZodError([
@@ -14,6 +14,5 @@ describe('describeIssues', () => {
     ]);
 
     expect(describeIssues(error)).toBe(`nested.field: ${fieldMessage}; ${rootMessage}`);
-    expect(describeIssues(error, '\n')).toBe(`nested.field: ${fieldMessage}\n${rootMessage}`);
   });
 });

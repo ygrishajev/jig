@@ -14,6 +14,8 @@ import {
   resolveDesignReview,
 } from '../../src/domain/design-review.js';
 import type { CapturedOutput, RejectedReview } from '../../src/domain/diagnostics.js';
+import { INVOCATION_STATUSES } from '../../src/domain/invocation-status.js';
+import type { MetricsSummary } from '../../src/domain/metrics.js';
 import type { Outcome } from '../../src/domain/outcome.js';
 import { runIdSchema } from '../../src/domain/run-id.js';
 import {
@@ -40,7 +42,11 @@ import type {
   WorkFacts,
   WorkObservations,
 } from '../../src/domain/work-facts.js';
-import type { MetricsSummary } from '../../src/ports/run-records.js';
+import type {
+  InvocationRecord,
+  InvocationResult,
+  RunDocumentContents,
+} from '../../src/ports/run-records.js';
 import { InMemoryConfigSource } from './fakes.js';
 import { unwrap } from './unwrap.js';
 
@@ -430,6 +436,43 @@ export function aMetricsSummary({
     costUsd,
     tokens,
   };
+}
+
+/** Spreads what it is given last, so an override of `undefined` leaves that document out. */
+export function someRunDocuments({
+  ...given
+}: Partial<RunDocumentContents> = {}): RunDocumentContents {
+  const {
+    'design.md': design = faker.lorem.paragraphs(),
+    'plan.md': plan = faker.lorem.paragraphs(),
+    'design-review.md': designReview = faker.lorem.paragraphs(),
+    'PR_DESCRIPTION.md': pullRequestDescription = faker.lorem.paragraphs(),
+  } = given;
+  return {
+    'design.md': design,
+    'plan.md': plan,
+    'design-review.md': designReview,
+    'PR_DESCRIPTION.md': pullRequestDescription,
+    ...given,
+  };
+}
+
+export function anInvocationResult({
+  status = faker.helpers.arrayElement(INVOCATION_STATUSES),
+  phase = faker.helpers.arrayElement(runPhaseSchema.options),
+  complete = faker.datatype.boolean(),
+  blockedReason = faker.helpers.maybe(() => faker.lorem.sentence()),
+  metrics = aMetricsSummary(),
+}: Partial<InvocationResult> = {}): InvocationResult {
+  return { status, phase, complete, blockedReason, metrics };
+}
+
+export function anInvocationRecord({
+  runId: id = runId(),
+  result = anInvocationResult(),
+  documents = someRunDocuments(),
+}: Partial<InvocationRecord> = {}): InvocationRecord {
+  return { runId: id, result, documents };
 }
 
 /** The contents of a Codex `auth.json` holding a full ChatGPT login. */

@@ -9,11 +9,12 @@ import { mock } from 'vitest-mock-extended';
 import { aRunState, aSlice, presetName, runId } from '../../../tests/support/builders.js';
 import { fakeStandardInput } from '../../../tests/support/fakes.js';
 import { tempDirectory } from '../../../tests/support/temp-directory.js';
-import type { StandardInput } from '../../adapters/terminal/standard-input.js';
 import { type JigOperations, type RunReport, RunRequestInvalid } from '../../app/api.js';
 import { runBranchFor, runStopReason } from '../../domain/run-state.js';
+import type { StandardInput } from '../../ports/request-inputs.js';
+import type { OutcomeLog } from '../command-io.js';
 import type { FailureOutput } from '../with-error-handling.js';
-import { nextStep, type OutcomeLog, registerRunCommand, runInputSchema } from './run.js';
+import { nextStep, registerRunCommand, runInputSchema } from './run.js';
 
 describe('nextStep', () => {
   it('asks for nothing more once the run is done', () => {
@@ -273,6 +274,7 @@ describe('run command', () => {
           readTextFile: (file) => readFile(file, 'utf-8'),
         },
         outcomeLog: () => outcomeLog,
+        defaultLogFormat: 'json',
       },
       output,
     );

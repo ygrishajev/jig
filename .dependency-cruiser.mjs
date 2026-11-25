@@ -1,43 +1,53 @@
-const productionModules = [
-  'adapters',
-  'app',
-  'cli',
-  'composition',
-  'config',
-  'domain',
-  'failures',
-  'flow',
-  'observers',
-  'ports',
-  'prompts',
-  'steps',
-];
+/**
+ * The production owners and the other owners each may import. Same-owner imports are always
+ * allowed.
+ */
+const allowedOwners = {
+  domain: [],
+  failures: [],
+  ports: ['domain'],
+  config: ['domain'],
+  flow: ['domain', 'ports', 'failures'],
+  prompts: ['domain'],
+  steps: ['domain', 'ports', 'flow', 'prompts', 'failures'],
+  observers: ['domain', 'ports', 'failures'],
+  adapters: ['domain', 'ports', 'config', 'failures'],
+  app: ['domain', 'ports', 'config', 'flow', 'steps', 'prompts', 'failures'],
+  cli: ['app', 'domain', 'ports', 'failures'],
+  composition: ['app', 'cli', 'adapters', 'config', 'observers', 'ports', 'domain', 'failures'],
+};
+const productionModules = Object.keys(allowedOwners);
 const testFilePattern = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 const ownedProductionPath = `^src/(${productionModules.join('|')})/`;
 /** Three rules share it: a dependency rule cannot see a file without imports, nor an orphan rule one with them. */
 const unownedComment =
-  'A production file belongs to one of the owners in productionModules. Move it, or add its owner.';
+  'A production file belongs to one of the owners in allowedOwners. Move it, or add its owner.';
 /** The one app module callers outside app and composition may import. */
 const publicApplicationEntry = '^src/app/api[.]ts$';
-const configAllowlist = [
-  '^src/(config|domain)/',
+/** Project sources are left to the owner rules. */
+const configPackageAllowlist = [
+  '^src/',
   '(^|/)node_modules/better-result/',
   '(^|/)node_modules/zod/',
 ];
-const failuresImporters = [
-  'adapters',
-  'app',
-  'cli',
-  'composition',
-  'failures',
-  'flow',
-  'observers',
-  'steps',
-];
 /** The logging and tracing libraries only concrete reporting and wiring may import. */
 const reportingLibraries = '(^|/)node_modules/(pino|pino-pretty|@opentelemetry/[^/]+)/';
-const compositionSourceAllowlist =
-  '^src/(composition|cli|app|adapters|config|observers|ports|domain|failures)/';
+
+/**
+ * One rule per owner, so a forbidden import is reported under the owner it leaves. Every form
+ * counts: value, type-only, re-export and literal dynamic imports.
+ * @type {import('dependency-cruiser').IForbiddenRuleType[]}
+ */
+const ownerRules = Object.entries(allowedOwners).map(([owner, allowed]) => ({
+  name: `${owner}-imports-only-allowed-owners`,
+  comment:
+    `Production ${owner} may import ` +
+    (allowed.length > 0 ? `only ${allowed.join(', ')} and itself` : 'no other owner') +
+    '. Name a port or move the code to its owner instead.',
+  severity: 'error',
+  from: { path: `^src/${owner}/`, pathNot: testFilePattern },
+  to: { path: '^src/', pathNot: `^src/(${[owner, ...allowed].join('|')})/` },
+}));
 
 /** @type {import('dependency-cruiser').IForbiddenRuleType} */
 const appInternalsArePrivate = {
@@ -98,119 +108,29 @@ export default {
       to: { path: '^src/', pathNot: ownedProductionPath },
     },
     {
-      name: 'domain-is-independent',
-      severity: 'error',
-      from: { path: '^src/domain/' },
-      to: { path: '^src/', pathNot: '^src/domain/' },
-    },
-    {
-      name: 'ports-depend-only-on-domain',
-      severity: 'error',
-      from: { path: '^src/ports/' },
-      to: { path: '^src/', pathNot: '^src/(ports|domain)/' },
-    },
-    {
       name: 'config-imports-only-approved-dependencies',
       comment:
-        'Production config owns schemas, defaults and selection policy over domain types. It may ' +
-        'import only config, domain, better-result and zod. Files, paths, processes, the home ' +
-        'directory and the environment belong to adapters and the process edge, which hand ' +
-        'config values.',
+        'Production config owns schemas, defaults and selection policy. Beside the owners it may ' +
+        'import, it uses only better-result and zod. Files, paths, processes, the home directory ' +
+        'and the environment belong to adapters and the process edge, which hand config values.',
       severity: 'error',
       from: { path: '^src/config/', pathNot: testFilePattern },
-      to: { pathNot: configAllowlist },
+      to: { pathNot: configPackageAllowlist },
     },
     {
       name: 'failures-imports-only-better-result-and-node',
       comment:
-        'Failures sits beneath every owner that presents, unwraps or retries a failure, so it ' +
-        'imports no project source outside itself and no package but better-result.',
+        'Failures sits beneath every owner that presents, unwraps or retries a failure, so beside ' +
+        'Node it imports no package but better-result; its owner rule keeps it off project sources.',
       severity: 'error',
       from: { path: '^src/failures/', pathNot: testFilePattern },
       to: {
-        pathNot: ['^src/failures/', '(^|/)node_modules/better-result/'],
+        pathNot: ['^src/', '(^|/)node_modules/better-result/'],
         dependencyTypesNot: ['core'],
       },
     },
-    {
-      name: 'failures-is-imported-only-by-listed-owners',
-      comment:
-        'Domain, ports, config and prompts do not present, unwrap or retry failures; only the ' +
-        'owners whose application-boundaries row lists failures import it.',
-      severity: 'error',
-      from: { path: '^src/', pathNot: `^src/(${failuresImporters.join('|')})/` },
-      to: { path: '^src/failures/' },
-    },
-    {
-      name: 'adapters-do-not-import-flow',
-      comment:
-        'Adapters implement capabilities for the layers above them, so they import neither the ' +
-        'workflow (app, flow, steps) nor the executable (cli, composition) that uses them.',
-      severity: 'error',
-      from: { path: '^src/adapters/' },
-      to: { path: '^src/(app|flow|steps|cli|composition)/' },
-    },
-    {
-      name: 'flow-does-not-assemble-workflows',
-      severity: 'error',
-      from: { path: '^src/flow/' },
-      to: { path: '^src/(app|steps)/' },
-    },
-    {
-      name: 'composition-imports-only-allowed-sources',
-      comment:
-        'Composition wires and starts the executable: it may import the CLI it starts, the app, ' +
-        'adapters, config, observers, ports, domain and failures. Flow, steps and prompts stay ' +
-        'behind the app.',
-      severity: 'error',
-      from: { path: '^src/composition/', pathNot: testFilePattern },
-      to: { path: '^src/', pathNot: compositionSourceAllowlist },
-    },
-    {
-      name: 'cli-is-imported-only-by-composition',
-      comment:
-        'Composition is the only production owner that imports the CLI. Specs and tooling ' +
-        'outside src/ may import CLI helpers.',
-      severity: 'error',
-      from: { path: '^src/', pathNot: ['^src/(cli|composition)/', testFilePattern] },
-      to: { path: '^src/cli/' },
-    },
-    {
-      name: 'composition-is-imported-by-no-other-owner',
-      comment: 'Composition wires the executable; no other production owner imports it.',
-      severity: 'error',
-      from: { path: '^src/', pathNot: ['^src/composition/', testFilePattern] },
-      to: { path: '^src/composition/' },
-    },
-    {
-      name: 'app-is-imported-only-by-cli-and-composition',
-      comment:
-        'The CLI calls application operations and composition binds them; no other production ' +
-        'owner imports app. Specs and tooling outside src/ follow the private-entry rule below.',
-      severity: 'error',
-      from: { path: '^src/', pathNot: ['^src/(app|cli|composition)/', testFilePattern] },
-      to: { path: '^src/app/' },
-    },
+    ...ownerRules,
     appInternalsArePrivate,
-    {
-      name: 'app-public-entry-exposes-no-infrastructure',
-      comment:
-        'The public entry names domain, config and port types only; exporting from adapters or ' +
-        'observers would hand every caller an implementation type.',
-      severity: 'error',
-      from: { path: publicApplicationEntry },
-      to: { path: '^src/(adapters|observers)/' },
-    },
-    {
-      name: 'app-imports-no-infrastructure',
-      comment:
-        'App decides; composition builds. Production app imports no adapter, observer or CLI ' +
-        'module in any form (value, type-only, re-export or dynamic import) and names the port ' +
-        'or its own type instead. Composition constructs the implementations and hands them in.',
-      severity: 'error',
-      from: { path: '^src/app/', pathNot: testFilePattern },
-      to: { path: '^src/(adapters|observers|cli)/' },
-    },
     {
       name: 'logging-and-tracing-libraries-stay-in-reporting-and-wiring',
       comment:

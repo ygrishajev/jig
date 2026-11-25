@@ -18,8 +18,8 @@ describe('npm run lint:dependencies', () => {
     const result = await run();
 
     expect(result.exitCode).not.toBe(0);
-    expect([...brokenRules.map(({ rule }) => rule), ...cycleRules].sort()).toEqual(
-      errorRules.sort(),
+    expect(new Set([...brokenRules.map(({ rule }) => rule), ...cycleRules])).toEqual(
+      new Set(errorRules),
     );
     for (const { rule, from } of brokenRules)
       expect(result.all).toContain(`error ${rule}: src/${from}`);
@@ -59,7 +59,7 @@ describe('npm run lint:dependencies', () => {
 
     expect(result.exitCode).not.toBe(0);
     for (const from of ['direct', 'nested/deeper', 'type-only', 're-export', 'dynamic', 'command'])
-      expect(result.all).toContain(`error app-imports-no-infrastructure: src/app/${from}.ts`);
+      expect(result.all).toContain(`error app-imports-only-allowed-owners: src/app/${from}.ts`);
     for (const rule of cycleRules) expect(result.all).not.toContain(`error ${rule}`);
   }, 30_000);
 
@@ -158,26 +158,25 @@ const configurationSchema = z.object({
 const target = 'export const b = 1; export type B = string;';
 const adapter = 'export class Adapter { readonly size = 1; }';
 
-/** One file per error rule, so a rule that stops matching leaves its own file unreported. */
+/** Listed by hand: edges derived from the owner table could not catch a wrong table. */
 const brokenRules = [
-  broken('domain-is-independent', 'domain/a.ts', '../ports/b.js'),
-  broken('ports-depend-only-on-domain', 'ports/a.ts', '../config/b.js'),
+  forbiddenEdge('domain', 'ports'),
+  forbiddenEdge('failures', 'domain'),
+  forbiddenEdge('ports', 'config'),
+  forbiddenEdge('config', 'ports'),
+  forbiddenEdge('prompts', 'ports'),
+  forbiddenEdge('flow', 'config'),
+  forbiddenEdge('steps', 'adapters'),
+  forbiddenEdge('observers', 'cli'),
+  forbiddenEdge('adapters', 'observers'),
+  forbiddenEdge('app', 'adapters'),
+  forbiddenEdge('cli', 'adapters'),
+  forbiddenEdge('cli', 'config'),
+  forbiddenEdge('cli', 'observers'),
+  forbiddenEdge('composition', 'flow'),
   broken('config-imports-only-approved-dependencies', 'config/a.ts', 'node:fs'),
-  broken('failures-imports-only-better-result-and-node', 'failures/a.ts', '../domain/b.js'),
-  broken('failures-is-imported-only-by-listed-owners', 'prompts/a.ts', '../failures/b.js'),
-  broken('adapters-do-not-import-flow', 'adapters/a.ts', '../steps/b.js'),
-  broken('flow-does-not-assemble-workflows', 'flow/a.ts', '../steps/b.js'),
-  broken('composition-imports-only-allowed-sources', 'composition/a.ts', '../flow/b.js'),
-  broken('cli-is-imported-only-by-composition', 'observers/a.ts', '../cli/b.js'),
-  broken('composition-is-imported-by-no-other-owner', 'observers/c.ts', '../composition/b.js'),
-  broken('app-is-imported-only-by-cli-and-composition', 'steps/a.ts', '../app/api.js'),
+  broken('failures-imports-only-better-result-and-node', 'failures/a.ts', 'commander'),
   broken('app-internals-are-private-to-app-and-composition', 'cli/a.ts', '../app/b.js'),
-  broken('app-public-entry-exposes-no-infrastructure', 'app/api.ts', '../adapters/b.js'),
-  {
-    rule: 'app-imports-no-infrastructure',
-    from: 'app/a.ts',
-    source: "import type { B } from '../observers/b.js'; export type A = B;",
-  },
   broken('logging-and-tracing-libraries-stay-in-reporting-and-wiring', 'steps/c.ts', 'pino'),
   { rule: 'unowned-file-is-disconnected', from: 'unknown/alone.ts', source: target },
   broken('unowned-file-imports', 'unknown/a.ts', '../domain/b.js'),
@@ -215,6 +214,10 @@ const cyclicFiles = {
   'domain/cycle.ts': importing('./cycle-back.js'),
   'domain/cycle-back.ts': importing('./cycle.js'),
 };
+
+function forbiddenEdge(from: string, to: string) {
+  return broken(`${from}-imports-only-allowed-owners`, `${from}/to-${to}.ts`, `../${to}/b.js`);
+}
 
 function broken(rule: string, from: string, specifier: string) {
   return { rule, from, source: importing(specifier) };

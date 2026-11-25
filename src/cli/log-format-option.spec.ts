@@ -12,9 +12,27 @@ describe('logFormatOption', () => {
     const format = faker.helpers.arrayElement<LogFormat>(['pretty', 'json']);
     const { run, received } = setup();
 
-    await run(['--log-format', format]);
+    const result = await run(['--log-format', format]);
 
+    expect(result.isOk()).toBe(true);
     expect(received()).toBe(format);
+  });
+
+  it('hands the action the default it was given when no format is chosen', async () => {
+    const defaultFormat = faker.helpers.arrayElement<LogFormat>(['pretty', 'json']);
+    const { run, received } = setup({ defaultFormat });
+
+    const result = await run([]);
+
+    expect(result.isOk()).toBe(true);
+    expect(received()).toBe(defaultFormat);
+  });
+
+  it('shows the default it was given in help', () => {
+    const defaultFormat = faker.helpers.arrayElement<LogFormat>(['pretty', 'json']);
+    const { help } = setup({ defaultFormat });
+
+    expect(help()).toContain(`default: "${defaultFormat}"`);
   });
 
   it('leaves an unknown format to the input schema to refuse', async () => {
@@ -26,7 +44,7 @@ describe('logFormatOption', () => {
     expect(received()).toBeUndefined();
   });
 
-  function setup() {
+  function setup({ defaultFormat = 'json' }: { defaultFormat?: LogFormat } = {}) {
     let received: LogFormat | undefined;
     let outcome: Result<void, CommandInputInvalid> = Result.ok();
     const action = withInput(logFormatInputSchema, async ({ logFormat }) => {
@@ -35,7 +53,7 @@ describe('logFormatOption', () => {
     });
     const command = new Command()
       .exitOverride()
-      .addOption(logFormatOption())
+      .addOption(logFormatOption(defaultFormat))
       .action(async (...actionArguments: unknown[]) => {
         outcome = await action(...actionArguments);
       });
@@ -45,6 +63,7 @@ describe('logFormatOption', () => {
         return outcome;
       },
       received: () => received,
+      help: () => command.helpInformation(),
     };
   }
 });

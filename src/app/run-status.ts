@@ -1,8 +1,9 @@
 import { Result } from 'better-result';
 
+import type { MetricsSummary } from '../domain/metrics.js';
 import type { RunId } from '../domain/run-id.js';
 import type { RunState } from '../domain/run-state.js';
-import type { MetricsSummary, RunDocumentFile, RunRecords } from '../ports/run-records.js';
+import type { RunDocumentFile, RunRecords } from '../ports/run-records.js';
 import type { MetricsLogCorrupt } from '../ports/run-state-failures.js';
 import type { RunStoreCatalog, RunStoreFailure, RunStoreSetupInvalid } from '../ports/run-store.js';
 import { RunRequestInvalid } from './errors.js';
@@ -13,6 +14,7 @@ import {
   type RepositorySources,
 } from './repository-preparation.js';
 import { openRunStore } from './run-stores.js';
+import { formatSummary } from './run-summary.js';
 
 export interface StatusInput {
   runId: RunId;
@@ -24,6 +26,8 @@ export interface RunStatus {
   state: RunState;
   documents: RunDocumentFile[];
   metrics: MetricsSummary;
+  /** The run's totals as one line, as a PR footer shows them. */
+  metricsLine: string;
 }
 
 /** Why `readRunStatus` has no status to show. */
@@ -60,6 +64,11 @@ export function readRunStatus(
     }
     const records = capabilities.runRecordsAt(repoRoot);
     const metrics = yield* records.metricsSummary(runId);
-    return Result.ok({ state, documents: records.documents(runId), metrics });
+    return Result.ok({
+      state,
+      documents: records.documents(runId),
+      metrics,
+      metricsLine: formatSummary(metrics),
+    });
   });
 }

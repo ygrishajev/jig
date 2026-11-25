@@ -42,10 +42,11 @@ import {
   type RuntimeRequest,
   startOrResumeRun,
 } from './api.js';
+import { formatSummary } from './run-summary.js';
 
 describe('application API', () => {
   describe('readRunStatus', () => {
-    it("returns the saved run with this machine's metrics and documents for it", async () => {
+    it("returns the saved run with this machine's metrics, their summary and documents for it", async () => {
       const { status, saveRun, records } = await setup();
       const state = await saveRun();
       const metrics = aMetricsSummary();
@@ -55,7 +56,7 @@ describe('application API', () => {
 
       const result = unwrap(await status({ runId: state.runId }));
 
-      expect(result).toEqual({ state, metrics, documents });
+      expect(result).toEqual({ state, metrics, documents, metricsLine: formatSummary(metrics) });
       expect(records.metricsSummary).toHaveBeenCalledWith(state.runId);
       expect(records.documents).toHaveBeenCalledWith(state.runId);
     });

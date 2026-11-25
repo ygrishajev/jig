@@ -4,51 +4,34 @@ import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
-import { designReviewReport } from '../../domain/design-review-report.js';
-import { type InvocationStatus, outcomeIsComplete } from '../../domain/invocation-status.js';
 import type { RunId } from '../../domain/run-id.js';
-import { type RunPhase, type RunState, runStopReason } from '../../domain/run-state.js';
-import { formatSummary } from '../../observers/metrics.js';
 import type { LocalStateUnwritable } from '../../ports/local-state.js';
 import {
-  type MetricsSummary,
+  type InvocationRecord,
+  type InvocationResult,
   RUN_DOCUMENTS,
-  type RunDocument,
   type RunDocumentFile,
 } from '../../ports/run-records.js';
 import { onLocalState } from './local-state.js';
 import { makeRunDirectory, stateDirectory } from './run-paths.js';
 
-interface RunResult {
-  runId: RunId;
-  status: InvocationStatus;
-  phase: RunPhase;
-  complete: boolean;
-  blockedReason: string | undefined;
-  metrics: MetricsSummary;
-}
-
 /**
  * This machine's record of how an invocation of a run ended, written once at its end and only
- * here: `result.json` for CI, and the design, plan, design review and pull request description
- * as markdown for a person. Each file is replaced atomically, so a reader never sees half of one.
+ * here: `result.json` for CI, and the documents the invocation hands over as markdown for a
+ * person. Each file is replaced atomically, so a reader never sees half of one.
  */
 export class RunArtefacts {
   constructor(private readonly repoRoot: string) {}
 
-  async write(
-    state: RunState,
-    status: InvocationStatus,
-    metrics: MetricsSummary,
-  ): Promise<Result<void, LocalStateUnwritable>> {
-    const directory = stateDirectory(this.repoRoot, state.runId);
+  async write(invocation: InvocationRecord): Promise<Result<void, LocalStateUnwritable>> {
+    const { runId } = invocation;
+    const directory = stateDirectory(this.repoRoot, runId);
     return onLocalState(directory, async () => {
-      await this.makeStateDirectory(state.runId);
+      await this.makeStateDirectory(runId);
       const write = (name: string, contents: string | undefined): Promise<void> =>
         writeOrRemove(path.join(directory, name), contents);
-      await write('result.json', `${JSON.stringify(resultFor(state, status, metrics), null, 2)}\n`);
-      const contents = documentContents(state, metrics);
-      for (const name of RUN_DOCUMENTS) await write(name, contents[name]);
+      await write('result.json', `${JSON.stringify(resultFile(invocation), null, 2)}\n`);
+      for (const name of RUN_DOCUMENTS) await write(name, invocation.documents[name]);
     });
   }
 
@@ -71,35 +54,8 @@ async function writeOrRemove(file: string, contents: string | undefined): Promis
   else await writeFileAtomic(file, contents);
 }
 
-/**
- * A small, stable summary for CI to read instead of parsing output that also carries whatever
- * an agent printed. `complete` and `blockedReason` keep the shape earlier workflows read.
- */
-function resultFor(state: RunState, status: InvocationStatus, metrics: MetricsSummary): RunResult {
-  return {
-    runId: state.runId,
-    status,
-    phase: state.phase,
-    complete: outcomeIsComplete(status),
-    blockedReason: state.blockedReason ?? runStopReason(state),
-    metrics,
-  };
-}
-
-function documentContents(
-  state: RunState,
-  metrics: MetricsSummary,
-): Record<RunDocument, string | undefined> {
-  return {
-    'design.md': state.docs?.design,
-    'plan.md': state.docs?.plan,
-    'design-review.md': designReviewReport(state),
-    'PR_DESCRIPTION.md': pullRequestDescription(state, metrics),
-  };
-}
-
-function pullRequestDescription(state: RunState, metrics: MetricsSummary): string | undefined {
-  if (state.prDescription === undefined) return undefined;
-  const footer = `<sub>jig run ${state.runId}: ${formatSummary(metrics)}</sub>`;
-  return `${state.prDescription}\n\n---\n${footer}\n`;
+/** The fields of `result.json`, in the order earlier workflows read them. */
+function resultFile({ runId, result }: InvocationRecord): { runId: RunId } & InvocationResult {
+  const { status, phase, complete, blockedReason, metrics } = result;
+  return { runId, status, phase, complete, blockedReason, metrics };
 }

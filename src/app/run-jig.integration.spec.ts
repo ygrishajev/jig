@@ -73,6 +73,8 @@ describe('runJig', () => {
     expect(report).toMatchObject({ status: 'halted', state: { phase: 'awaitingMerge' } });
     expect(agent.closed).toBe(true);
     expect(await readResult(repo.dir, id)).toMatchObject({ status: 'halted', complete: false });
+    const status = unwrap(await readRunStatus(realStatusCapabilities(repo.dir), { runId: id }));
+    expect(await readDocument(repo.dir, id, 'PR_DESCRIPTION.md')).toContain(status.metricsLine);
   });
 
   it("leaves a tracked file alone when a saved run's document links to it", async () => {

@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import { fakeStandardInput } from '../../tests/support/fakes.js';
 import { tempDirectory } from '../../tests/support/temp-directory.js';
-import type { StandardInput } from '../adapters/terminal/standard-input.js';
 import { RunRequestInvalid } from '../app/api.js';
+import type { StandardInput } from '../ports/request-inputs.js';
 import { readRequest } from './read-request.js';
 
 describe('readRequest', () => {

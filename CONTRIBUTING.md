@@ -87,10 +87,11 @@ and run flows. Download and open it in a browser; GitHub displays HTML as source
 | `src/cli/`         | Commands and input parsing.                                             |
 | `src/app/`         | Public operations, lifecycle, acquisition order, workflow assembly.     |
 | `src/config/`      | Configuration schemas, defaults, presets, and policy.                   |
-| `src/domain/`      | State, validation, domain decisions, and business failures.             |
+| `src/domain/`      | State, validation, domain decisions, metrics, and business failures.    |
 | `src/failures/`    | Failure messages, panic unwrapping, and retry of `Result`s.             |
 | `src/flow/`        | Generic flow contracts, execution, and the step retry policy.           |
 | `src/steps/`       | Individual pipeline steps.                                              |
+| `src/observers/`   | Event subscriptions: logging, tracing, and metric records.              |
 | `src/ports/`       | Interfaces for external operations and their failures.                  |
 | `src/adapters/`    | Git, sandbox containers, storage, config files, terminals, telemetry.   |
 | `src/prompts/`     | Inputs sent to agents.                                                  |
@@ -111,10 +112,9 @@ built-ins, and domain, ports, config and prompts cannot import it.
 
 `src/composition/main.ts` is the executable. `buildJigCli()` adds the GitHub commands to the core
 CLI, bound to the same operations, and the module parses arguments only when it is the invoked
-script, so importing it starts nothing. `npm run lint:dependencies` lets no production owner but
-composition import `src/cli/`. Production composition may import only composition, cli, app,
-adapters, config, observers, ports, domain and failures, and no other production owner may import
-composition. Adapters cannot import app, flow, steps, cli or composition.
+script, so importing it starts nothing. `npm run lint:dependencies` holds every production owner
+to the owners `allowedOwners` in `.dependency-cruiser.mjs` lists for it, one
+`<owner>-imports-only-allowed-owners` rule each.
 A file under any directory not listed in the code map fails as unowned. Specs and tooling outside `src/` may import CLI helpers.
 Only cli and composition import `src/app/`. Everywhere outside app and composition, specs
 included, app is reached only through `src/app/api.ts`. Production app imports no adapter, observer
@@ -202,8 +202,7 @@ publication in `src/ports/run-branches.ts`, publication receipts in
 `src/ports/publication-receipts.ts`; shared Git, run-state and local-state failures in `src/ports/git-failures.ts`, `src/ports/run-state-failures.ts` and
 `src/ports/local-state.ts`), configuration validation in `src/config/errors.ts`, and use-case and
 command input failures in `src/app/` and `src/cli/`. Import a class from its owner; there is no
-union of every class. `src/adapters/logging/error-serializer.ts` logs a class split out of
-`ConfigInvalid` under that old identity, so run logs stay comparable.
+union of every class.
 
 Use the current guides and code for supported behavior. Changes to agent prompts and request files
 follow the [write-request procedure](.claude/skills/write-request/SKILL.md). For branches,

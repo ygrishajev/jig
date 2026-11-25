@@ -15,7 +15,6 @@ import {
 import { type JigOperations, RunRequestInvalid, type RunStatus } from '../../app/api.js';
 import type { RunState } from '../../domain/run-state.js';
 import { runBranchFor } from '../../domain/run-state.js';
-import { formatSummary } from '../../observers/metrics.js';
 import type { FailureOutput } from '../with-error-handling.js';
 import { describeRun, registerStatusCommand } from './status.js';
 
@@ -137,19 +136,21 @@ describe('describeRun', () => {
   });
 
   it('sums up the run so far once a step has run', () => {
+    const metricsLine = faker.lorem.sentence();
     const metrics = aMetricsSummary({ steps: faker.number.int({ min: 1, max: 30 }) });
 
-    const lines = describeRun(aStatus({ state: aRunState(), metrics })).split('\n');
+    const lines = describeRun(aStatus({ state: aRunState(), metrics, metricsLine })).split('\n');
 
-    expect(lines.at(-1)).toContain(formatSummary(metrics));
+    expect(lines.at(-1)).toBe(`So far: ${metricsLine}`);
   });
 
   it('shows no summary before any step has run', () => {
+    const metricsLine = faker.lorem.sentence();
     const metrics = aMetricsSummary({ steps: 0 });
 
-    expect(describeRun(aStatus({ state: aRunState(), metrics }))).not.toContain(
-      formatSummary(metrics),
-    );
+    const shown = describeRun(aStatus({ state: aRunState(), metrics, metricsLine }));
+
+    expect(shown).not.toContain(metricsLine);
   });
 
   it('shows no slice list for a run that has none yet', () => {
@@ -164,10 +165,7 @@ function aStatus({
   state,
   documents = [],
   metrics = aMetricsSummary(),
-}: {
-  state: RunState;
-  documents?: RunStatus['documents'];
-  metrics?: RunStatus['metrics'];
-}): RunStatus {
-  return { state, documents, metrics };
+  metricsLine = faker.lorem.sentence(),
+}: Partial<RunStatus> & { state: RunState }): RunStatus {
+  return { state, documents, metrics, metricsLine };
 }
