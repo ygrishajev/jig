@@ -3,14 +3,10 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import {
-  aRunStateIn,
-  aSlice,
-  designDocs,
-  runId,
-  runSettings,
-} from '../../tests/support/builders.js';
-import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { aRunStateIn, aSlice, designDocs, runSettings } from '../../tests/support/builders.js';
+import { FakeWorkspace } from '../../tests/support/fake-workspace.js';
+import { FakeAgentSession } from '../../tests/support/fakes.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import { completionEvidenceOf } from '../domain/completion-reuse.js';
 import type { FulfillmentVerdict } from '../domain/final-check.js';
 import type { RunSettings } from '../domain/settings.js';
@@ -91,8 +87,8 @@ describe('completion reuse steps', () => {
     authorized?: boolean;
     finishingSettings?: RunSettings;
   }) {
-    const id = runId();
-    const { agent, workspace, sandboxPath } = await createRunWorktree(id);
+    const agent = new FakeAgentSession(await tempDirectory());
+    const workspace = new FakeWorkspace(agent);
     const verifyCommand = `npm run ${faker.word.verb()}`;
     const settings = runSettings({ verifyCommand });
     const request = `# ${faker.lorem.sentence()}`;
@@ -104,7 +100,6 @@ describe('completion reuse steps', () => {
       observed: { before: facts, after: facts },
     };
     const recorded = {
-      runId: id,
       request,
       docs,
       slices: [aSlice({ status: 'approved', verification })],
@@ -133,7 +128,7 @@ describe('completion reuse steps', () => {
         settings: finishingSettings,
       });
     const dirtySandbox = () =>
-      writeFile(path.join(sandboxPath, `${faker.string.uuid()}.txt`), faker.lorem.sentence());
+      writeFile(path.join(agent.sandboxPath, `${faker.string.uuid()}.txt`), faker.lorem.sentence());
     const takeSandboxDown = () => {
       const failure = new SandboxUnavailable({ message: faker.lorem.sentence() });
       agent.takeSandboxDown(failure);

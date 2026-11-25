@@ -1,15 +1,10 @@
 import { faker } from '@faker-js/faker';
 import { describe, expect, it } from 'vitest';
 
-import {
-  aRunStateIn,
-  aSlice,
-  designDocs,
-  runId,
-  runSettings,
-} from '../../tests/support/builders.js';
+import { aRunStateIn, aSlice, designDocs, runSettings } from '../../tests/support/builders.js';
+import { FakeWorkspace } from '../../tests/support/fake-workspace.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
-import { createRunWorktree } from '../../tests/support/run-worktree.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
 import type { RunSettings } from '../domain/settings.js';
 import {
   AgentOutputInvalid,
@@ -21,10 +16,10 @@ import { checkWholeRun } from './final-check.js';
 
 describe('checkWholeRun', () => {
   it('asks the reviewer whether the whole run fulfils the request, the plan and the whole range', async () => {
-    const { attempt, agent, state, git, runBranch } = await setup({
+    const { attempt, agent, state, workspace } = await setup({
       reviewer: [{ output: { fulfilled: true, gaps: [] } }],
     });
-    const forkPoint = await git.revparse([runBranch]);
+    const forkPoint = (await workspace.forkPoint()).unwrap();
 
     const outcome = (await attempt()).unwrap();
 
@@ -45,7 +40,13 @@ describe('checkWholeRun', () => {
     const outcome = (await attempt()).unwrap();
 
     expect(agent.commands).toEqual([verifyCommand]);
-    expect(outcome).toMatchObject({ type: 'finalChecked', verified: true, command: verifyCommand });
+    expect(outcome).toEqual({
+      type: 'finalChecked',
+      verified: true,
+      command: verifyCommand,
+      fulfilled: true,
+      gaps: [],
+    });
   });
 
   it('has the reviewer judge the run even when its verification failed', async () => {
@@ -87,14 +88,18 @@ describe('checkWholeRun', () => {
   });
 
   it('leaves the run branch untouched, committing and importing nothing', async () => {
-    const { attempt, git, runBranch } = await setup({
-      reviewer: [{ output: { fulfilled: true, gaps: [] } }],
+    const { attempt, workspace } = await setup({
+      reviewer: [
+        {
+          files: { [`${faker.string.uuid()}.txt`]: faker.lorem.word() },
+          output: { fulfilled: true, gaps: [] },
+        },
+      ],
     });
-    const before = (await git.log([runBranch, '-1'])).latest?.hash;
 
-    await attempt();
+    (await attempt()).unwrap();
 
-    expect((await git.log([runBranch, '-1'])).latest?.hash).toBe(before);
+    expect(workspace.history).toEqual([]);
   });
 
   it('passes on a sandbox that cannot run the verification at all', async () => {
@@ -131,28 +136,19 @@ describe('checkWholeRun', () => {
     reviewer?: AgentScript[];
     exec?: (command: string) => ExecResult | SandboxUnavailable;
   }) {
-    const id = runId();
-    const created = await createRunWorktree(id);
-    const agent = new FakeAgentSession(created.sandboxPath, input.exec);
+    const agent = new FakeAgentSession(await tempDirectory(), input.exec);
+    const workspace = new FakeWorkspace(agent);
     agent.script('reviewer', ...(input.reviewer ?? []));
     const state = aRunStateIn('finalCheck', {
-      runId: id,
       slices: [aSlice({ status: 'approved' })],
       docs: designDocs(),
     });
     const attempt = () =>
       checkWholeRun({
         state,
-        ports: { agent, workspace: created.workspace },
+        ports: { agent, workspace },
         settings: input.settings ?? runSettings(),
       });
-    return {
-      attempt,
-      agent,
-      state,
-      git: created.git,
-      runBranch: created.runBranch,
-      workspace: created.workspace,
-    };
+    return { attempt, agent, state, workspace };
   }
 });

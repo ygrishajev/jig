@@ -5,18 +5,23 @@ import { mock } from 'vitest-mock-extended';
 import {
   aFeaturePlan,
   aFinalCheckResult,
+  aRunState,
   aRunStateIn,
   aSlice,
   aVerification,
   runSettings,
 } from '../../tests/support/builders.js';
+import { FakeWorkspace } from '../../tests/support/fake-workspace.js';
 import { type AgentScript, FakeAgentSession } from '../../tests/support/fakes.js';
+import { tempDirectory } from '../../tests/support/temp-directory.js';
+import { unwrap } from '../../tests/support/unwrap.js';
 import type { RunState } from '../domain/run-state.js';
 import type { RunSettings } from '../domain/settings.js';
+import type { Slice } from '../domain/slice.js';
 import type { RunStep } from '../flow/define-flow.js';
 import { AgentRunFailed } from '../ports/agent-session.js';
-import { type Workspace } from '../ports/workspace.js';
-import { describePullRequest } from './finishing.js';
+import { MergeFailed, type Workspace } from '../ports/workspace.js';
+import { describePullRequest, mergeRunBranch } from './finishing.js';
 
 describe('describePullRequest', () => {
   it("fills the repository's own pull request template", async () => {
@@ -200,5 +205,55 @@ describe('describePullRequest', () => {
           settings: input.settings ?? runSettings(),
         }),
     };
+  }
+});
+
+describe('mergeRunBranch', () => {
+  it('merges the run branch once its tip is what the last slice was approved at', async () => {
+    const { merge, workspace, commit } = await setup();
+    const slices: Slice[] = [];
+    for (const order of [0, 1, 2]) {
+      slices.unshift(aSlice({ order, status: 'approved', commit: await commit() }));
+    }
+
+    expect(unwrap(await merge(slices))).toEqual({ type: 'merged' });
+    expect(workspace.merged).toBe(true);
+  });
+
+  it('refuses to merge when the branch tip is not what was last approved', async () => {
+    const { merge, workspace, commit } = await setup();
+    const approved = aSlice({ status: 'approved', commit: await commit() });
+    await commit();
+
+    const refusal = await merge([approved]);
+
+    expect(refusal.isErr() && refusal.error).toBeInstanceOf(MergeFailed);
+    expect(workspace.merged).toBe(false);
+  });
+
+  it('waits for a person to merge in manual mode, and sees the merge they did', async () => {
+    const { merge, workspace, commit } = await setup({ mergeMode: 'manual' });
+    const slices = [aSlice({ status: 'approved', commit: await commit() })];
+
+    expect(unwrap(await merge(slices))).toEqual({ type: 'awaitingManualMerge' });
+    workspace.mergeByHand();
+    expect(unwrap(await merge(slices))).toEqual({ type: 'merged' });
+    expect(workspace.mergeAttempts).toBe(0);
+  });
+
+  async function setup(settings: Partial<RunSettings> = {}) {
+    const agent = new FakeAgentSession(await tempDirectory());
+    const workspace = new FakeWorkspace(agent);
+    const merge = (slices: Slice[]) =>
+      mergeRunBranch({
+        state: aRunState({ phase: 'merging', slices }),
+        ports: { agent, workspace },
+        settings: runSettings(settings),
+      });
+    const commit = async () => {
+      workspace.commitOnHost();
+      return unwrap(await workspace.headCommit());
+    };
+    return { merge, workspace, commit };
   }
 });
