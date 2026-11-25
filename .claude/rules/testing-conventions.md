@@ -9,8 +9,12 @@ paths:
 ## Description
 
 - **Vitest, node environment.** A spec is `*.spec.ts` beside the code it covers: `src/flow/engine.ts` → `src/flow/engine.spec.ts`. Never add new files under `tests/` except shared helpers in `tests/support/` and the live end-to-end run in `tests/e2e/`.
-- **A unit spec starts no process.** A spec that runs git, launches a command or works on a real repository is `*.integration.spec.ts`, in the `integration` project; lint rejects a unit spec that imports what it needs to do so. Test a decision in a unit spec, with fakes for the ports; keep an integration spec for what only the real thing can show.
-- **Coverage is the floor, not the goal.** `npm run test:mutation` (Stryker) is the real measure here — a spec that raises coverage without killing mutants is worse than no spec.
+- **A unit spec starts no process.** A spec that runs git, launches a command or works on a real repository is `*.integration.spec.ts`, in the `integration` project; lint rejects a unit spec that imports what it needs to do so, and any integration spec in `config`, `domain`, `flow`, `prompts` or `steps`. Test a decision in a unit spec, with fakes for the ports; keep an integration spec for what only the real thing can show.
+- **Test a rule once, where it lives.** Its cases belong in the spec of the module that owns it. A caller gets one test that it acts on the answer, not the cases again: `completion-reuse.spec.ts` tests every way evidence stops holding, and `run-flow.spec.ts` that a run whose evidence broke goes to the final check.
+- **No full grids.** A row is there because it can fail for a reason the others cannot. Three sources in three phases are not nine tests when the sources are one rule and the phases another.
+- **Start from the state under test.** Build the run in the phase it is about (`aRunStateIn('slices', …)`) instead of driving it there through every step before.
+- **Replace tests, don't pile them up.** Before adding one, look for the spec that already covers it and change that. A test that repeats a covered case is a review finding, the same as one that is missing.
+- **Coverage is the floor, not the goal.** Mutation testing shows what the specs let through: `npm run test:mutation -- --mutate src/steps/slice.ts` for one file. A spec that raises coverage without killing mutants is worse than no spec. A survivor is not always a gap: message text, a check that only satisfies the types and a value nothing reads are not worth a test. `src/adapters/git/` is left out, because only integration specs cover it.
 - **`setup` function, not `beforeEach`.** It sits at the bottom of the root `describe`, takes a single parameter with an inline type, builds the thing under test and returns it (plus whatever the tests need to read back). No shared state between tests, and no declared return type.
 - **Assert an expected failure on the returned `Err`, never with `toThrow`.** Check `result.isErr()`, then its class or `_tag` and the fields the code decided, on `result.error`. Never `expect(result).toEqual(Result.err(x))`: better-result's `Err` is iterable, so that panics. `toThrow(Panic)` is kept for bugs. To read a value you do not assert on, use `unwrap` from `tests/support/unwrap.ts`.
 - **Never test statics.** Do not test a constant; test the code that acts on it: not that a failure class has `kind: 'retry'`, but that the engine runs the step again. A class's `_tag`, and a field its constructor was handed, are the library's to test. Do not assert that a hardcoded prompt sentence, label or log message is present. Test what the code _decides_: a transition, a branch, a computation, a parsed value, a call it made, a file or commit it produced. `expect(prompt).toContain('You are the review step')` proves nothing.
@@ -54,7 +58,7 @@ paths:
 
 ## End-to-end
 
-- **One whole run on real git per path to it, not one per decision.** Plan, implement, review, verify and merge with a fake agent, asserting on the run branch's commits and the saved run state — not on log output. Which step follows which is a unit spec of `runFlow` on fake ports.
+- **A whole run on real git is rare.** `run-flow.integration.spec.ts` merges one and `implement-issue.integration.spec.ts` publishes one and refuses one; add another only for an outcome none of them reaches. Each asserts on the commits, refs and saved state it leaves, not on log output. Which step follows which is `run-flow.spec.ts`, on fake ports.
 - **Crash and resume are part of the flow.** Stop a run between steps, start it again from saved state, and assert it finishes with the same commits it would have produced uninterrupted.
 
 ## Examples

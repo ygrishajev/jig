@@ -63,13 +63,12 @@ as arguments; specs pass fakes, never `vi.mock`.
 npx stryker run --mutate "src/flow/engine.ts"
 ```
 
-A survivor can legitimately mean dead code: prefer deleting it over a vacuous test, and say
-so in the PR.
+A survivor can legitimately mean dead code: prefer deleting it over a vacuous test. Message
+text, a check that only satisfies the types and a value nothing reads are not worth a test.
 
 ## Done when
 
-- [ ] the run above reports 0 survived, 0 no-coverage — or each exception is named in the PR
-      with why it is not worth killing
+- [ ] every survivor the run above reports is caught, or explained in the PR
 - [ ] `npm test`, `npm run lint`, `npm run format:check` pass from the repo root
 ````
 
