@@ -19,6 +19,7 @@
 <!-- The commands you ran and what they reported. Say what you could not run. -->
 
 - [ ] `npm test`
+- [ ] `npm run test:integration`
 - [ ] `npm run build`
 - [ ] `npm run lint`
 - [ ] `npm run format:check`

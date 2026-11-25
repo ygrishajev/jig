@@ -39,10 +39,11 @@ npm run validate -- --help
 ```
 
 ```bash
-npm test              # fast suite
+npm test                 # unit specs, starts no process
+npm run test:integration # specs on real git and processes, slow
 npm run lint
 npm run lint:duplication # jscpd, production source only
-npm run test:coverage    # Vitest V8, text + HTML + LCOV
+npm run test:coverage    # unit and integration, Vitest V8, text + HTML + LCOV
 npm run format:check
 npm run test:mutation # StrykerJS, slow (~30 min)
 npm run secretlint
@@ -54,16 +55,17 @@ Duplication checks fail when jscpd finds duplicated production code with its def
 size settings; specs are excluded. Reports go to `reports/duplication/`, and coverage reports
 go to `coverage/`. Stryker remains the mutation-testing tool.
 
-`vitest.workspace.ts` defines the named `unit` and `e2e` projects. The root config
-loads `vitest.unit.workspace.ts` by default, including for mutation testing.
-`npm test`, coverage, and watch also select `unit` explicitly. The E2E script selects
-the full workspace with `--workspace vitest.workspace.ts --project e2e`.
+A spec that starts a process or works on a real repository is named `*.integration.spec.ts`; lint
+rejects a unit spec that imports what it needs to do so. `vitest.workspace.ts` defines the named
+`unit`, `integration` and `e2e` projects. The root config loads `vitest.specs.workspace.ts`, the
+unit and integration projects, by default, including for coverage and mutation testing. `npm test`
+and watch select `unit`. The E2E script selects the full workspace with `--workspace vitest.workspace.ts --project e2e`.
 
 ## Live E2E
 
 The [live end-to-end guide](docs/testing.md) covers credentials, role assignment,
 assertions, and failure diagnosis. This opt-in check requires Docker and makes real
-agent calls; it is excluded from `npm test` and `npm run validate`.
+agent calls; it is excluded from `npm test`, `npm run test:integration` and `npm run validate`.
 
 ## Code map
 

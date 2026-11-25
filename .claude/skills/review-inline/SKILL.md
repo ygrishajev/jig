@@ -71,7 +71,7 @@ When asked to fix it:
 - Make the change and its spec per `testing-conventions.md`; remove the marker.
 - Run, and report the results as they came out:
   `npm run typecheck`, `npx eslint .`, `npx prettier --check .`, `npm run lint:duplication`,
-  `npm test`.
+  `npm test`, `npm run test:integration`.
 - Commit only when asked: `refactor(<scope>): <what changed>`, the body saying why.
 
 A finding can turn out wrong — a parse that already sits at the edge, a duplication that is two

@@ -5,7 +5,7 @@
 `npm run test:e2e` builds the CLI, then runs `tests/e2e/feature.spec.ts` through a
 named `e2e` Vitest project for one real pipeline in a fresh temporary
 repository. It uses credentials from the environment, with optional defaults from
-the ignored `tests/e2e/.env`. It is opt-in and is not part of `npm test` or `validate`.
+the ignored `tests/e2e/.env`. It is opt-in and is not part of `npm test`, `npm run test:integration` or `validate`.
 Docker must be running; the check builds an image and makes paid/subscription agent calls.
 The script loads that file with `--env-file-if-exists`, which needs Node 22.9 or newer.
 

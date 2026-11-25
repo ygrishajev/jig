@@ -47,6 +47,15 @@ const noCommanderParsing = {
   message: "Parse a command's input with its zod schema, not commander's argParser or choices.",
 };
 
+/** `.claude/rules/testing-conventions.md`: a unit spec starts no process. */
+const startsProcesses = ['simple-git', 'execa', 'child_process', 'node:child_process'].map(
+  (name) => ({
+    name,
+    allowTypeImports: true,
+    message: 'A spec that starts a process is an integration spec: name it *.integration.spec.ts.',
+  }),
+);
+
 /** awilix wires the app in `src/app/`; everything else receives what it needs. */
 const awilixOnlyInApp = {
   name: 'awilix',
@@ -115,6 +124,26 @@ export default tseslint.config(
   {
     files: ['**/*.spec.ts'],
     rules: { 'no-restricted-syntax': ['error', noDoubleCast, noGuardThrowInSpecs, ...specRules] },
+  },
+  {
+    files: ['src/**/*.spec.ts', 'scripts/**/*.spec.ts'],
+    ignores: ['**/*.integration.spec.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: startsProcesses,
+          patterns: [
+            {
+              regex: 'tests/support/(temp-repo|run-worktree|open-run-worktree|commit-all)[.]js$',
+              allowTypeImports: true,
+              message:
+                'A spec on a real repository is an integration spec: name it *.integration.spec.ts.',
+            },
+          ],
+        },
+      ],
+    },
   },
   {
     files: ['src/**/*.ts'],

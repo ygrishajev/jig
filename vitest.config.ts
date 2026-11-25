@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    workspace: 'vitest.unit.workspace.ts',
+    workspace: 'vitest.specs.workspace.ts',
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
