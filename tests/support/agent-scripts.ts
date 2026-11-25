@@ -42,15 +42,23 @@ export function designRevision(docs: DesignDocs, dispositions: FindingDispositio
   return { output: { ...docs, dispositions } };
 }
 
+/** Scripts each slice implemented and approved, the final check fulfilled, and the description. */
+export function scriptDelivery(agent: FakeAgentSession, slices: PlannedSlice[]) {
+  agent.script(
+    'implementer',
+    ...slices.map((slice) => ({ files: { [`${slice.id}.txt`]: faker.lorem.sentence() } })),
+  );
+  agent.script('reviewer', ...slices.map(() => approval()), fulfillment());
+  agent.script('describer', aDescription());
+}
+
 /** Scripts a whole run of one slice that is implemented, approved, finally checked and described. */
 export function scriptWholeRun(
   agent: FakeAgentSession,
   slice = aPlannedSlice({ description: implementingPlanSteps(1) }),
 ) {
   scriptPlanning(agent, [slice]);
-  agent.script('implementer', { files: { [`${slice.id}.txt`]: faker.lorem.sentence() } });
-  agent.script('reviewer', approval(), fulfillment());
-  agent.script('describer', aDescription());
+  scriptDelivery(agent, [slice]);
 }
 
 /**
