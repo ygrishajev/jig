@@ -122,7 +122,9 @@
       ]
     }
   },
-  "refusalComments": {},
+  "refusalComments": {
+    "ygrishajev/jig#59@451ecbb1482615de2b63cd96047bf473d3af2252": "https://github.com/ygrishajev/jig/issues/59#issuecomment-7166310714"
+  },
   "findingsComments": {
     "findings:ygrishajev/sdlc#64:refactor-config-read-settings-and-008e047e:stuck:ecc0cda2b8402e53324e61053edfb61212247a01": "https://github.com/ygrishajev/jig/pull/64#issuecomment-7086057379",
     "findings:ygrishajev/jig#67:refactor-domain-assign-error-ownership-8ba14cb6:stuck:d0b3398d0e2f4b82d49a1e2e2adbb7219eabcf0b": "https://github.com/ygrishajev/jig/pull/67#issuecomment-7103011596",
